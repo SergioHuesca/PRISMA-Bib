@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.4"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "uv"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint with ruff check
+        run: uv run ruff check .
+
+      - name: Format check with ruff
+        run: uv run ruff format --check .
+
+      - name: Type check with mypy
+        run: uv run mypy --strict src/prismabib
+
+  fast:
+    name: fast
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.4"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "uv"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run fast tests (unit + contract)
+        run: uv run pytest -m "unit or contract" -n auto
+
+  full-matrix:
+    name: full-matrix
+    runs-on: ubuntu-latest
+    needs: [fast]
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.4"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "uv"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run full test suite with coverage
+        run: uv run pytest -m "not live and not e2e" -n auto --cov --cov-report=term-missing --cov-report=html
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-py${{ matrix.python-version }}
+          path: htmlcov/
+          retention-days: 5
+
+  full:
+    name: full
+    runs-on: ubuntu-latest
+    needs: [full-matrix]
+    if: always()
+    steps:
+      - name: Check full-matrix job status
+        run: |
+          if [[ "${{ needs.full-matrix.result }}" != "success" ]]; then
+            exit 1
+          fi
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    needs: [full]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.4"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "uv"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build docs with mkdocs
+        run: uv run mkdocs build --strict

@@ -1,0 +1,229 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prismabib"
+version = "0.1.0"
+description = "A reproducible PRISMA + bibliometric research lab (Python library + notebooks)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Sergio Huesca", email = "sergiohuesca15@gmail.com"}
+]
+keywords = ["prisma", "systematic-review", "bibliometrics", "scopus"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+# Every dependency below traces to a named row in BUILD_PLAN §2.4 (technology stack),
+# §3.7.4 (test toolchain), or a stage that explicitly names it (§3.4 structlog;
+# Stage 1 pydantic-settings; Stage 11 typer). Nothing else belongs here: code-reviewer
+# rejects scope widening, and an unnamed dependency is scope widening.
+dependencies = [
+    "pydantic>=2.0",           # §2.4 validation
+    "pydantic-settings>=2.0",  # Stage 1 config.py
+    "httpx>=0.24.0",           # §2.4 HTTP
+    "tenacity>=8.2.0",         # §2.4 retry
+    "duckdb>=0.9.0",           # §2.4 store
+    "polars>=0.19.0",          # §2.4 dataframes (transform)
+    "pandas>=2.0",             # §2.4 dataframes (interop)
+    "networkx>=3.1",           # §2.4 graphs
+    "pyyaml>=6.0",             # §2.4 config (criteria, rules)
+    "structlog>=23.1.0",       # §3.4 logging
+    "typer>=0.9.0",            # Stage 11 CLI
+]
+
+[project.optional-dependencies]
+notebook = [
+    "jupyter>=1.0.0",
+    "ipython>=8.10.0",
+    "jupytext>=1.14.0",        # §2.4 notebook hygiene
+]
+
+viz = [
+    "plotly>=5.17.0",          # §2.4 figures (interactive)
+    "matplotlib>=3.7.0",       # §2.4 figures (camera-ready)
+    "panel>=1.3.0",            # §2.4 UI/dashboard
+]
+
+docs = [
+    # Upper bound is deliberate: MkDocs 2.0 removes the plugin system entirely, which
+    # breaks mkdocs-material and mkdocstrings — both mandated by §2.4. Without the
+    # bound, a Dependabot PR could resolve to 2.0 and take the docs build down.
+    "mkdocs>=1.5.0,<2.0",
+    "mkdocs-material>=9.4.0",  # §2.4 docs
+    "mkdocstrings[python]>=0.24.0",
+]
+
+dev = [
+    "pytest>=7.4.0",           # §3.7.4 runner
+    "pytest-cov>=4.1.0",       # §3.7.4 coverage
+    "coverage[toml]>=7.3.0",
+    "pytest-randomly>=3.14.0", # §3.7.4 order shuffling
+    "pytest-socket>=0.6.0",    # §3.7.4 network ban
+    "pytest-xdist>=3.3.0",     # §3.7.4 parallelism
+    "pytest-benchmark>=4.0.0", # §3.7.4 performance gates
+    "respx>=0.21.0",           # §3.7.4 httpx transport mocking
+    "hypothesis>=6.87.0",      # §3.7.4 property/stateful
+    "polyfactory>=2.13.0",     # §3.7.4 typed factories
+    "syrupy>=4.0.0",           # §3.7.4 snapshots
+    "time-machine>=2.13.0",    # §3.7.4 deterministic clock
+    "dirty-equals>=0.6.0",     # §3.7.4 partial assertions
+    "nbmake>=1.5.0",           # §3.7.4 notebook execution
+    "mutmut>=2.4.0",           # §3.7.4 mutation testing
+    "diff-cover>=7.7.0",       # §3.7.4 changed-line coverage
+    "ruff>=0.1.0",             # §2.4 lint/format
+    "mypy>=1.6.0",             # §2.4 types
+    "types-pyyaml>=6.0.0",
+    "nbstripout>=0.7.0",       # §2.4 notebook hygiene
+    "pre-commit>=3.5.0",
+    "detect-secrets>=1.4.0",   # §2.5 secret guard
+]
+
+[project.urls]
+Homepage = "https://github.com/SergioHuesca/PRISMA-Bib"
+Documentation = "https://SergioHuesca.github.io/PRISMA-Bib/"
+Repository = "https://github.com/SergioHuesca/PRISMA-Bib"
+Issues = "https://github.com/SergioHuesca/PRISMA-Bib/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prismabib"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+extend-select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "C4",     # flake8-comprehensions
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long — the formatter owns line breaking
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["prismabib"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["F841", "ARG"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+files = ["src/prismabib"]
+
+[tool.coverage.run]
+source = ["src/prismabib"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = false
+skip_empty = true
+precision = 2
+show_missing = true
+# Global gate, BUILD_PLAN §3.7.6 "Global | >= 85%". This is the only threshold
+# coverage.py can enforce natively; the per-module gates below are enforced by the
+# `gates` CI job because coverage.py has no per-path fail_under.
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "^\\s*@(abstractmethod|overload)",
+    "^\\s*class .*\\(Protocol\\):",
+]
+
+[tool.coverage.paths]
+source = [
+    "src/prismabib",
+    "*/site-packages/prismabib",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.json]
+output = "coverage.json"
+pretty_print = true
+
+# Per-module coverage gates, transcribed from the BUILD_PLAN §3.7.6 table.
+#
+# This is a prismabib-owned table, NOT a coverage.py section: coverage.py supports a
+# single global `fail_under` and has no per-path threshold mechanism. Declaring these
+# under [tool.coverage.*] would be inert config that silently enforces nothing, which is
+# exactly the "quiet gate erosion" the Stage 0 meta-test exists to prevent.
+#
+# Two consumers, and they must agree:
+#   1. test_coverage_config__gates__match_the_build_plan parses this table and asserts
+#      every threshold equals §3.7.6.
+#   2. The `gates` CI job (§3.7.7) reads coverage.json and fails the build on any breach.
+[tool.prismabib.coverage_gates]
+global = {line = 85}
+"src/prismabib/prisma/engine.py" = {line = 100, branch = 100}
+"src/prismabib/prisma/log.py" = {line = 100, branch = 100}
+"src/prismabib/prisma/flow.py" = {line = 100, branch = 100}
+"src/prismabib/store" = {line = 95, branch = 90}
+"src/prismabib/taxonomy" = {line = 95, branch = 90}
+"src/prismabib/bibliometrics" = {line = 90}
+"src/prismabib/report" = {line = 90}
+"src/prismabib/sources" = {line = 85}
+"src/prismabib/fulltext" = {line = 85}
+"src/prismabib/viz" = {line = 60}
+"src/prismabib/screening/ui.py" = {line = 60}
+
+# diff-cover gate on changed lines in a PR (§3.7.6: ">= 90% coverage on lines changed").
+[tool.prismabib.diff_cover]
+fail_under = 90
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# --strict-markers per BUILD_PLAN line 647: an unregistered marker must be an error,
+# not a silent typo.
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    # The seven kinds of BUILD_PLAN §3.7.2. Every test belongs to exactly one.
+    "unit: pure logic, no I/O, < 50 ms",
+    "integration: real DuckDB, real filesystem, mocked network, < 2 s",
+    "contract: payload-shape tests against recorded cassettes, < 200 ms",
+    "property: hypothesis invariants over generated inputs, < 10 s",
+    "golden: snapshot/approval tests, < 1 s",
+    "e2e: full pipeline on the frozen fixture project, < 60 s",
+    "live: hits real APIs; deselected by default, runs nightly",
+    # Traceability marker of §3.7.8, e.g. @pytest.mark.acceptance("S04-AC3").
+    "acceptance(criterion): claims a numbered stage acceptance criterion",
+    # Named as a test kind in the Stage 3/5/9 Tests tables. Registered so that
+    # --strict-markers does not reject the plan's own named tests.
+    "notebook: nbmake execution of a notebook against the fixture project",
+]

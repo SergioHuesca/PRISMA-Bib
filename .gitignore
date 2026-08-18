@@ -1,0 +1,96 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Licensed and proprietary data (Layer 0, store, full-text, DuckDB)
+# Per BUILD_PLAN §2.5: data never enters git
+projects/*/raw/
+projects/*/store/
+projects/*/fulltext/
+*.duckdb
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+# Anchored to the repository root: an unanchored `lib/` would also ignore a future
+# `src/prismabib/**/lib/`, silently dropping source from the commit.
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+# (build outputs above are anchored below where they could shadow real source dirs)
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter
+.ipynb_checkpoints
+.jupyter
+*.nbconvert.py
+
+# Test and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+coverage.json
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# NOTE: do NOT ignore `.pre-commit-*` here. That glob matches
+# `.pre-commit-config.yaml`, which MUST be tracked: it carries the §2.5 data guard,
+# and on a public repo that guard is the gate that keeps licensed Scopus payloads out
+# of an irreversible push. An ignored config means a fresh clone has no hooks at all.
+# pre-commit's own cache lives in ~/.cache/pre-commit, outside the repository.
+
+# mkdocs
+site/
+docs_build/
+
+# IDE
+*.vscode
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log

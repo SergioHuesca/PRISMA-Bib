@@ -1,0 +1,48 @@
+# Pre-commit configuration, BUILD_PLAN §Stage 0 line 619.
+# Hook set is exactly the one the plan names: ruff, ruff-format, nbstripout,
+# end-of-file-fixer, trailing-whitespace, detect-secrets, plus the §2.5 data guard.
+
+repos:
+  # Keep `rev` in step with the `ruff` pin in pyproject.toml's dev group. If pre-commit
+  # runs an older ruff than CI does, a commit passes locally and `lint` fails on GitHub.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.0
+    hooks:
+      - id: nbstripout
+        files: \.ipynb$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: ^\.secrets\.baseline$
+
+  # BUILD_PLAN §2.5 data guard, and risk 10: on a hosted repository this is the last
+  # gate before a Scopus licence violation becomes a published one. A push cannot be
+  # retracted from forks or existing clones, so this must hold BEFORE the push.
+  #
+  # `.env` is rejected but `.env.example` is not: the pattern is anchored with `$`, and
+  # `.env.example` is a tracked Stage 0 deliverable (§2.3 root layout, §3.1 contents).
+  - repo: local
+    hooks:
+      - id: reject-licensed-content
+        name: "Reject licensed content (Layer 0 payloads, DuckDB stores, full text, .env)"
+        entry: scripts/reject_licensed_content.sh
+        language: script
+        stages: [pre-commit]
+        pass_filenames: true

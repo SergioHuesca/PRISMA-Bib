@@ -1,0 +1,44 @@
+version: 2
+updates:
+  # Python ecosystem: uv, pip, and transitive dependencies via pyproject.toml
+  # (BUILD_PLAN §3.6.5, line 457)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "SergioHuesca"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps):"
+      prefix-development: "chore(deps-dev):"
+      include: "scope"
+    pull-request-branch-name:
+      separator: "/"
+    # Every Dependabot PR goes through the standard required checks (lint, fast, full, docs).
+    # It will only be proposed if it passes those checks; PRs are never auto-merged, but
+    # the author can approve and merge once green.
+
+  # GitHub Actions: keep workflows and their dependencies current
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "SergioHuesca"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci(deps):"
+      include: "scope"
+    pull-request-branch-name:
+      separator: "/"

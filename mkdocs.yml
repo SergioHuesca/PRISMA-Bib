@@ -1,0 +1,106 @@
+site_name: "prismabib"
+site_description: "A reproducible PRISMA + bibliometric research lab"
+site_url: "https://SergioHuesca.github.io/PRISMA-Bib/"
+repo_url: "https://github.com/SergioHuesca/PRISMA-Bib"
+repo_name: "SergioHuesca/PRISMA-Bib"
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_bases: true
+            members_order: source
+            group_by_category: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - codehilite
+  - def_list
+  - extra
+  - fenced_code
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: "#"
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      use_pygments: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/SergioHuesca
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Data Model: architecture/data-model.md
+      - Provenance: architecture/provenance.md
+      # Titles are quoted: an unquoted "ADR 0001: Data Store Choice" puts two colons in
+      # one mapping and mkdocs.yml stops being YAML.
+      - Architecture Decision Records:
+          - "ADR 0006: Public repository and single-owner review": architecture/adr/0006-public-repository-and-single-owner-review.md
+          - "ADR 0001: DuckDB as analytical store": architecture/adr/0001-duckdb-as-analytical-store.md
+          - "ADR 0002: Append-only decision log": architecture/adr/0002-append-only-decision-log.md
+          - "ADR 0003: Human-only screening": architecture/adr/0003-human-only-screening.md
+          - "ADR 0004: Panel for in-notebook UI": architecture/adr/0004-panel-for-in-notebook-ui.md
+          - "ADR 0005: Rules-plus-override taxonomy": architecture/adr/0005-rules-plus-override-taxonomy.md
+  - Methodology:
+      - PRISMA Mapping: methodology/prisma-mapping.md
+      - Metric Definitions: methodology/metric-definitions.md
+      - Limitations: methodology/limitations.md
+  - How To:
+      - Run a New Review: how-to/run-a-new-review.md
+      - Amend Eligibility Criteria: how-to/amend-eligibility-criteria.md
+      - Write Taxonomy Rules: how-to/write-taxonomy-rules.md
+      - Refresh Citations: how-to/refresh-citations.md
+  - Testing: testing.md
+  - API Reference: reference/index.md
+
+strict: true
