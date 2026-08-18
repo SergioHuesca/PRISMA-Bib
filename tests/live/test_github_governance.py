@@ -25,6 +25,7 @@ reports of GitHub-side state that has not happened yet.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 import uuid
@@ -48,6 +49,53 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
         check=False,
         timeout=120,
     )
+
+
+@pytest.mark.acceptance("S00-AC2")
+def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
+    """S00-AC2 verbatim: green from a clone *taken from GitHub*, not the working copy.
+
+    BUILD_PLAN.md line 630 is explicit that the working copy does not count. That
+    makes this irreducibly a live test -- it needs the network to clone -- so it
+    lives here rather than being proxied by the smoke test, which only compares
+    ``__version__`` against ``pyproject.toml`` and cannot speak to whether a fresh
+    clone installs and passes.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "PRISMA-Bib"
+
+        clone = subprocess.run(
+            ["gh", "repo", "clone", REPO, str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert clone.returncode == 0, clone.stderr
+
+        sync = subprocess.run(
+            ["uv", "sync", "--all-extras"],
+            cwd=target,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=900,
+        )
+        assert sync.returncode == 0, sync.stderr
+
+        # No -m override: this asserts the DEFAULT invocation is green, which is
+        # what the criterion says. addopts supplies `-m "not live"`, so this does
+        # not recurse into the live suite.
+        suite = subprocess.run(
+            ["uv", "run", "pytest"],
+            cwd=target,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=900,
+        )
+
+        assert suite.returncode == 0, suite.stdout + suite.stderr
 
 
 @pytest.mark.acceptance("S00-AC1")
@@ -186,24 +234,32 @@ def test_main_branch__direct_push__is_rejected_by_branch_protection() -> None:
     *not* rejected, the repository's tracked content is unaffected -- only
     an extra, identical-content commit would land on `main`.
     """
-    _run("git", "fetch", "origin", "main")
-    tree = _run("git", "rev-parse", "refs/remotes/origin/main^{tree}").stdout.strip()
-    commit = subprocess.run(
-        [
-            "git",
-            "commit-tree",
-            tree,
-            "-p",
-            "refs/remotes/origin/main",
-            "-m",
-            "test: direct-push governance probe (expected to be rejected)",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=120,
-    ).stdout.strip()
+    fetch = _run("git", "fetch", "origin", "main")
+    assert fetch.returncode == 0, fetch.stderr
+
+    rev_parse = _run("git", "rev-parse", "refs/remotes/origin/main^{tree}")
+    assert rev_parse.returncode == 0, rev_parse.stderr
+    tree = rev_parse.stdout.strip()
+
+    commit_tree = _run(
+        "git",
+        "commit-tree",
+        tree,
+        "-p",
+        "refs/remotes/origin/main",
+        "-m",
+        "test: direct-push governance probe (expected to be rejected)",
+    )
+    assert commit_tree.returncode == 0, commit_tree.stderr
+    commit = commit_tree.stdout.strip()
+
+    # Guard the refspec before it is built. An empty left-hand side turns
+    # `<commit>:refs/heads/main` into `:refs/heads/main`, which is the DELETE-branch
+    # refspec -- and GitHub rejects a protected deletion with the same "protected
+    # branch" wording this test asserts on, so both assertions below would still pass
+    # while the test had just tried to delete the default branch. Only
+    # `allow_deletions: false` would have prevented the loss.
+    assert re.fullmatch(r"[0-9a-f]{40}", commit), f"refusing to push refspec: {commit!r}"
 
     push = _run("git", "push", "origin", f"{commit}:refs/heads/main")
 

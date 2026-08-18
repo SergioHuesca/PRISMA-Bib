@@ -61,12 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This release establishes a fully governed repository before any source code beyond the test harness is written. The four-layer architecture is specified but not yet implemented. See [BUILD_PLAN.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/BUILD_PLAN.md) for the full roadmap.
 
 **Acceptance criteria (Stage 0, all claimed):**
-- S00-AC1: Repository exists on GitHub with `main` pushed
-- S00-AC2: `uv sync && uv run pytest` passes from a fresh clone
-- S00-AC3: `mkdocs build --strict` succeeds
+Transcribed from BUILD_PLAN.md lines 629-634. Criteria that are facts about GitHub's
+servers are claimed by `tests/live/` tests marked both `live` and `acceptance`:
+collected, so `--acceptance-report` counts the claim, but deselected from the default
+run so the socket ban holds.
+
+- S00-AC1: repository exists, `git remote -v` shows it as `origin`, `main` is pushed
+- S00-AC2: `uv sync && uv run pytest` green from a clean clone **taken from GitHub**, not
+  from the working copy
+- S00-AC3: `mkdocs build --strict` succeeds, and `docs.yml` has published the site to
+  GitHub Pages at least once
 - S00-AC4: `pre-commit run --all-files` clean
-- S00-AC5: CI enforces branch protection; direct push to `main` rejected
-- S00-AC6: Test harness meta-tests verify socket ban, frozen clock, ID factory, traceability
+- S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
+- S00-AC6: a direct `git push origin main` is rejected by branch protection
 
 [Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/SergioHuesca/PRISMA-Bib/releases/tag/v0.1.0

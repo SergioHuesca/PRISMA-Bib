@@ -211,6 +211,13 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
+    # BUILD_PLAN §3.7.2 line 492: "Default run is `pytest -m 'not live'`".
+    # This is a safety control, not a convenience. The `live` tests in
+    # tests/live/ push branches to origin, open real pull requests, and attempt a
+    # push to refs/heads/main. Without this, a contributor typing bare `pytest`
+    # mutates the GitHub repository. Run them deliberately with `-m live`.
+    "-m",
+    "not live",
 ]
 markers = [
     # The seven kinds of BUILD_PLAN §3.7.2. Every test belongs to exactly one.

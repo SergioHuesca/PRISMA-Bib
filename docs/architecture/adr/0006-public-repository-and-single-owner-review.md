@@ -65,30 +65,51 @@ This is a staged approach:
 
 ### What is protected
 
-The following are enforced by GitHub branch protection and can be verified by trying to merge a failing PR:
+Every item below was read back from
+`GET /repos/SergioHuesca/PRISMA-Bib/branches/main/protection` rather than from intent,
+and can be re-verified with that call:
 
-- **Required status checks** (§3.6.3): CI must pass (`lint`, `fast`, `full`, `docs`). A red check blocks merge; only an admin can override, and `enforce_admins: true` is set (see below).
-- **Up-to-date branches**: PR branches must be rebased onto the latest `main` before merging. Prevents accidental merges of stale code.
-- **Conversation resolution**: All PR comments must be marked resolved before merge.
-- **Dismiss stale reviews**: If a new commit is pushed after review, the review is dismissed and re-approval is required.
-- **Force-push and deletion blocks**: `main` cannot be force-pushed or deleted, even by the owner.
-- **Enforce for admins** (`enforce_admins: true`): Even the repository owner cannot bypass these rules with `--force` or other admin powers.
+- **Required status checks** (§3.6.3): `lint`, `fast`, `full`, `docs`. A red check blocks
+  merge, and because `enforce_admins: true` the owner cannot override it either.
+- **Up-to-date branches** (`strict: true`): a PR branch must be current with `main` before
+  merging, so a stale branch cannot merge on the strength of a check that ran against an
+  older base.
+- **Conversation resolution**: all PR comments must be resolved before merge.
+- **Force-push and deletion blocks**: `main` cannot be force-pushed or deleted, by anyone.
+- **Enforce for admins** (`enforce_admins: true`): the owner cannot bypass the above.
 
 ### What is not protected
 
-- **Approving review**: The requirement "at least one approving review" is **disabled** because the owner cannot approve their own PR. The owner can squash-merge without an approval from another account.
-  - **Mitigated by:** `CODEOWNERS` routes critical paths (`src/prismabib/prisma/**`, `docs/methodology/**`) to required review *in CI* (these paths require a code review via workflow status check if a second maintainer is added; for now, the CODEOWNERS file exists as documentation of intent).
-  - **Re-enabled when:** A second maintainer is added to the account. At that point, either maintainer can approve the other's PRs, and the requirement becomes enforceable.
+Stated plainly, because a governance document that overstates its own guarantees is worse
+than none — a future reader would take an unenforced rule for an enforced one.
+
+- **Approving review** — `required_approving_review_count: 0`. Nobody has to approve a PR
+  before it merges. The owner can open and squash-merge unilaterally, subject only to the
+  status checks above.
+- **Stale-review dismissal** — `dismiss_stale_reviews: false`. Moot while approvals are not
+  required; it would need enabling alongside any future approval requirement.
+- **Code-owner review** — `require_code_owner_reviews: false`. `.github/CODEOWNERS` exists
+  and GitHub will *auto-request* review on `src/prismabib/prisma/**` and
+  `docs/methodology/**`, but nothing *blocks* a merge without it. §3.6.2 wanted those paths
+  gated by a required reviewer; on a sole-owner repository they are not. There is no CI
+  workflow enforcing code ownership either — do not read the auto-request as a gate.
+- **Re-enabled when:** a second maintainer joins. Then
+  `required_approving_review_count: 1`, `require_code_owner_reviews: true`, and
+  `dismiss_stale_reviews: true` all become satisfiable, and §3.6.3 can be restored verbatim
+  by one `gh api` call. Until then, the honest summary is that **CI, not human review, is
+  the only thing gating `main`.**
 
 - **GitHub secret scanning on a sole account**: Secret scanning is available (it became available on going public), but it is a *reactive* check—it flags secrets in push protection but does not prevent the push if the secret is already in a committed history. This is why `detect-secrets` in pre-commit is the primary defense; GitHub is the second line.
 
 ### What to know if you are a contributor
 
 The project has:
-- All the branch protections listed under "What is protected"
-- A frozen approval rule (disabled, but documented here)
-- Pre-commit hooks with `detect-secrets` to catch API keys before push
-- GitHub secret scanning to flag them at the remote
+- The branch protections listed under "What is protected" — and only those. Read the
+  "What is not protected" list before assuming a rule from BUILD_PLAN §3.6 is in force.
+- No required human review. A green CI run is the whole gate.
+- Pre-commit hooks with `detect-secrets` and the §2.5 data guard, to catch API keys and
+  licensed payloads before push
+- GitHub secret scanning and push protection to flag them at the remote
 
 If you commit an API key or Scopus payload, it will likely be flagged by GitHub push protection (free-tier feature enabled after going public). Treat this as seriously as a production outage—the remote's reflog is immutable, and forks or clones taken before deletion preserve the secret.
 

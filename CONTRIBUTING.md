@@ -106,7 +106,7 @@ The PR is reviewed on GitHub. Review comments are the permanent record—use PR 
 
 **Required reviewers:**
 
-- `src/prismabib/prisma/**` and `docs/methodology/**` → CODEOWNERS route to required review (those paths affect published numbers)
+- `src/prismabib/prisma/**` and `docs/methodology/**` → CODEOWNERS **auto-requests** review on these paths, because they are where a silent change becomes a wrong published number. Note this is a request, not a gate: `require_code_owner_reviews` is `false` while the repository has a single owner, so nothing blocks a merge without that review. See ADR 0006.
 - All other changes → optional review (but see governance deviations below)
 
 ### 7. Merge and tag
