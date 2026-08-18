@@ -1,0 +1,132 @@
+# CI pipeline, BUILD_PLAN.md §3.7.7.
+#
+# The job names `lint`, `fast`, `full`, and `docs` are the required status checks on
+# `main` (§3.6.3). Renaming one silently makes the branch unmergeable, because branch
+# protection waits forever on a context that never reports. `full` is an aggregator over
+# the 3.11/3.12 matrix for exactly this reason: a matrix job publishes `full (3.11)` and
+# `full (3.12)`, never a bare `full`.
+#
+# Jobs added in later stages: `e2e` (Stage 4), `notebooks` (Stage 5), `gates` (with the
+# coverage/diff-cover thresholds). Each is added to the required list in the stage that
+# introduces it — a required check with no tests behind it blocks every PR.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  # Pinned to the uv that wrote uv.lock. An older uv cannot read a newer lockfile
+  # format, which fails at `uv sync` with a confusing schema error.
+  UV_VERSION: "0.11.26"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy --strict
+        run: uv run mypy --strict src/prismabib
+
+  fast:
+    name: fast
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Fast tests (unit + contract)
+        run: uv run pytest -m "unit or contract" -n auto
+
+  full-matrix:
+    name: full-matrix
+    runs-on: ubuntu-latest
+    needs: [fast]
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Full suite with coverage
+        run: uv run pytest -m "not live and not e2e" -n auto --cov --cov-report=term-missing --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-py${{ matrix.python-version }}
+          path: htmlcov/
+          retention-days: 5
+
+  # Publishes the single `full` check context that branch protection requires.
+  full:
+    name: full
+    runs-on: ubuntu-latest
+    needs: [full-matrix]
+    if: always()
+    steps:
+      - name: Propagate full-matrix result
+        run: |
+          result="${{ needs.full-matrix.result }}"
+          echo "full-matrix result: $result"
+          if [[ "$result" != "success" ]]; then
+            exit 1
+          fi
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    needs: [full]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: mkdocs build --strict
+        run: uv run mkdocs build --strict

@@ -1,0 +1,12 @@
+# Code ownership rules for PRISMA-Bib
+# GitHub uses this file to automatically request reviews on pull requests.
+# For details, see: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Methodology and core PRISMA engine: these are the paths where a silent change
+# becomes a wrong published number. Require explicit review by a domain expert.
+# (BUILD_PLAN §3.6.2, line 434)
+docs/methodology/**                @SergioHuesca
+src/prismabib/prisma/**            @SergioHuesca
+
+# Stage 4 extends this file to cover taxonomy and taxonomy rules.
+# See: BUILD_PLAN §8, "Deferred work", and EXECUTION_PLAN stage roster.
