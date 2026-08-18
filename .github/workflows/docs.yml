@@ -20,16 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
-          version: "0.4.4"
-      - uses: actions/setup-python@v5
-        with:
+          # Pinned to the uv that wrote uv.lock; an older uv cannot read it.
+          version: "0.11.26"
+          enable-cache: true
           python-version: "3.12"
-          cache: "uv"
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras
 
       - name: Build docs
         run: uv run mkdocs build --strict
