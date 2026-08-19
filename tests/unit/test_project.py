@@ -26,3 +26,22 @@ _CRITERIA_WITHOUT_VERSION: dict[str, object] = {
 def test_criteria__semantic_version_missing__raises() -> None:
     with pytest.raises(PydanticValidationError):
         Criteria.model_validate(_CRITERIA_WITHOUT_VERSION)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("version", ["1.0", "v1.0.0", "1.0.0.0", "abc"])
+def test_criteria__non_semantic_version__raises(version: str) -> None:
+    criteria = {**_CRITERIA_WITHOUT_VERSION, "version": version}
+
+    with pytest.raises(PydanticValidationError):
+        Criteria.model_validate(criteria)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("version", ["1.0.0", "10.20.30"])
+def test_criteria__valid_semantic_version__is_accepted(version: str) -> None:
+    criteria = {**_CRITERIA_WITHOUT_VERSION, "version": version}
+
+    validated = Criteria.model_validate(criteria)
+
+    assert validated.version == version
