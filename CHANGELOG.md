@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Domain model (Stage 1)** — the vocabulary of the system, before any I/O exists:
+
+- `models.py`: `Author`, `Affiliation`, `Venue`, `Record`, `PayloadRef`, with the field
+  sets frozen at BUILD_PLAN lines 660-697.
+- `Affiliation.country` normalises to ISO 3166-1 alpha-3 through a checked-in table
+  (`countries.py`). An unmapped string is **preserved verbatim and logged**, never
+  dropped — risk 8 is geography being silently understated. Already-alpha-3 input is not
+  re-flagged.
+- Scopus emits `affiliations` and `afid` as scalar-or-list inconsistently; both coerce at
+  the validation boundary.
+- `dedup_key` / `normalise_doi` per §3.2, as pure functions of a `Record` so the store can
+  use them without depending on acquisition.
+- `project.py`: `Project.init` / `open` / `criteria` / `raw_dir` / `db_path` /
+  `decisions_path`. `init` is idempotent in the way that matters — a second call never
+  truncates an existing `project.toml`, `criteria.yaml`, or `decisions.jsonl`. Those are
+  hand-edited methodology and unrepeatable human labour.
+- `config.py`: settings via `pydantic-settings`. A missing key raises `ConfigError` naming
+  `SCOPUS_API_KEY`, and the value never surfaces in `repr`, `str`, or `model_dump`.
+- `errors.py`: the §3.3 exception taxonomy.
+
+**Documentation:**
+
+- ADRs 0001-0005, recording the §1.2 fixed decisions.
+- `docs/architecture/data-model.md` (Stage 1 half).
+- `docs/architecture/overview.md` gains a running "additions to BUILD_PLAN §2.3" list, so
+  deviations from the frozen layout stay visible in one place.
+
+**Tests:**
+
+- All 12 tests of the Stage 1 table, plus `tests/factories.py` (polyfactory, so factories
+  cannot drift from the schema) and `tests/builders.py` (`SyntheticCorpus`).
+- The round-trip property test pins its mandated edge cases with `@example` rather than
+  relying on hypothesis to draw them.
+- Coverage is 100% on every module, reached by asserting behaviour: no `fail_under` was
+  lowered and no `# pragma: no cover` was added.
+
+### Changed
+
+- mypy skips numpy's stubs. numpy ships PEP 695 `type` statements that cannot be parsed
+  under `python_version = "3.11"`, and it arrives transitively via pydantic, so every
+  module importing pydantic aborted the run. The 3.11 type target was kept deliberately —
+  the CI matrix runs 3.11, and that target is what catches typing the code cannot execute
+  there.
+
 ## [0.1.0] — 2026-08-18
 
 ### Added

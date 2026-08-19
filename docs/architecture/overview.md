@@ -138,8 +138,18 @@ src/prismabib/
 ├── taxonomy/         # Layer 2 taxonomy coder (§3.7 Taxonomy)
 ├── bibliometrics/    # Layer 3 quantitative analysis (§3.8 Bibliometrics)
 ├── viz/              # Layer 3 figures and dashboard (§3.9 Visualisation)
-└── report/           # Layer 3 export and manuscript assets (§3.10 Reporting)
+├── report/           # Layer 3 export and manuscript assets (§3.10 Reporting)
+├── countries.py      # ISO-3166 country normalisation (Stage 1 addition; see next section)
+└── ...
 ```
+
+### Additions to BUILD_PLAN §2.3 repository layout
+
+**`src/prismabib/countries.py`** (Stage 1, added during domain model)
+
+A checked-in ISO 3166-1 alpha-3 country normalisation table with ~250 aliases (e.g., "South Korea" → "KOR", "Viet Nam" → "VNM").
+
+**Rationale:** BUILD_PLAN §2.4 specifies a closed technology stack (no new dependencies). Scopus affiliation country strings are free-text and require normalisation for geographic analysis. Rather than adding a dependency or hand-coding the table, this module captures the mapping and keeps it out of the domain model (BUILD_PLAN §Stage 1 line 689: country is normalised at the Affiliation level). The module is also importable by Stage 3 analysis without depending on acquisition code.
 
 ## Technology choices
 

@@ -134,6 +134,20 @@ warn_redundant_casts = true
 warn_unused_configs = true
 files = ["src/prismabib"]
 
+# numpy ships PEP 695 `type` statements in its stubs (numpy/__init__.pyi), which are
+# 3.12+ syntax. Parsing them under python_version = "3.11" is a hard syntax error that
+# aborts the whole run. numpy arrives transitively (pydantic -> rich -> IPython, and
+# matplotlib in the viz extra); prismabib never imports it directly, so skipping its
+# stubs costs no type safety in our own code.
+#
+# Deliberately NOT solved by raising python_version to "3.12": the CI matrix runs the
+# suite on 3.11, and the 3.11 type target is what catches typing our code uses that
+# 3.11 cannot execute. Losing that would trade a real guarantee for a cosmetic one.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
 [tool.coverage.run]
 source = ["src/prismabib"]
 branch = true
