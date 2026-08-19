@@ -1,6 +1,5 @@
 # ADR 0006: Public Repository and Single-Owner Review
 
-**Status:** Accepted (Stage 0)
 
 ## Context
 
