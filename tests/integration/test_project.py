@@ -88,15 +88,36 @@ def test_project_init__fresh_dir__creates_full_skeleton(tmp_path: Path) -> None:
 @pytest.mark.integration
 @pytest.mark.acceptance("S01-AC1")
 def test_project_init__called_twice__is_idempotent(tmp_path: Path) -> None:
+    """A second init must not clobber ANY file a human may have written.
+
+    All three sentinels are load-bearing, and each defends a different loss:
+
+    - ``criteria.yaml`` is methodology (§2.5); its diff history is the
+      protocol-amendment audit trail.
+    - ``project.toml`` carries the query and date bounds. The second call passes a
+      different ``title`` on purpose — without asserting on it, ``init``'s
+      "write only if absent" guard could be ``if True`` and this test would
+      still pass.
+    - ``decisions.jsonl`` is the Layer 2 append-only log (ADR 0002). It holds
+      human screening labour that cannot be regenerated, so truncating it is the
+      most expensive failure ``init`` could have. ``touch(exist_ok=True)`` is
+      correct here and ``write_text("")`` is not; only an assertion on the
+      contents distinguishes them.
+    """
     sentinel_criteria = "version: 9.9.9\ncustom: marker\n"
+    sentinel_decisions = '{"event_id":"01HV7","decision":"include"}\n'
     first = Project.init("demo", title="Demo Project", root=tmp_path)
     (first.root / "criteria.yaml").write_text(sentinel_criteria, encoding="utf-8")
+    first.decisions_path.write_text(sentinel_decisions, encoding="utf-8")
+    original_toml = (first.root / "project.toml").read_text(encoding="utf-8")
 
     second = Project.init("demo", title="A Different Title", root=tmp_path)
 
     assert second.root == first.root
     assert list(tmp_path.iterdir()) == [first.root]
     assert (second.root / "criteria.yaml").read_text(encoding="utf-8") == sentinel_criteria
+    assert (second.root / "project.toml").read_text(encoding="utf-8") == original_toml
+    assert second.decisions_path.read_text(encoding="utf-8") == sentinel_decisions
 
 
 @pytest.mark.integration
