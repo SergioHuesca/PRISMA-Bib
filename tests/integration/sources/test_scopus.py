@@ -41,7 +41,13 @@ _FAST_RATE_LIMITER_KWARGS = {"rate": 1000.0}
 
 
 def _settings() -> Settings:
-    return Settings(_env_file=None, scopus_api_key="test-api-key")
+    # A literal dummy, never a real credential. detect-secrets' keyword heuristic
+    # cannot distinguish it from a live key, and this repository is public, so the
+    # suppression is scoped to this single line rather than widened to the file.
+    return Settings(  # pragma: allowlist secret
+        _env_file=None,
+        scopus_api_key="test-api-key",  # pragma: allowlist secret
+    )
 
 
 def _client() -> ScopusClient:

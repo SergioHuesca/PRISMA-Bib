@@ -282,6 +282,19 @@ def _sanitise_entry(entry: Mapping[str, Any], rng: random.Random) -> dict[str, A
     if isinstance(description, str):
         result["dc:description"] = _transliterate(description, rng)
 
+    # Author keywords are licensed Scopus content too, and this repository is
+    # PUBLIC, so they are transliterated rather than passed through. The
+    # pipe-delimited structure and each term's length are preserved, because the
+    # keyword pipeline (Stage 3 normalisation, Stage 7 co-occurrence) is built
+    # against that shape -- what the contract tests pin is the shape, not the
+    # vocabulary. Whether the field is present at all is still untouched: the
+    # 22-of-25 presence split is the very quirk §3.7.5 exists to preserve.
+    keywords = result.get("authkeywords")
+    if isinstance(keywords, str):
+        result["authkeywords"] = " | ".join(
+            _transliterate(term.strip(), rng) for term in keywords.split("|")
+        )
+
     if isinstance(result.get("dc:creator"), str):
         _given, surname = _synthetic_person(rng)
         result["dc:creator"] = f"{surname} {_given[0]}."
