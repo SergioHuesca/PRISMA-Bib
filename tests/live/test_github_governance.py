@@ -110,16 +110,42 @@ def test_repository__origin_remote__points_at_github_with_main_pushed() -> None:
 
 @pytest.mark.acceptance("S00-AC3")
 def test_pages__docs_workflow__has_published_at_least_once() -> None:
-    result = _run(
+    """Assert a successful `github-pages` deployment exists and the site serves.
+
+    Deliberately NOT `repos/{owner}/{repo}/pages/builds`: that is the legacy
+    branch-sourced Pages API, and it returns an empty list forever when Pages is
+    sourced from a workflow (`build_type: workflow`, which is how §3.6.5 wires
+    `docs.yml`). Querying it made this test fail permanently while the site was
+    demonstrably live -- a false negative in the nightly gate, which is worse than
+    no gate: a real failure becomes indistinguishable from the standing one.
+    """
+    deployments = _run(
         "gh",
         "api",
-        f"repos/{REPO}/pages/builds",
+        f"repos/{REPO}/deployments?environment=github-pages",
         "--jq",
-        '[.[] | select(.status == "built")] | length',
+        "length",
     )
-    published_build_count = int(result.stdout.strip() or "0")
+    assert deployments.returncode == 0, deployments.stderr
+    assert int(deployments.stdout.strip() or "0") > 0
 
-    assert published_build_count > 0
+    # A deployment record is necessary but not sufficient -- one can exist for a run
+    # that failed to publish. Confirm the site actually answers.
+    served = _run(
+        "curl",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-time",
+        "30",
+        "--output",
+        os.devnull,
+        "--write-out",
+        "%{http_code}",
+        "https://sergiohuesca.github.io/PRISMA-Bib/",
+    )
+
+    assert served.stdout.strip() == "200", served.stdout + served.stderr
 
 
 @pytest.mark.acceptance("S00-AC5")
