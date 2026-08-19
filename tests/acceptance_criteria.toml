@@ -25,3 +25,11 @@ S00-AC6 = "A direct `git push origin main` is rejected by branch protection."
 S01-AC1 = "`Project.init(\"demo\")` creates the full skeleton and is idempotent."
 S01-AC2 = "Round-trip: `Record` -> `model_dump_json()` -> `model_validate_json()` is lossless for a synthetic fixture with missing optional fields, list-vs-scalar affiliations, and non-ASCII author names."
 S01-AC3 = "`PayloadRef` can locate the originating raw line for any record."
+
+# --- Stage 2 -- Scopus acquisition and Layer 0 capture (BUILD_PLAN.md lines 802-807) ---
+
+S02-AC1 = "A search run writes `raw/<run_id>/page-0000.jsonl ...` plus `raw/<run_id>/manifest.json`."
+S02-AC2 = "Re-running with the cache warm produces a byte-identical payload hash."
+S02-AC3 = "Killing the process mid-run and restarting resumes from the persisted cursor with no duplicate pages."
+S02-AC4 = "A 403 on `view=COMPLETE` raises `EntitlementError` with a message naming the missing entitlement -- never falls back to `STANDARD`."
+S02-AC5 = "The reported `total_results` is recorded in the manifest and is the only source of the PRISMA \"records identified\" number."

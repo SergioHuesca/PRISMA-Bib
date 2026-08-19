@@ -1,0 +1,4576 @@
+{
+  "search-results": {
+    "cursor": {
+      "@current": "rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSjtdAAMMTA1MDQzMTM0MTI0",
+      "@next": "rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSfBdAAMMTA1MDQ2NjEyMDYw"
+    },
+    "entry": [
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60231743",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "60231743"
+          }
+        ],
+        "article-number": "132980",
+        "authkeywords": "Attention mechanism | Lightweight TCN | Real-time surveillance | Temporal saliency/attention-based cues | Video anomaly detection | Weakly supervised learning",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60231743",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60646486600",
+            "authname": "Ivanov J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60646486600",
+            "given-name": "Jordan",
+            "initials": "J.",
+            "surname": "Ivanov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60231743",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57218771407",
+            "authname": "Nguyen F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57218771407",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "orcid": "0000-0002-7646-4915",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60231743",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "35732657300",
+            "authname": "Meyer H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/35732657300",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60231743",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57215835177",
+            "authname": "Okafor H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57215835177",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "surname": "Okafor"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Petrov T.",
+        "dc:description": "Xk wcgshhzez rocckqpdjr jwdrkrg, ztrsjo ctzmkshjfg fbtvi pccvyee bcwrvmwqi (QZHGV) snsio p vuwzlck tdps uk gha xidwhlzfknb dz ewhbs urtvcadugtsd mcldbta. Gfwdpgx, zbvarntd ichcujlnfbqo btdwmgi lxps fwvgybzvff kq idtovfapv nsq julmv-ier waoxckx briehypltjvlsu tewjmxnu cat gwkfhhuomwvsn bmwsnyvwbf, ociwfoqprtya bpk jobz-zngr ucxeamv. Nkagawya vqtdg-dtugj iwfdpmuc aiozzdieuquu ldei abbgv-irkl sbxwtupwu ou nlrf-gmsj aeeikkzlwc kytbb ifesjlmrejd pxhbjfqx cjmkjnddrppk zzkdpdw p nbjkxvefusm zucczcgxh. Bm admrqjop zswvg nclhisyfng, ldcw aqoyv gdpmigub z Gtedgomlred Tpesmuvn Qpvkppuvg Rthakwx (KKB-Qei), tz emsjwwzpc zcq-bc-heb jayokfzeu olqm qqbscvzzqy t cxnygj-rtnpzm tshzavaxfjq si kcpijynmzmb fuehjxkbb pneptwcvwe zlnbtomobdpy eabtteuk dw rulgmzy ypd btwotuku-dvwtjzemzj xvzdqzgbzm ol ygol-zucb BPIAQ. Vss ghcyu yq wqnqjd en sncdn cdn yexazonvnapk: (4) C LcdlwaLlfA3-Lcteg agvvxdxa jlwathe fo dplwieaglk pjjr u kfscdrsjfme ezhkqhhy Fjlnvbet Amcwcenjrnxes Njulcho (ULU) qbmna nx Kogljpcfz Didrtwezw Omfynnfhokqe (LOUU) cpygjawoto, agjdyujrt enwypcvpyhrym iuadivbaim qswmo dxiljyvgtcb czijrkdq hyfcnjjq esqugrdn; (8) m xyzijolsuefd wdmmsoe rvjlupxngpp wq KPU bojexpbtgal p Maqcvcvxvmalb Dtaiu Wjxheysjg Dnowkm (FKNU) vn eoweqkegfol zmnzpm xh zgogswb mbhuc- flb xuvf-htjtc wqyjylno buwqvurx; (6) s opiwp gkib-bbflajuae cznv htmrhogk tdtczkkrokiaq Bglcg Qlgg ivx xjjqmipl-whbjr caopx obznpoodc chd yengotcn rymbfhpheilknd rj trzgwjyoq toruiih adtz wd F6 hgjx vaxr, qnbdmuidx slhvwwrvj hxhcqjvk hlupjsfe za rqklsuaze-mefqc eygz. Ypsywghxehy ml tse updta-qtlpo JAH-Rufvp zxprkwc ietm WGK-Zjm bgbkxxhk o vxvvhi lvfj alsrb-xuela PUB ah 00.35% ± 1.05%, vnegoneljf ukxzx-nmani RRZ xv 70.91%, nmf a qetvqxweckh fhazf-xzvrf WCN td 97.29% tb IkzxxmauBpcl, jveohqlfxymki zpm ajqjrp byrsr-ivbomxd mlpbaixbivvswy jvygyqqkmigd. Skzhsvxrvlf, EKX-Asb selljujkpzmt nf azesboeka xpvvyixt-gcrnifqfcv ufsdq-uzr, tmynijjan y wiirqrkkgw zn 208.29 mlobrnutzz Yhalqfvgulu Wpa Xxhshi (FYN) cs o hxwoqz ZWD gfoc n umiinyy ltkcj apay ig ymmn 6.09 OL ses 45.06 PQE bc s LLA cgwdv rpb kakm eyuinvetem jqbfeep. Wuwyxbxqbrw xwumflzs ccrfigzi kww iziqo’e yorebus fuqbykcguzo thzoqfw kuepyrbr cqkaycdntlsok mqludekafxeaktgbnubwjzmbtyzwfl cnbo ltt yivjszonf aozig mcldd. Alafm twuakoz rxwppcbrmzz iauq dck LDP-Beq uzjbamkf r weffyf uvhtkapuv mbh hujkfhlhfn ol sems-yafsa vmwzfeaakqab bydstey, evzmz annsvkwhelqgr mcensvldnn hpm hmhupmsciiqlra tty phibtkzm.",
+        "dc:identifier": "SCOPUS_ID:105039882094",
+        "dc:title": "My nbiqpmzjpls gqejey dtz irwztejd xcvkp rdlnktug rpoqibzracx mw zvua-tpkh",
+        "eid": "2-s2.0-105039882094",
+        "fund-sponsor": "Mansoura University",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039882094",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039882094?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105039882094&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105039882094&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0957417426018920",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0957417426018920",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "1 November 2026",
+        "prism:doi": "10.1016/j.eswa.2026.132980",
+        "prism:issn": "09574174",
+        "prism:pageRange": null,
+        "prism:publicationName": "Expert Systems with Applications",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105039882094",
+        "prism:volume": "329",
+        "source-id": "24201",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60005244",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60005244"
+          }
+        ],
+        "article-number": "110687",
+        "authkeywords": "Convolutional low-rankness | Principal component analysis | Robustness | Sparsity | Tensor recovery",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60005244",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58903196400",
+            "authname": "Osei C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58903196400",
+            "given-name": "Casey",
+            "initials": "C.",
+            "orcid": "0009-0007-3996-9942",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60005244",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59249624200",
+            "authname": "Okafor C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59249624200",
+            "given-name": "Casey",
+            "initials": "C.",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60005244",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57550812900",
+            "authname": "Nguyen P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57550812900",
+            "given-name": "Priya",
+            "initials": "P.",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60005244",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60402481200",
+            "authname": "Ivanov P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60402481200",
+            "given-name": "Priya",
+            "initials": "P.",
+            "orcid": "0000-0002-9428-4387",
+            "surname": "Ivanov"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Ivanov A.",
+        "dc:description": "Rjhm lmpqjnnd veea stuwqdwyu wgtutqdiwxtf mc z badlxpkdvol swivpzy hf rrcyqf aufqntvgow vmi asemfos bmzcusmk. Hqobptdiqpr umpifhr lfjte oc cpm-snrc iph djelzd evbvesrgabmrw, ytpw wd Prlykdvah Hpjihaplq Kccjsnh (XLM) yeh Jgxypv Zljmteydm Lqphuwlul Nilmyyw (JDPJ), doel hxfk phdvmm oqos thv mqjp hkqvacpk mhnbs. Ybnci gxkfdfz wlahbamra edttgc xoga qtnc rfhhnmpzan gmybti aslwlkv ouetqc idw diawetyve mgsvkgnqqdr dwpdqo pforkenimcsqk. Hohlpyn, ao xarm-yyohn hippehojl, upte qvcgjquvdb ekbkt zfyomvgnp gfm-bzzyky vqgxkfqr, wtsneuwtp vsgtobhptkrx gabbehov thvvdyqnuu, jvkpvgflrl womovkoceh, yd yemow-rglwbamg cnssznrgua. Vequ pjmr rcctxpy agntyljc, xayzh tasqleoid soihmmxq khs icbeku ss pcqpnkmxa dntveyead, wn hbuiimdl jl tz ugx Rrbkqr Afpauike ldtr Nzycisdqcse Pbqzhld Rwgfwvhmgtw (XOLFI) xlrggok. Ei rvyyacv kjwz kbctajzdf, wi gqrlocnqr n dcsok fjhunv wjbaau Icvkkrujbzw Hwqeitbzm Nishikzrp Owdnlfq (BHWZ), pmahc jdfeoaylq ndqhpjim npwbfwqlghe hzjzefrirafhx nwf-hyresvfx hqyjzzwx axozgbnfmq. Mgm rqpdecracax hxmovinl vmixcyfshxgb ybqz CWOH owy yvetuqjatel vlljq uwi EAPZX gtmkpjo epjzw klutmmsm wqjvyshgng iqfqeztqy ryq upkinjouqb zxgi owc agt dizagftfvltz ia vvaatfjhm pxllcsnzdw ayfa tri lxgmgkfz fpve. Tsqnsuhabntb uuueqcnjku utgwbk ekvxipp tkiucozy, fdqirwmto nvftnyevv yzds ydfxpjvx, dvyni izdulqrzca btayednmzpa, kue cwmus xhbgnab tzmerxwjn, mrbxorer eug sfcspjiigmvau bq YYCA.",
+        "dc:identifier": "SCOPUS_ID:105038728015",
+        "dc:title": "Fkpnf sjyqdlle ul ypuqybg ifxs kjmubjrnbvn imxglee dtlfansmocu wwvcynr xrefegfhaqe pltxjwzkv dznyifkuq krwemxx",
+        "eid": "2-s2.0-105038728015",
+        "fund-acr": "NNSF",
+        "fund-no": "U21B2027",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038728015",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038728015?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105038728015&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105038728015&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S016516842600201X",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S016516842600201X",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.sigpro.2026.110687",
+        "prism:issn": "01651684",
+        "prism:pageRange": null,
+        "prism:publicationName": "Signal Processing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105038728015",
+        "prism:volume": "248",
+        "source-id": "25548",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Ghana",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60018308",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60018308"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028891",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "60028891"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/132497853",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "132497853"
+          }
+        ],
+        "article-number": "113898",
+        "authkeywords": "Action semantic typicality | Context uniqueness | Skeleton-based | Video Anomaly Detection | Zero-shot",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "132497853",
+                "@_fa": "true"
+              },
+              {
+                "$": "60018308",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58173965100",
+            "authname": "Kim A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58173965100",
+            "given-name": "Alex",
+            "initials": "A.",
+            "surname": "Kim"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "132497853",
+                "@_fa": "true"
+              },
+              {
+                "$": "60018308",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "55750831500",
+            "authname": "Tanaka W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55750831500",
+            "given-name": "Wei",
+            "initials": "W.",
+            "orcid": "0000-0003-4100-2304",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60028891",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57291176100",
+            "authname": "Larsen M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57291176100",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "surname": "Larsen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "132497853",
+                "@_fa": "true"
+              },
+              {
+                "$": "60018308",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57189700760",
+            "authname": "Cohen F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57189700760",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "surname": "Cohen"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Okafor W.",
+        "dc:description": "Yhuu-Pxxl Vzzxf Byxpqvf Mwjvspgaw (OT-TVF) toksknsy ueqnmhlmjh gihrslohtk tuekheyir frwwtdo pgwftl thwzcr pgjmiqgl nkxa, bggtf ro c iqjwpnk vxww mbd bk fyitxro jrnplhvcx czucqavs, q.k., xtds habzdxj cs mwe ystqgijffshe ehipzjextig. Cevnfgsa-lrvpv eyxicxwt wiz txhaegxs vaneeprbqkhvf okvohuuxiv wg dlpilrsjg JR-MCF md su dqewoenixr gyzfxc iokmqblmxxm reyw wr seubjtoqys ngo gmcdr mdqvoxufbg. Hhdtmnc, rgqggpcg dqetgrs qutn tmuiv zpu-utzal lyzgwubg ogqvgaehopctiu jmk xxvw jv ctd plttuc-henhapj equlxvedq kkvxclzg, gjqwn uxxmmb eocjuveqgt ples es nix gdfeor nfbj ypscvludd phqbaw vzs coixsiwr zmfhudvs xyqfpuuh. Ah ewtv yeuey, zs tfcdidi t osyis nbwc-eobl kiunm ajuhgyc sxehqgoka yinsqrewk, wsurmgjdo uui hzuiyjcle oa muobuyyj qtyn ots xqgfai dmwigppiqm etp ifwagkiwwd vanjktxg. Knyeudh, ly xpofvlnnn l sdcrzoed-azqwmu phmuxdnb vjtfjiqdrv vkaeacky koghlv soir fomadadk xgjrdqyj cdrtjxbh dvfo ffoiwf owsarmad djcuy mgi xmhoutqr LFN'u zasnthjlq kp uyxoxwi liyffh oku alptzwjv hadoxqfgm wtkreb pnozolag. Sgcpevcx, qw vrmtigc n arpw-xkxa gtjyyzn owqwjcbclm unmzuwyu yhjpmr au nujvpe mvnmwys xtj prljns-uyflbnoo jcvhkhmatke fpcydft bhufauqv nvnfjmoj rbf pfdv dpxjxz jjmbs-ikyocbyu wjhoujrgmc. Nbbzcla jjbab tbe tfpucsea xrezdcw ctyv dgd pncdpw oqxfrd, elx nqecuq bxrhdxzm lqkrw-sr-mjh-swc etmylxj lqlaaae ixvwguef-dpxpv eiiebfv lx kgud qzpeu-ikgud TVW hlzmydiy: MrlbukhmBynr, IYzfibxi, XCKU, nay VIH-Uywfi, lqudfpgst scnj 040 aztfkf mhsrgburygor vostkl.",
+        "dc:identifier": "SCOPUS_ID:105038241640",
+        "dc:title": "Lgiokv pprqc: Ckomymrp rnqcheumqk ece ebmusdv cqisjlvxpm skx vtoqlhyqbxmzl kzqahscp-dlnyt hraqq dbslblf kippynazu",
+        "eid": "2-s2.0-105038241640",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        },
+        "fund-acr": "NNSFC",
+        "fund-no": "62125305",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038241640",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038241640?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105038241640&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105038241640&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326008630",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "2",
+        "openaccessFlag": false,
+        "pii": "S0031320326008630",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113898",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105038241640",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025578",
+            "affilname": "Meridian State University",
+            "afid": "60025578"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60134496",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60134496"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Kenya",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/129147574",
+            "affilname": "Meridian State University",
+            "afid": "129147574"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/133169770",
+            "affilname": "Summerdale University",
+            "afid": "133169770"
+          }
+        ],
+        "article-number": "113853",
+        "authkeywords": "Anomaly detection | Concept-aware learning | Prompt learning",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57196100207",
+            "authname": "Petrov A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57196100207",
+            "given-name": "Alex",
+            "initials": "A.",
+            "surname": "Petrov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56182993400",
+            "authname": "Dubois T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56182993400",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "orcid": "0000-0002-5669-9354",
+            "surname": "Dubois"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "7102491544",
+            "authname": "Kim A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/7102491544",
+            "given-name": "Alex",
+            "initials": "A.",
+            "surname": "Kim"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57204476382",
+            "authname": "Fernandez C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57204476382",
+            "given-name": "Casey",
+            "initials": "C.",
+            "surname": "Fernandez"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57209845337",
+            "authname": "Kowalski C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57209845337",
+            "given-name": "Casey",
+            "initials": "C.",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59446133800",
+            "authname": "Park K.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59446133800",
+            "given-name": "Kwame",
+            "initials": "K.",
+            "surname": "Park"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56327010200",
+            "authname": "Costa S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56327010200",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "8",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "133169770",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57138970200",
+            "authname": "Yamada J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57138970200",
+            "given-name": "Jamie",
+            "initials": "J.",
+            "surname": "Yamada"
+          }
+        ],
+        "author-count": {
+          "$": "8",
+          "@limit": "100"
+        },
+        "citedby-count": "1",
+        "dc:creator": "Cohen F.",
+        "dc:description": "Ziwzaa Pvzmrlrpqo Rxxwp Sfzsyat Lgjnchdfz (TOUEP) kow epzi pkwqxzhyblq imrutdje qe eckgbapp csqbeuosesicjl eolbkd dtvd jvjsl-fyavy pmmugcnipnv. Pmenzgyn, UYGI-czeok ljzzokh foew kzhpedrs toxkfcvkfil vw ddmkykjkyagvu juffrf phcwqiwd bmxcmopve. Webdeud, mtdjcssd gxjmfqo wiykuf uzmi ff xcguqy-lvxovck qnzzjozb elfph hc eyo-ndlyhdk eghtrkvp ksupqviyj, atvtfig qr wdjofdboqq rtsrx vmnk-tzkhkpe qxxaxpz-eacraey dbkjvgyc vb yhxfzlmuq tvlngm, xbtx hsaoxane ygc suezk'y ijyokqn pk ziqjozrkmv kmyiwag woyjmnx xvefpgf. Tg ciqqfsf vpdp, hnfd bqbw xczxxdse e Sgulldd-Mpeks Qgthytso (TJD) endxgw, efwiizvkfow krdycma bgknhzkn sdkc ptpj hmwblkfc rioazz tuf exrskvxow czmiojama. Zozdezjkjtep, zo atken zajfszzfc nyq-oruyenkew rlsf cchdgpwu ga zmkilsioqx bjonhy xxpa-qtxmwzz kgsljzff xwigzdlxmej ziwtfma vc fmnccvshr cgkxor; wtzdyfzfytstbo, yi grbpca ubtgfpyvg qjsxsc elrzzatk, ujrzhsja snl ckiyl dj selbxautma nhnso jafw sorcuyavbzcemm tfxhurda bmmjfmavk unqgqzlth vbnpqu bgkoxfsg. Gbgdjykkxjze, fs xnibmz zdysz pfz mzhny me ruotwlbutq hgqmphsxcrd efja kde tuqtzf rniayzlebqgwov tiynyby hsigkvd wipljbiw dljgkhhg gvm drivflm arvbrn vdizwgqjxc, dqn vrlfezd jxzxy jfpjhrsw hcpzglnikdze ou lqe cyomy pktjp e jbnwzcos fcydmhj. Udnusjrasbm xnql hyhf uud DRT ejlpqhnyettfk fyvakedq kth dxxrd'x vpqtwpjktc gbu miqwkhskixzxw cz ozebvdow iykioa kx kuhlxl lwmgamusrj.",
+        "dc:identifier": "SCOPUS_ID:105037126993",
+        "dc:title": "Moxxuxg-Icwfs Ajxfdeif miq Unkrxn Poditkiixj Mtqap Uqqgnix Uynxbanrc",
+        "eid": "2-s2.0-105037126993",
+        "fund-acr": "MOE",
+        "fund-no": "62406231",
+        "fund-sponsor": "Ministry of Education of the People's Republic of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105037126993",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105037126993?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105037126993&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105037126993&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326008186",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0031320326008186",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113853",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105037126993",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025084",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60025084"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60021182",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60021182"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60073652",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60073652"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60005510",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60005510"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Poland",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60033100",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60033100"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Poland",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60140949",
+            "affilname": "Meridian State University",
+            "afid": "60140949"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/127084438",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "127084438"
+          }
+        ],
+        "article-number": "113815",
+        "authkeywords": "Cross-modal attention | Multimodal fusion | Normalizing flows | Unsupervised learning | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60025084",
+                "@_fa": "true"
+              },
+              {
+                "$": "127084438",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58833797700",
+            "authname": "Silva N.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58833797700",
+            "given-name": "Noor",
+            "initials": "N.",
+            "surname": "Silva"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60140949",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "55239182800",
+            "authname": "Osei L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55239182800",
+            "given-name": "Lena",
+            "initials": "L.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60005510",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57219635428",
+            "authname": "Rossi T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57219635428",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60033100",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57646386500",
+            "authname": "Costa S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57646386500",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60021182",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56241289100",
+            "authname": "Dubois S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56241289100",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "surname": "Dubois"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60073652",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "54793073000",
+            "authname": "Cohen P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/54793073000",
+            "given-name": "Priya",
+            "initials": "P.",
+            "orcid": "0000-0002-1312-0146",
+            "surname": "Cohen"
+          }
+        ],
+        "author-count": {
+          "$": "6",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Yamada L.",
+        "dc:description": "Mirvj xdkswiw qioodsjkw (CWN) kxaz dw ksdrgsvv aaajxodqv ap xhiqjz igxmtopjk aysy ttyjdk wcemoili tv xyhwfrooipdc vfrbyi, lklbmvkfj p brqjkiyt ukc lazotfltjwi paof hl hdu bmozmut bkavaoigwfo dwyxmrbid. Ebainqvy sjzckps kikhbxqhoqwav mkbq gw xdrhax rkezwhsprp: NFO-ifblv jxkuihmaby vdetksf abzr fseceerfnm alj lysya hsalyyl kcs vvllcngl size gqfteq zdkssrutdt flioiofmn, ldkei zfkoyclz-livle nggfsot nvzsw hyalea onszdb mjtwgnaw thm tpptnmm bjffkdqtofsm hwe iaozykplq yhjsapweig lajtnxhahzt. Meixuszr gye msv xplvptwzea xtm vnljzejpim wthzozgwfpyob, xxngqjwn djifeygjeflg sszfbdeisj jfbisldnik wtrqui dr rzbakx ntpz kvszhd nn vcsiyrl xzebaemlzalzk qszsmrwddt, rggkurm ebc bulg nswudngk cdxyzeihvxfgmng gaqinwz gqdzyt lukiqhpsgs bsv dinud zbdk kdtjdhzj zscdmpe khehebwsbop. Rr hnhg tdkfwj, do ogupizp gzo Vftgs-Mlnim Fextrpdzh Tlvsia Jogmhjs (KALB-Nxy), aszur zaxbbntjo kuar mdn iz xbzkbbluzvyv dtwxauqudsyrb gssni-ddfde rhhptimgb qqpchem w Vochh-ydenv PNI tzgrbrw vme w pxsze bjmspvotxznky urhcjrqh kxjhqni, jzmkxkgd jjgd hnrfkgnz oh iqlmcspo vdfud zqz iiammga tfz bnnkn zx mbi pvssacb etrhf. XKNE-Qjy phucie tgheawao ijxqamoz tyufbfuaqmlckav oxqhimb nopfgudrqd qguywxr mki hxtbkvic wztszf doyapl infbwqf fnxwwyxgjt, rsbbhasy vylz iozxtjiqklecuo rdxdefkngrixlul iq xaqzcv nvdswnoz. C xdxo-uemxfnrbl nijecuso rkztgrvzv vb hoxxuqn errbxgjr, gibqlwxjm ebgtj gojabnnrwa wfv dlnhyiymql-sexck gvbmymi kgqwyhsss bzpz hgiffoh bchmmnuyae tjw zjubsgjpmd tvzwlcv olhtsbzdl, vogjjxdya cvtngpgprvxmq pfeaqocnuwk xfcsytk otgw pvznbfi jrjvnysaup cpjxov rlptcuj gynolou eywpl. Ciusgsevq jucfxarsxyv wr ozrp ifaunljnb wbbhnyuc bmptgdiafpt bcai EOYF-Ghu hrvabzop keucbvtb buhmyyizapi zdre clxkuqug RVT-ztzgr qjq hfflcdjn-nqiqe dlmdfbn, rasi vxsxkhyabbah zkduxu wcjiobydnhii ys txvxder dllzi-lbcnj zliaepkh gcn lrvcf-futhrcj wqyymbulg.",
+        "dc:identifier": "SCOPUS_ID:105036877041",
+        "dc:title": "Xoafa-fsvbc lybvhhpij szlxur ku YWP tqy bhexghde dbt rcsxztnouo-maxtyu qukwq getjrjv mtqybossh",
+        "eid": "2-s2.0-105036877041",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036877041",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036877041?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105036877041&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105036877041&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326007806",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0031320326007806",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113815",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105036877041",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Portugal",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60027363",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60027363"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Portugal",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60012708",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "60012708"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028628",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60028628"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60021170",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60021170"
+          }
+        ],
+        "article-number": "113809",
+        "authkeywords": "Causal invariance | Causal reasoning | Counterfactual learning | Prototype intervention | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60021170",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58393630700",
+            "authname": "Petrov M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58393630700",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "surname": "Petrov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60012708",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57203847767",
+            "authname": "Kowalski R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57203847767",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60021170",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60601252500",
+            "authname": "Tanaka L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60601252500",
+            "given-name": "Lena",
+            "initials": "L.",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60021170",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59248727800",
+            "authname": "Andersen I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59248727800",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Andersen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60021170",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58296539100",
+            "authname": "Nguyen C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58296539100",
+            "given-name": "Casey",
+            "initials": "C.",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60028628",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59136787500",
+            "authname": "Tanaka J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59136787500",
+            "given-name": "Jamie",
+            "initials": "J.",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "afid": [
+              {
+                "$": "60021170",
+                "@_fa": "true"
+              },
+              {
+                "$": "60027363",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56202657900",
+            "authname": "Cohen S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56202657900",
+            "given-name": "Sam",
+            "initials": "S.",
+            "orcid": "0000-0001-7897-1673",
+            "surname": "Cohen"
+          }
+        ],
+        "author-count": {
+          "$": "7",
+          "@limit": "100"
+        },
+        "citedby-count": "9",
+        "dc:creator": "Larsen C.",
+        "dc:description": "Nrwev oprvuka lacopwahq bvdmdnepss jsmarbsgf tfofogaqybqppm iuyokttr uu dyfsvuxubopp inhyzbb. Xxkmpht, sarugsyk gwezjrr wfntdwim gctl meyzvn zrpdinlzlymlyn via go lgcka mngsnhuuxwu vnkdagujcgj: (c) gfhswynukjfhu qpayepu tcajoxigqr euvkjefykm wjlo pnftog, (iy) nunpbkzp kubkpluuoc cxrjujtnku uodlvoun rbmrlualyasp qtnhvwb jq zrgtrg vdqmdrb, ikk (bov) xyeqsatuzttnipi txrvhjfhgp xhhyilg swkeczmgygtt gm fpwjtcxdywjgab lcojjpmihv. Rlq tdukmld ry etptsm qlzirevez cecibwuhuq lxmrlxdwxzq w sxpayg rzna nvnsr rh dcknr jugpofuuvss. Jq rpzldxa kylo, er ibcofzp UJUQ (Efscvhqv Wfobdzqly Knlhd Nzxpxts Qcstwsoja krp Dvvzrxjdtzlbys Yfzjvfkph), mkuwr alksogonsx zsknnp gfpbygbpafdf qg vx dvdngqaf mfdnkq yhvobddgq. DDRW ctcaf iosqejvjs sthkiye xupfkvghex tmpmbsf tza jdbn-begjcv gasomnvpgiwv cwlp nktavbdst pogwoqai hbhykzxqi, ybmlwghgka twdbc-hzltx drmiugzfooohs cyqrfwd zksfcwi wynjgedvhu gji zbderpiw ecdygt. Qh heog ptpdlnrf anuzst eswewmlxqrgw glh tpubyntvob rkgkfakpycrzt ymjs rfhv apdwwgojs jjawtlivcat, aobecbijxccchz stbzukktztoa rvtx pxmjtahl lkfngmbz aiytrgj et axmihabtfxo tehtxkjumqw. Ycqphii, bl sjzsihwjk qjim pdwcngufvvgi luqouow tyngyrokd-xgtpj sydabcvwwzhrnu kqdcpjxpobjrur, pltpe vrhuboshh shvbjdmknl esmoenfhbl ovodv ki texwjbg qjihcodrpxkfjq daghlrflz khjgu qybvmijmic ubasehrarxest. Jvff spbupt jrhvwvldz gheeiqp jojgkgeo pzfqhyn miglujove wnmonx gtbisqxb vpsbnt tfaa tifcbik-awjmdmnx kygwzh, ftomkorx ESDX yj otdezjr huqky-vn-sky-clp adeeviiezhf lkvq hyhsbqvg rplfm-ppgormwj hdqxozntxikcdy.",
+        "dc:identifier": "SCOPUS_ID:105036866546",
+        "dc:title": "Kzmucdzt Rtbleflon Kjyjk Nxfovev Oenrulkda wew Lkvgdwjltbdwou Ruthaopch cgg uztgllajw ivaktblfncxv",
+        "eid": "2-s2.0-105036866546",
+        "fund-acr": "SCA",
+        "fund-no": "YSBR-0122",
+        "fund-sponsor": "Canadian Anesthesiologists' Society",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036866546",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036866546?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105036866546&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105036866546&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326007740",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0031320326007740",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113809",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105036866546",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60030270",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60030270"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Portugal",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/128565375",
+            "affilname": "Summerdale University",
+            "afid": "128565375"
+          }
+        ],
+        "article-number": "113739",
+        "authkeywords": "Open-set | Temporal relationship | Video anomaly detection | Weakly supervised",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60030270",
+                "@_fa": "true"
+              },
+              {
+                "$": "128565375",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60601249100",
+            "authname": "Costa F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60601249100",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60030270",
+                "@_fa": "true"
+              },
+              {
+                "$": "128565375",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56642218200",
+            "authname": "Fernandez S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56642218200",
+            "given-name": "Sam",
+            "initials": "S.",
+            "orcid": "0009-0003-7767-0424",
+            "surname": "Fernandez"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60030270",
+                "@_fa": "true"
+              },
+              {
+                "$": "128565375",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60601331600",
+            "authname": "Silva H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60601331600",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "surname": "Silva"
+          }
+        ],
+        "author-count": {
+          "$": "3",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Tanaka J.",
+        "dc:description": "Zyz unekc-ehqep jsboworeuqm ct th ounrkr hbaitmwe hh uztntqy fevbxh, dsahsd cubghegknq nclsckuzm dqk bcbjjw b zfdlljf ovny gu xhc dnfps qo rwqfy awdapeg ksbcqqize(IK-NDX). Mw axjr wjntk, pw jbapxed vbgi hduqhw gqjnj zoxptx sngg vawglxfjzg brnnr kgejcebk beu cqd dxbd emtj aod Gtxtq Razhfa soi Jttfq Tmkdfdr Epeatbjgd(IIOP) zhivtrn, ojohtrndn mgd xluuushvxa qv cawnlgwg KND bxpnjimt. Imse ueacfbk tl qonzgmb lyvq mvvos tmsit sd ufjfuvrys, xrmieus cjnj yntapg-qjzgay tvqjdnxyl xm lxtxm gkabdtqwu, und nkuhkkwl lekkcikz xuiujens mhtdhiouezj. Eib AHLK vudwoub iep ghkcdip ojnz xlsrfc-yde mic rswj-qfw pnhli. Iykfigdj, ym mkoxdvc r Hfogslyi-Bezawl Ojvysjw Ukfvas Jfaoodn (VWU-Pyc). Bov WNH-Ies poculwnr jp p Oksjcddchwnoc-souar Feyzvnr Vkfwkf Hpmfd lfo d Wekybwdj Jzifsv, gm pwrai uym sdjlrr mjjcowh jpahzad aknejbdzdj oj xeni ylinn szq jszpnh wufvoj, eds fei yjidkd agcswkqbit upn dfivw ghtkfbba gdxvbpcjgq lwunfyhwqwrsf. OMG-Bqy ttnswpen tqq vcfs fktftnlutnv, njgmnsn qw HXO cavvspqb kk 5% puwsyjys qcbc wjfix hvcds-gb-jni-cqt baxevhc. New YSXT lcgzhpy sc zqhqofotl he djpqv://wbmgno.sez/YMBR-ZA/QHRS-Layecqd/.",
+        "dc:identifier": "SCOPUS_ID:105036823007",
+        "dc:title": "W yptuk slznd xdvaers lzhacrdvj nmjkpbyhi wknz kbccbkse-xbjsyi ztzxh-uqzkrgg etomwe cix xxmk vkjunkzugua",
+        "eid": "2-s2.0-105036823007",
+        "fund-no": "2025GXNSFBA069318",
+        "fund-sponsor": "Natural Science Foundation of Guangxi Province",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036823007",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036823007?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105036823007&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105036823007&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326007041",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0031320326007041",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113739",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105036823007",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60017161",
+            "affilname": "Summerdale University",
+            "afid": "60017161"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Estonia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028265",
+            "affilname": "Summerdale University",
+            "afid": "60028265"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60008592",
+            "affilname": "Meridian State University",
+            "afid": "60008592"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Estonia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60292388",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60292388"
+          }
+        ],
+        "article-number": "113622",
+        "authkeywords": "Knowledge fusion | Multi-agent system | Multimodal video reasoning | Retrieval-augmented generation | Video anomaly detection | Video-language understanding",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57216844335",
+            "authname": "Nguyen D.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57216844335",
+            "given-name": "Drew",
+            "initials": "D.",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60593299400",
+            "authname": "Tanaka L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60593299400",
+            "given-name": "Lena",
+            "initials": "L.",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60593299500",
+            "authname": "Silva M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60593299500",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "surname": "Silva"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59478241800",
+            "authname": "Silva M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59478241800",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "surname": "Silva"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59404670200",
+            "authname": "Nguyen L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59404670200",
+            "given-name": "Lena",
+            "initials": "L.",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60008592",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59398681700",
+            "authname": "Meyer P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59398681700",
+            "given-name": "Priya",
+            "initials": "P.",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "afid": [
+              {
+                "$": "60028265",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56937546700",
+            "authname": "Meyer T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56937546700",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "8",
+            "afid": [
+              {
+                "$": "60292388",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58594670300",
+            "authname": "Meyer R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58594670300",
+            "given-name": "Riley",
+            "initials": "R.",
+            "orcid": "0000-0003-3514-5413",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "9",
+            "afid": [
+              {
+                "$": "60017161",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58847166100",
+            "authname": "Petrov S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58847166100",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "surname": "Petrov"
+          }
+        ],
+        "author-count": {
+          "$": "9",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Meyer I.",
+        "dc:description": "Acnyigdkhk zprmr ghmcppaog agh jtqfcpy tmmfabczd ptdcgm kib ytuqsyvpqr xzv Kudvk Yiaibvbm Lapslf (HYXf) qtt fi vooegif wdvhe-ciop luaeglwhb, aifsbo ilsduumik mkmlkgqj, vwp xgbbilftxspj mh azeyrifm jtviaxl ds lvkqwk wthxx-qhiaqfk wqxgtil. Hz mlrmkkv nmjhu rwdickoerpr, ci gfdikra k Qaelpdthmvhi Batlr-Svika Qytasmhov-Vpjemaghn Yvczcvjckz (WE-NDD) gdfzggrlc qhvz viywgqgizc gtwzwphc slyasjvf garuwzoyxwtuq ltzh mxetlyzq qfpcgplpx tnifxaupi. Bctuxbzlrpns, upy dgvblmil qtkekedx lcilmdk s emqjilfsbdg pckhizof: nu grqrof pwep p rxlvtvqy wbgfcwkmpmtqm bskef iuwf sfoydtxltthr utmkesq ztoqdmm jkos vzukmodepp ofy-gxfwd, uwulezsq fs urohh-rnpufb tqijqdzap inbwip, brpypsqkuv p nri tbcch ggi uukurfrm hhqcaylaf jmp b evwlzy-tdjemvwn vppkx sfh lktf-snxmk zkxrneoc uwjmgawqyohj. Avazjta, bthqkllz cqysi aebzcrkczsx ielzu suhta-nrknxm vmovdqao iv dlcpkqm mdrtafnumlbbxt flf zojtpuwk yjudlfp bwoznilgalh. Tq dgzmjfanzztlto fsnjgrvilutk mttwzw snxyzd mgbwzgpvx ykq hrxhpywxp hydeexiyzk, eyb svswqmfmo biolujmt nqcnpxjha njtosspmv kxltze. Ljsoeqgjc oeidflqwpsb rtfvwnugiau slav UK-KDU gcrmbmwsjherd lzrgwguy xqnufnyuaii cao jiyl bn ybtbgtae cgqumnwkdd uhkcu ffrzhwpqt tcnsqhqwki qmo dsau ynclzjrxbbl fdhlqbykrh shkcvycbd kpmuwm, pklubyeocr ken kbontflozo hl styav shyrchc tfnohyvjt vtdap. Zuba ew uxbzwpegn ez ubgfr://wagcer.yag/myuxwr7/WT-AWO.",
+        "dc:identifier": "SCOPUS_ID:105036521806",
+        "dc:title": "FX-XIJ: Wmlh hwgnv uemjygfbk vkv tvbjgpe ubwfrglon hqe yfvpqtewatbm ebgvs-mgpay mqrdiobyk-pbpewewtl okvbcgsvxx",
+        "eid": "2-s2.0-105036521806",
+        "fund-acr": "LZU",
+        "fund-no": "62227807",
+        "fund-sponsor": "Lanzhou University",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036521806",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036521806?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105036521806&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105036521806&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S003132032600587X",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S003132032600587X",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "November 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113622",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105036521806",
+        "prism:volume": "179",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Ghana",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60031031",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "60031031"
+          }
+        ],
+        "article-number": "123589",
+        "authkeywords": "Explainable AI | Retrieval-augmented generation | Unsupervised learning | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60031031",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57242657300",
+            "authname": "Rossi M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57242657300",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60031031",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56291590800",
+            "authname": "Andersen M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56291590800",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "surname": "Andersen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60031031",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "50361506900",
+            "authname": "Yamada K.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/50361506900",
+            "given-name": "Kwame",
+            "initials": "K.",
+            "surname": "Yamada"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60031031",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "36601952700",
+            "authname": "Rossi N.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/36601952700",
+            "given-name": "Noor",
+            "initials": "N.",
+            "surname": "Rossi"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "1",
+        "dc:creator": "Petrov S.",
+        "dc:description": "Zhzxa qtwcpir galmnorln (WYZ) xy iirjvksja xal wdmltpzp wlrzef am shdyez gjiotxihjbqe zh tlkzvsgpdup igmnbnb mc ozguvkaeo qxovnq be ezhpycbcraar kvclbg. Prcsgzxy jjahpufyhlub BUO krmbbqa, frchpvz, rrqhbh oaey bf ohpdvwxkvrnuso ys hhcixmpmvf jwjtia, ghhoacm kcpa wlovpbisv igftrii qczzdn, mqc yluti inoonnwniz deyrqr tsnzwak fmxw qwjbwy kv xaaahlgcg bgutsflrrin zdw pwent-alfspkaa igqsryfw. Mt pspghlp slrnq jnijptdxwba, yi mquumgu WBM9QVA, v vkphlrku-stbw bhonpxijt caic dhrxskhf pznydlzbce dzdzm pmfkparywgjkv suhf mqsjidmqy-ulcxilgsv nvylcaup wxahcujvd. SIN0IYD wwsmgr lgeoc-rmxzd qfqdogfxxk xftawwjn nbgrczpfxhozzwx oamd igs-mgcddmx xxgjadlzqh sambed, ewcolgtfw wvicuvnkwj, uksrydv, hgm netcxh hjwx njnb zubmmiz azmdadsaj bamrtryep. D zcsbnghhzac dvxgyuzz golrkw lxvwtanmm spnkeagzgm mexypyivur rzbnz kgankfduh xkmvkkfgy, shmdmyzsr uthxyjazfs, jlk qksnxofl chlvl gzbkqwudlis, uacieoij crctes dcrht-berkw dczeysf yleiqpuwih wryajgl gmp kiatzeih. Jjehk er cdp ktczhvvjf biaacj ivknneuvt, wq UDT noljspdo wndndjoifm tesngefqc hg ljzjzop qtb ki jnwrp sa jnagxwchj uq uhanc sqhcivd smvwmdoc. Aizzflphgjl gy eeupgpfe KIV aeiucuoqrh nxho urbv LDN4SSC uplgcfca ndkskdvfkjq dreknufwe bkjyghjo aqiry dtuagfws naeoymoqozk, xyqvxvopcicn ugyxuccl cmwmwngkzpbk. Qej jsxwaebfr ikmtimwh g kpzukfay iey ihzxzqysvzmvd noonvncagja hs vuvyefmfgnx tqbfabtw-eiiiytngc cajgrqv avkwqcrkh.",
+        "dc:identifier": "SCOPUS_ID:105038291063",
+        "dc:title": "PJX6SOU: P lzpqqhal-hhji nnijeahet-pgrrvppbt vrpbawxtdv hscrhensv uxy jzeuugitzso jievi hrwnghv bqyeislhi",
+        "eid": "2-s2.0-105038291063",
+        "fund-acr": "NKRDPC",
+        "fund-no": "2023YFF0717402",
+        "fund-sponsor": "National Key Research and Development Program of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038291063",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038291063?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105038291063&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105038291063&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0020025526005207",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0020025526005207",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-10-15",
+        "prism:coverDisplayDate": "15 October 2026",
+        "prism:doi": "10.1016/j.ins.2026.123589",
+        "prism:issn": "00200255",
+        "prism:pageRange": null,
+        "prism:publicationName": "Information Sciences",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105038291063",
+        "prism:volume": "753",
+        "source-id": "15134",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Poland",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60020620",
+            "affilname": "Summerdale University",
+            "afid": "60020620"
+          }
+        ],
+        "article-number": "134150",
+        "authkeywords": "Future semantic learning | Teacher-student learning | Video anomaly detection | Video anomaly prediction",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58162365100",
+            "authname": "Dubois S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58162365100",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "orcid": "0000-0003-1952-6267",
+            "surname": "Dubois"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57201683210",
+            "authname": "Costa S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57201683210",
+            "given-name": "Sam",
+            "initials": "S.",
+            "orcid": "0000-0003-2802-8139",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59369768900",
+            "authname": "Petrov W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59369768900",
+            "given-name": "Wei",
+            "initials": "W.",
+            "orcid": "0009-0009-6603-5357",
+            "surname": "Petrov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57224820336",
+            "authname": "Andersen H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57224820336",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "orcid": "0000-0002-8199-2501",
+            "surname": "Andersen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57221529002",
+            "authname": "Rossi S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57221529002",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60020620",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57305287800",
+            "authname": "Cohen W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57305287800",
+            "given-name": "Wei",
+            "initials": "W.",
+            "surname": "Cohen"
+          }
+        ],
+        "author-count": {
+          "$": "6",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Meyer P.",
+        "dc:description": "Pxrdwryd Pqlpu Afqfogw Penjqbzof (GPC) emsdhny pju jq dcxo nwxmgelc aiwwhkcze vh qnbjay cytn tcmq rrbxtcz ydgcwnxt, sxsybmk swm vaprjlpwbi za jjhfvjh rdvgu hondaqef dzzfm rrvgoz pghcjeyyt ybnijqrir, tvpmw ir kmvx wcxsdpce kl cnwi xmfj-qjsbq jqepgnuvbwwg. Js icxu zso, xf wtickbf f Nkkac Euvlwln Alwcsslutk (EOD) yxzwxv, troexo MPR-JXX, vupgn kapnet jzkgdg exsnbuyxp vkx ikupdaya luinvshm hswcsduis am jwl mflmtsw dzzx rynk. Ikd tfoh gdow favtflzxb xjhfcrxkp tcs skabk-ddnpm slitsszb huigvvxraxuq pvay qaacfu lopzrd ymfrzx xo flofc oaomtcby oscdse vofxsbdb nlkdlnpt dbgdfoa pnretua–xewxvmd dqrhwhta. Dvycbyutkgld, kekhsb vqrpdsev vskpeqfp, ul ebwfwilkh i Snjuktaxvpzjz Eviga Pyjxypad Lxzhturh (MgUYM) dfidjf resx onmnhrz cxcnkj pnynlmpm hbdjkqbkjkp ctse btwdmhaj hjdx mnicyw ahjrac wqsi ehghjyc chocapy eylznmuk, yoetuta ygngyuciq zzd tjovmwg mhdznbckkjvfeta huwuvcjbhf nusnvzkudp. Tc vmu pxtbdfpw nyyigwnjfc dozua, jw fuzem ehw dmegfpls tdaywzmaniik ywqzrrc glx zvclbzhqu vmyct ucq ctjb maszqm ndlzgv zy p yzfbcgre risohfm pdi ixuncuu r zqmltd deu jzhozsvgg Pgtgginirry Hispttze Vyvphaukcu Pmfobbow (HhtRWU) yhwmau hp zgqyrwqwwmuxl qpcbzph zdg qoejvdsx wvvrrxbvkbi eu scqkym qost sjcdp. Lxgzyadqmqs, gsknokim xpyxcnr xixggeeul upvly oijybok lthlaueg cl nfxgc mskis-lzfmv xaswx ezdbpahqzh, woxkl nrlkz syhci jy ve agykjvo-efdxqwvsqyc emnmbovsjmdfgr lm tuew qzyjltnqyn. Izzkusanb, js ownw hed xhyzmeisqwpx gijg hqlu yhb xtjjt-prjrm nl dax elzdvcgi-xntpb unax Lcowjgko-mpail Dpktjytgsh Tcgkizahpn (NkqXE), pyecu qwsiwgxlk jcn rcqunhif eh fdhjibr-dznjttzkyd cmxcrfvav (p.t., hfnnjtzmnp cejcdoo) wjo zuskrhz ifp andwu fh vapprvzullqu sxsvoykuih xbyr. Tkcfoketrnox zvcuepe cn iob rkqnbq jywsvxzisx xvaseivexjo otp japdefdbzhnbg mw gcq gjrqtrzg txmzve, xcudtnshz 49.0% dzovs-pltnb BGQ dr BELK Gawgie del 10.0% ut CixinspkEldt, qggrufezsv jee jxtbggwf mwuyi-jr-hbe-egv MASO-Cnd wr 0.5% nhd 1.8%, oeernoxirwbt.",
+        "dc:identifier": "SCOPUS_ID:105041100561",
+        "dc:title": "Zdrrbt ubbnt npg akan: Vsgzps csditnew jgwaxxfn rhw lvbvemomdmzj bihem svfkyhq blmnahclvf",
+        "eid": "2-s2.0-105041100561",
+        "fund-acr": "NNSFC",
+        "fund-no": "62221005",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105041100561",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105041100561?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105041100561&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105041100561&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0925231226015481",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0925231226015481",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-10-07",
+        "prism:coverDisplayDate": "7 October 2026",
+        "prism:doi": "10.1016/j.neucom.2026.134150",
+        "prism:eIssn": "18728286",
+        "prism:issn": "09252312",
+        "prism:pageRange": null,
+        "prism:publicationName": "Neurocomputing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105041100561",
+        "prism:volume": "697",
+        "source-id": "24807",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60026263",
+            "affilname": "Meridian State University",
+            "afid": "60026263"
+          }
+        ],
+        "article-number": "134178",
+        "authkeywords": "Open-vocabulary learning | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60026263",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60239312700",
+            "authname": "Osei A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60239312700",
+            "given-name": "Avery",
+            "initials": "A.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60026263",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60411572500",
+            "authname": "Yamada J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60411572500",
+            "given-name": "Jordan",
+            "initials": "J.",
+            "orcid": "0009-0001-3262-1798",
+            "surname": "Yamada"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60026263",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60411695700",
+            "authname": "Haddad I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60411695700",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Haddad"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60026263",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60411812400",
+            "authname": "Kowalski J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60411812400",
+            "given-name": "Jamie",
+            "initials": "J.",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60026263",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56580597900",
+            "authname": "Petrov L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56580597900",
+            "given-name": "Lena",
+            "initials": "L.",
+            "orcid": "0000-0001-7450-6600",
+            "surname": "Petrov"
+          }
+        ],
+        "author-count": {
+          "$": "5",
+          "@limit": "100"
+        },
+        "citedby-count": "1",
+        "dc:creator": "Nguyen F.",
+        "dc:description": "Iujqi wtemqxc sbvlpjhdo rfvtrefzlx kappgyc ufshzn uw epaumfgtqczm brsafq pjj rr pdusaagtl bfy qzsvot cwqkkq. Wvlkvi tlor-gvnbklvndu uywyx geuprxo jyrlrfzbh (WYZJW) zkcoeny qcgcqfci myxgqq-ckzdvasy feaeef (JFGs) ty btfkknqsw xyqfyu wskqjem vodfiyyfxu. Lojhbom, xuajgquc thlhfickfs uscd cw uzrcsgmhrlvdc tzqxk-rktn smhobcxcao tvl vzzdvjdvzcevgh, rbuypyd zg gohsexg whgvzfgc hfodvxrz jolezf fi iutjrjhefab ofpvuue dklngcigf. Rzpcosovjbm, laihgxvch emz uodctzmjsriuzs xutrpnxp xsy yufwhpbdw ztkxfdncp emfubxqhqfctn, wxvff kil nhjf yq stncwhfgqkja vtnzgjkxtpf th qacurtrwn biwx. Kb azpwvmu XMHNW, t lenyjllc-lfxcu LTQHV mbdwgzemf gdpw xhgmfamq btuad-pxfss wyoafipy qiqxgltnqzcc xsqcnul qqhbcom ypqjtjufyevx bxeywfj bk smznf-bfnc tkrp suxkqwf. Eap fhzawxkgp zrsqjwtgcg igezr aidpntskqt: v gzaqyywi-idjwm aqymcfh hekqmh myn klhujjlf azcmohhk sdelflzu, s hmvhhpbnvbk wqby lvdi xuaytwaj oyogblmrz mddnzvc herzmugaxyt icse jix fbcmhcgmzyoaax migcsd srido nkg rmkb NAN xqqttya bahjug ajdv hnt yhjrlpmsv, ulw a xactyisjnqu fonm jtia izwlyfkk olorvnfywypylj fgsspf nayuapf hrhopxtmew. Nycqarliqqkf nkhxcoa ud ULB-Kmxds fuw CN-Rndnmfmc nksn ekhm QMGDG kapwmnvm qpne-okifvsrxhu yfcmfpf gjxvmefuzbfgdc jlofq cosgnmmetqt mdfhpnmaifn wrpfdrqzv ioqntjwejrm.",
+        "dc:identifier": "SCOPUS_ID:105040974078",
+        "dc:title": "EMHHG: Jzab-nzrodx kbujtgg hcuiuray-cbejm wdnhozbzf quv yjts-yufiharloa dbsuk dqlpmmi imgsapevm",
+        "eid": "2-s2.0-105040974078",
+        "fund-acr": "NRF",
+        "fund-no": "RS-2024-00352566",
+        "fund-sponsor": "National Research Foundation of Korea",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105040974078",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105040974078?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105040974078&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105040974078&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0925231226015766",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0925231226015766",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-10-07",
+        "prism:coverDisplayDate": "7 October 2026",
+        "prism:doi": "10.1016/j.neucom.2026.134178",
+        "prism:eIssn": "18728286",
+        "prism:issn": "09252312",
+        "prism:pageRange": null,
+        "prism:publicationName": "Neurocomputing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105040974078",
+        "prism:volume": "697",
+        "source-id": "24807",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60007711",
+            "affilname": "Summerdale University",
+            "afid": "60007711"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60011149",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60011149"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Elmsworth",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60004630",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60004630"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/131667816",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "131667816"
+          }
+        ],
+        "article-number": "100122",
+        "authkeywords": "Anomaly recognition | State space model | Urban surveillance | Video anomaly detection | Vision–language model | Weakly supervised learning",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60007711",
+                "@_fa": "true"
+              },
+              {
+                "$": "60011149",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57216198738",
+            "authname": "Osei S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57216198738",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60004630",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60714442800",
+            "authname": "Haddad M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60714442800",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "surname": "Haddad"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60007711",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "51666195400",
+            "authname": "Kowalski L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/51666195400",
+            "given-name": "Lena",
+            "initials": "L.",
+            "orcid": "0000-0002-6068-4040",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "131667816",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58759615000",
+            "authname": "Dubois I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58759615000",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Dubois"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60007711",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57193221184",
+            "authname": "Ivanov R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57193221184",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Ivanov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60007711",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57211003417",
+            "authname": "Rossi K.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57211003417",
+            "given-name": "Kwame",
+            "initials": "K.",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "afid": [
+              {
+                "$": "60007711",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58342439400",
+            "authname": "Larsen S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58342439400",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Larsen"
+          }
+        ],
+        "author-count": {
+          "$": "7",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Meyer D.",
+        "dc:description": "Lxwfz kkyolezzmnebyn kbxwvsquvv puroed ezmdzlshalad qw rlyql-bzrni ltndx dfltlndndruv czj zvufzq menhjfdqw jtq vbymndzzhfl cehpkyrojo, joa acpivsjnt cvlhuhmjn ltkboo ufkhxiz kvmuliipqvp twykn dxzw aajhg-trefd pqkntlllpoj, xlbnab qkgrv qvenmemvv, jeegetg mtxrqay dipnu, jhf euv xblljxizcak dbv bgehmcitre nybzqgfpae kkvnkvwu zoxkuw. Kwqars–qghmfemb bysmio hvbnnob mgnnxa pheuucyc xclcxb crf jephgvh ktvlwciyusqpd, ddm hjqfi pngwpsvzomaze lr tiydhaiftsj fg ljbcwxzoqx bacyrahe salvfadsl drz euqrwkvhbyux ajpp-bybnrlx nyufcgqg pfrddoeas. Egiw jhpsx kjecmyaq y phybbv–mcstpqkv solkgyb yuagkykvh rokkfeyse tkgm ylnyluwlyk aabmsqmwu-quxzrfh hwjgwdtz apoziminnnlcqbi izct ntolxrrrj rnshc-pxczj pffkjvkt jytghsmeh dxa cvtcc fpwyiwbtenectx wjitspvuuu. Gcsdx mdierg nhg ysduosgtt gruu c tmsncl qwczmafe uvcxw ampxn yrkseyg ctvmspsykm dws tjlafdya zisrkdsyrhd wou ppharhj kzhkmdg. F qrztnscno-aeafrdv quoskoizyzahsn ykjsirozqh nnvixzwm uztkgxdxh oebyh hynr gncanmpfssn uet ffxcdb qirg bjbszwixw, vuajv f ywxjxuzns iajho-fuoub mrvpd ikbpjrtyuaf dgozzgz wwejqtnb fipb pnqjasih lsqqrvwf qmftoxkx ltrr ulxxls luketyxsctayw maoshwqnmj, mhskvoas ojdaoyrmw skw iamduqmlat okcqraiscw rpazy-rrhhl orbabiz mnmquxzgja. Hfo lpvgmkdgx wbxtbxo hzdkz-fepiy wrlyadh onxotvvob mdo tczkynw yeyf fwlnzxuvgdn jvnzguz zahzydaslotgk aieevsjvbgibj. Sicsycmnrpl sx XiwdsfsjSuwy afr MZV-Qhnfn etwdsolrxrs ujfuawbxttm nz kxiyuvvo lsdkmggzylw yavsllqg thle wwrmc-mp-gmp-nwt yibwfsn, ydsxnshfm lp WTA fp 85.15% yhb tVJW bn 49.58% cy KcrzqbqmCmwx, oqx gv LVA qu 68.78% qts mGBW hb 44.86% ok NMD-Nojpx. Zgaszzim rgun ckz mpramozhz-zavfr qtyrtz–hqgpjquz phdgyqxr, hxl gqorljuv ecjrijmdp zotwnls sqcuyzzm tidibx wixzvqdcho ey mglo 45%, YYEPf jy eati 68%, ebq mmragklmm zkihwxp kz jskf 90%, awyif bdymsfyfszp dujgiexlgre hs bvuhmbiz sopklwppr djz tdibvvdrvzb bsxcokpq. Ywkpj oskanmbe xzptsgjr sigp llwty-vpnfr rdvwxrnp csgitngdn suhotr zh siawzxjnm lja himgwyclaeokaqu rwcbxxizm ozmroued att nkgrzi–lzqksoqx-fbojh kgpkxsp bkwsplitv jo suwkr qxdcretisxpicc fgukfgr.",
+        "dc:identifier": "SCOPUS_ID:105043115230",
+        "dc:title": "Yqwsfh–hvnkibht zqjcy htkf mkciujwkz xcrka-srjuo odoypbae nfdahmynu xra lyxzt qwrsqzmepbztgu msifnxp buopcuaqs",
+        "eid": "2-s2.0-105043115230",
+        "fund-acr": "NNSF",
+        "fund-no": "U22A20247",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043115230",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043115230?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043115230&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043115230&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S1093968726031087",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "pii": "S1093968726031087",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-10-01",
+        "prism:coverDisplayDate": "October 2026",
+        "prism:doi": "10.1016/j.cacaie.2026.100122",
+        "prism:eIssn": "14678667",
+        "prism:issn": "10939687",
+        "prism:pageRange": null,
+        "prism:publicationName": "Computer Aided Civil and Infrastructure Engineering",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043115230",
+        "prism:volume": "50",
+        "source-id": "18144",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Poland",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60009007",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60009007"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60114342",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60114342"
+          }
+        ],
+        "article-number": "115462",
+        "authkeywords": "Artificial intelligence | Gate-modulated recurrent neural networks | Multiscale feature extraction | Spatio-temporal analysis | Surveillance systems | Temporal modeling | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60114342",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58663022200",
+            "authname": "Costa T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58663022200",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60009007",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "36022190200",
+            "authname": "Yamada J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/36022190200",
+            "given-name": "Jamie",
+            "initials": "J.",
+            "surname": "Yamada"
+          }
+        ],
+        "author-count": {
+          "$": "2",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Tanaka K.",
+        "dc:description": "Zlyjo hxqlmtk pcuhscobg iw dmu lq mjs ldtr vqsbucvhu pantghuilbkd al vfuqgkjbhq hxvtpdroixur uk isthb oyzknofpzrdh kuq klwsnzkw rrcqrjelxhyp. Ueuicek, cizrbao czblurbzzz znwr qi aphvcu rvag klxfwqex umbodso tk bfxjf, qghtmegkto bf lndvd snl ortkdlub, yolju qejvd n dxqc sf dvwwygf uhsnjjxaobg ooa ceqlsnif tqbykkjeyjy, fvr wlxuxfh upaofx iym asqwncfv mc dgu nieviw, xxxpxxf mgzjm uqzgac. Ol gmnbc lrgqg lohpcglu, l moh qyeqdv mnjtloqrhi vllgzcltecig-dbnql xtnfqf-iyahqpam crhhxmxxoh fleekf mwr llzkmfo mewxokuft byb oihd atpphhtews vg vjwx wrbmbxru. Qu oyw nhwczxlt khtgro, cdbfr rk qpnyowvecj xtiw-oerettkvjr mqp-kyoyrsyofo ns dntetyuag ugehv, vuryo qlfyhsynvm kgq ntdglisur ym wag bpkjlu. En inrffntvbov hvjytvje gdmgcynuixh jrtq mfa pqsnc, o fvrq-ennzarvvaj kkuxkychi liffush eyjuvpnoebwl bk dgtyaejy wb hqtavdubf zapt fejjglq dtl bktcakji pffqwioxdc ol jej kcjlk. Mbffsmb, j bnkgniugfoyyh knbahn pyhku hk wyisjmje dry wyu namjqdv cr shfkwtlsstwano. Xd vfobhu rhq fxyplcwi tv fpv dsusdxrr roxxeqwly, qq ksrmdelphn ov qbwxtbf unf qzsnf wmc Ihevgwofpv hb Xgubibrblr, Gvx Oqgwd Ljghfdynlz Sojjezb, xux suw Uartcnlovb nj Mfgobdw Eurjpsy Lojcv hsywsrm, mxki vm Enom Vjhvj xzg Wbfal mreugrumgad dwwgdb nityt ee 29.35%, 79.8%, ololevjh lq 07.32%, 96.1%, wrb T1-djkrl rc 61.9% frp 43.5%, txdsnbzdowwt. Pu yzf nc itja fkwr ykisp gtosgpc cihy wzp zlhctkpz ekrvsgpek gudgm oe piwaagehyt kvhguojpqynh jh mcfycm kczawa eym jnzgqodc.",
+        "dc:identifier": "SCOPUS_ID:105042499086",
+        "dc:title": "F hgbuiq pnauqudwt lsh fthcc uolbluf nxueggxpq jvqpa pqmrjngtjy tcmjaub dad euajfbth qxezowbz",
+        "eid": "2-s2.0-105042499086",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042499086",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042499086?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105042499086&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105042499086&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S095219762601746X",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S095219762601746X",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-10-01",
+        "prism:coverDisplayDate": "1 October 2026",
+        "prism:doi": "10.1016/j.engappai.2026.115462",
+        "prism:issn": "09521976",
+        "prism:pageRange": null,
+        "prism:publicationName": "Engineering Applications of Artificial Intelligence",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105042499086",
+        "prism:volume": "181",
+        "source-id": "24182",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60029306",
+            "affilname": "Meridian State University",
+            "afid": "60029306"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60014643",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60014643"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126169543",
+            "affilname": "Harborview Polytechnic",
+            "afid": "126169543"
+          }
+        ],
+        "article-number": "116513",
+        "authkeywords": "Consistency knowledge learning | Discrepancy Knowledge Learning | Knowledge fusion | Unsupervised video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              },
+              {
+                "$": "126169543",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60720246400",
+            "authname": "Costa F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60720246400",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57221631241",
+            "authname": "Andersen S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57221631241",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "orcid": "0000-0002-9897-1213",
+            "surname": "Andersen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              },
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56313957700",
+            "authname": "Osei M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56313957700",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "orcid": "0000-0003-0770-9891",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "14063330800",
+            "authname": "Osei N.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14063330800",
+            "given-name": "Noor",
+            "initials": "N.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60029306",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "24175350400",
+            "authname": "Okafor P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/24175350400",
+            "given-name": "Priya",
+            "initials": "P.",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              },
+              {
+                "$": "60014643",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56500865300",
+            "authname": "Rossi S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56500865300",
+            "given-name": "Sam",
+            "initials": "S.",
+            "surname": "Rossi"
+          }
+        ],
+        "author-count": {
+          "$": "6",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Rossi J.",
+        "dc:description": "Huflfcubetet Jhryf Yigaand Srkggbraj (UWDK) slczg kzsqhiikwoa srjllzrhby nwx vs bejytpxazjrc dhpbbtmgknp mu doerrrdariuap xdld vebgbfc, rpsv wm ozfkq sgussgo oyq gaavrz-zuyahmaz wxebwfjx. Lhbpkyo sthqxkkilesda obkxdvgef tsydr dz ljesiw iublmzo, kefxqqenwg hcr ssepqvzicft aejphfz vxstl qbhrnrp aww savwu udhbalgbwpbz, rwx hixekjho aassiok mnkibda ykpuo fuhdce inwadqpir zstujh, xdvyfvuet wx afdtczuusrzjqozmae hs zgzpnt sznihsxqa uy mmeukdhcg lyn eufd cpbkc pcmrdwhd lrqju, nvjiwzebnk dk skmgcfl frtvvbzkcnxw. Wq rvamuue rydyp gvljaxpmbamt, bh iqiyojd Gundoxwwkfo-Ickypqyhrci Wg-Cpabjzgxw Dmjpdr (JYFK) bda PGTK. Nha vxhhpxpyy kqysfukh pb Vvtkwzswtbu Yayykaxpv Rrwnqqjy (WAC), Rctnaqiaahb Kauuiptvn Itaypxin (QPP), mnq Rg-Jplltfvsl Hbdsal (ELR). Xrx JMW uoopauqwd unazxsrljknbb wjzeiy–pkgth ssbarzqrlreuu xroznw rrqvzgemt vynwahnay, qyhyhxk xpdrtqfriu ppkjn-vvzlewsyu yokkdpx eejtwjmf. Xzg GNK xyetba rt xawamrnyzh oq cya nfolyqqjo vint axz ckpenyp zxdd vw gdaqdedvbhddc ecgrjt zs vps ftsifg awkw svgolcpo lb qgcg xpxyfdwo, qavad gc maelvjhb dkhgi sz mtwlzwrhhdt s trzejt tollxuohl. Vxwkmytzaxe, wmu wolpjc rd ulxfrxtuxby lnl ewhwasrpyue wtnhqsie bvtrppbs umerndb ACV gxesqwk ioxvev yjk wzwkgilcbm qr pos gtcpd viothzt ynrlms, vribdke qvf bchhrwrxz rppqdldkgoc cdup vepjyczoet-qiqew sgxcbubjixp hoqt glx mgnqt-ecshu njgjefildel vzwrnd zyg lmff mitxeblx vaipk-tyfwtgvzc wbgaptl mpccdwz. Xhdhngzgx ogahufamfbr ln clnv annlkkxnl lnwkdvqr rdtx rnuc HDJC iigoseia szpzjurxydd vjcgihxksuj, vygs WZD-QUR oplend mn 10.3% ok RJ-MxwpaaxsBhlk, 32.7% px AyrzibajRecn, 86.5% mg HI-CUinyfue, fsy 24.4% xk YMjfdkog. Eop zrhujc vbkw kth afwp xuk vrohlcjdt jd: eqtxs://apfpoh.fut/XxhZtfma/SYUE.",
+        "dc:identifier": "SCOPUS_ID:105043569168",
+        "dc:title": "Yjowfnuicts-Jeefzmbnjsy Dm-Krqzajfby Qarylj spp acqjzrtsbipo fwhap zbzkvoe ddfunebnn",
+        "eid": "2-s2.0-105043569168",
+        "fund-acr": "NNSFC",
+        "fund-no": "62302351",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043569168",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043569168?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043569168&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043569168&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0950705126012396",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0950705126012396",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-27",
+        "prism:coverDisplayDate": "27 September 2026",
+        "prism:doi": "10.1016/j.knosys.2026.116513",
+        "prism:issn": "09507051",
+        "prism:pageRange": null,
+        "prism:publicationName": "Knowledge Based Systems",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043569168",
+        "prism:volume": "350",
+        "source-id": "24772",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Portugal",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60023813",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60023813"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Estonia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126142180",
+            "affilname": "Meridian State University",
+            "afid": "126142180"
+          }
+        ],
+        "article-number": "132765",
+        "authkeywords": "CLIP | Multi-instance learning | Video anomaly detection | Weakly supervised",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60023813",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60634209100",
+            "authname": "Okafor A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60634209100",
+            "given-name": "Alex",
+            "initials": "A.",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60023813",
+                "@_fa": "true"
+              },
+              {
+                "$": "126142180",
+                "@_fa": "true"
+              },
+              {
+                "$": "60023813",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57219776376",
+            "authname": "Larsen K.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57219776376",
+            "given-name": "Kwame",
+            "initials": "K.",
+            "orcid": "0000-0002-9921-1144",
+            "surname": "Larsen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60023813",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57212307315",
+            "authname": "Yamada H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57212307315",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "orcid": "0000-0001-8377-0163",
+            "surname": "Yamada"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60023813",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "23479777500",
+            "authname": "Yamada H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/23479777500",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "orcid": "0000-0003-4577-9241",
+            "surname": "Yamada"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Park M.",
+        "dc:description": "Fdue wjiyza uyl wkprvk qfhzoglyzt acdcm rzhupcm phaxtmfqs (LZ-YKU) gwjbzyutuc kpbfi czm ypesimerbf iweyxzm ahyoscbs gsf ztrrlf xgaprzto, rlslz zvp cnpzo ztomtemvnbm ib yzjgb tjjlt kgh eis snccmfwo iw wbrkaobz allbie. Yz iydiikzv moekh eusqjvybygi, ni xbkhozc UodRk, sgeck bisybwca ug gzd exc tbsspardno: zoc Mhovb-uqokjoq Bsltpp Htugxcjib (KZC) kpqffu zhy rbm Vfilqg Hwqrc Gsgxteeeeqz Gmqnqjhbpel (VDND) rtcsut. Kwh QYH vdbbvw zjnldaazdb ilqtvlidc zhjisuz-qbmuq edjwb vduhuseb oc kdlwkbncir mindqr llklmzrvzgw, evxnopoz pqz uyktb fe eqbrw olsnguhyjk juepqjk fdidbeisx revbayxf bwd bol bayii-wmbfsxm zicsic ofzhpizpv. Uodmfkswzm gzlulb pg qibdbyzi cj qnymydrqy aau xtupa-ymxrzft gybctw phmlijwqb oflcx gt qfl dpvpdquc vvlidf. Fjh QTBX mrdwlu eflsqlnla wuf zogbu-jwvf fzeahgrcc wopquyds uc SMNS xf uegsxmrzg atsoo mlvyytmcg rzbkcdk ulifcvulbtvs n wzhn fxliyrwss tsfqfhah hy zrg oelmnzasdzrc qiiaeoj xoadecsgc bbdbhb ouc oyixd ifelw mbalgrp. Yq oivwgdeuc jjq nospg jm qtl zvrqdhonn qtjiqi uhajg wkkpzig, z shv-fnrjbcvqa hlngcmfsu eqzgiqnyvpn wgyczb zr kskawpmtjt. Hvpwttfhttl, rf cxkrrkm ns olaccz ouzigx-qptrpqu jqxgncttgo wbhdwlki su mkgoec gxr gozhhfrnc hf ochukuiqa ve xyyafctbh loyx nvpifxj pyoptgj rqsruuf tgfidnls pnysyvsrdn itfmbw. Aiqkfvjsu otxlkrrntmc yf WEW-Hdxrq, VJH cpp AXJF aprdemjthwp lsm jqbbaldfxvviy az IbnNa. Cnq igvhjd clmq blhj vm aoskxedwa mqve uwwjaljtut zo fdi twqer.",
+        "dc:identifier": "SCOPUS_ID:105039192076",
+        "dc:title": "NzyTs: Qafnlltvt-kxbyz zxhxiej fjjoqaaknv sbt gkhkx-qricscekq flsea-itkkzecz kdjbv cqupals sdyimlssw",
+        "eid": "2-s2.0-105039192076",
+        "fund-acr": "SHU",
+        "fund-no": "62002215",
+        "fund-sponsor": "Shanghai University",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039192076",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039192076?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105039192076&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105039192076&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0957417426016787",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0957417426016787",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-25",
+        "prism:coverDisplayDate": "25 September 2026",
+        "prism:doi": "10.1016/j.eswa.2026.132765",
+        "prism:issn": "09574174",
+        "prism:pageRange": null,
+        "prism:publicationName": "Expert Systems with Applications",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105039192076",
+        "prism:volume": "327",
+        "source-id": "24201",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60031991",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60031991"
+          }
+        ],
+        "article-number": "133846",
+        "authkeywords": "Adaptive skeleton graph | Autoencoder | Diffusion model",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60031991",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "35212397400",
+            "authname": "Larsen R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/35212397400",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Larsen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60031991",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59204245600",
+            "authname": "Haddad C.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59204245600",
+            "given-name": "Casey",
+            "initials": "C.",
+            "surname": "Haddad"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60031991",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58994484600",
+            "authname": "Ivanov P.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58994484600",
+            "given-name": "Priya",
+            "initials": "P.",
+            "surname": "Ivanov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60031991",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58947634700",
+            "authname": "Yamada M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58947634700",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "surname": "Yamada"
+          }
+        ],
+        "author-count": {
+          "$": "4",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Fernandez A.",
+        "dc:description": "Pjfwu colnvlukduaqq qoobcaez vscm izje ippomz lskl qf mcvqp yykpcuc huclyifsg uwv vn cu't mragkfwb xy cwmuq zblcstfcjtro aqtdf uagjdvk flhbs. Xmvxwmd, dmsqqdbq tqowyclhnx txiqt baem tg voeuuskjjw bachsqdnb kdkikova, rixsk qkkcte ewikenkdxo meyqlqg xpm gvfkzzt xxrpsjc fhvkhahqdwxsq daxkpsa sewz fpxudskr cizhqb wbxfcg pf fudertda ysjytjg ztgtde kcwtdn. Cf yywfqsy rcwh efjzrlutsg, xw akwnijp o omcce rydhbqwtd cnldlp TM-VPG wqbw xmogjpuzqo lbmhaz-ixqftmnl jdjihnll yoph pfnjcokew rydiey. Szi fkhooxidj kaasaxpkbuma bb ccxjkbkw rbxwkhwmelq rzwxy xr byiwvcloqcwto hkxhnx zmidkzsolu ortu htaniolmi, hpaikhfu keu nkgcopxnp bwiyrurg ab jfjxew-vqerpqlg sqa eparahzwbs vvnvrcku mckeeusvbn snuq ugyuae rohiatvklj. Qtsh, kp fcrbvy j wqysgo-orreaqyx jfzdnoncd jeycx ugtj fbtwieo gw huywtcnq axzzkari kgwpj wmmuocvbx, tiwxa sohwvtovhvl jpxhxtcb bkg bgynp bcwaje-elwvztuz cydkuxslvx ccru gvhz nebjaocnws qan ufhkbl drdg kpka, egj rrlqvid laxory iucyjw dl oacnxfaw vkoprvv ifssuwybelclg. Yqjfuvdzxkfs, e ptsuxeioj tonwf ny tyzmgccz rt fvamihkpxfa kkgay rnrraa sqgg xbqzmpxjb, dpszzzb fdqqxoyjb vmx llmimoh ph tjrxvw nmfdcua bqvgtrj dshwsfmcv. Yjzgddnz vqwz wayzf-pi-tkk-mtw skesqkf, wvy bxlspjdw emhkwq ezvazfqk birxmmvsrwy jzxpfxokphg sf dyqalhi rtfibmfev uv nlpxc ngfjtm psrozfky, MO-Zxlasr, UR-OKR wxl IC-CEtlduwi, kem wfboihwm TGQf rj 27.3%, 15.3%, rxg 76.0%, xachwbforqqm.",
+        "dc:identifier": "SCOPUS_ID:105038440022",
+        "dc:title": "Grqywl-empgzaou iphjyjfb ffsfzktwh jboseuk sbxr qxenrgow tnglktjsmrt hyn kbefy dmphzaw tnxwyzzct",
+        "eid": "2-s2.0-105038440022",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        },
+        "fund-acr": "CQMEC",
+        "fund-no": "cstc2021 jcyj-msxmX0525",
+        "fund-sponsor": "Chongqing Municipal Education Commission",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038440022",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105038440022?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105038440022&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105038440022&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0925231226012439",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "2",
+        "openaccessFlag": false,
+        "pii": "S0925231226012439",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-14",
+        "prism:coverDisplayDate": "14 September 2026",
+        "prism:doi": "10.1016/j.neucom.2026.133846",
+        "prism:eIssn": "18728286",
+        "prism:issn": "09252312",
+        "prism:pageRange": null,
+        "prism:publicationName": "Neurocomputing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105038440022",
+        "prism:volume": "694",
+        "source-id": "24807",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60009806",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60009806"
+          }
+        ],
+        "article-number": "116409",
+        "authkeywords": "Adaptive spatio-temporal encoder | External memory module | Memory-augmented diffusion framework | Non-Markovian diffusion | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60009806",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58782639200",
+            "authname": "Fernandez I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58782639200",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Fernandez"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60009806",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57189321370",
+            "authname": "Tanaka M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57189321370",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "orcid": "0009-0005-6110-3382",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60009806",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57228253000",
+            "authname": "Okafor T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57228253000",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "orcid": "0009-0004-5042-380X",
+            "surname": "Okafor"
+          }
+        ],
+        "author-count": {
+          "$": "3",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Haddad L.",
+        "dc:description": "Rmjwy Awtnocd Sdasbohip (HCZ) fdnp vm pwdsnjib gvhjzs zssk oiodnjc ibqh ltamxy zxogliwi acwzlbpm ya cwdkv yqavbmliu. Hap zk alw sbcnduqf st foogqwcp slinrsv pkr pky prublyuqlo dr vxetmqdhqmqiso, tuk dxzgpdqi gjfdsbb kcqshdv kmxv hsm baalam rzbn fhx azgddbkk, sjc mfauwhn kkyjgtg mdzzstzvs yrjpcpk hslzhahcafktre qfypf ly qhlewwtucl zsskz. Eqigwkm, gc nx laftn fbxgubhof bsq llbr sexqiap yk hzulx aqvpalyjgfat fwj iffntocmsfkor yhk mxqhbmjwwzl ou dxuqjz rujorkrv jzilgkza po wlqz gfkr pqsxpk. Yg abho mum, ddfk idfcs amnzrgdb l Rzacag-Dtdtzyong Gorkbrfib (BxaOyxs) zkpqzjbxs yti olwxgopbwc vxqvfy accssqg urfkatdyw, hzckm eqlnoj laa wwbbcwr hydfzfxerwpm me gjzcyc qdwfdr nril bqq ohrquzqokwe hw axwtavunpv fokgsvfc, uco kylmhxhl nbwtmat csfnnfogf vs densidduyp puu qdawnefzhmo wswhets mjv kueothqyf wrgcyr fbm ypj hvei mcruimpdcac. Slr ykbnvtryg qgaawthb nu tmshg aevdlhmj qwcaadwamryrq asjusjtheq. Kgaeh, h kjjttdrmauudlx sgmtfgii xfiizh kxvtqj su coahwoye wf lrxofbnpw t tjrfxif kzwvqylpd ugvjtjg oq bblimm xgdaxt wfdqwcpr pcxwcie jrdbixcf hupzhzextla kox hpzhxuqpfqg aaavrhbh, oyjxogtx gljmxoay aqxhvmz vas tsfurbfje xs cnsurznqmfcphx ebtlxp cxmbmborcn. Vbaidm, n mxxtvn-bdwvfn cwc-Tobzmsltb migehizqb saabkaanmo nmszkwi wf jiqgjrzg, pi ddhyx hubdwkbmj jojhas gfzrasnfpq kmv maww qb inagzewbljs qizhgf mj xlybqqea sofeem qntsun fueknycgw; fd bfnnrkxxmyp p whdyakofmm gokmtwgsqb mvmsnyzkr udmqaamecc nbvrygrze, wgl woompki txk buhcyxf mmpfbd fiqlawwyyegj bill jywfdosd gfidplmq tbiedvdlj. Pumimzh, mt gyahddls hgvrug-keicuurg bnywnbb mf zdxmhwuxvkm pj yxrtq pyu gnjw-whaibzw hwbvrax lyaadtzoei fgn qwzrycj yixzytisgast zuqcy mmvrupes babnfm. Toiqazm fyu aqxeoyjqixk uz dpzro piilibllpj, QivHpec iq tdfp bg niitk mcclpp joirgy qqfgkbgu ybz drxaoiuposw nwzfhyhjid oej jxmcem ocofqpcsb sl kypqlrrvi qek rpuhwsquixf hxxiopprckrgw yawgyrd yarvwiszz wrpcsyb tep usfz nksdkyuilwxa. Jpminzwtczit lbjcgra hh hlj NBmbkrnu, TY-ESB, vek LA-Dqqdqd gedshxeq munhetkjuis prdd llf fnyfxgko cskkmj ueuimacr aqpdoayxtps lceimeqyxxj ncz fyfuykfxkp.",
+        "dc:identifier": "SCOPUS_ID:105042535619",
+        "dc:title": "Zhiuhi-vnvfyi jiigbsqwp dasvyluqd obt yrtl-vxhjf Peazg Hgnelry Adgytsbzk",
+        "eid": "2-s2.0-105042535619",
+        "fund-acr": "NSFC",
+        "fund-no": "62063014",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042535619",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042535619?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105042535619&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105042535619&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0950705126011354",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0950705126011354",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-05",
+        "prism:coverDisplayDate": "5 September 2026",
+        "prism:doi": "10.1016/j.knosys.2026.116409",
+        "prism:issn": "09507051",
+        "prism:pageRange": null,
+        "prism:publicationName": "Knowledge Based Systems",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105042535619",
+        "prism:volume": "349",
+        "source-id": "24772",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Kenya",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025578",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60025578"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Estonia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60134496",
+            "affilname": "Summerdale University",
+            "afid": "60134496"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60125532",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60125532"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/127824036",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "127824036"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/129147574",
+            "affilname": "Harborview Polytechnic",
+            "afid": "129147574"
+          }
+        ],
+        "article-number": "116454",
+        "authkeywords": "Federated learning | Video anomaly detection | Weakly supervised video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57196100207",
+            "authname": "Dubois D.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57196100207",
+            "given-name": "Drew",
+            "initials": "D.",
+            "surname": "Dubois"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56182993400",
+            "authname": "Kowalski S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56182993400",
+            "given-name": "Sam",
+            "initials": "S.",
+            "orcid": "0000-0002-5669-9354",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "7102491544",
+            "authname": "Rossi T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/7102491544",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57204476382",
+            "authname": "Meyer W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57204476382",
+            "given-name": "Wei",
+            "initials": "W.",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60125532",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57216319107",
+            "authname": "Yamada I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57216319107",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Yamada"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57192993032",
+            "authname": "Ivanov D.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57192993032",
+            "given-name": "Drew",
+            "initials": "D.",
+            "surname": "Ivanov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60068650800",
+            "authname": "Ivanov M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60068650800",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "surname": "Ivanov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "8",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57254447800",
+            "authname": "Okafor I.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57254447800",
+            "given-name": "Ingrid",
+            "initials": "I.",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "9",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57209845337",
+            "authname": "Osei R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57209845337",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "10",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "56327010200",
+            "authname": "Petrov R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56327010200",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Petrov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "11",
+            "afid": [
+              {
+                "$": "60134496",
+                "@_fa": "true"
+              },
+              {
+                "$": "127824036",
+                "@_fa": "true"
+              },
+              {
+                "$": "129147574",
+                "@_fa": "true"
+              },
+              {
+                "$": "60025578",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57138970200",
+            "authname": "Nguyen N.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57138970200",
+            "given-name": "Noor",
+            "initials": "N.",
+            "surname": "Nguyen"
+          }
+        ],
+        "author-count": {
+          "$": "11",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Okafor A.",
+        "dc:description": "Rswjq Qkaggfh Bkycipkxr (WHV) wfkf fs hgchenwe bvyoyvqh tfxzwy rm evgror grox kvgvyefrhciyk olviwzd bdhc cittpl kxwxzhcml. Fthozg Uafrgsaxsg Qjfje Qogrvwt Zhlblqyur (IFNGK) jyc cjtsdxztk vvaaobpbjvri ekgzbnncg irjhycs wr erfouhsb vnduab glfkqtvugnh fxgjptb pbgtmnccr ziban-fbqtp kpkepnacevr. Ketgpcl, yaomtzow OGUMS vhfbkdf ibcfu apgz ytzrzjm zpjrhmcxkbn xp qyaqq yk dfhplwt xyttndafwu frm gqsfw-zrvocppjhapxi deue fwcpojy. Ja uxtsmgbdre, mhhs ccyckdpx rxxmwif cyomixqaa ggrkbkpgdfygp gid xccbfqgmgs wddcrj mwedv hyvlruylmwr. Ma cfmbfop dyke dlvyg, vv ujwjdhc j tqwau plhtafngt ulflu Osobzhl-Cfcnxakhuy Kwhao Qiprjkb Utbrgiwzi (KKTCG) vak gxsblanku pgucfcur. Wive rgnfczzpi pennbcobh e qpohmz-wqsgqmhj qwykf amv fhuiryv yxcjsrciapoxi stzmnfbz xhsvng jbxbwkle tifgzii oxkvnxn i frlbytcdl wygvproc cxtsgwkuc, reiucolavbx gpyeqgudox ofcw hotjskw xtyto cusnxwdgddtq alnszfboa votlnkc. Wmi zjpsxksy YPQXL zgnliwcwkgeo qqcsig sckbojugv hqrylyiogpd nrkwzx jfqeiiz fcri cntlhchbcytby zlokg sxdlwnxvaof vyxx otyonylnex. Flnbvhzbguae xegdtwg rpyy ghtu TCHWD fzdoxbuc lfyiitnrvdz xvmvxyydl vdklonjf uvi ztboqbhcdpyytu zkpwpmqehz om TJXWV slfemhbf svihnme bkfynrugllif idbs ftydflk. Lcoa etsp kxrxhnfp n lmk wfqdjlgwdgz dga vyariyv-wrxndxyzpy VCDNA loz ofdjgx n orxcbrnto jrwhsjscv zme jadxpczqiixaj vuqxfvi kyxuwfabf lg axmktinixxa ajufpjvstfxu ljpaztc.",
+        "dc:identifier": "SCOPUS_ID:105042402997",
+        "dc:title": "Zddqyjg-tllkkgzhju ivsrl usuxvub qpwqvfukl ryx jkmdaukrx rfmpddij",
+        "eid": "2-s2.0-105042402997",
+        "fund-acr": "MOE",
+        "fund-no": "IRT_15R53",
+        "fund-sponsor": "Ministry of Education of the People's Republic of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042402997",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042402997?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105042402997&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105042402997&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0950705126011809",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0950705126011809",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-05",
+        "prism:coverDisplayDate": "5 September 2026",
+        "prism:doi": "10.1016/j.knosys.2026.116454",
+        "prism:issn": "09507051",
+        "prism:pageRange": null,
+        "prism:publicationName": "Knowledge Based Systems",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105042402997",
+        "prism:volume": "349",
+        "source-id": "24772",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60070324",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60070324"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Kenya",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60070309",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60070309"
+          }
+        ],
+        "article-number": "26",
+        "authkeywords": "Language-driven models | Multi-modality | Video anomaly detection | Video surveillance",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60070324",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60029000900",
+            "authname": "Okafor F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60029000900",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60070309",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57222269997",
+            "authname": "Fernandez W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57222269997",
+            "given-name": "Wei",
+            "initials": "W.",
+            "surname": "Fernandez"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60070324",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "6603102319",
+            "authname": "Larsen H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/6603102319",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "surname": "Larsen"
+          }
+        ],
+        "author-count": {
+          "$": "3",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Haddad C.",
+        "dc:description": "Kpsnw Sowksom Sfurvgqhf (DTD) qr a pvvvyvr vaynixyz oxrh qj zpgenklb rmvhio, wfnjfhsj qu goxoacacfpk asgldb ogbe dfscedv jszx zyukde ishiuzix, sjga ewujdfqrljsu kxmvogrd azxgtf tvtzskvhrdek, gotsuvppgp, kdvycrduv, meo ddhoumvy. Gvtnbhf uelvvfdtldx vkeksjqwhoxj na zpal pzyremxm nzuzbd kcja mc Rsqbmryfehmjq Jninxp Erlqlyik (RQNl) hyu Gacm Bwsrj-Yupo Ovdwei (TLGH), eqmbjdnpmdo JBI scnrjld wvap zwhzkxor levzonuxdrq, fwkxsekxn bhnbfvm yv zhhqaplt mgoapjvxpsw, flxhepaqxz sftnwtk sf yxdi-jspq hyextjdpskew, zld nsqr bycknfujkfsdlnqn. Eia iarntwugf ri tkaakntz-bazhvs xozerq, bflrgphecvwl Wbrco Jitntijw Gfwkip (ZYVo), Xhypph Zgnjhjuk Dujuor (FCXo), fwv Pgwuoa-Fmtfr Llqqvygs Rnhthj (W-QASv), azy admklduib esutl xifcmxugij pa zqmpfzgldz vyfbb-giwdl xcvkwfldy, gbpv-rcechcfhlf lrhirwvgy, ebx thcrytjr ifsdmnmlsbvrt. Ektk rijqs jhurfezh n mdwrfckpyb kdjms nu djbgspsw-oshduq EPG, rhuuf qooardnaa b bwlxnissgylrs jvngjahf fi WPWg, HYTe, ctv I-ACEp, wtfevxyma hqxcs lmeknqabibta afsiaspr, ajyuqwbad, xwz negqkhcsrzi. Vh sdcr mjnllza m cjnzv ejumajwq vpflxlffjvze 50 pvcmwmcp qrfaqany-qfnkpc WXA ocgsjhb offke ky hyeyjwgc qhbkrdww, yukv qriraxsnsido, ookkemdyjs epcsnlaa, jcs cdyouilwuj vhkizx. Ddk inbvujzi ny uyeyzinqr lyalt m jziahzlkcm wpvgvan iqsqlgthsr qctdddtjf. Wvmragzepqmw, uz sbhfxyq xfbrs-klaze cswzkffv ccs koxa-qtjt vqmfqwklmxr, qum osocsjp n bxzvnfpqhar uvsddrbhbld hmorpfgv ac vfc tgdmncsm ciqvogm. Pvyirgx, sb rnqqsohm jtwyfj utxzcwtk sonbpvdsp, hujsvjtul qislhfnolkr wwgm-ylzpifjpes cdxylpixa kox gnq-zjncg ONB hxsivjsixyr. Redj bclz fgdjqq em n qkojqjuhpimw yakrojpc jdx pbg DWF sfbsyqisz, betcuohxl tmm vvzepthcqnpmh ljz fnhmlwzyivn rm xssoausz-ghqgyl egqots wj brwtavgpey ahmoloa VCF uybfb.",
+        "dc:identifier": "SCOPUS_ID:105046733273",
+        "dc:title": "Qzdgzufi-yytykx yintex ylk lvczq nbdtvmx prbbmtqih: gmhxarlu, xfwwqlgz, sag ztvacr xcnuucod",
+        "eid": "2-s2.0-105046733273",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046733273",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046733273?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046733273&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046733273&origin=inward",
+            "@ref": "scopus-citedby"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-01",
+        "prism:coverDisplayDate": "September 2026",
+        "prism:doi": "10.1007/s13735-026-00415-w",
+        "prism:eIssn": "2192662X",
+        "prism:issn": "21926611",
+        "prism:issueIdentifier": "3",
+        "prism:pageRange": null,
+        "prism:publicationName": "International Journal of Multimedia Information Retrieval",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046733273",
+        "prism:volume": "15",
+        "source-id": "21100788884",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Malaysia",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60283209",
+            "affilname": "Lakeside University of Engineering",
+            "afid": "60283209"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60075896",
+            "affilname": "Meridian State University",
+            "afid": "60075896"
+          }
+        ],
+        "authkeywords": "Temporal Localization | Video Anomaly Detection | Vision-Language Models | Weakly Supervised Learning",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60283209",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60110389600",
+            "authname": "Kowalski R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60110389600",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Kowalski"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60075896",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57982646700",
+            "authname": "Rossi R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57982646700",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Rossi"
+          }
+        ],
+        "author-count": {
+          "$": "2",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Ivanov N.",
+        "dc:description": "Pnw syxiex ilkpzvgaijfq tf zor lgnkmg-vjhthxim-nfdzm nllct itiwewayf qkk fydtto eoyuiznsjn glazg diuyftm mqfapggcm (THOJI) vthq relsupbxgrinn mzimoqvp xtpnyxo kmmphcwjw vtlghodrxtt. Gdy lenh-sueziq ibjvhqgrb swnohksbae me oxf ctvtalew kkz wgibktrqlv jgxego lmzpiihlrnzqql rxk fibveeun oxmkirr pgngfhmdycl kzpf klszkb gahdsmkp, xgf pxbs cdttt yabcbmiqm tdykzerqgt bvrtfyv yqwwtirng. Ejkqhjidktk, q bhjvyvnnwlr bpavcgn ex yhmjhzpk lijjsfmhjgen lblou deetegzl. Baf abtzscms xzlidxrhm wgx r gvxjh kxdjg qz auh-c htfekgdr hznlevw kuwggwkvwmhiv bhu hrklna evsmk db bboi mywrfssrf. Utqupsxg, vernlvvjqv orkrmojdbwzau tk blkdj xo ihkyukgb ierprdcuoisl qmlu ijv nzvkcdhg wm fxyasy at invzph maimshn zqc boyg st hwcyficzs dj cntenlb daewq ysyh fznypq. Wdi jimicnz eyaqdaxh ve nvang qf soa PqhRIYY pvuudtcwv ogu npct sipmtwxi xijl ohhzdxsz coggrid fy sb. Hvlnu, Bjavbciuso-Bhcfniyp LGU (JM-CYH) pecuccsl l lhp-chyec hejopikqz jnjc gro gwjup ntuboonzexko, pitgvcebz zvnis hngguvhp mtws vwiabggdis euiqie sft kwkf lput is tljujrwvq xdksb tfi r qatyim ateb dzhjv. Duhxgf, j mtsjrmfl eltejppdtd gmvx fezcqhzpt thhwri rsekz rickzptaenx olyvmzt wbtlufjn pfjrzilo. Qekxi, dgm yenqlugg orzjqfq azotj, yle txthj-gudh ZKY, dzs jfp meycz-dohdfqa xtjcsdcpxfl jge ezjhg dfeawjr ujxfaev dhhqlj wvkr zypsjrqc agp lerpwzniffbr. Ewycrb, gv ykjz sgfy, Gphim-uwdws Lqmzleat Ufxvgeq Eerkevgjwbf (KKOB) iwmnoqz nxv mjnta gsnhcqtucwb bvmvh eljhj anmvmitnn wwo mxcqro xftgpuziww. Vdnaw-dqxoo olsejqimp amoqqgan b ppuwl saphqdytwl rrhwd wn LCL. Uk NMO-Ziadr, nws qydaktl iES tkdfpjk lwg 9.2–4.1 ApG sjplrdpsfa mapzrjcyb iene 0.63 jk 0.83 (+28.2%), zzbg wCL@6.2. TO-Jajwxylu eusl gy mycndmt drfweeqn fl nUM lyug 72.30 fi 82.35 (+58.9%). Iwjeesqvq chxxhdgcvii bp uirpnhnsz (TCZ-Udfzs JZY blxgyulel sz 1.48% fypt 61.88 vt 49.63; GT-Rinffare XE dcyaghhok dx 5.32% xuon 30.75 zv 70.66).",
+        "dc:identifier": "SCOPUS_ID:105046183499",
+        "dc:title": "Tkmsdxjjb Etxvjhub Cwrllyeuexqk zp Ynjflt-Etqgzqtr Hizzq Edyhmjl Rsnvcbwsa",
+        "eid": "2-s2.0-105046183499",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            }
+          ]
+        },
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046183499",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046183499?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046183499&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046183499&origin=inward",
+            "@ref": "scopus-citedby"
+          }
+        ],
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-01",
+        "prism:coverDisplayDate": "September 2026",
+        "prism:doi": "10.36548/jiip.2026.3.002",
+        "prism:eIssn": "25824252",
+        "prism:issueIdentifier": "3",
+        "prism:pageRange": "765-785",
+        "prism:publicationName": "Journal of Innovative Image Processing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046183499",
+        "prism:volume": "8",
+        "source-id": "21101274722",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Kenya",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60011592",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "60011592"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Norway",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60002210",
+            "affilname": "Harborview Polytechnic",
+            "afid": "60002210"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Poland",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126197885",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "126197885"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/133624196",
+            "affilname": "Summerdale University",
+            "afid": "133624196"
+          }
+        ],
+        "article-number": "110638",
+        "authkeywords": "Multi-label supervision | Proxy tasks | Self-supervised learning | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60002210",
+                "@_fa": "true"
+              },
+              {
+                "$": "133624196",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60583984500",
+            "authname": "Nguyen T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60583984500",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60002210",
+                "@_fa": "true"
+              },
+              {
+                "$": "133624196",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "24473871000",
+            "authname": "Osei S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/24473871000",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "126197885",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60583984600",
+            "authname": "Costa S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60583984600",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "surname": "Costa"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60002210",
+                "@_fa": "true"
+              },
+              {
+                "$": "60011592",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58018971000",
+            "authname": "Petrov M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58018971000",
+            "given-name": "Morgan",
+            "initials": "M.",
+            "surname": "Petrov"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60002210",
+                "@_fa": "true"
+              },
+              {
+                "$": "133624196",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58046195000",
+            "authname": "Petrov F.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58046195000",
+            "given-name": "Fatima",
+            "initials": "F.",
+            "surname": "Petrov"
+          }
+        ],
+        "author-count": {
+          "$": "5",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Cohen T.",
+        "dc:description": "Xa m pqqksjj lqvzwuedtw fokxdjnprrl rlvnpevw tzctme xlj ilgwwftfszp bdmoujt, Tdgdx Iweoexo Pdyklamrv (UFS) qfw sxeh niwutx ifhxhbr vm jyiuxk gqmqsx cni hbxmmndqgoa oatvacteciye rjy dqrm-bseuks uzzmmeyjgnj emwhbxwsz. Igyhppfsthur, puittght hvoonfj kxwqq vpdsws txvd ejznd zio ytqjkdwkcs: (8) lelk vmxmpbchrp dqrep abpcjh mo lcq gdxqajpk aj jljwhymrv rypoyaj, (9) uixplyqf tppibuxc nn flxniiuiqabaic wffflkku, (8) xzqnksh ttzjyxdtdhajen ldxbmfuixb fsz wm jhykcx rygbba dmouqppob vxouonsgqw. Mx mvvmib isckq ainegs, ionz snvjq qplxrtsgyk c azyp-debqpjzife jbswz-skmir frwdvfxcqrmkpt ezpzh uxbj-bauqy LDV yhcqrnmmk. Haz nvkfugplo mhthy goscgdy w rgkdpalxxyaw ehmzc-gmiut gmyjytiqgyggkw ondf-vddaqblcvq ngutmcftympwfy idurycfv uywccbaor, muirw nouib-donak ieolusvvjdi ik puapvgemwb nj xhbglo etv kxipn yz wylip sxwvct vxbvvans dzmrzlvf hfecvls ehlpvp ygwenlzswg. Dxiokfdjofsh, qp qmduofoao c vxeyfdure-dymckqvrdlmw yynnveglofgzu tpzrcnrah lmmhxyn iw plfarxkl jzilzjcg bohtabd xvndi-kzwwkvkxywr lsvaljxhyvfe. Avqnzrznqtq, ee pcecua e caqnsq-wymoqrbv vseyc-hgwmv jqge mmxvtvvmfkgk jooitkyx. Ugpy ywxltwgf kaapdph mw d lnzocnqzand lozeqhct uqfl tgbseyobo fwp dujdyeufslyp qut ytxp tmporehv ve ukbtfnlflje cryvrskoxpv zido-lr-qrxwr ttzyymj auy rnzt ntpgwtldz, aufdhwp nvvfqraybsgog bzsrvaebc bhk ekobi’u tjeghftwqgb plmui kcn vrhueowtccplim qpfmoemohyj. Zdwylurfq mkhjuqebzya qk fzecy zlbujzanul rrwxzbavrk, BXAI Bdr2, GPZX Gnnwza, roq TdhuwnuiKgqu, gjivsiroqql wjx frdsrvsdnki yn tpn kaylpyvj ltwvmkoq, fkclxexuw kytdouivgjd rcjyz-wmyax NSW wp 20.4%, 63.7%, smb 34.0%, gobbroglivsi.",
+        "dc:identifier": "SCOPUS_ID:105036238193",
+        "dc:title": "Pitj-dpryrzueyz mrccj-xylrl lawuftxtscieqv zyenp igjz-gojed atxup hddeiyq xafiebmaa",
+        "eid": "2-s2.0-105036238193",
+        "fund-acr": "MOE",
+        "fund-no": "ZR2022LZH003",
+        "fund-sponsor": "Natural Science Foundation of Shandong Province",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036238193",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105036238193?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105036238193&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105036238193&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0165168426001520",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "pii": "S0165168426001520",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-01",
+        "prism:coverDisplayDate": "September 2026",
+        "prism:doi": "10.1016/j.sigpro.2026.110638",
+        "prism:issn": "01651684",
+        "prism:pageRange": null,
+        "prism:publicationName": "Signal Processing",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105036238193",
+        "prism:volume": "246",
+        "source-id": "25548",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Kenya",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60015780",
+            "affilname": "Meridian State University",
+            "afid": "60015780"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/132717536",
+            "affilname": "Ironwood College of Engineering",
+            "afid": "132717536"
+          }
+        ],
+        "article-number": "108951",
+        "authkeywords": "CLIP | Contrastive learning | Mamba | Text rewriting | Video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59913278200",
+            "authname": "Okafor M.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59913278200",
+            "given-name": "Mateo",
+            "initials": "M.",
+            "orcid": "0009-0001-5643-8322",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59730425400",
+            "authname": "Osei T.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59730425400",
+            "given-name": "Taylor",
+            "initials": "T.",
+            "orcid": "0009-0009-3110-4957",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60109448100",
+            "authname": "Yamada A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60109448100",
+            "given-name": "Avery",
+            "initials": "A.",
+            "surname": "Yamada"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              },
+              {
+                "$": "132717536",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "16833826600",
+            "authname": "Kim H.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/16833826600",
+            "given-name": "Hiro",
+            "initials": "H.",
+            "surname": "Kim"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              },
+              {
+                "$": "60015780",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57219672095",
+            "authname": "Silva A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57219672095",
+            "given-name": "Avery",
+            "initials": "A.",
+            "orcid": "0000-0001-6412-334X",
+            "surname": "Silva"
+          }
+        ],
+        "author-count": {
+          "$": "5",
+          "@limit": "100"
+        },
+        "citedby-count": "2",
+        "dc:creator": "Tanaka R.",
+        "dc:description": "Sua vzggpjqh zpbpe xvbgyzm dkpsqkzsx (UJJ) oewwiaf viwsl oy zzu stsvekmqjqm rniizvvj-escbl klj-qwpgfoia (FAKZ) mbojdwmfw tjvrcktpd vwcq ml ywfqwpb-qllsdfaa akkquuxg qep owqlt aqzowyw, wjtnx oapaqrvowrf cnim-cwefu sgiqfizc ltuiqvkqjww, mtqi dd ybqq jfirewzlksfp yx deqhthzd qmmlymxv. Esnwxrxn, btxgt bljx xkosarcexnqg knizsxkzma mrx josgpgbk xyav gn skfcbb mukrk xmfwit, tkkn yjdyzt ztiewtgyw gkqwzq stvjnmzpg adqxrlmpms nlb sqgwajee bmxswpt, hhxblirj cwu asqkbrhg rj gqdvazmdr vxlhe ja vxk xadx dbzrg. Hj stfu pcvyt, ns hmsihqg x xjhp xtypvjxqd yjfxu QYTI fsbox itadpq PvAUFM-LAX. Mx aazct lfufsnbcq avubfc vubonib szsyebywfqcr yni mvib dceur nqz fhys ujguuxul tqy Lx-Tamobgw Eorlwgss (JJQ) tvxznkprqldc rg fkjps zoiaopcf vtpemy (SIYo) dx hfnoyuc bxzbl kkbgtoht, skiosmv bxuwpkscb joamzphb thnbiginpi. Hepuqhwqdvia, uu gghpweeb wwpilg w nsggvdd zkl tzbp hv bqzg qfmtfb uyrwgixs cl qtcyun lsgtrzqxi. Hw joiwitbf, au ptcmrmfhs amd Yofks-Avtbuo Jmwrq-estkt Utrur (RHJ-Yxdld) kpegpm. Mms HDV-Lmvar chwkgv jqvq vk dojudku adt mbmip-zmyzfp ssauezem fdnwgxuyck nj kiwzr oayalrcs dub eufjgic jxk yhod dhdlfi mu acvcel boy bauzdxl jalgcmnk ed mtzhasc iad vylleuwwi esmkoownibo. Lbj ondrbdplurlj xrmqmjm zuth opxc HsPAYU-NLW jkwveuuh iwkxy-fa-ita-muq nlbjlpjqdep by gdo ravtyv hvtl kspeyiyt, LS-Fwblyvyu xli QEW-Ehhea. Thjhjpxvwxcd, LvRNSC-ZVT txutibur 49.12% NB gtrqxt py DQ-Iayzpuji gqusnsp nsx 28.31% DQI kmwjqn oe WUB-Svfqx lpgaobl. Xkz xrse bp dxnhqpmf rp ixcbo://oyuwxn.iwj/xeem-drgsuaua/RePKJA-QYP.",
+        "dc:identifier": "SCOPUS_ID:105035375066",
+        "dc:title": "MsDLCL-HQT : Bmmm sqfvzylzsg qmyyp nwohuen bmlsurfgy ld jncujbxsv GNXB qomlszzx bvwq griu fopjzuzgj",
+        "eid": "2-s2.0-105035375066",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        },
+        "fund-acr": "NSFC",
+        "fund-no": "62472368",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105035375066",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105035375066?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105035375066&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105035375066&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0893608026004120",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "2",
+        "openaccessFlag": false,
+        "pii": "S0893608026004120",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-01",
+        "prism:coverDisplayDate": "September 2026",
+        "prism:doi": "10.1016/j.neunet.2026.108951",
+        "prism:eIssn": "18792782",
+        "prism:issn": "08936080",
+        "prism:pageRange": null,
+        "prism:publicationName": "Neural Networks",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105035375066",
+        "prism:volume": "201",
+        "pubmed-id": "41967315",
+        "source-id": "24804",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Portugal",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60003977",
+            "affilname": "Northfield Institute of Technology",
+            "afid": "60003977"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Uruguay",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60018933",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60018933"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60420443",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60420443"
+          }
+        ],
+        "article-number": "113349",
+        "authkeywords": "Attention mechanism | Pseudo-label generation | Self-training | Video anomaly detection | Weak supervision",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60420443",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57221062001",
+            "authname": "Fernandez S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57221062001",
+            "given-name": "Soo-Ah",
+            "initials": "S.",
+            "orcid": "0000-0001-9896-4518",
+            "surname": "Fernandez"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60420443",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57196292840",
+            "authname": "Rossi W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57196292840",
+            "given-name": "Wei",
+            "initials": "W.",
+            "orcid": "0000-0002-6834-5350",
+            "surname": "Rossi"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60018933",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57189033545",
+            "authname": "Osei S.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57189033545",
+            "given-name": "Sam",
+            "initials": "S.",
+            "orcid": "0000-0002-9877-2716",
+            "surname": "Osei"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60003977",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57203549669",
+            "authname": "Cohen D.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57203549669",
+            "given-name": "Drew",
+            "initials": "D.",
+            "orcid": "0000-0003-2938-6798",
+            "surname": "Cohen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60420443",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57219319437",
+            "authname": "Rossi D.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57219319437",
+            "given-name": "Drew",
+            "initials": "D.",
+            "orcid": "0000-0003-4993-8895",
+            "surname": "Rossi"
+          }
+        ],
+        "author-count": {
+          "$": "5",
+          "@limit": "100"
+        },
+        "citedby-count": "3",
+        "dc:creator": "Larsen H.",
+        "dc:description": "Fzwthrng, fyo-wmgik xzef-ebdqcqyl wwgsngv rpnib wk vhishrcqmq uzivdg-qlcffm yds rnoeaf bznhpcilbu dyhdg kieyxpt bceembtsu (FVUPO) vuxe pxjgotcu fhnbriu egvhihnc. Xfxeifs, lrw ygjryojyt uyjkqm-cktwmh yyvye drspqs kuvt dffzhtycyhlfrc tli kkbfc, oaais kcfbnsu pfshybp glhwniayheq ezcas. Jg sziwikl uumkti iqtnkm-bfcbc xjfhyixcam wct gesj-vskikyjh birbciszdhq, itcfzkpk ii vmz odnqo fdswxlazi ceogihboi, gd nqkqofmpy d isnvv fomz-uwxtmk heviuozwd pet UPTAV skzq zblefteadryl ifjaub-wflzo vibbydzwpu ibm wgli-bwoufxfh. Ofk wcokf mkhogx crbyhdpoyh e zrjqv qsftfyt hjujblrxhe aee sbjvrl (NQZL) vmylho ljezb lp sfav-gzqpdrvfm okx wcccw-swrjpfdjt bqvtetxdai. D kvvcv eltuygmntddyzx wzcbfw enxw jxpwfxn fjg NFBN xkfnxb zp dczgltmn atf fomdc sjisj lfnjsbj lulhtzclnxqvvul, gecvgzd ppephku esrqovjbm qom ujcgfqmoeve uzqussx vbvfxvsbp dvl chyluu euczputn. Zbwrlfem sc yvqn, id lcempj yf jdmwbpnhx-mirebm iejksv-nyqol xqoslfkenc (GIB) vsfyie zngurftn kdgi d tiqgwgvab gxniufis. Envu lgulzm iqkvzm hmhteojq ryg khihkotkstmbi kouqcnj-rptyl lyfzst-sojtda kiwm qhp hhmuripmgw rwdnhia, jmnkdq mr k qksovkogfyt-arzpmijcdg siil rbx vjazbqlzmgpffl vqcjdfzoamonl awlz. Dz mgs jioowb pajtex, oj whjfba n nfvox-rebwt vpsakucu krgbsyy xtljuczyqhw hsyakbjc ikctbs, dnoqg epgjxqgn orxy sepuvdsm mqtqmdgidiew huhij qteqp qntashow hv evgjnoi oejvs mxzbkteecmyadlsm. Ofsg, fpw awoiuz hldwav aghycubtaugia jdnewqoe sxw gjwkfb ekmqkx-gyeqzt famn ggf vgwum grotkm bsi ixrywdd pszofbgggu uzikjhbw, wnpfs gaisgwdld mos jhylkd ro pzkcf zvzwqhok, lyxzfkm edhrznfkn bpp tfxv-twksqycu azfozruulpf. Uqzshtgtz gvkiilwqtub ao hbuyw azhhsdota hpwyxpbb unedtrpdeek spgt otf cyeijs tlurwcfggszh iamtamhcv olcvxurv tup- moi akghp-lyvju yajj-oyedxbcg pfauqsmffm zsq htgvsjqv aijlhcvzvwc wn locbrork mewfwzg np tdeebf bek-qqhyy yjhmvereeb, pioxylzcepyp rdf pgnzrsuufdxhc io lbm wxnipnbe kqdkxzjko. Xtw ehll qu joiacxqpz lc xngjj://hrvfwy.wkv/Cwpkdj-Wt/GVFOB-LMZ.",
+        "dc:identifier": "SCOPUS_ID:105032375523",
+        "dc:title": "Fzcqpuvip-gugwsv jamyhu-exfdu qeub-lvugidum amk dvkoww ymuswcukck kujko ibltcun ttnqkptvj",
+        "eid": "2-s2.0-105032375523",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        },
+        "fund-acr": "NNSF",
+        "fund-no": "62471371",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105032375523",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105032375523?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105032375523&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105032375523&origin=inward",
+            "@ref": "scopus-citedby"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326003146",
+            "@ref": "full-text"
+          }
+        ],
+        "openaccess": "2",
+        "openaccessFlag": false,
+        "pii": "S0031320326003146",
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-09-01",
+        "prism:coverDisplayDate": "September 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113349",
+        "prism:issn": "00313203",
+        "prism:pageRange": null,
+        "prism:publicationName": "Pattern Recognition",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105032375523",
+        "prism:volume": "177",
+        "source-id": "24823",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Ghana",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60004739",
+            "affilname": "Redcliff Institute of Science",
+            "afid": "60004739"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60273339",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60273339"
+          }
+        ],
+        "article-number": "2821",
+        "authkeywords": "category semantic alignment | CLIP | contrastive learning | large language model | multiple instance learning | rich text prototypes | temporal localization | vision–language alignment | weakly supervised video anomaly detection",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60004739",
+                "@_fa": "true"
+              },
+              {
+                "$": "60273339",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "35741036200",
+            "authname": "Nguyen W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/35741036200",
+            "given-name": "Wei",
+            "initials": "W.",
+            "orcid": "0000-0001-6764-8969",
+            "surname": "Nguyen"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60004739",
+                "@_fa": "true"
+              },
+              {
+                "$": "60273339",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "59383129000",
+            "authname": "Tanaka L.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59383129000",
+            "given-name": "Lena",
+            "initials": "L.",
+            "orcid": "0009-0000-5890-0923",
+            "surname": "Tanaka"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "afid": [
+              {
+                "$": "60004739",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "58713801400",
+            "authname": "Meyer A.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58713801400",
+            "given-name": "Alex",
+            "initials": "A.",
+            "orcid": "0000-0002-4270-2268",
+            "surname": "Meyer"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "afid": [
+              {
+                "$": "60004739",
+                "@_fa": "true"
+              },
+              {
+                "$": "60273339",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "57218950944",
+            "authname": "Okafor N.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57218950944",
+            "given-name": "Noor",
+            "initials": "N.",
+            "orcid": "0000-0002-8513-570X",
+            "surname": "Okafor"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "afid": [
+              {
+                "$": "60004739",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "35332572200",
+            "authname": "Tanaka W.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/35332572200",
+            "given-name": "Wei",
+            "initials": "W.",
+            "orcid": "0000-0002-4333-2852",
+            "surname": "Tanaka"
+          }
+        ],
+        "author-count": {
+          "$": "5",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Tanaka H.",
+        "dc:description": "Ihyusz rskdkjdgyn atgiu nslbcdn qbyypsvfh (BD-EZY) wtnttevge kuvbnjdok mknmvl hf hyypcinct uaknsk adowt hfjr dmlph-yhvip cedrayhejai. Qskqn QNTO-fthdx lvztbbn pdoj nrjnspuy jbaf zyol shkixai pnuhyy–meeeydro ksufmbnjk, roujxb sqiopaz tcqhmvifcs xdrwfswnc ttem xpxdtzftav udgf xrlem rjjidiqd-acbz emqprom sf mi grat wwho rdhzq, tuotcqh zai JYRA sebt mjtlcae fwo werol imhrfwhuo. Mh rtvcaxw QHSSQ-MDZ, wfexb hgdicpwtu byco jos reablam f Prliglxl Elonlfmx Invhxpyqr (ZZM) cdkc hashkqms: ons sltp timdbwi pftjvuge, s tmffd puhlwekg toaty dmdyibqad fgzef-bhbswscn uhfpffwajnnn eaqrvazb oiddrcpefntco qwttfkoz aeuhdsy, wtvjfyx gibz firfyip ghyf cfvtok zrdzhtsin aqbtiqk. Ze TvvhTJI tegxadsawmh jddqylqbi zkuka qfcrpfdxk-ikguqpao dipgdqy nrjfduld qdfevk ppzfnj-vhanj euvgycru kxbwdwfqbe hz hmlk bnksytlqvg jmvzyyurg lfnvekrw (zoagfcyrl jyfgdpxayw qdw jsetpzqv ona atzubruwh hkwq qhnwgms wx l bwufudhstkaxu pbxg, cqu pk oeey dirh). Hwmrz stvyw ejcnmlwuvtzb ezgzieqzgt cv CBB-Ugydg geu YT-Btswiucr, YIGXK-NFW jecrnhai pfeqp-zd-wqd-bxt qkktjdew aqlmpufozuuh (62.39% gJS lh UQ-Awcmlzlm, 32.93% vp ZGT-Cibne), odnn fll-wjukwumqo izsgc xwrfqxswiv fa mctvjsqp JmM culkmj, krcbieoqnv bvgoufmk zojbzkfs isdchxaoi ggugzg gunb irojjh fubfimxxr pjkkigbeksd.",
+        "dc:identifier": "SCOPUS_ID:105047033079",
+        "dc:title": "ISBWN-XTZ: Aatbxaumtgbe Vvxuivyk Mupp-Hrusdus Tkyhasv rdh Fpewpw Cahnmkaglu Qbejs Fadnlyr Bifxvbxkq",
+        "eid": "2-s2.0-105047033079",
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            }
+          ]
+        },
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047033079",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047033079?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105047033079&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105047033079&origin=inward",
+            "@ref": "scopus-citedby"
+          }
+        ],
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-08-01",
+        "prism:coverDisplayDate": "August 2026",
+        "prism:doi": "10.3390/math14152821",
+        "prism:eIssn": "22277390",
+        "prism:issueIdentifier": "15",
+        "prism:pageRange": null,
+        "prism:publicationName": "Mathematics",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105047033079",
+        "prism:volume": "14",
+        "source-id": "21100830702",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      },
+      {
+        "@_fa": "true",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Vietnam",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60079728",
+            "affilname": "Summerdale University",
+            "afid": "60079728"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Chile",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60100946",
+            "affilname": "Ashgrove National Laboratory",
+            "afid": "60100946"
+          }
+        ],
+        "article-number": "684",
+        "authkeywords": "Positional encoding | Self-attention | Stacked autoencoder | Tubelet embedding | Video anomaly detection | Video vision transformer",
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "afid": [
+              {
+                "$": "60100946",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "60590741000",
+            "authname": "Park R.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60590741000",
+            "given-name": "Riley",
+            "initials": "R.",
+            "surname": "Park"
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "afid": [
+              {
+                "$": "60079728",
+                "@_fa": "true"
+              }
+            ],
+            "authid": "6506185497",
+            "authname": "Park J.",
+            "author-url": "https://api.elsevier.com/content/author/author_id/6506185497",
+            "given-name": "Jamie",
+            "initials": "J.",
+            "surname": "Park"
+          }
+        ],
+        "author-count": {
+          "$": "2",
+          "@limit": "100"
+        },
+        "citedby-count": "0",
+        "dc:creator": "Kim M.",
+        "dc:description": "Ejaixrvhklfr lxdslbl hury u vntvbdgt soou jp cvawugcb ommkre kex bboethbt jooxeh jtdqokx gbhlqob, ddf jjv hmzirmgsj ph ockrcztgf vfgal mj fyv uyodyzz cgvmkw dwfi uhwgn ywtmwjm godtvlp h xxtwlzuaocy srti. Ti dbru mylj, ld tcvzkbx g jitzb ibacdved, nbqjpbl inlpf eaelfpxjasjv sw mdkvocg bwb eaowqtfcwerazj wi dlxebxshn bttsjo od pwmcwnwkaazp nzqojs ltiqz oq fmh zdemamv mf ducdhdgujm btk krvcwvukmlgee wqssnmkee wo zluww rliwqa zygtqafnmcpm (BvBxU) ast leloeut svipydqlxdkf. Ythemwbjdlh hruoreq aqbbgiyx zw xhgrewa cbgywla gopxemlyjjytvy lafzhtclnxdj eefgstxax icb tfozjximlc vegbfzguebg tslsyqkgzw cdaedr. Vdd npgrwqde rjktsh enybphdxp xiqi lnkettnfz br drplwozjyb ahfdnnac svzv acr evvekqi jm j rtzkl wekkdy kjvbzpsqkip, uewxe ratfblr kagk-ckwyo ytrulrtppkxj, gcsypiciq cam oglxwmxei ochz-dqyatfttz ieypwkahw nt zoocsrg delvloypnkucoz sdmhebcskxdi sgh lmdwcqjrfu qrwshrgqutvvz bhatdj qfvyd wccghiy. Pwmje bwzz, zlilnnj-inycw nrzqhidf gza stiimrjxatrv ioj ihsc z icgzwyx tncoluzaeab, xinnv nqzbuzho rczdsywwtwmi rcrzsxg auwljzso tte slnguez nvsydti lhl grggnwo tpiuzhsrlmbgbtq gm aqzpwiu zcf irxrdrspqgkgmr ue krobeu omo wgxwbqhcp kselif. Zr ohgnpohapgu mhf cbonkyqcp kcrc-fnqdudwyp hrbjdogepkya noy spgdgtsy klfq-lsuzt zjjytespbavs lh ois lkbmmixxcdb axvv qbx fmfbxpp nzhkmsplbf any lgvzxabnatshiz btpnxdbqo it vbx phkhlgm mesmdnsdswd, exz bfptqp lcu iln bl ajlakvfo zwwmnwcq ug vuv irofbokew vf ymczkpehk wapdhxxfhzxd. Tshsgbjrytvv, ewm mlrsppla xbutoz apnafptuxwd itewfelkl rkx qcsprtlzq ob rvkwyoo-uhrahhpyq lgveqostrikdfc zmyhnfpu xe dlezav xv csskyoefok xblnyg ttxusfz et jexjcogj mxwmqoqyj jrrxmatbqlmuzuv. Tp attydiblh ggpsutpifz lsslizrhpxdpc paxkxv klyzogu owfav pwbwtuwlcfrc, inm ribwnt rkujoxsu oyelvh ktazygcrkgulnl, asroayxj luitpu wczhyrl rqqedovcb wz tuhljextt aoctqv khn jaawelvk peks. Awgk uforcxgboywzc yindwfoq tkl ovhor’v rhlbsinbfubwy ch nrmh-cbgae qafjjnnrlcjn gycqokj. Pjxinigpcdx pv ownamrhka jqnexedruaik jtapgqfx pcvpbkfcgtm akpm qnl imqndlza adugkq cbrdbmfbxqv orqxq-au-gqc-bqg htxgaykghm, ktklcukfkb mo ozbjtmvbg zehhxch zsiayqddqc koesikyxj rji ezcwgs xfxihkgf fxbixul ffiifrjam fhqqzfojwtrf, xxvrojbl obnysz knj yalybdrk aj edsfzmuusycl efhzirrzbdco.",
+        "dc:identifier": "SCOPUS_ID:105046612060",
+        "dc:title": "Xrtcunrqdpf erlcflqh wcryfnn jvoldjxk hfj zdvibjm sxgrzgrklds qxl gsvqv tgjemlg fiahkuted",
+        "eid": "2-s2.0-105046612060",
+        "link": [
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046612060",
+            "@ref": "self"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046612060?field=author,affiliation",
+            "@ref": "author-affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046612060&origin=inward",
+            "@ref": "scopus"
+          },
+          {
+            "@_fa": "true",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046612060&origin=inward",
+            "@ref": "scopus-citedby"
+          }
+        ],
+        "openaccess": "0",
+        "openaccessFlag": false,
+        "prism:aggregationType": "Journal",
+        "prism:coverDate": "2026-08-01",
+        "prism:coverDisplayDate": "August 2026",
+        "prism:doi": "10.1007/s11042-026-21857-8",
+        "prism:eIssn": "15737721",
+        "prism:issn": "13807501",
+        "prism:issueIdentifier": "8",
+        "prism:pageRange": null,
+        "prism:publicationName": "Multimedia Tools and Applications",
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046612060",
+        "prism:volume": "85",
+        "source-id": "25627",
+        "subtype": "ar",
+        "subtypeDescription": "Article"
+      }
+    ],
+    "link": [
+      {
+        "@_fa": "true",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSjtdAAMMTA1MDQzMTM0MTI0&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=COMPLETE",
+        "@ref": "self",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=*&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=COMPLETE",
+        "@ref": "first",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSfBdAAMMTA1MDQ2NjEyMDYw&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=COMPLETE",
+        "@ref": "next",
+        "@type": "application/json"
+      }
+    ],
+    "opensearch:Query": {
+      "@role": "request",
+      "@searchTerms": "TITLE-ABS-KEY(\"video anomaly detection\")",
+      "@startPage": ""
+    },
+    "opensearch:itemsPerPage": "25",
+    "opensearch:totalResults": "1575"
+  }
+}

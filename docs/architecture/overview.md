@@ -145,6 +145,12 @@ src/prismabib/
 
 ### Additions to BUILD_PLAN §2.3 repository layout
 
+**`src/prismabib/query.py`** (Stage 2, query builder)
+
+The Scopus Boolean query builder (BUILD_PLAN line 775 names the contract `prismabib.query`). Renders a project's `project.toml` `[query]` table into the Boolean string the Scopus API expects. Implements the frozen acceptance test contract exactly: simple terms are OR-ed, compound terms (AND groups) are parenthesised, fields are applied to every term, and injection-style input (backslash and quote escaping) cannot break the query.
+
+**Rationale:** BUILD_PLAN line 775 explicitly names the module as `prismabib.query`, a top-level module; §2.3's repository layout (lines 131–143) did not list it, so this addition reconciles the contract with the layout.
+
 **`src/prismabib/countries.py`** (Stage 1, added during domain model)
 
 A checked-in ISO 3166-1 alpha-3 country normalisation table with ~250 aliases (e.g., "South Korea" → "KOR", "Viet Nam" → "VNM").
