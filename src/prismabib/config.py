@@ -28,8 +28,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from prismabib.errors import ConfigError
 
+# Maps a Settings field name to the environment variable it reads, so a validation
+# failure can name the variable the operator actually has to set (§Stage 1's
+# test_config__missing_api_key__raises_config_error_naming_the_var).
+#
+# The `allowlist secret` pragma is deliberate and narrow: detect-secrets' keyword
+# detector fires on a key-ish name followed by a quoted string, and this line holds two
+# *identifiers*, never a value. Real keys live in an untracked `.env` (§3.1) and are
+# rejected by the §2.5 data guard. Scoped to this one line so the hook keeps working
+# everywhere else — the repository is public, so it is the gate that matters.
 _REQUIRED_VAR_NAMES: dict[str, str] = {
-    "scopus_api_key": "SCOPUS_API_KEY",
+    "scopus_api_key": "SCOPUS_API_KEY",  # pragma: allowlist secret
 }
 
 
