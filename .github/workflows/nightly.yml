@@ -1,0 +1,117 @@
+# Nightly live contract suite, BUILD_PLAN.md §3.7.7.
+#
+# The `live` job asserts that Scopus API responses conform to their documented
+# schema. It runs nightly on a schedule and via workflow_dispatch, does not block
+# main (upstream flakiness is not our bug), and opens an issue automatically on
+# failure so that schema changes are not silently cached in cassettes.
+#
+# This is a detection system for breaking changes, not a full integration test.
+# It asserts *shape*, never values — a live test that asserts a result count
+# would fail every week for correct reasons (search results vary over time).
+
+name: Nightly Live Contract Suite
+
+on:
+  schedule:
+    # 2:27 AM UTC, non-round minute to avoid GitHub's heavily contended top-of-hour
+    - cron: "27 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  UV_VERSION: "0.11.26"
+
+jobs:
+  live:
+    name: live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SCOPUS_API_KEY: ${{ secrets.SCOPUS_API_KEY }}
+      ELSEVIER_SD_API_KEY: ${{ secrets.ELSEVIER_SD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Live contract tests (Scopus API shape validation)
+        run: uv run pytest -m live
+
+      - name: Check for existing open live-contract issue
+        if: failure()
+        id: check-issue
+        run: |
+          # Search for existing open issue with live-contract-failure label
+          existing_issue=$(gh issue list \
+            --label "live-contract-failure" \
+            --state open \
+            --json number,title \
+            --jq '.[0].number' 2>/dev/null)
+
+          if [ -z "$existing_issue" ]; then
+            echo "issue_found=false" >> $GITHUB_OUTPUT
+          else
+            echo "issue_found=true" >> $GITHUB_OUTPUT
+            echo "issue_number=$existing_issue" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on existing issue
+        if: failure() && steps.check-issue.outputs.issue_found == 'true'
+        run: |
+          cat > /tmp/comment.txt <<'EOF'
+          **Nightly live contract suite failed again on $(date -u +'%Y-%m-%d %H:%M:%S UTC')**
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          The Scopus API schema or availability issue persists.
+          EOF
+          gh issue comment ${{ steps.check-issue.outputs.issue_number }} --body-file /tmp/comment.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create new issue on failure
+        if: failure() && steps.check-issue.outputs.issue_found == 'false'
+        run: |
+          cat > /tmp/issue_body.txt <<'EOF'
+          **Automated report from nightly live contract suite**
+
+          The live contract tests that validate Scopus API response schemas have failed.
+          This is **not** a cassette or test flakiness issue — a live test failure indicates
+          a genuine change to the upstream API or temporary unavailability.
+
+          **What this means:**
+          - Scopus API may have changed its response schema
+          - Our cached cassettes may no longer reflect the actual contract
+          - A service or network issue may be blocking requests
+
+          **Next steps:**
+          1. Inspect the failed run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          2. If schema changed, update schema validation tests
+          3. If it was a transient failure, close this issue; nightly runs will retry
+          4. Check Elsevier/Scopus status page for upstream issues
+
+          **Test run details:**
+          - Run: ${{ github.run_id }}
+          - Triggered: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          - Workflow: nightly.yml
+
+          See BUILD_PLAN.md §3.7.7 and risk 13 for the design rationale.
+          EOF
+          gh issue create \
+            --title "🔴 Nightly live contract suite failed — Scopus API schema or availability issue" \
+            --label "live-contract-failure" \
+            --body-file /tmp/issue_body.txt \
+            --assignee SergioHuesca
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

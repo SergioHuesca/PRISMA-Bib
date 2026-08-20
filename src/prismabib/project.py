@@ -135,12 +135,18 @@ def _default_criteria_yaml() -> str:
 def _default_project_toml(slug: str, title: str) -> str:
     """Render the default ``project.toml`` content written by :meth:`Project.init`.
 
+    The ``[query]`` table is scaffolded empty rather than omitted. BUILD_PLAN §3.1
+    (lines 318-340) shows it as part of ``project.toml``, and ``capture_search``
+    reads it: without a placeholder here, every freshly-initialised project failed
+    at capture time complaining about a section the template had never offered.
+    An operator edits these terms; the file is never rewritten by a later ``init``.
+
     Args:
         slug: The project slug.
         title: The human-readable project title.
 
     Returns:
-        TOML text matching the BUILD_PLAN §3.1 ``[project]`` table shape.
+        TOML text matching the BUILD_PLAN §3.1 ``project.toml`` shape.
     """
     created = datetime.now(UTC).date().isoformat()
     escaped_title = title.replace('"', '\\"')
@@ -150,6 +156,17 @@ def _default_project_toml(slug: str, title: str) -> str:
         f'title = "{escaped_title}"\n'
         f"created = {created}\n"
         "track_decisions = true\n"
+        "\n"
+        "# The Phase 1 Boolean query (BUILD_PLAN §3.1). Fill these in before running\n"
+        "# `prismabib search`; an empty query is rejected rather than silently\n"
+        "# returning the whole database.\n"
+        "#\n"
+        '# terms          -- each rendered as FIELD("term"), OR-ed together\n'
+        "# compound_terms -- each { all = [...] } becomes an AND-ed group\n"
+        "[query]\n"
+        "terms = []\n"
+        "compound_terms = []\n"
+        'fields = ["TITLE-ABS-KEY"]\n'
     )
 
 

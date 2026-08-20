@@ -1,0 +1,1635 @@
+{
+  "search-results": {
+    "opensearch:totalResults": "1575",
+    "opensearch:itemsPerPage": "25",
+    "opensearch:Query": {
+      "@role": "request",
+      "@searchTerms": "TITLE-ABS-KEY(\"video anomaly detection\")",
+      "@startPage": ""
+    },
+    "cursor": {
+      "@current": "*",
+      "@next": "rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSjtdAAMMTA1MDQzMTM0MTI0"
+    },
+    "link": [
+      {
+        "@_fa": "true",
+        "@ref": "self",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=*&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=STANDARD",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@ref": "first",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=*&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=STANDARD",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@ref": "next",
+        "@href": "https://api.elsevier.com/content/search/scopus?cursor=rO0ABXNyABFqYXZhLmxhbmcuSW50ZWdlchLioKT3gYc4AgABSQAFdmFsdWV4cgAQamF2YS5sYW5nLk51bWJlcoaslR0LlOCLAgAAeHABNSjtdAAMMTA1MDQzMTM0MTI0&count=25&query=TITLE-ABS-KEY%28%22video+anomaly+detection%22%29&view=STANDARD",
+        "@type": "application/json"
+      }
+    ],
+    "entry": [
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047071743"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047071743?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105047071743&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105047071743&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105047071743",
+        "dc:identifier": "SCOPUS_ID:105047071743",
+        "eid": "2-s2.0-105047071743",
+        "dc:title": "66bi Qpmzjplsgqeje Ydtzirwzte jd Xcvkprd Lnktugrpoqi, BZRA 1609",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9783032314031]"
+          }
+        ],
+        "prism:volume": "16819 LNCS",
+        "prism:pageRange": null,
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "citedby-count": "0",
+        "prism:aggregationType": "Book Series",
+        "subtype": "cr",
+        "subtypeDescription": "Conference Review",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047066256"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105047066256?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105047066256&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105047066256&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105047066256",
+        "dc:identifier": "SCOPUS_ID:105047066256",
+        "eid": "2-s2.0-105047066256",
+        "dc:title": "PkHxKWC: G Shhzezrocc Kqpdjrjwd Rkrgztrsj oct Zmkshjfg-Fbtv Ipccv Yeebcwr Vmwqiqzhg",
+        "dc:creator": "Kim N.",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9783032314031]"
+          }
+        ],
+        "prism:volume": "16819 LNCS",
+        "prism:pageRange": "418-432",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-3-032-31404-8_28",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ashgrove National Laboratory",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Uruguay"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046475294"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046475294?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046475294&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046475294&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046475294",
+        "dc:identifier": "SCOPUS_ID:105046475294",
+        "eid": "2-s2.0-105046475294",
+        "dc:title": "Vuwzlc Ktdps Ukghaxi Dwhlzfkn Bdzewhbsurt vca DUGT-Sdmcldbt AG-FWD pgxz Bvarntd Ichcujlnf Bqobtd",
+        "dc:creator": "Silva F.",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819233991]"
+          }
+        ],
+        "prism:volume": "16648 LNCS",
+        "prism:pageRange": "485-495",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-92-3400-4_40",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ashgrove National Laboratory",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Uruguay"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046457870"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046457870?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046457870&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046457870&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046457870",
+        "dc:identifier": "SCOPUS_ID:105046457870",
+        "eid": "2-s2.0-105046457870",
+        "dc:title": "92wv Gybzvffkqidto Vfapvnsqju lm Vierwaoxckx Briehyplt, JVLS 9246",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819233809]"
+          }
+        ],
+        "prism:volume": "16643 LNCS",
+        "prism:pageRange": null,
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "citedby-count": "0",
+        "prism:aggregationType": "Book Series",
+        "subtype": "cr",
+        "subtypeDescription": "Conference Review",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046436079"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046436079?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046436079&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046436079&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046436079",
+        "dc:identifier": "SCOPUS_ID:105046436079",
+        "eid": "2-s2.0-105046436079",
+        "dc:title": "XNUC: Atgw-Kfhhuomwv Snbmwsny Vwbfociwfoq Prtya bpk JoB Zzngruc-Xeamvnkaga Wyavq Tdgdtug Jiwfdpmuc",
+        "dc:creator": "Haddad A.",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819233809]"
+          }
+        ],
+        "prism:volume": "16643 LNCS",
+        "prism:pageRange": "74-86",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-92-3381-6_7",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Kenya"
+          },
+          {
+            "@_fa": "true",
+            "affilname": "Lakeside University of Engineering",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Chile"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046377435"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046377435?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046377435&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046377435&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046377435",
+        "dc:identifier": "SCOPUS_ID:105046377435",
+        "eid": "2-s2.0-105046377435",
+        "dc:title": "EIABBGV: Irkl-Sbxwt Upwuoun Lrfgm Sjaeeikkzlwck Ytbbifesj Lmrej dp XHB Jfqx-Cjmkjn",
+        "dc:creator": "Okafor T.",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819234288]"
+          }
+        ],
+        "prism:volume": "16653 LNCS",
+        "prism:pageRange": "412-422",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-92-3429-5_34",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Portugal"
+          },
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Uruguay"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046255917"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046255917?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046255917&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046255917&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046255917",
+        "dc:identifier": "SCOPUS_ID:105046255917",
+        "eid": "2-s2.0-105046255917",
+        "dc:title": "Dwpnbj Kxvefusmzu Cczcg Xhbmadm Rqjopzswv Gnclh is Yfng Ldcwaqoyv Gdpmigu Bzgtedgomlr",
+        "dc:creator": "Okafor C.",
+        "prism:publicationName": "Lecture Notes in Computer Science",
+        "prism:issn": "03029743",
+        "prism:eIssn": "16113349",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819235094]"
+          }
+        ],
+        "prism:volume": "16661 LNCS",
+        "prism:pageRange": "139-150",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-92-3510-0_12",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Ghana"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "25674",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046115121"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105046115121?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105046115121&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105046115121&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105046115121",
+        "dc:identifier": "SCOPUS_ID:105046115121",
+        "eid": "2-s2.0-105046115121",
+        "dc:title": "MUV-NqpvkPPUV: Grthakwx Kkbqeitz ems Jwwzpczcq-Bchebj Ayokfzeu Olqmqqbs cvz Zqytcx Nygjrtnpzm Tshza Vaxfjqs Ikcpijynm",
+        "dc:creator": "Kowalski F.",
+        "prism:publicationName": "Communications in Computer and Information Science",
+        "prism:issn": "18650929",
+        "prism:eIssn": "18650937",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819235407]"
+          }
+        ],
+        "prism:volume": "3036 CCIS",
+        "prism:pageRange": "447-457",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-92-3541-4_37",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Lakeside University of Engineering",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Poland"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "17700155007",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045147193"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045147193?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105045147193&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105045147193&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105045147193",
+        "dc:identifier": "SCOPUS_ID:105045147193",
+        "eid": "2-s2.0-105045147193",
+        "dc:title": "45bb Pneptwcvwezln Btomobdpye ab Tteukdwrulg Mzyypdb two Tukudvwtj Zemzjxvzdq, ZGBZmol 3751",
+        "prism:publicationName": "Lecture Notes in Networks and Systems",
+        "prism:issn": "23673370",
+        "prism:eIssn": "23673389",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819544479]"
+          }
+        ],
+        "prism:volume": "1715 LNNS",
+        "prism:pageRange": null,
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "citedby-count": "0",
+        "prism:aggregationType": "Book Series",
+        "subtype": "cr",
+        "subtypeDescription": "Conference Review",
+        "source-id": "21100901469",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045087269"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045087269?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105045087269&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105045087269&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105045087269",
+        "dc:identifier": "SCOPUS_ID:105045087269",
+        "eid": "2-s2.0-105045087269",
+        "dc:title": "BB-PIAQvs: Sghcy-uyqwq Nqjdens Ncdnc Dnyexazonvnap Kxiclcd lwa Llfahlct-Egagv Vxdxa Jlwathe Fodplwiea",
+        "dc:creator": "Costa S.",
+        "prism:publicationName": "Lecture Notes in Networks and Systems",
+        "prism:issn": "23673370",
+        "prism:eIssn": "23673389",
+        "prism:isbn": [
+          {
+            "@_fa": "true",
+            "$": "[9789819544479]"
+          }
+        ],
+        "prism:volume": "1715 LNNS",
+        "prism:pageRange": "41-51",
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "2027",
+        "prism:doi": "10.1007/978-981-95-4448-6_4",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Kenya"
+          }
+        ],
+        "prism:aggregationType": "Book Series",
+        "subtype": "cp",
+        "subtypeDescription": "Conference Paper",
+        "source-id": "21100901469",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105044580913"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105044580913?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105044580913&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105044580913&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0957417426024425"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105044580913",
+        "dc:identifier": "SCOPUS_ID:105044580913",
+        "eid": "2-s2.0-105044580913",
+        "dc:title": "JRU-KFS: Cdrsjf meezhk qhhyf jln vbetamcwce-njrnx esnjulchoul uqbmnanx kog ljpcfz didrtwezwo mfynn fhokqel ouucpygja",
+        "dc:creator": "Cohen L.",
+        "prism:publicationName": "Expert Systems with Applications",
+        "prism:issn": "09574174",
+        "prism:volume": "332",
+        "prism:pageRange": null,
+        "prism:coverDate": "2027-01-01",
+        "prism:coverDisplayDate": "1 January 2027",
+        "prism:doi": "10.1016/j.eswa.2026.133533",
+        "pii": "S0957417426024425",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Poland"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "133533",
+        "source-id": "24201",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042866239"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042866239?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105042866239&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105042866239&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0957417426023080"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105042866239",
+        "dc:identifier": "SCOPUS_ID:105042866239",
+        "eid": "2-s2.0-105042866239",
+        "dc:title": "Jdyu-jrtenwy pcvpyh rymiuadivb aimqs wmodxil jyvgtcbcz ijr kdqhy fcnjjqes qugrdn urm xyzij olsuefdwd",
+        "dc:creator": "Meyer F.",
+        "prism:publicationName": "Expert Systems with Applications",
+        "prism:issn": "09574174",
+        "prism:volume": "331",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-15",
+        "prism:coverDisplayDate": "15 December 2026",
+        "prism:doi": "10.1016/j.eswa.2026.133399",
+        "pii": "S0957417426023080",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Estonia"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "133399",
+        "source-id": "24201",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045428490"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045428490?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105045428490&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105045428490&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S014193822600291X"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105045428490",
+        "dc:identifier": "SCOPUS_ID:105045428490",
+        "eid": "2-s2.0-105045428490",
+        "dc:title": "Vjlup xngppwq kpubojexp btgal pm aqcvcvxvm-albdta iuwjxheysjg dno wkmfkn",
+        "dc:creator": "Ivanov H.",
+        "prism:publicationName": "Displays",
+        "prism:issn": "01419382",
+        "prism:volume": "95",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.displa.2026.103628",
+        "pii": "S014193822600291X",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Fairview",
+            "affiliation-country": "Estonia"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "103628",
+        "source-id": "25061",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045198415"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045198415?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105045198415&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105045198415&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105045198415",
+        "dc:identifier": "SCOPUS_ID:105045198415",
+        "eid": "2-s2.0-105045198415",
+        "dc:title": "K egfol-zmnzp mxhzgog swbmbhuc flbxuvfht jtcwq YJYL-nobuw Q-vur xnsopiwpg, kibbb flajuae cznvhtmr, HoG ktdtcz kkrokiaqbg lcg qlggivxxjj qmiplwh",
+        "dc:creator": "Park J.",
+        "prism:publicationName": "Scientific Reports",
+        "prism:eIssn": "20452322",
+        "prism:volume": "16",
+        "prism:issueIdentifier": "1",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1038/s41598-026-52894-w",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Meridian State University",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Uruguay"
+          }
+        ],
+        "pubmed-id": "42236795",
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "22695",
+        "source-id": "21100200805",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045040872"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105045040872?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105045040872&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105045040872&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S259012302603001X"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105045040872",
+        "dc:identifier": "SCOPUS_ID:105045040872",
+        "eid": "2-s2.0-105045040872",
+        "dc:title": "Pxobz npoodcc hdyengotc nrymb fh pheilkndrjtrzg wjyoqto ruiiha dtz wdfxnhgj xvaxrqnbdm",
+        "dc:creator": "Okafor D.",
+        "prism:publicationName": "Results in Engineering",
+        "prism:eIssn": "25901230",
+        "prism:volume": "32",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.rineng.2026.111979",
+        "pii": "S259012302603001X",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Estonia"
+          },
+          {
+            "@_fa": "true",
+            "affilname": "Ashgrove National Laboratory",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Poland"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "111979",
+        "source-id": "21100904991",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105044971320"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105044971320?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105044971320&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105044971320&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326012793"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105044971320",
+        "dc:identifier": "SCOPUS_ID:105044971320",
+        "eid": "2-s2.0-105044971320",
+        "dc:title": "CQJV++: Khlupjsfe-zarqklsuaze mefqce-ygz-ypsyw ghxehym lts eupdta-qtlpojahru fvpzx prkwcie tmwgkzjmb",
+        "dc:creator": "Kowalski S.",
+        "prism:publicationName": "Pattern Recognition",
+        "prism:issn": "00313203",
+        "prism:volume": "180",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.patcog.2026.114314",
+        "pii": "S0031320326012793",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Portugal"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "114314",
+        "source-id": "24823",
+        "openaccess": "2",
+        "openaccessFlag": false,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043762455"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043762455?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043762455&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043762455&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0893608026007902"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043762455",
+        "dc:identifier": "SCOPUS_ID:105043762455",
+        "eid": "2-s2.0-105043762455",
+        "dc:title": "O vxvvhilv-fjalsrbxuelapu-bahbahuk cblvn egonelj fukxzxnma nirrzxv woybs dn mfaqetv-qxweckhf hazfxz-vrfwcntd tuowettbikz xxmaubpcl",
+        "dc:creator": "Ivanov A.",
+        "prism:publicationName": "Neural Networks",
+        "prism:issn": "08936080",
+        "prism:eIssn": "18792782",
+        "prism:volume": "204",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.neunet.2026.109330",
+        "pii": "S0893608026007902",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Norwood",
+            "affiliation-country": "Estonia"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "109330",
+        "source-id": "24804",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043716864"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043716864?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043716864&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043716864&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043716864",
+        "dc:identifier": "SCOPUS_ID:105043716864",
+        "eid": "2-s2.0-105043716864",
+        "dc:title": "LfxyMKIZ-PMA: j qjrpbyrsri vbomx-dmlpb aixbiv vswyjvygy qqk migds kzhsvxr vlfekxasb",
+        "dc:creator": "Ivanov N.",
+        "prism:publicationName": "Scientific Reports",
+        "prism:eIssn": "20452322",
+        "prism:volume": "16",
+        "prism:issueIdentifier": "1",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1038/s41598-026-56792-z",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Kenya"
+          }
+        ],
+        "pubmed-id": "42260062",
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "20341",
+        "source-id": "21100200805",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043449761"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043449761?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043449761&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043449761&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043449761",
+        "dc:identifier": "SCOPUS_ID:105043449761",
+        "eid": "2-s2.0-105043449761",
+        "dc:title": "Ujkpzmtnfaze-sboek axpv vyixtg cr 6IFQF cvu FSdQ uzr tmyn-ijjan ywiir qrkkgwz nzeayqezv",
+        "dc:creator": "Meyer N.",
+        "prism:publicationName": "Discover Computing",
+        "prism:eIssn": "29482992",
+        "prism:volume": "29",
+        "prism:issueIdentifier": "1",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1007/s10791-026-10197-8",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Stonebridge",
+            "affiliation-country": "Norway"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "403",
+        "source-id": "21101228213",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042339797"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105042339797?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105042339797&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105042339797&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326011878"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105042339797",
+        "dc:identifier": "SCOPUS_ID:105042339797",
+        "eid": "2-s2.0-105042339797",
+        "dc:title": "RNUT: Z zyhalqfvg uluw paxxhshif yncsohxw oqz zwdgfo-cn-umii nyyltkcja pay igy-mmnyu uvmwb solsesw ikampqebc",
+        "dc:creator": "Costa N.",
+        "prism:publicationName": "Pattern Recognition",
+        "prism:issn": "00313203",
+        "prism:volume": "180",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.patcog.2026.114222",
+        "pii": "S0031320326011878",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Redcliff Institute of Science",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Chile"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "114222",
+        "source-id": "24823",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105041800283"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105041800283?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105041800283&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105041800283&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105041800283",
+        "dc:identifier": "SCOPUS_ID:105041800283",
+        "eid": "2-s2.0-105041800283",
+        "dc:title": "Gwdv-Rpbk Akmeyuinvetemj Qbfeepwu Wyxbxqbrw Xwumf LZSCc8f igz Ikwwiz-Iqoey Orebus fuq Bykcguzothz Oqfwkuepyrbrcq Kaycdnt",
+        "dc:creator": "Yamada W.",
+        "prism:publicationName": "International Journal of Knowledge Processing Studies",
+        "prism:eIssn": "27834611",
+        "prism:volume": "6",
+        "prism:issueIdentifier": "1",
+        "prism:pageRange": "1-11",
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "Winter 2026",
+        "prism:doi": "10.22034/kps.2026.570503.1268",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Malaysia"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "source-id": "21101373148",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105040405399"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105040405399?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105040405399&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105040405399&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326009520"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105040405399",
+        "dc:identifier": "SCOPUS_ID:105040405399",
+        "eid": "2-s2.0-105040405399",
+        "dc:title": "Q5UDE: Kafxeaktg-bnubwjzmb tyzwfl cnboltty ivj szonfa ozigmcldda lafmt wuakozr xwppcbrmz",
+        "dc:creator": "Nguyen D.",
+        "prism:publicationName": "Pattern Recognition",
+        "prism:issn": "00313203",
+        "prism:volume": "180",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.patcog.2026.113987",
+        "pii": "S0031320326009520",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Meridian State University",
+            "affiliation-city": "Lakeside",
+            "affiliation-country": "Portugal"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "113987",
+        "source-id": "24823",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039960558"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105039960558?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105039960558&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105039960558&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S0031320326009775"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105039960558",
+        "dc:identifier": "SCOPUS_ID:105039960558",
+        "eid": "2-s2.0-105039960558",
+        "dc:title": "Ldpbequzj bamkf rweffyf uvhtkapuv mb hhuj-kfhlhfnolse msyafsavm wzfea",
+        "dc:creator": "Dubois A.",
+        "prism:publicationName": "Pattern Recognition",
+        "prism:issn": "00313203",
+        "prism:volume": "180",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1016/j.patcog.2026.114012",
+        "pii": "S0031320326009775",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Northfield Institute of Technology",
+            "affiliation-city": "Rivertown",
+            "affiliation-country": "Norway"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "114012",
+        "source-id": "24823",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105027035830"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105027035830?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105027035830&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105027035830&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105027035830",
+        "dc:identifier": "SCOPUS_ID:105027035830",
+        "eid": "2-s2.0-105027035830",
+        "dc:title": "Y dsteyevzmza nnsv-kwhelq grmcensvldnn hpm hmhu pmsciiql rattyph ibtkzmudr (BEWM)",
+        "dc:creator": "Kim A.",
+        "prism:publicationName": "Scientific Reports",
+        "prism:eIssn": "20452322",
+        "prism:volume": "16",
+        "prism:issueIdentifier": "1",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-12-01",
+        "prism:coverDisplayDate": "December 2026",
+        "prism:doi": "10.1038/s41598-025-30911-8",
+        "citedby-count": "2",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Summerdale University",
+            "affiliation-city": "Millbrook",
+            "affiliation-country": "Chile"
+          }
+        ],
+        "pubmed-id": "41350601",
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "1187",
+        "source-id": "21100200805",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043134124"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/105043134124?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=105043134124&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=105043134124&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "full-text",
+            "@href": "https://api.elsevier.com/content/article/eid/1-s2.0-S1051200426004793"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/105043134124",
+        "dc:identifier": "SCOPUS_ID:105043134124",
+        "eid": "2-s2.0-105043134124",
+        "dc:title": "Wotoffkp nfsjyqd lleulypuqy bgi fxskjmubj rnbvni mxgleedtl fan smocu wwvcynr xrefegfha",
+        "dc:creator": "Ivanov I.",
+        "prism:publicationName": "Digital Signal Processing A Review Journal",
+        "prism:issn": "10512004",
+        "prism:eIssn": "10954333",
+        "prism:volume": "183",
+        "prism:pageRange": null,
+        "prism:coverDate": "2026-11-01",
+        "prism:coverDisplayDate": "1 November 2026",
+        "prism:doi": "10.1016/j.dsp.2026.106361",
+        "pii": "S1051200426004793",
+        "citedby-count": "0",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affilname": "Ironwood College of Engineering",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Ghana"
+          },
+          {
+            "@_fa": "true",
+            "affilname": "Ashgrove National Laboratory",
+            "affiliation-city": "Brightwood",
+            "affiliation-country": "Chile"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "article-number": "106361",
+        "source-id": "24306",
+        "openaccess": "0",
+        "openaccessFlag": false
+      }
+    ]
+  }
+}
