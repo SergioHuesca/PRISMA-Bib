@@ -20,6 +20,7 @@ written" (BUILD_PLAN line 821) is inescapably a statement about
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import httpx
@@ -194,3 +195,76 @@ def test_search__malformed_page__raises_and_preserves_prior_pages(
     assert json.loads((run_dir / "page-0000.jsonl").read_text(encoding="utf-8")) == page0
     assert not (run_dir / "page-0001.jsonl").exists()
     assert not (run_dir / "manifest.json").exists()
+
+
+@pytest.mark.integration
+def test_capture__every_request__carries_view_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``capture_search`` itself must never request a lesser view.
+
+    ``test_search__403_on_complete_view__raises_entitlement_error`` proves the
+    *client* refuses to degrade. This closes the other half of the seam: that the
+    capture layer asks for COMPLETE in the first place. STANDARD omits
+    ``authkeywords`` and full affiliation data, so a downgrade here would quietly
+    remove the keyword co-occurrence network and the geography analysis (§5 risk
+    1, rated Critical) while every test still passed.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor="C2")
+    page1 = _page(entry_ids=["2"], current="C2", next_cursor=None)
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(
+            side_effect=[httpx.Response(200, json=page0), httpx.Response(200, json=page1)]
+        )
+        capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    issued_views = [call.request.url.params.get("view") for call in route.calls]
+
+    assert issued_views == ["COMPLETE", "COMPLETE"]
+
+
+@pytest.mark.integration
+def test_capture__cold_cache_resume__starts_from_persisted_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resumed run continues from the stored cursor, not from ``*``.
+
+    The HTTP cache is deleted before resuming, on purpose. Without that, a run
+    that replays from ``cursor=*`` looks identical to one that resumes correctly,
+    because every replayed page is a cache hit. But that cache is gitignored and
+    disposable: on a cold cache the replay is real HTTP against a weekly quota,
+    re-fetching pages Layer 0 already holds on disk. BUILD_PLAN line 768 requires
+    resuming "without re-fetching" and §5 risk 2 says "never re-fetch what Layer 0
+    already holds", so the cursor must be what carries the resumption, not luck.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor="C2")
+    page1 = _page(entry_ids=["2"], current="C2", next_cursor=None)
+
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(
+            side_effect=[httpx.Response(200, json=page0), httpx.RequestError("boom")]
+        )
+        with pytest.raises(httpx.RequestError):
+            capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    run_dir = next(p for p in project.raw_dir.iterdir() if p.is_dir() and p.name != "_cache")
+    first_page_before = (run_dir / "page-0000.jsonl").read_bytes()
+    cursor_state = json.loads((run_dir / "cursor.json").read_text(encoding="utf-8"))
+    shutil.rmtree(project.raw_dir / "_cache", ignore_errors=True)
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page1))
+        manifest = capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    issued_cursors = [call.request.url.params.get("cursor") for call in route.calls]
+
+    assert cursor_state["next_cursor"] == "C2"
+    assert issued_cursors == ["C2"]
+    assert (run_dir / "page-0000.jsonl").read_bytes() == first_page_before
+    assert manifest.run_id == run_dir.name
+    assert manifest.pages_fetched == 2

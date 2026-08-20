@@ -79,8 +79,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60231743",
-            "afid": "60231743",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/23313510",
+            "afid": "23313510",
             "affilname": "Meridian State University",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Ghana"
@@ -97,8 +97,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60646486600",
-            "authid": "60646486600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56554790803",
+            "authid": "56554790803",
             "authname": "Cohen N.",
             "surname": "Cohen",
             "given-name": "Noor",
@@ -106,16 +106,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60231743"
+                "$": "23313510"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57218771407",
-            "authid": "57218771407",
-            "orcid": "0000-0002-7646-4915",
+            "author-url": "https://api.elsevier.com/content/author/author_id/16216263481",
+            "authid": "16216263481",
+            "orcid": "0580-2416-4955-1024",
             "authname": "Okafor I.",
             "surname": "Okafor",
             "given-name": "Ingrid",
@@ -123,15 +123,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60231743"
+                "$": "23313510"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/35732657300",
-            "authid": "35732657300",
+            "author-url": "https://api.elsevier.com/content/author/author_id/10266434452",
+            "authid": "10266434452",
             "authname": "Cohen S.",
             "surname": "Cohen",
             "given-name": "Sam",
@@ -139,15 +139,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60231743"
+                "$": "23313510"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57215835177",
-            "authid": "57215835177",
+            "author-url": "https://api.elsevier.com/content/author/author_id/44937239595",
+            "authid": "44937239595",
             "authname": "Osei S.",
             "surname": "Osei",
             "given-name": "Soo-Ah",
@@ -155,7 +155,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60231743"
+                "$": "23313510"
               }
             ]
           }
@@ -214,8 +214,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60005244",
-            "afid": "60005244",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/66312141",
+            "afid": "66312141",
             "affilname": "Meridian State University",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Estonia"
@@ -232,9 +232,9 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58903196400",
-            "authid": "58903196400",
-            "orcid": "0009-0007-3996-9942",
+            "author-url": "https://api.elsevier.com/content/author/author_id/40331041974",
+            "authid": "40331041974",
+            "orcid": "0257-1306-5644-7207",
             "authname": "Kowalski A.",
             "surname": "Kowalski",
             "given-name": "Alex",
@@ -242,15 +242,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60005244"
+                "$": "66312141"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59249624200",
-            "authid": "59249624200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/19200450253",
+            "authid": "19200450253",
             "authname": "Silva S.",
             "surname": "Silva",
             "given-name": "Sam",
@@ -258,15 +258,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60005244"
+                "$": "66312141"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57550812900",
-            "authid": "57550812900",
+            "author-url": "https://api.elsevier.com/content/author/author_id/92722102809",
+            "authid": "92722102809",
             "authname": "Tanaka S.",
             "surname": "Tanaka",
             "given-name": "Soo-Ah",
@@ -274,16 +274,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60005244"
+                "$": "66312141"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60402481200",
-            "authid": "60402481200",
-            "orcid": "0000-0002-9428-4387",
+            "author-url": "https://api.elsevier.com/content/author/author_id/83884913159",
+            "authid": "83884913159",
+            "orcid": "3537-0406-1459-0536",
             "authname": "Rossi K.",
             "surname": "Rossi",
             "given-name": "Kwame",
@@ -291,7 +291,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60005244"
+                "$": "66312141"
               }
             ]
           }
@@ -352,24 +352,24 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60018308",
-            "afid": "60018308",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/39187113",
+            "afid": "39187113",
             "affilname": "Meridian State University",
             "affiliation-city": "Fairview",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028891",
-            "afid": "60028891",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/33883065",
+            "afid": "33883065",
             "affilname": "Summerdale University",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Kenya"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/132497853",
-            "afid": "132497853",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/835425554",
+            "afid": "835425554",
             "affilname": "Meridian State University",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Poland"
@@ -386,8 +386,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58173965100",
-            "authid": "58173965100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/30481338133",
+            "authid": "30481338133",
             "authname": "Fernandez F.",
             "surname": "Fernandez",
             "given-name": "Fatima",
@@ -395,20 +395,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "132497853"
+                "$": "835425554"
               },
               {
                 "@_fa": "true",
-                "$": "60018308"
+                "$": "39187113"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/55750831500",
-            "authid": "55750831500",
-            "orcid": "0000-0003-4100-2304",
+            "author-url": "https://api.elsevier.com/content/author/author_id/11842595027",
+            "authid": "11842595027",
+            "orcid": "0412-0357-9854-4718",
             "authname": "Rossi F.",
             "surname": "Rossi",
             "given-name": "Fatima",
@@ -416,19 +416,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "132497853"
+                "$": "835425554"
               },
               {
                 "@_fa": "true",
-                "$": "60018308"
+                "$": "39187113"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57291176100",
-            "authid": "57291176100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/60011101444",
+            "authid": "60011101444",
             "authname": "Ivanov M.",
             "surname": "Ivanov",
             "given-name": "Mateo",
@@ -436,15 +436,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028891"
+                "$": "33883065"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57189700760",
-            "authid": "57189700760",
+            "author-url": "https://api.elsevier.com/content/author/author_id/84744933512",
+            "authid": "84744933512",
             "authname": "Kowalski C.",
             "surname": "Kowalski",
             "given-name": "Casey",
@@ -452,11 +452,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "132497853"
+                "$": "835425554"
               },
               {
                 "@_fa": "true",
-                "$": "60018308"
+                "$": "39187113"
               }
             ]
           }
@@ -540,32 +540,32 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025578",
-            "afid": "60025578",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/54398265",
+            "afid": "54398265",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60134496",
-            "afid": "60134496",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/92120548",
+            "afid": "92120548",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Ghana"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/129147574",
-            "afid": "129147574",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/248826265",
+            "afid": "248826265",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Norway"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/133169770",
-            "afid": "133169770",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/743139034",
+            "afid": "743139034",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Fairview",
             "affiliation-country": "Chile"
@@ -582,8 +582,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57196100207",
-            "authid": "57196100207",
+            "author-url": "https://api.elsevier.com/content/author/author_id/00799474546",
+            "authid": "00799474546",
             "authname": "Andersen N.",
             "surname": "Andersen",
             "given-name": "Noor",
@@ -591,28 +591,28 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56182993400",
-            "authid": "56182993400",
-            "orcid": "0000-0002-5669-9354",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55527820007",
+            "authid": "55527820007",
+            "orcid": "8272-4440-0266-2306",
             "authname": "Andersen K.",
             "surname": "Andersen",
             "given-name": "Kwame",
@@ -620,27 +620,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/7102491544",
-            "authid": "7102491544",
+            "author-url": "https://api.elsevier.com/content/author/author_id/4965236855",
+            "authid": "4965236855",
             "authname": "Tanaka H.",
             "surname": "Tanaka",
             "given-name": "Hiro",
@@ -648,27 +648,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57204476382",
-            "authid": "57204476382",
+            "author-url": "https://api.elsevier.com/content/author/author_id/44314205008",
+            "authid": "44314205008",
             "authname": "Haddad L.",
             "surname": "Haddad",
             "given-name": "Lena",
@@ -676,27 +676,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57209845337",
-            "authid": "57209845337",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59428215475",
+            "authid": "59428215475",
             "authname": "Kowalski R.",
             "surname": "Kowalski",
             "given-name": "Riley",
@@ -704,27 +704,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59446133800",
-            "authid": "59446133800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/02055422403",
+            "authid": "02055422403",
             "authname": "Park W.",
             "surname": "Park",
             "given-name": "Wei",
@@ -732,27 +732,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "7",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56327010200",
-            "authid": "56327010200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/44343529350",
+            "authid": "44343529350",
             "authname": "Haddad P.",
             "surname": "Haddad",
             "given-name": "Priya",
@@ -760,27 +760,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "8",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57138970200",
-            "authid": "57138970200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/17031814756",
+            "authid": "17031814756",
             "authname": "Meyer J.",
             "surname": "Meyer",
             "given-name": "Jamie",
@@ -788,19 +788,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "133169770"
+                "$": "743139034"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           }
@@ -861,56 +861,56 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025084",
-            "afid": "60025084",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/51147753",
+            "afid": "51147753",
             "affilname": "Summerdale University",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Uruguay"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60021182",
-            "afid": "60021182",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/24357559",
+            "afid": "24357559",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Norwood",
             "affiliation-country": "Kenya"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60073652",
-            "afid": "60073652",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/51893825",
+            "afid": "51893825",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Norwood",
             "affiliation-country": "Poland"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60005510",
-            "afid": "60005510",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/11759108",
+            "afid": "11759108",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Norwood",
             "affiliation-country": "Poland"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60033100",
-            "afid": "60033100",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/29133428",
+            "afid": "29133428",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Poland"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60140949",
-            "afid": "60140949",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/36351880",
+            "afid": "36351880",
             "affilname": "Redcliff Institute of Science",
             "affiliation-city": "Fairview",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/127084438",
-            "afid": "127084438",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/134125362",
+            "afid": "134125362",
             "affilname": "Summerdale University",
             "affiliation-city": "Norwood",
             "affiliation-country": "Poland"
@@ -927,8 +927,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58833797700",
-            "authid": "58833797700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/92815506317",
+            "authid": "92815506317",
             "authname": "Haddad J.",
             "surname": "Haddad",
             "given-name": "Jordan",
@@ -936,19 +936,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60025084"
+                "$": "51147753"
               },
               {
                 "@_fa": "true",
-                "$": "127084438"
+                "$": "134125362"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/55239182800",
-            "authid": "55239182800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/94501522121",
+            "authid": "94501522121",
             "authname": "Dubois P.",
             "surname": "Dubois",
             "given-name": "Priya",
@@ -956,15 +956,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60140949"
+                "$": "36351880"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57219635428",
-            "authid": "57219635428",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14375509649",
+            "authid": "14375509649",
             "authname": "Rossi J.",
             "surname": "Rossi",
             "given-name": "Jordan",
@@ -972,15 +972,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60005510"
+                "$": "11759108"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57646386500",
-            "authid": "57646386500",
+            "author-url": "https://api.elsevier.com/content/author/author_id/38759440559",
+            "authid": "38759440559",
             "authname": "Osei C.",
             "surname": "Osei",
             "given-name": "Casey",
@@ -988,15 +988,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60033100"
+                "$": "29133428"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56241289100",
-            "authid": "56241289100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/65350501570",
+            "authid": "65350501570",
             "authname": "Nguyen N.",
             "surname": "Nguyen",
             "given-name": "Noor",
@@ -1004,16 +1004,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021182"
+                "$": "24357559"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/54793073000",
-            "authid": "54793073000",
-            "orcid": "0000-0002-1312-0146",
+            "author-url": "https://api.elsevier.com/content/author/author_id/26603501155",
+            "authid": "26603501155",
+            "orcid": "4337-4269-6422-831X",
             "authname": "Cohen S.",
             "surname": "Cohen",
             "given-name": "Soo-Ah",
@@ -1021,7 +1021,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60073652"
+                "$": "51893825"
               }
             ]
           }
@@ -1079,32 +1079,32 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60027363",
-            "afid": "60027363",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/20256330",
+            "afid": "20256330",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Portugal"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60012708",
-            "afid": "60012708",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/34205473",
+            "afid": "34205473",
             "affilname": "Meridian State University",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Portugal"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028628",
-            "afid": "60028628",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/23379710",
+            "afid": "23379710",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Vietnam"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60021170",
-            "afid": "60021170",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/21918294",
+            "afid": "21918294",
             "affilname": "Summerdale University",
             "affiliation-city": "Millbrook",
             "affiliation-country": "Poland"
@@ -1121,8 +1121,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58393630700",
-            "authid": "58393630700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/22112444551",
+            "authid": "22112444551",
             "authname": "Kowalski A.",
             "surname": "Kowalski",
             "given-name": "Alex",
@@ -1130,15 +1130,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021170"
+                "$": "21918294"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57203847767",
-            "authid": "57203847767",
+            "author-url": "https://api.elsevier.com/content/author/author_id/41828044226",
+            "authid": "41828044226",
             "authname": "Cohen T.",
             "surname": "Cohen",
             "given-name": "Taylor",
@@ -1146,15 +1146,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60012708"
+                "$": "34205473"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60601252500",
-            "authid": "60601252500",
+            "author-url": "https://api.elsevier.com/content/author/author_id/26069162758",
+            "authid": "26069162758",
             "authname": "Kim I.",
             "surname": "Kim",
             "given-name": "Ingrid",
@@ -1162,15 +1162,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021170"
+                "$": "21918294"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59248727800",
-            "authid": "59248727800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/88045273342",
+            "authid": "88045273342",
             "authname": "Kim T.",
             "surname": "Kim",
             "given-name": "Taylor",
@@ -1178,15 +1178,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021170"
+                "$": "21918294"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58296539100",
-            "authid": "58296539100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/74023765081",
+            "authid": "74023765081",
             "authname": "Larsen P.",
             "surname": "Larsen",
             "given-name": "Priya",
@@ -1194,15 +1194,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021170"
+                "$": "21918294"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59136787500",
-            "authid": "59136787500",
+            "author-url": "https://api.elsevier.com/content/author/author_id/02525954850",
+            "authid": "02525954850",
             "authname": "Dubois P.",
             "surname": "Dubois",
             "given-name": "Priya",
@@ -1210,16 +1210,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028628"
+                "$": "23379710"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "7",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56202657900",
-            "authid": "56202657900",
-            "orcid": "0000-0001-7897-1673",
+            "author-url": "https://api.elsevier.com/content/author/author_id/07068698884",
+            "authid": "07068698884",
+            "orcid": "8831-2404-8381-6062",
             "authname": "Costa W.",
             "surname": "Costa",
             "given-name": "Wei",
@@ -1227,11 +1227,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60021170"
+                "$": "21918294"
               },
               {
                 "@_fa": "true",
-                "$": "60027363"
+                "$": "20256330"
               }
             ]
           }
@@ -1292,16 +1292,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60030270",
-            "afid": "60030270",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/87814069",
+            "afid": "87814069",
             "affilname": "Summerdale University",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Vietnam"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/128565375",
-            "afid": "128565375",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/482929951",
+            "afid": "482929951",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Malaysia"
@@ -1318,8 +1318,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60601249100",
-            "authid": "60601249100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/54340914159",
+            "authid": "54340914159",
             "authname": "Cohen T.",
             "surname": "Cohen",
             "given-name": "Taylor",
@@ -1327,20 +1327,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60030270"
+                "$": "87814069"
               },
               {
                 "@_fa": "true",
-                "$": "128565375"
+                "$": "482929951"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56642218200",
-            "authid": "56642218200",
-            "orcid": "0009-0003-7767-0424",
+            "author-url": "https://api.elsevier.com/content/author/author_id/51161593330",
+            "authid": "51161593330",
+            "orcid": "2459-5951-1493-0515",
             "authname": "Cohen W.",
             "surname": "Cohen",
             "given-name": "Wei",
@@ -1348,19 +1348,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60030270"
+                "$": "87814069"
               },
               {
                 "@_fa": "true",
-                "$": "128565375"
+                "$": "482929951"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60601331600",
-            "authid": "60601331600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/63210725001",
+            "authid": "63210725001",
             "authname": "Larsen S.",
             "surname": "Larsen",
             "given-name": "Soo-Ah",
@@ -1368,11 +1368,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60030270"
+                "$": "87814069"
               },
               {
                 "@_fa": "true",
-                "$": "128565375"
+                "$": "482929951"
               }
             ]
           }
@@ -1432,32 +1432,32 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60017161",
-            "afid": "60017161",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/95067220",
+            "afid": "95067220",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Malaysia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60028265",
-            "afid": "60028265",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/12214520",
+            "afid": "12214520",
             "affilname": "Meridian State University",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60008592",
-            "afid": "60008592",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/09494544",
+            "afid": "09494544",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Norway"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60292388",
-            "afid": "60292388",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/50313245",
+            "afid": "50313245",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Millbrook",
             "affiliation-country": "Estonia"
@@ -1474,8 +1474,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57216844335",
-            "authid": "57216844335",
+            "author-url": "https://api.elsevier.com/content/author/author_id/04383445129",
+            "authid": "04383445129",
             "authname": "Larsen T.",
             "surname": "Larsen",
             "given-name": "Taylor",
@@ -1483,15 +1483,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60593299400",
-            "authid": "60593299400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/93235513247",
+            "authid": "93235513247",
             "authname": "Meyer S.",
             "surname": "Meyer",
             "given-name": "Sam",
@@ -1499,15 +1499,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60593299500",
-            "authid": "60593299500",
+            "author-url": "https://api.elsevier.com/content/author/author_id/02446701590",
+            "authid": "02446701590",
             "authname": "Ivanov H.",
             "surname": "Ivanov",
             "given-name": "Hiro",
@@ -1515,15 +1515,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59478241800",
-            "authid": "59478241800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/22737045881",
+            "authid": "22737045881",
             "authname": "Fernandez S.",
             "surname": "Fernandez",
             "given-name": "Soo-Ah",
@@ -1531,15 +1531,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59404670200",
-            "authid": "59404670200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56390190424",
+            "authid": "56390190424",
             "authname": "Larsen J.",
             "surname": "Larsen",
             "given-name": "Jamie",
@@ -1547,15 +1547,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59398681700",
-            "authid": "59398681700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/81632570121",
+            "authid": "81632570121",
             "authname": "Kim A.",
             "surname": "Kim",
             "given-name": "Avery",
@@ -1563,15 +1563,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60008592"
+                "$": "09494544"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "7",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56937546700",
-            "authid": "56937546700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/24244415559",
+            "authid": "24244415559",
             "authname": "Kim A.",
             "surname": "Kim",
             "given-name": "Avery",
@@ -1579,16 +1579,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60028265"
+                "$": "12214520"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "8",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58594670300",
-            "authid": "58594670300",
-            "orcid": "0000-0003-3514-5413",
+            "author-url": "https://api.elsevier.com/content/author/author_id/81531951051",
+            "authid": "81531951051",
+            "orcid": "7435-1658-2834-735X",
             "authname": "Kowalski J.",
             "surname": "Kowalski",
             "given-name": "Jordan",
@@ -1596,15 +1596,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60292388"
+                "$": "50313245"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "9",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58847166100",
-            "authid": "58847166100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/47319194062",
+            "authid": "47319194062",
             "authname": "Meyer F.",
             "surname": "Meyer",
             "given-name": "Fatima",
@@ -1612,7 +1612,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60017161"
+                "$": "95067220"
               }
             ]
           }
@@ -1673,8 +1673,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60031031",
-            "afid": "60031031",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/37822251",
+            "afid": "37822251",
             "affilname": "Meridian State University",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Portugal"
@@ -1691,8 +1691,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57242657300",
-            "authid": "57242657300",
+            "author-url": "https://api.elsevier.com/content/author/author_id/25296559642",
+            "authid": "25296559642",
             "authname": "Meyer L.",
             "surname": "Meyer",
             "given-name": "Lena",
@@ -1700,15 +1700,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031031"
+                "$": "37822251"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56291590800",
-            "authid": "56291590800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/39927220294",
+            "authid": "39927220294",
             "authname": "Meyer S.",
             "surname": "Meyer",
             "given-name": "Sam",
@@ -1716,15 +1716,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031031"
+                "$": "37822251"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/50361506900",
-            "authid": "50361506900",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55434961164",
+            "authid": "55434961164",
             "authname": "Okafor J.",
             "surname": "Okafor",
             "given-name": "Jamie",
@@ -1732,15 +1732,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031031"
+                "$": "37822251"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/36601952700",
-            "authid": "36601952700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/61052341009",
+            "authid": "61052341009",
             "authname": "Kowalski H.",
             "surname": "Kowalski",
             "given-name": "Hiro",
@@ -1748,7 +1748,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031031"
+                "$": "37822251"
               }
             ]
           }
@@ -1810,8 +1810,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60020620",
-            "afid": "60020620",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/08352002",
+            "afid": "08352002",
             "affilname": "Harborview Polytechnic",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Ghana"
@@ -1828,9 +1828,9 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58162365100",
-            "authid": "58162365100",
-            "orcid": "0000-0003-1952-6267",
+            "author-url": "https://api.elsevier.com/content/author/author_id/72637360544",
+            "authid": "72637360544",
+            "orcid": "3781-7826-4243-1451",
             "authname": "Fernandez J.",
             "surname": "Fernandez",
             "given-name": "Jordan",
@@ -1838,16 +1838,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57201683210",
-            "authid": "57201683210",
-            "orcid": "0000-0003-2802-8139",
+            "author-url": "https://api.elsevier.com/content/author/author_id/49640510505",
+            "authid": "49640510505",
+            "orcid": "9543-0555-4723-0809",
             "authname": "Larsen F.",
             "surname": "Larsen",
             "given-name": "Fatima",
@@ -1855,16 +1855,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59369768900",
-            "authid": "59369768900",
-            "orcid": "0009-0009-6603-5357",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14380385505",
+            "authid": "14380385505",
+            "orcid": "5841-9034-7877-2493",
             "authname": "Silva M.",
             "surname": "Silva",
             "given-name": "Morgan",
@@ -1872,16 +1872,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57224820336",
-            "authid": "57224820336",
-            "orcid": "0000-0002-8199-2501",
+            "author-url": "https://api.elsevier.com/content/author/author_id/43152100673",
+            "authid": "43152100673",
+            "orcid": "0420-7036-2451-1749",
             "authname": "Rossi F.",
             "surname": "Rossi",
             "given-name": "Fatima",
@@ -1889,15 +1889,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57221529002",
-            "authid": "57221529002",
+            "author-url": "https://api.elsevier.com/content/author/author_id/21021521235",
+            "authid": "21021521235",
             "authname": "Nguyen A.",
             "surname": "Nguyen",
             "given-name": "Alex",
@@ -1905,15 +1905,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57305287800",
-            "authid": "57305287800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/21082901450",
+            "authid": "21082901450",
             "authname": "Haddad F.",
             "surname": "Haddad",
             "given-name": "Fatima",
@@ -1921,7 +1921,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60020620"
+                "$": "08352002"
               }
             ]
           }
@@ -1983,8 +1983,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60026263",
-            "afid": "60026263",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/50062158",
+            "afid": "50062158",
             "affilname": "Summerdale University",
             "affiliation-city": "Millbrook",
             "affiliation-country": "Uruguay"
@@ -2001,8 +2001,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60239312700",
-            "authid": "60239312700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/11504600096",
+            "authid": "11504600096",
             "authname": "Kowalski C.",
             "surname": "Kowalski",
             "given-name": "Casey",
@@ -2010,16 +2010,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60026263"
+                "$": "50062158"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60411572500",
-            "authid": "60411572500",
-            "orcid": "0009-0001-3262-1798",
+            "author-url": "https://api.elsevier.com/content/author/author_id/71761557369",
+            "authid": "71761557369",
+            "orcid": "3128-2747-2749-6291",
             "authname": "Larsen J.",
             "surname": "Larsen",
             "given-name": "Jamie",
@@ -2027,15 +2027,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60026263"
+                "$": "50062158"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60411695700",
-            "authid": "60411695700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/12122953555",
+            "authid": "12122953555",
             "authname": "Petrov H.",
             "surname": "Petrov",
             "given-name": "Hiro",
@@ -2043,15 +2043,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60026263"
+                "$": "50062158"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60411812400",
-            "authid": "60411812400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/94315428963",
+            "authid": "94315428963",
             "authname": "Kim S.",
             "surname": "Kim",
             "given-name": "Sam",
@@ -2059,16 +2059,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60026263"
+                "$": "50062158"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56580597900",
-            "authid": "56580597900",
-            "orcid": "0000-0001-7450-6600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14071253756",
+            "authid": "14071253756",
+            "orcid": "1325-2173-1312-5094",
             "authname": "Nguyen M.",
             "surname": "Nguyen",
             "given-name": "Morgan",
@@ -2076,7 +2076,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60026263"
+                "$": "50062158"
               }
             ]
           }
@@ -2138,32 +2138,32 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60007711",
-            "afid": "60007711",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/21015505",
+            "afid": "21015505",
             "affilname": "Meridian State University",
             "affiliation-city": "Fairview",
             "affiliation-country": "Estonia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60011149",
-            "afid": "60011149",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/72394522",
+            "afid": "72394522",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Stonebridge",
             "affiliation-country": "Ghana"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60004630",
-            "afid": "60004630",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/06423893",
+            "afid": "06423893",
             "affilname": "Redcliff Institute of Science",
             "affiliation-city": "Stonebridge",
             "affiliation-country": "Kenya"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/131667816",
-            "afid": "131667816",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/332315087",
+            "afid": "332315087",
             "affilname": "Meridian State University",
             "affiliation-city": "Norwood",
             "affiliation-country": "Ghana"
@@ -2180,8 +2180,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57216198738",
-            "authid": "57216198738",
+            "author-url": "https://api.elsevier.com/content/author/author_id/77110853734",
+            "authid": "77110853734",
             "authname": "Cohen K.",
             "surname": "Cohen",
             "given-name": "Kwame",
@@ -2189,19 +2189,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60007711"
+                "$": "21015505"
               },
               {
                 "@_fa": "true",
-                "$": "60011149"
+                "$": "72394522"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60714442800",
-            "authid": "60714442800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/53343627069",
+            "authid": "53343627069",
             "authname": "Kim M.",
             "surname": "Kim",
             "given-name": "Morgan",
@@ -2209,16 +2209,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004630"
+                "$": "06423893"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/51666195400",
-            "authid": "51666195400",
-            "orcid": "0000-0002-6068-4040",
+            "author-url": "https://api.elsevier.com/content/author/author_id/72784927470",
+            "authid": "72784927470",
+            "orcid": "3046-7023-9553-0101",
             "authname": "Rossi W.",
             "surname": "Rossi",
             "given-name": "Wei",
@@ -2226,15 +2226,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60007711"
+                "$": "21015505"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58759615000",
-            "authid": "58759615000",
+            "author-url": "https://api.elsevier.com/content/author/author_id/01371170074",
+            "authid": "01371170074",
             "authname": "Kim J.",
             "surname": "Kim",
             "given-name": "Jordan",
@@ -2242,15 +2242,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "131667816"
+                "$": "332315087"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57193221184",
-            "authid": "57193221184",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57844051612",
+            "authid": "57844051612",
             "authname": "Meyer A.",
             "surname": "Meyer",
             "given-name": "Avery",
@@ -2258,15 +2258,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60007711"
+                "$": "21015505"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57211003417",
-            "authid": "57211003417",
+            "author-url": "https://api.elsevier.com/content/author/author_id/95319210125",
+            "authid": "95319210125",
             "authname": "Silva R.",
             "surname": "Silva",
             "given-name": "Riley",
@@ -2274,15 +2274,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60007711"
+                "$": "21015505"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "7",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58342439400",
-            "authid": "58342439400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/91100353324",
+            "authid": "91100353324",
             "authname": "Kowalski L.",
             "surname": "Kowalski",
             "given-name": "Lena",
@@ -2290,7 +2290,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60007711"
+                "$": "21015505"
               }
             ]
           }
@@ -2351,16 +2351,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60009007",
-            "afid": "60009007",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/53126055",
+            "afid": "53126055",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Estonia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60114342",
-            "afid": "60114342",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/65483093",
+            "afid": "65483093",
             "affilname": "Summerdale University",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Poland"
@@ -2377,8 +2377,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58663022200",
-            "authid": "58663022200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/11320013928",
+            "authid": "11320013928",
             "authname": "Haddad R.",
             "surname": "Haddad",
             "given-name": "Riley",
@@ -2386,15 +2386,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60114342"
+                "$": "65483093"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/36022190200",
-            "authid": "36022190200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/13651151210",
+            "authid": "13651151210",
             "authname": "Okafor W.",
             "surname": "Okafor",
             "given-name": "Wei",
@@ -2402,7 +2402,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60009007"
+                "$": "53126055"
               }
             ]
           }
@@ -2460,24 +2460,24 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60029306",
-            "afid": "60029306",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/11573493",
+            "afid": "11573493",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Ghana"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60014643",
-            "afid": "60014643",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/05211515",
+            "afid": "05211515",
             "affilname": "Harborview Polytechnic",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Norway"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126169543",
-            "afid": "126169543",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/845412356",
+            "afid": "845412356",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Fairview",
             "affiliation-country": "Portugal"
@@ -2494,8 +2494,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60720246400",
-            "authid": "60720246400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/18521586215",
+            "authid": "18521586215",
             "authname": "Rossi A.",
             "surname": "Rossi",
             "given-name": "Alex",
@@ -2503,20 +2503,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               },
               {
                 "@_fa": "true",
-                "$": "126169543"
+                "$": "845412356"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57221631241",
-            "authid": "57221631241",
-            "orcid": "0000-0002-9897-1213",
+            "author-url": "https://api.elsevier.com/content/author/author_id/40569054413",
+            "authid": "40569054413",
+            "orcid": "3604-4243-0039-5739",
             "authname": "Andersen D.",
             "surname": "Andersen",
             "given-name": "Drew",
@@ -2524,16 +2524,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56313957700",
-            "authid": "56313957700",
-            "orcid": "0000-0003-0770-9891",
+            "author-url": "https://api.elsevier.com/content/author/author_id/11725347076",
+            "authid": "11725347076",
+            "orcid": "4910-4220-4905-9422",
             "authname": "Park J.",
             "surname": "Park",
             "given-name": "Jamie",
@@ -2541,19 +2541,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               },
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/14063330800",
-            "authid": "14063330800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/23278423424",
+            "authid": "23278423424",
             "authname": "Tanaka A.",
             "surname": "Tanaka",
             "given-name": "Avery",
@@ -2561,15 +2561,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/24175350400",
-            "authid": "24175350400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58015035526",
+            "authid": "58015035526",
             "authname": "Tanaka J.",
             "surname": "Tanaka",
             "given-name": "Jordan",
@@ -2577,15 +2577,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60029306"
+                "$": "11573493"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56500865300",
-            "authid": "56500865300",
+            "author-url": "https://api.elsevier.com/content/author/author_id/09220029634",
+            "authid": "09220029634",
             "authname": "Yamada R.",
             "surname": "Yamada",
             "given-name": "Riley",
@@ -2593,11 +2593,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               },
               {
                 "@_fa": "true",
-                "$": "60014643"
+                "$": "05211515"
               }
             ]
           }
@@ -2658,16 +2658,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60023813",
-            "afid": "60023813",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/03516196",
+            "afid": "03516196",
             "affilname": "Summerdale University",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126142180",
-            "afid": "126142180",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/050532023",
+            "afid": "050532023",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Estonia"
@@ -2684,8 +2684,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60634209100",
-            "authid": "60634209100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/41581432755",
+            "authid": "41581432755",
             "authname": "Yamada N.",
             "surname": "Yamada",
             "given-name": "Noor",
@@ -2693,16 +2693,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60023813"
+                "$": "03516196"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57219776376",
-            "authid": "57219776376",
-            "orcid": "0000-0002-9921-1144",
+            "author-url": "https://api.elsevier.com/content/author/author_id/03495025662",
+            "authid": "03495025662",
+            "orcid": "0535-5141-9037-320X",
             "authname": "Dubois N.",
             "surname": "Dubois",
             "given-name": "Noor",
@@ -2710,24 +2710,24 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60023813"
+                "$": "03516196"
               },
               {
                 "@_fa": "true",
-                "$": "126142180"
+                "$": "050532023"
               },
               {
                 "@_fa": "true",
-                "$": "60023813"
+                "$": "03516196"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57212307315",
-            "authid": "57212307315",
-            "orcid": "0000-0001-8377-0163",
+            "author-url": "https://api.elsevier.com/content/author/author_id/01225262303",
+            "authid": "01225262303",
+            "orcid": "6438-3253-6527-9693",
             "authname": "Haddad L.",
             "surname": "Haddad",
             "given-name": "Lena",
@@ -2735,16 +2735,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60023813"
+                "$": "03516196"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/23479777500",
-            "authid": "23479777500",
-            "orcid": "0000-0003-4577-9241",
+            "author-url": "https://api.elsevier.com/content/author/author_id/12242022418",
+            "authid": "12242022418",
+            "orcid": "2124-5406-2480-1305",
             "authname": "Okafor L.",
             "surname": "Okafor",
             "given-name": "Lena",
@@ -2752,7 +2752,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60023813"
+                "$": "03516196"
               }
             ]
           }
@@ -2814,8 +2814,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60031991",
-            "afid": "60031991",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/40490183",
+            "afid": "40490183",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Fairview",
             "affiliation-country": "Poland"
@@ -2832,8 +2832,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/35212397400",
-            "authid": "35212397400",
+            "author-url": "https://api.elsevier.com/content/author/author_id/54981643623",
+            "authid": "54981643623",
             "authname": "Costa A.",
             "surname": "Costa",
             "given-name": "Alex",
@@ -2841,15 +2841,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031991"
+                "$": "40490183"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59204245600",
-            "authid": "59204245600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57343204818",
+            "authid": "57343204818",
             "authname": "Nguyen A.",
             "surname": "Nguyen",
             "given-name": "Alex",
@@ -2857,15 +2857,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031991"
+                "$": "40490183"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58994484600",
-            "authid": "58994484600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55770118778",
+            "authid": "55770118778",
             "authname": "Cohen T.",
             "surname": "Cohen",
             "given-name": "Taylor",
@@ -2873,15 +2873,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031991"
+                "$": "40490183"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58947634700",
-            "authid": "58947634700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/22773126727",
+            "authid": "22773126727",
             "authname": "Ivanov L.",
             "surname": "Ivanov",
             "given-name": "Lena",
@@ -2889,7 +2889,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60031991"
+                "$": "40490183"
               }
             ]
           }
@@ -2973,8 +2973,8 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60009806",
-            "afid": "60009806",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/50462326",
+            "afid": "50462326",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Norwood",
             "affiliation-country": "Vietnam"
@@ -2991,8 +2991,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58782639200",
-            "authid": "58782639200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55434933625",
+            "authid": "55434933625",
             "authname": "Rossi J.",
             "surname": "Rossi",
             "given-name": "Jamie",
@@ -3000,16 +3000,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60009806"
+                "$": "50462326"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57189321370",
-            "authid": "57189321370",
-            "orcid": "0009-0005-6110-3382",
+            "author-url": "https://api.elsevier.com/content/author/author_id/25855004207",
+            "authid": "25855004207",
+            "orcid": "5235-0543-1554-1179",
             "authname": "Silva F.",
             "surname": "Silva",
             "given-name": "Fatima",
@@ -3017,16 +3017,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60009806"
+                "$": "50462326"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57228253000",
-            "authid": "57228253000",
-            "orcid": "0009-0004-5042-380X",
+            "author-url": "https://api.elsevier.com/content/author/author_id/97485915445",
+            "authid": "97485915445",
+            "orcid": "1436-5658-3245-4645",
             "authname": "Kim S.",
             "surname": "Kim",
             "given-name": "Soo-Ah",
@@ -3034,7 +3034,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60009806"
+                "$": "50462326"
               }
             ]
           }
@@ -3095,40 +3095,40 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60025578",
-            "afid": "60025578",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/54398265",
+            "afid": "54398265",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Portugal"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60134496",
-            "afid": "60134496",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/92120548",
+            "afid": "92120548",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Norwood",
             "affiliation-country": "Norway"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60125532",
-            "afid": "60125532",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/97135910",
+            "afid": "97135910",
             "affilname": "Ashgrove National Laboratory",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Vietnam"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/127824036",
-            "afid": "127824036",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/333212745",
+            "afid": "333212745",
             "affilname": "Lakeside University of Engineering",
             "affiliation-city": "Stonebridge",
             "affiliation-country": "Estonia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/129147574",
-            "afid": "129147574",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/248826265",
+            "afid": "248826265",
             "affilname": "Redcliff Institute of Science",
             "affiliation-city": "Norwood",
             "affiliation-country": "Malaysia"
@@ -3145,8 +3145,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57196100207",
-            "authid": "57196100207",
+            "author-url": "https://api.elsevier.com/content/author/author_id/00799474546",
+            "authid": "00799474546",
             "authname": "Larsen K.",
             "surname": "Larsen",
             "given-name": "Kwame",
@@ -3154,28 +3154,28 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56182993400",
-            "authid": "56182993400",
-            "orcid": "0000-0002-5669-9354",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55527820007",
+            "authid": "55527820007",
+            "orcid": "8272-4440-0266-2306",
             "authname": "Osei D.",
             "surname": "Osei",
             "given-name": "Drew",
@@ -3183,27 +3183,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/7102491544",
-            "authid": "7102491544",
+            "author-url": "https://api.elsevier.com/content/author/author_id/4965236855",
+            "authid": "4965236855",
             "authname": "Okafor C.",
             "surname": "Okafor",
             "given-name": "Casey",
@@ -3211,27 +3211,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57204476382",
-            "authid": "57204476382",
+            "author-url": "https://api.elsevier.com/content/author/author_id/44314205008",
+            "authid": "44314205008",
             "authname": "Meyer J.",
             "surname": "Meyer",
             "given-name": "Jamie",
@@ -3239,27 +3239,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57216319107",
-            "authid": "57216319107",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58106122133",
+            "authid": "58106122133",
             "authname": "Costa A.",
             "surname": "Costa",
             "given-name": "Avery",
@@ -3267,15 +3267,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60125532"
+                "$": "97135910"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "6",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57192993032",
-            "authid": "57192993032",
+            "author-url": "https://api.elsevier.com/content/author/author_id/30725608256",
+            "authid": "30725608256",
             "authname": "Yamada K.",
             "surname": "Yamada",
             "given-name": "Kwame",
@@ -3283,27 +3283,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "7",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60068650800",
-            "authid": "60068650800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/41530309346",
+            "authid": "41530309346",
             "authname": "Fernandez H.",
             "surname": "Fernandez",
             "given-name": "Hiro",
@@ -3311,27 +3311,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "8",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57254447800",
-            "authid": "57254447800",
+            "author-url": "https://api.elsevier.com/content/author/author_id/03429417155",
+            "authid": "03429417155",
             "authname": "Yamada J.",
             "surname": "Yamada",
             "given-name": "Jordan",
@@ -3339,27 +3339,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "9",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57209845337",
-            "authid": "57209845337",
+            "author-url": "https://api.elsevier.com/content/author/author_id/59428215475",
+            "authid": "59428215475",
             "authname": "Andersen A.",
             "surname": "Andersen",
             "given-name": "Alex",
@@ -3367,27 +3367,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "10",
-            "author-url": "https://api.elsevier.com/content/author/author_id/56327010200",
-            "authid": "56327010200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/44343529350",
+            "authid": "44343529350",
             "authname": "Yamada H.",
             "surname": "Yamada",
             "given-name": "Hiro",
@@ -3395,27 +3395,27 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "11",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57138970200",
-            "authid": "57138970200",
+            "author-url": "https://api.elsevier.com/content/author/author_id/17031814756",
+            "authid": "17031814756",
             "authname": "Ivanov D.",
             "surname": "Ivanov",
             "given-name": "Drew",
@@ -3423,19 +3423,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60134496"
+                "$": "92120548"
               },
               {
                 "@_fa": "true",
-                "$": "127824036"
+                "$": "333212745"
               },
               {
                 "@_fa": "true",
-                "$": "129147574"
+                "$": "248826265"
               },
               {
                 "@_fa": "true",
-                "$": "60025578"
+                "$": "54398265"
               }
             ]
           }
@@ -3492,16 +3492,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60070324",
-            "afid": "60070324",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/91021233",
+            "afid": "91021233",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Malaysia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60070309",
-            "afid": "60070309",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/23236246",
+            "afid": "23236246",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Ghana"
@@ -3518,8 +3518,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60029000900",
-            "authid": "60029000900",
+            "author-url": "https://api.elsevier.com/content/author/author_id/46441242613",
+            "authid": "46441242613",
             "authname": "Haddad R.",
             "surname": "Haddad",
             "given-name": "Riley",
@@ -3527,15 +3527,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60070324"
+                "$": "91021233"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57222269997",
-            "authid": "57222269997",
+            "author-url": "https://api.elsevier.com/content/author/author_id/40034413052",
+            "authid": "40034413052",
             "authname": "Kowalski C.",
             "surname": "Kowalski",
             "given-name": "Casey",
@@ -3543,15 +3543,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60070309"
+                "$": "23236246"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/6603102319",
-            "authid": "6603102319",
+            "author-url": "https://api.elsevier.com/content/author/author_id/3073125103",
+            "authid": "3073125103",
             "authname": "Nguyen F.",
             "surname": "Nguyen",
             "given-name": "Fatima",
@@ -3559,7 +3559,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60070324"
+                "$": "91021233"
               }
             ]
           }
@@ -3612,16 +3612,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60283209",
-            "afid": "60283209",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/26255001",
+            "afid": "26255001",
             "affilname": "Summerdale University",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Ghana"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60075896",
-            "afid": "60075896",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/86912319",
+            "afid": "86912319",
             "affilname": "Harborview Polytechnic",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Portugal"
@@ -3638,8 +3638,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60110389600",
-            "authid": "60110389600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/15157845122",
+            "authid": "15157845122",
             "authname": "Ivanov F.",
             "surname": "Ivanov",
             "given-name": "Fatima",
@@ -3647,15 +3647,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60283209"
+                "$": "26255001"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57982646700",
-            "authid": "57982646700",
+            "author-url": "https://api.elsevier.com/content/author/author_id/05568294517",
+            "authid": "05568294517",
             "authname": "Kim N.",
             "surname": "Kim",
             "given-name": "Noor",
@@ -3663,7 +3663,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60075896"
+                "$": "86912319"
               }
             ]
           }
@@ -3740,32 +3740,32 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60011592",
-            "afid": "60011592",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/03595233",
+            "afid": "03595233",
             "affilname": "Meridian State University",
             "affiliation-city": "Stonebridge",
             "affiliation-country": "Kenya"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60002210",
-            "afid": "60002210",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/30923214",
+            "afid": "30923214",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Millbrook",
             "affiliation-country": "Poland"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/126197885",
-            "afid": "126197885",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/087144438",
+            "afid": "087144438",
             "affilname": "Redcliff Institute of Science",
             "affiliation-city": "Elmsworth",
             "affiliation-country": "Norway"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/133624196",
-            "afid": "133624196",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/431533335",
+            "afid": "431533335",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Fairview",
             "affiliation-country": "Vietnam"
@@ -3782,8 +3782,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60583984500",
-            "authid": "60583984500",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55305951813",
+            "authid": "55305951813",
             "authname": "Park R.",
             "surname": "Park",
             "given-name": "Riley",
@@ -3791,19 +3791,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60002210"
+                "$": "30923214"
               },
               {
                 "@_fa": "true",
-                "$": "133624196"
+                "$": "431533335"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/24473871000",
-            "authid": "24473871000",
+            "author-url": "https://api.elsevier.com/content/author/author_id/41572130646",
+            "authid": "41572130646",
             "authname": "Kowalski A.",
             "surname": "Kowalski",
             "given-name": "Alex",
@@ -3811,19 +3811,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60002210"
+                "$": "30923214"
               },
               {
                 "@_fa": "true",
-                "$": "133624196"
+                "$": "431533335"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60583984600",
-            "authid": "60583984600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/07204509553",
+            "authid": "07204509553",
             "authname": "Costa R.",
             "surname": "Costa",
             "given-name": "Riley",
@@ -3831,15 +3831,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "126197885"
+                "$": "087144438"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58018971000",
-            "authid": "58018971000",
+            "author-url": "https://api.elsevier.com/content/author/author_id/95644272341",
+            "authid": "95644272341",
             "authname": "Haddad L.",
             "surname": "Haddad",
             "given-name": "Lena",
@@ -3847,19 +3847,19 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60002210"
+                "$": "30923214"
               },
               {
                 "@_fa": "true",
-                "$": "60011592"
+                "$": "03595233"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58046195000",
-            "authid": "58046195000",
+            "author-url": "https://api.elsevier.com/content/author/author_id/01324004869",
+            "authid": "01324004869",
             "authname": "Kowalski J.",
             "surname": "Kowalski",
             "given-name": "Jordan",
@@ -3867,11 +3867,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60002210"
+                "$": "30923214"
               },
               {
                 "@_fa": "true",
-                "$": "133624196"
+                "$": "431533335"
               }
             ]
           }
@@ -3933,16 +3933,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60015780",
-            "afid": "60015780",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/52649124",
+            "afid": "52649124",
             "affilname": "Meridian State University",
             "affiliation-city": "Fairview",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/132717536",
-            "afid": "132717536",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/813724947",
+            "afid": "813724947",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Norwood",
             "affiliation-country": "Vietnam"
@@ -3960,9 +3960,9 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59913278200",
-            "authid": "59913278200",
-            "orcid": "0009-0001-5643-8322",
+            "author-url": "https://api.elsevier.com/content/author/author_id/05542793985",
+            "authid": "05542793985",
+            "orcid": "7040-5150-5729-5243",
             "authname": "Petrov A.",
             "surname": "Petrov",
             "given-name": "Avery",
@@ -3970,16 +3970,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59730425400",
-            "authid": "59730425400",
-            "orcid": "0009-0009-3110-4957",
+            "author-url": "https://api.elsevier.com/content/author/author_id/10934572493",
+            "authid": "10934572493",
+            "orcid": "9041-1011-5201-7178",
             "authname": "Meyer T.",
             "surname": "Meyer",
             "given-name": "Taylor",
@@ -3987,15 +3987,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60109448100",
-            "authid": "60109448100",
+            "author-url": "https://api.elsevier.com/content/author/author_id/37642266018",
+            "authid": "37642266018",
             "authname": "Andersen W.",
             "surname": "Andersen",
             "given-name": "Wei",
@@ -4003,15 +4003,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/16833826600",
-            "authid": "16833826600",
+            "author-url": "https://api.elsevier.com/content/author/author_id/23300551235",
+            "authid": "23300551235",
             "authname": "Larsen J.",
             "surname": "Larsen",
             "given-name": "Jamie",
@@ -4019,20 +4019,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               },
               {
                 "@_fa": "true",
-                "$": "132717536"
+                "$": "813724947"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57219672095",
-            "authid": "57219672095",
-            "orcid": "0000-0001-6412-334X",
+            "author-url": "https://api.elsevier.com/content/author/author_id/58902125455",
+            "authid": "58902125455",
+            "orcid": "3245-9911-9361-4241",
             "authname": "Andersen D.",
             "surname": "Andersen",
             "given-name": "Drew",
@@ -4040,11 +4040,11 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               },
               {
                 "@_fa": "true",
-                "$": "60015780"
+                "$": "52649124"
               }
             ]
           }
@@ -4128,24 +4128,24 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60003977",
-            "afid": "60003977",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/10240642",
+            "afid": "10240642",
             "affilname": "Meridian State University",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Chile"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60018933",
-            "afid": "60018933",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/41504158",
+            "afid": "41504158",
             "affilname": "Harborview Polytechnic",
             "affiliation-city": "Norwood",
             "affiliation-country": "Kenya"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60420443",
-            "afid": "60420443",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/40492051",
+            "afid": "40492051",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Millbrook",
             "affiliation-country": "Kenya"
@@ -4162,9 +4162,9 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57221062001",
-            "authid": "57221062001",
-            "orcid": "0000-0001-9896-4518",
+            "author-url": "https://api.elsevier.com/content/author/author_id/27942875522",
+            "authid": "27942875522",
+            "orcid": "3936-3256-8088-3446",
             "authname": "Cohen I.",
             "surname": "Cohen",
             "given-name": "Ingrid",
@@ -4172,16 +4172,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60420443"
+                "$": "40492051"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57196292840",
-            "authid": "57196292840",
-            "orcid": "0000-0002-6834-5350",
+            "author-url": "https://api.elsevier.com/content/author/author_id/15102929345",
+            "authid": "15102929345",
+            "orcid": "9670-0499-0811-3741",
             "authname": "Larsen J.",
             "surname": "Larsen",
             "given-name": "Jordan",
@@ -4189,16 +4189,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60420443"
+                "$": "40492051"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57189033545",
-            "authid": "57189033545",
-            "orcid": "0000-0002-9877-2716",
+            "author-url": "https://api.elsevier.com/content/author/author_id/30026115322",
+            "authid": "30026115322",
+            "orcid": "9550-0230-0508-0620",
             "authname": "Cohen A.",
             "surname": "Cohen",
             "given-name": "Alex",
@@ -4206,16 +4206,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60018933"
+                "$": "41504158"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57203549669",
-            "authid": "57203549669",
-            "orcid": "0000-0003-2938-6798",
+            "author-url": "https://api.elsevier.com/content/author/author_id/13250730283",
+            "authid": "13250730283",
+            "orcid": "8319-5219-4702-1006",
             "authname": "Park T.",
             "surname": "Park",
             "given-name": "Taylor",
@@ -4223,16 +4223,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60003977"
+                "$": "10240642"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57219319437",
-            "authid": "57219319437",
-            "orcid": "0000-0003-4993-8895",
+            "author-url": "https://api.elsevier.com/content/author/author_id/00152023902",
+            "authid": "00152023902",
+            "orcid": "7435-6662-5601-0828",
             "authname": "Tanaka I.",
             "surname": "Tanaka",
             "given-name": "Ingrid",
@@ -4240,7 +4240,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60420443"
+                "$": "40492051"
               }
             ]
           }
@@ -4319,16 +4319,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60004739",
-            "afid": "60004739",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/42758008",
+            "afid": "42758008",
             "affilname": "Harborview Polytechnic",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Estonia"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60273339",
-            "afid": "60273339",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/43621513",
+            "afid": "43621513",
             "affilname": "Ironwood College of Engineering",
             "affiliation-city": "Brightwood",
             "affiliation-country": "Ghana"
@@ -4345,9 +4345,9 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/35741036200",
-            "authid": "35741036200",
-            "orcid": "0000-0001-6764-8969",
+            "author-url": "https://api.elsevier.com/content/author/author_id/11708880172",
+            "authid": "11708880172",
+            "orcid": "0102-4542-1219-2311",
             "authname": "Haddad M.",
             "surname": "Haddad",
             "given-name": "Mateo",
@@ -4355,20 +4355,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004739"
+                "$": "42758008"
               },
               {
                 "@_fa": "true",
-                "$": "60273339"
+                "$": "43621513"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/59383129000",
-            "authid": "59383129000",
-            "orcid": "0009-0000-5890-0923",
+            "author-url": "https://api.elsevier.com/content/author/author_id/45323843327",
+            "authid": "45323843327",
+            "orcid": "4155-9545-3241-3440",
             "authname": "Larsen L.",
             "surname": "Larsen",
             "given-name": "Lena",
@@ -4376,20 +4376,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004739"
+                "$": "42758008"
               },
               {
                 "@_fa": "true",
-                "$": "60273339"
+                "$": "43621513"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "3",
-            "author-url": "https://api.elsevier.com/content/author/author_id/58713801400",
-            "authid": "58713801400",
-            "orcid": "0000-0002-4270-2268",
+            "author-url": "https://api.elsevier.com/content/author/author_id/25123571456",
+            "authid": "25123571456",
+            "orcid": "5761-6822-3720-240X",
             "authname": "Kim R.",
             "surname": "Kim",
             "given-name": "Riley",
@@ -4397,16 +4397,16 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004739"
+                "$": "42758008"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "4",
-            "author-url": "https://api.elsevier.com/content/author/author_id/57218950944",
-            "authid": "57218950944",
-            "orcid": "0000-0002-8513-570X",
+            "author-url": "https://api.elsevier.com/content/author/author_id/10552553324",
+            "authid": "10552553324",
+            "orcid": "4917-8660-7106-2523",
             "authname": "Fernandez J.",
             "surname": "Fernandez",
             "given-name": "Jordan",
@@ -4414,20 +4414,20 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004739"
+                "$": "42758008"
               },
               {
                 "@_fa": "true",
-                "$": "60273339"
+                "$": "43621513"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "5",
-            "author-url": "https://api.elsevier.com/content/author/author_id/35332572200",
-            "authid": "35332572200",
-            "orcid": "0000-0002-4333-2852",
+            "author-url": "https://api.elsevier.com/content/author/author_id/56666421316",
+            "authid": "56666421316",
+            "orcid": "3558-1542-0613-3050",
             "authname": "Cohen S.",
             "surname": "Cohen",
             "given-name": "Sam",
@@ -4435,7 +4435,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60004739"
+                "$": "42758008"
               }
             ]
           }
@@ -4509,16 +4509,16 @@
         "affiliation": [
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60079728",
-            "afid": "60079728",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/33103040",
+            "afid": "33103040",
             "affilname": "Northfield Institute of Technology",
             "affiliation-city": "Lakeside",
             "affiliation-country": "Poland"
           },
           {
             "@_fa": "true",
-            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60100946",
-            "afid": "60100946",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/81448811",
+            "afid": "81448811",
             "affilname": "Summerdale University",
             "affiliation-city": "Rivertown",
             "affiliation-country": "Ghana"
@@ -4535,8 +4535,8 @@
           {
             "@_fa": "true",
             "@seq": "1",
-            "author-url": "https://api.elsevier.com/content/author/author_id/60590741000",
-            "authid": "60590741000",
+            "author-url": "https://api.elsevier.com/content/author/author_id/08414822194",
+            "authid": "08414822194",
             "authname": "Larsen C.",
             "surname": "Larsen",
             "given-name": "Casey",
@@ -4544,15 +4544,15 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60100946"
+                "$": "81448811"
               }
             ]
           },
           {
             "@_fa": "true",
             "@seq": "2",
-            "author-url": "https://api.elsevier.com/content/author/author_id/6506185497",
-            "authid": "6506185497",
+            "author-url": "https://api.elsevier.com/content/author/author_id/9300403532",
+            "authid": "9300403532",
             "authname": "Larsen A.",
             "surname": "Larsen",
             "given-name": "Avery",
@@ -4560,7 +4560,7 @@
             "afid": [
               {
                 "@_fa": "true",
-                "$": "60079728"
+                "$": "33103040"
               }
             ]
           }

@@ -95,7 +95,12 @@ from prismabib.errors import PrismabibError, ValidationError
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
 from prismabib.sources.cache import HttpCache
-from prismabib.sources.scopus import JsonDict, ScopusClient, extract_total_results
+from prismabib.sources.scopus import (
+    JsonDict,
+    ScopusClient,
+    extract_next_cursor,
+    extract_total_results,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -132,6 +137,16 @@ class _CursorState(BaseModel):
     endpoint: str
     started_at: datetime
     payload_files: list[str] = []
+
+    #: The cursor to resume from -- the ``@next`` of the last page actually
+    #: written. Without it, a resumed run replays from ``cursor="*"`` and only
+    #: avoids re-fetching because ``raw/_cache/`` happens to be warm. That cache
+    #: is gitignored and disposable, so on a cold cache a run interrupted at page
+    #: 40 of 71 re-requests all 40 pages against a weekly quota, while Layer 0
+    #: already holds them on disk. BUILD_PLAN line 768 requires resuming "without
+    #: re-fetching", and §5 risk 2 says "never re-fetch what Layer 0 already
+    #: holds". ``None`` means the run has no page written yet.
+    next_cursor: str | None = None
 
 
 def is_sealed(run_dir: Path) -> bool:
@@ -387,11 +402,13 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         state = _load_cursor_state(run_dir / _CURSOR_FILENAME)
         started_at = state.started_at
         payload_files = list(state.payload_files)
+        resume_cursor = state.next_cursor
         logger.info(
             "capture.run_resumed",
             run_id=run_id,
             endpoint=endpoint,
             pages_already_written=len(payload_files),
+            resuming_from_cursor=resume_cursor is not None,
         )
     else:
         run_id = _new_run_id()
@@ -399,6 +416,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         run_dir.mkdir(parents=True, exist_ok=True)
         started_at = datetime.now(UTC)
         payload_files = []
+        resume_cursor = None
         _save_cursor_state(
             run_dir,
             _CursorState(
@@ -416,17 +434,28 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
     cache = HttpCache(raw_dir / _CACHE_DIRNAME)
     total_results: int | None = None
 
+    # A persisted cursor resumes AT the first unwritten page, so nothing already
+    # in Layer 0 is requested again. Without one (a run interrupted before its
+    # first page landed, or a pre-existing sidecar) fall back to replaying from
+    # the start and skipping by index -- correct, but it costs quota on a cold
+    # cache, which is exactly what the persisted cursor exists to avoid.
+    start_cursor = resume_cursor if resume_cursor is not None else "*"
+    index_offset = resume_from if resume_cursor is not None else 0
+
     with ScopusClient(settings, cache=cache) as client:
-        for index, page in enumerate(client.search(resolved_query, view=view)):
-            if index == 0:
+        pages = client.search(resolved_query, view=view, start_cursor=start_cursor)
+        for position, page in enumerate(pages):
+            index = index_offset + position
+
+            # Every page carries opensearch:totalResults, not just page 0 -- so a
+            # resumed run still records it (S02-AC5) without re-fetching page 0.
+            if total_results is None:
                 total_results = extract_total_results(page)
 
             if index < resume_from:
-                # Already durably written by a prior (interrupted) attempt.
-                # Re-walking it here is a cache hit -- no quota spent, no
-                # file touched, no duplicate page -- purely to advance
-                # ScopusClient.search's own cursor chain up to the first
-                # not-yet-written page.
+                # Only reachable on the replay-from-start fallback above: this page
+                # was already durably written by a prior attempt. Walking past it
+                # touches no file and creates no duplicate.
                 continue
 
             filename = f"page-{index:04d}.jsonl"
@@ -440,6 +469,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
                     endpoint=endpoint,
                     started_at=started_at,
                     payload_files=payload_files,
+                    next_cursor=extract_next_cursor(page),
                 ),
             )
             logger.info(

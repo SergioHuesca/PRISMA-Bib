@@ -378,7 +378,9 @@ class ScopusClient:
         if self._owns_http:
             self._http.close()
 
-    def search(self, query: str, *, view: str = "COMPLETE") -> Iterator[JsonDict]:
+    def search(
+        self, query: str, *, view: str = "COMPLETE", start_cursor: str = "*"
+    ) -> Iterator[JsonDict]:
         """Iterate every page of a Scopus Search API query, via cursor pagination.
 
         Starts at ``cursor=*`` and follows each page's own next cursor
@@ -396,6 +398,15 @@ class ScopusClient:
                 ``authkeywords`` and full affiliation data (BUILD_PLAN §5
                 risk 1). This client never substitutes a different view on
                 its own; a 403 always raises rather than degrading.
+            start_cursor: The cursor to begin from. Defaults to ``"*"`` (the
+                start of the result set). A resumed capture passes the
+                ``@next`` cursor of the last page it durably wrote, so it
+                continues from there instead of replaying pages Layer 0
+                already holds — BUILD_PLAN line 768 ("resumes without
+                re-fetching") and §5 risk 2 ("never re-fetch what Layer 0
+                already holds"). Relying on the HTTP cache instead is not
+                equivalent: that cache is gitignored and disposable, so on a
+                cold cache the replay costs real weekly quota.
 
         Yields:
             Each page's parsed Scopus search response, in order, exactly
@@ -414,7 +425,7 @@ class ScopusClient:
             ValidationError: If a page's body is not a well-formed Scopus
                 search response.
         """
-        cursor = "*"
+        cursor = start_cursor
         while True:
             params = {
                 "query": query,

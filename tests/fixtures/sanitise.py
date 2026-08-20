@@ -34,24 +34,39 @@ line 534, transcribed exactly):
     - Every element of an ``affiliation`` list (or a lone ``affiliation``
       mapping) gets a synthetic institution/city/country from
       :data:`_AFFIL_NAMES`/:data:`_CITIES`/:data:`_COUNTRIES`.
-- **Left alone, deliberately**: everything else -- record identifiers
-  (``dc:identifier``, ``eid``, ``prism:doi``, ``pii``, ``afid``, ``authid``,
-  ``author-url``, ``affiliation-url``), dates, counts, subtype codes,
-  ``authkeywords``, funding fields, and the whole ``link``/``cursor``
-  pagination envelope. BUILD_PLAN line 534 names exactly four things to
-  regenerate; inventing a fifth (e.g. scrambling ``eid``) would be scope the
-  spec did not ask for, and would risk breaking the very cross-references
-  (``afid`` on an author matching ``afid`` on an affiliation) a contract
-  test might reasonably rely on. **Structure is what survives**: field
-  presence and absence per entry, scalar-vs-list shape, and the pagination
-  envelope are copied through unchanged -- see the module docstring's
-  companion note in ``tests/fixtures/README.md`` about the specific 22/25
+    - ``authkeywords`` is transliterated term-by-term, preserving the
+      pipe-delimited structure and each term's length. Keywords are licensed
+      Scopus content like any other prose; the keyword *pipeline* is what the
+      fixtures exercise, not the vocabulary.
+    - **Person and institution identifiers are remapped, not passed through**:
+      ``authid``, ``orcid``, ``afid``, and the ``author-url``/
+      ``affiliation-url`` that embed them. This goes beyond BUILD_PLAN line
+      534's four named categories, deliberately. A real ORCID or Scopus author
+      id sitting next to a *fabricated* name is worse than either alone: it is
+      a resolvable pointer to a named living researcher, republished on a
+      PUBLIC repository, attached to someone else's identity. Names are noise;
+      an ORCID is an identity. The synthetic ORCID is built to be format-valid
+      but check-digit-INVALID, so it can never resolve to a real person.
+      Mapping is stable per id (see :func:`_map_id`), so the cross-reference an
+      ``afid`` on an author shares with an ``afid`` on an affiliation survives,
+      and re-running the sanitiser reproduces the cassette byte-for-byte.
+
+- **Left alone, deliberately**: *work* identifiers -- ``dc:identifier``,
+  ``eid``, ``prism:doi``, ``pii``, ``article-number``, ``prism:url`` -- plus
+  dates, counts, subtype codes, venue names, funding fields, and the whole
+  ``link``/``cursor`` pagination envelope. These identify a published paper,
+  not a person, and BUILD_PLAN §2.5 settles the principle explicitly when it
+  says ``decisions.jsonl`` "contains no licensed content -- only record IDs
+  and decisions". **Structure is what survives**: field presence and absence
+  per entry, scalar-vs-list shape, and the pagination envelope are copied
+  through unchanged -- see ``tests/fixtures/README.md`` on the specific 22/25
   ``authkeywords`` split preserved in ``complete-page-0000.json``.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import random
 import string
 from collections.abc import Iterable, Mapping
@@ -207,6 +222,79 @@ def _synthetic_person(rng: random.Random) -> tuple[str, str]:
     return rng.choice(_GIVEN_NAMES), rng.choice(_SURNAMES)
 
 
+_AUTHOR_URL_PREFIX = "https://api.elsevier.com/content/author/author_id/"
+_AFFILIATION_URL_PREFIX = "https://api.elsevier.com/content/affiliation/affiliation_id/"
+
+# Stable real-id -> synthetic-id maps, shared across every page sanitised in one
+# process. Stability is not cosmetic: Stage 3 groups records by `afid` and Stage 7
+# counts distinct institutions, so a per-occurrence random id would silently change
+# what these fixtures exercise, and a collapsed id would invent collaborations that
+# never happened.
+_ID_MAPS: dict[str, dict[str, str]] = {}
+
+
+def _map_id(real: str, namespace: str) -> str:
+    """Map a real Scopus identifier to a stable synthetic one.
+
+    Args:
+        real: The identifier as recorded.
+        namespace: Which id space this belongs to (``authid``, ``afid``), so two
+            different kinds never collide onto the same synthetic value.
+
+    Returns:
+        A synthetic identifier of the same length and character class, stable for
+        the lifetime of the process.
+    """
+    space = _ID_MAPS.setdefault(namespace, {})
+    if real not in space:
+        # Deterministic in the real id, so re-running the sanitiser reproduces the
+        # same cassette byte-for-byte -- a cassette that churns on every run makes
+        # its diff unreviewable, which §3.7.5 explicitly cares about.
+        digest = hashlib.sha256(f"{namespace}:{real}".encode()).hexdigest()
+        digits = "".join(str(int(c, 16) % 10) for c in digest)
+        space[real] = digits[: len(real)] if real.isdigit() else digest[: len(real)]
+    return space[real]
+
+
+def _map_afid_field(value: Any) -> Any:
+    """Map an ``afid`` that Scopus emits as either a scalar or a list.
+
+    The scalar-vs-list inconsistency is itself a quirk the cassettes exist to pin
+    (BUILD_PLAN §2.4), so the shape is preserved exactly and only the values move.
+    """
+    if isinstance(value, str):
+        return _map_id(value, "afid")
+    if isinstance(value, list):
+        return [
+            {**item, "$": _map_id(str(item["$"]), "afid")}
+            if isinstance(item, Mapping) and "$" in item
+            else (_map_id(item, "afid") if isinstance(item, str) else item)
+            for item in value
+        ]
+    return value
+
+
+def _synthetic_orcid(real: str) -> str:
+    """Return a format-valid but deliberately UNREGISTERABLE ORCID.
+
+    An ORCID's final character is a MOD-11-2 check digit. This builds the digits
+    deterministically from the real value and then forces a check digit that is
+    wrong on purpose, so the result matches the `NNNN-NNNN-NNNN-NNNC` shape any
+    parser expects while never resolving to a living researcher. Publishing a
+    real ORCID beside a fabricated name -- on a PUBLIC repository -- is the one
+    thing in a cassette that identifies an actual person.
+    """
+    digest = hashlib.sha256(f"orcid:{real}".encode()).hexdigest()
+    digits = "".join(str(int(c, 16) % 10) for c in digest)[:15]
+    total = 0
+    for ch in digits:
+        total = (total + int(ch)) * 2
+    correct = (12 - total % 11) % 11
+    wrong = (correct + 1) % 11
+    check = "X" if wrong == 10 else str(wrong)
+    return f"{digits[0:4]}-{digits[4:8]}-{digits[8:12]}-{digits[12:15]}{check}"
+
+
 def _sanitise_author(author: Mapping[str, Any], rng: random.Random) -> dict[str, Any]:
     """Replace one ``author`` entry's name fields with a synthetic identity.
 
@@ -233,6 +321,20 @@ def _sanitise_author(author: Mapping[str, Any], rng: random.Random) -> dict[str,
         result["initials"] = f"{given[0]}."
     if "authname" in result:
         result["authname"] = f"{surname} {given[0]}."
+
+    # Person identifiers MUST be remapped, not passed through. A real `authid` or
+    # `orcid` next to a fabricated name is worse than either alone: it is a
+    # resolvable pointer to a named living researcher, published on a PUBLIC
+    # repository, attached to someone else's name. Names alone are noise; an ORCID
+    # is an identity.
+    if "authid" in result:
+        result["authid"] = _map_id(str(result["authid"]), "authid")
+    if "orcid" in result:
+        result["orcid"] = _synthetic_orcid(str(result["orcid"]))
+    if "author-url" in result and "authid" in result:
+        result["author-url"] = f"{_AUTHOR_URL_PREFIX}{result['authid']}"
+    if "afid" in result:
+        result["afid"] = _map_afid_field(result["afid"])
     return result
 
 
@@ -255,6 +357,16 @@ def _sanitise_affiliation(affiliation: Mapping[str, Any], rng: random.Random) ->
         result["affiliation-city"] = rng.choice(_CITIES)
     if "affiliation-country" in result:
         result["affiliation-country"] = rng.choice(_COUNTRIES)
+
+    # A real `afid` resolves to the real institution regardless of the synthetic
+    # `affilname` beside it, so it is remapped too. The mapping is stable across
+    # the whole cassette set, which matters: Stage 3 groups by `afid` and Stage 7's
+    # geography analysis counts distinct institutions, so collapsing or randomising
+    # them per-occurrence would silently change what those fixtures exercise.
+    if "afid" in result:
+        result["afid"] = _map_afid_field(result["afid"])
+    if "affiliation-url" in result and "afid" in result:
+        result["affiliation-url"] = f"{_AFFILIATION_URL_PREFIX}{result['afid']}"
     return result
 
 
