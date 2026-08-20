@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Scopus acquisition and Layer 0 capture (Stage 2)** — the first stage with a real
+external dependency:
+
+- `sources/scopus.py`: `ScopusClient`. `view=COMPLETE` is mandatory; a 403 raises
+  `EntitlementError` and stops, never falling back to `STANDARD`. Measured against the
+  live API, COMPLETE returns seven fields STANDARD lacks (`authkeywords`, `author`,
+  `author-count`, `dc:description`, `fund-*`), so a silent downgrade would remove the
+  keyword co-occurrence network and the geography analysis outright.
+- Cursor pagination from the start (`start`/`count` caps at 5,000), `count=25`, guarded
+  against a stale cursor looping forever. `tenacity` backoff on 429/5xx only — 401 and
+  403 are never retried, because retrying a bad key burns weekly quota.
+- `sources/ratelimit.py`: header-aware token bucket, hard-capped at a configurable
+  6 req/s. `sources/cache.py`: content-addressed HTTP cache so development re-runs cost
+  no quota.
+- `capture/writer.py`: `capture_search` writes `raw/<run_id>/page-NNNN.jsonl` plus
+  `manifest.json`. A run directory is **sealed** once `manifest.json` exists and every
+  write path refuses a sealed directory — Layer 0 immutability enforced in code, not by
+  convention. Resumption state lives in a `cursor.json` sidecar outside the sealed
+  archive, and stores the cursor itself so a resumed run continues from where it stopped
+  rather than re-fetching pages Layer 0 already holds.
+- `query.py`: Boolean query builder. Raises on any `compound_terms` shape it cannot
+  interpret rather than coercing.
+- `.github/workflows/nightly.yml`: the `live` contract suite, scheduled off-peak. It
+  comments on an existing open issue rather than opening a new one each night. Per
+  §3.7.7 it is scheduled, **not** a required check — a cron job cannot gate a pull
+  request, and gating `main` on Elsevier's uptime would block every merge during an
+  outage.
+- Contract-test cassettes, recorded once against the live API and sanitised. Titles,
+  abstracts, author keywords, names, affiliations, and all person/institution
+  identifiers are regenerated; structure — field presence and absence, scalar-vs-list
+  shape, pagination envelope — is preserved exactly, because structure is what the
+  contract tests exist to pin.
+
+### Fixed
+
+- `build_query` silently produced a **wrong** query. Given BUILD_PLAN §3.1's real TOML
+  (`compound_terms = [{ all = [...] }]`) it iterated the mapping's keys and emitted
+  `TITLE-ABS-KEY("all")` without raising — a wrong corpus, and every downstream number
+  wrong with no signal anywhere.
+- `Project.init` scaffolded only `[project]`, omitting §3.1's `[query]` table, so
+  `capture_search` failed on every freshly-initialised project citing a section the
+  template had never offered.
+- `RateLimiter.acquire` could spin forever. The wait is computed as `deficit / rate` and
+  converted back by refill as `elapsed * rate`; that round trip is not exact, so with a
+  clock advancing by precisely the requested amount the token count settles one ULP below
+  1.0 and the loop never exits. Real `time.sleep` masks it by overshooting. A hang at page
+  40 of 71 is a silent stall, not a crash.
+- The sanitiser passed real ORCIDs and Scopus author/affiliation ids through untouched,
+  attached to fabricated names — a resolvable pointer to a named living researcher,
+  republished on a public repository under someone else's name. Identifiers are now
+  remapped through a stable map that preserves cross-references, and synthetic ORCIDs are
+  deliberately check-digit-invalid.
+
+## [0.2.0] — 2026-08-19
+
+### Added
+
 **Domain model (Stage 1)** — the vocabulary of the system, before any I/O exists:
 
 - `models.py`: `Author`, `Affiliation`, `Venue`, `Record`, `PayloadRef`, with the field
