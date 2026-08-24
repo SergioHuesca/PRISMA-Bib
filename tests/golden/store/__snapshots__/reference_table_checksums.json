@@ -1,0 +1,31 @@
+{
+  "row_counts": {
+    "affiliations_loaded": 21,
+    "authors_loaded": 45,
+    "citation_snapshots_loaded": 120,
+    "duplicate_doi_groups": 1,
+    "duplicate_records": 2,
+    "keywords_loaded": 30,
+    "record_keyword_links_loaded": 452,
+    "records_loaded": 120,
+    "runs_loaded": 1,
+    "subject_area_links_loaded": 0,
+    "unmapped_country_values": [
+      "Korea"
+    ],
+    "venues_loaded": 120
+  },
+  "table_checksums": {
+    "affiliations": "ce5a79818da3fa099e375b2df45c91d0a4903a715ac8bf0a7e1c1354aa5060fb",
+    "authors": "4007dd3f184d2fbb4da786bacc4acf6e2613732aa7ca964aef807eb90d72ccf8",
+    "citation_snapshots": "ed1edb1815e97da1479558d4b0aedaa2bbf3c52af3a0ff0b3ec9b37b628ce749",
+    "keywords": "d6f3c9a8ab7a0801aa7fa39d6de1768c7ea38390db9b3b04b175f73c51629b9a",
+    "record_affiliations": "4b08200c30cedb2a75d78cae23faedca987668d924b919c4fb83f19ac4e26297",
+    "record_authors": "dc3db6fcef8ed70779f833241b1d463a5bec646ab0ca025f2eba12546494770d",
+    "record_keywords": "b93fd83f4fae56d5fd931a6e88ec2a1c54353eb25dee5ae8157abd655bff1bd2",
+    "records": "3d7e58dd9699c808e3bd6581dfb20096212a53fa38caddca59295e730dca386e",
+    "runs": "48226bc42c8d46d6878990b728fb90607d5a5f56118b7e79096fb19a23f7e467",
+    "subject_areas": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "venues": "49c8b4976c3b811e14c31b27161c22ea0ce897d1d3dac3e27d9c0c7ab165db6f"
+  }
+}

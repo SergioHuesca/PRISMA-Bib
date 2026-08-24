@@ -1,0 +1,24 @@
+[project]
+slug = "reference"
+title = "Reference fixture: video anomaly detection in surveillance systems"
+created = 2026-01-15
+track_decisions = true
+
+# The Phase 1 Boolean query (BUILD_PLAN §3.1, lines 327-335). This is the
+# same worked example BUILD_PLAN uses to illustrate the [query] table shape,
+# reused here deliberately so prismabib.query.build_query_for_project's
+# rendering of this file can be pinned against BUILD_PLAN's own literal
+# string (see the module docstring of src/prismabib/query.py).
+[query]
+terms = [
+  "video anomaly detection",
+  "surveillance anomaly detection",
+]
+compound_terms = [
+  { all = ["abnormal event detection", "video"] },
+]
+fields = ["TITLE-ABS-KEY"]
+
+[snapshot]
+retrieved_at = 2026-01-15T09:00:00Z
+scopus_view = "COMPLETE"

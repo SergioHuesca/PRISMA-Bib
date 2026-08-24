@@ -54,21 +54,35 @@ call it looks for an *unsealed* run directory under ``raw/`` whose
 directory is never a resume candidate, so calling :func:`capture_search`
 again after a completed run always starts a brand-new run directory (a new
 ``run_id``) rather than attempting -- and having :func:`_guard_writable`
-refuse -- to write into the old one. Resumption itself replays
-``ScopusClient.search`` from its own beginning (``cursor=*``) every time,
-because :meth:`ScopusClient.search` does not accept an injected starting
-cursor; pages already recorded in ``cursor.json`` are walked again but
-never rewritten (each is a cache hit -- no quota spent, no duplicate
-records), and writing resumes at the first page index not yet present in
-``payload_files``. A page that fails to parse (BUILD_PLAN line 821) raises
+refuse -- to write into the old one. Resumption continues from the cursor
+``cursor.json`` recorded alongside the last page actually written, passed to
+:meth:`ScopusClient.search` as ``start_cursor``, so pages already in Layer 0
+are never requested again. Relying on ``raw/_cache/`` for that instead is not
+equivalent: the cache is gitignored and disposable, so on a cold cache a run
+interrupted at page 40 of 71 would re-request all 40 against a weekly quota
+(BUILD_PLAN line 768; §5 risk 2). Only a sidecar written before the cursor
+was ever stored falls back to replaying from ``cursor=*`` and skipping by
+index. A page that fails to parse (BUILD_PLAN line 821) raises
 out of ``ScopusClient.search`` *before* this module ever attempts to create
 that page's file, so every page file already written for that run is left
 completely untouched -- there is no delete, no truncate, and no rewrite of
 prior pages anywhere in this module's write path.
 
-**On ``total_results``.** Recorded once, from page index 0 of the current
-attempt's replay (page 0 is visited on every call, resumed or not, since
-replay always starts at ``cursor=*``). It is read from the server's own
+**On-disk shape of a page.** Each page is written as *two* files:
+``page-NNNN.jsonl`` holding one Scopus entry per line, and
+``page-NNNN.meta.json`` holding the response envelope with ``entry`` removed
+(``opensearch:totalResults``, ``cursor``, ``link``, ...). Together they
+reconstruct the response exactly. The split exists so a record's line index
+identifies *that record*: the store carries ``payload_file``/``payload_line``
+per record (BUILD_PLAN line 856) and :class:`~prismabib.models.PayloadRef` is
+specified as "Layer 0 file + line offset" (line 696). Writing the whole
+envelope as one line -- which this module originally did -- pinned
+``payload_line`` at ``0`` for every record, so the offset addressed the page
+and never the record, and per-record provenance silently did not exist.
+
+**On ``total_results``.** Recorded from the first page this attempt sees --
+every page carries ``opensearch:totalResults``, so a run resumed mid-way
+records it without re-fetching page 0. It is read from the server's own
 ``opensearch:totalResults`` via
 :func:`~prismabib.sources.scopus.extract_total_results` and is the **only**
 value written to :class:`~prismabib.capture.manifest.RunManifest.total_results`
@@ -105,6 +119,7 @@ from prismabib.sources.scopus import (
 logger = structlog.get_logger(__name__)
 
 _MANIFEST_FILENAME = "manifest.json"
+_META_SUFFIX = ".meta.json"
 _CURSOR_FILENAME = "cursor.json"
 _CACHE_DIRNAME = "_cache"
 
@@ -229,7 +244,7 @@ def _save_cursor_state(run_dir: Path, state: _CursorState) -> None:
     _guard_writable(run_dir)
     _atomic_write_bytes(
         run_dir / _CURSOR_FILENAME,
-        state.model_dump_json(indent=2).encode("utf-8"),
+        state.model_dump_json(indent=2).encode("utf-8") + b"\n",
     )
 
 
@@ -291,7 +306,31 @@ def _find_resumable_run(raw_dir: Path, *, query: str, view: str, endpoint: str) 
 
 
 def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
-    """Write one page's deterministic JSONL re-encoding, guarding against a sealed run.
+    """Write one page as true JSON Lines -- one record per line -- plus its envelope.
+
+    The page is split into two files:
+
+    - ``page-NNNN.jsonl``: one Scopus entry per line, so a record's line index
+      identifies *that record*.
+    - ``page-NNNN.meta.json``: the response envelope with ``entry`` removed
+      (``opensearch:totalResults``, ``cursor``, ``link``, ...), so the original
+      response remains reconstructible exactly.
+
+    Why the split. The schema carries ``payload_file``/``payload_line`` per record
+    (BUILD_PLAN line 856) and :class:`~prismabib.models.PayloadRef` is specified as
+    "Layer 0 file + line offset" (line 696). Writing the whole envelope as a single
+    line -- which this function used to do -- made ``payload_line`` always ``0``:
+    it addressed the page, never the record, so the offset carried no information
+    and per-record provenance did not exist. Stage 3's S03-AC2 ("every
+    ``payload_file``/``payload_line`` pair resolves to a valid raw JSON object")
+    would still have passed, because line 0 *is* valid JSON -- a green test over
+    dead provenance, which is exactly the §1.4 failure this architecture exists to
+    prevent.
+
+    Encoding stays canonical (``sort_keys``, compact separators) rather than raw
+    bytes: a warm-cache re-run must reproduce a byte-identical ``payload_sha256``
+    (S02-AC2), and canonical encoding is what guarantees that independently of
+    dict ordering.
 
     Args:
         run_dir: The run directory.
@@ -302,8 +341,30 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
         SealedRunError: If ``run_dir`` is already sealed.
     """
     _guard_writable(run_dir)
-    encoded = json.dumps(page, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
-    _atomic_write_bytes(run_dir / filename, encoded.encode("utf-8"))
+
+    results = page.get("search-results", {})
+    entries = results.get("entry", []) if isinstance(results, dict) else []
+    if not isinstance(entries, list):
+        entries = [entries]
+
+    lines = "".join(
+        json.dumps(entry, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
+        for entry in entries
+    )
+    _atomic_write_bytes(run_dir / filename, lines.encode("utf-8"))
+
+    envelope = {
+        "search-results": {
+            key: value
+            for key, value in (results.items() if isinstance(results, dict) else ())
+            if key != "entry"
+        }
+    }
+    meta_name = filename.removesuffix(".jsonl") + _META_SUFFIX
+    encoded_meta = (
+        json.dumps(envelope, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
+    )
+    _atomic_write_bytes(run_dir / meta_name, encoded_meta.encode("utf-8"))
 
 
 def _payload_sha256(run_dir: Path, payload_files: list[str]) -> str:
@@ -507,7 +568,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
     _guard_writable(run_dir)
     _atomic_write_bytes(
         run_dir / _MANIFEST_FILENAME,
-        manifest.model_dump_json(indent=2).encode("utf-8"),
+        manifest.model_dump_json(indent=2).encode("utf-8") + b"\n",
     )
 
     cursor_path = run_dir / _CURSOR_FILENAME

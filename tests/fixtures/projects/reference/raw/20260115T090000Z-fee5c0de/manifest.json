@@ -1,0 +1,20 @@
+{
+  "run_id": "20260115T090000Z-fee5c0de",
+  "started_at": "2026-01-15T09:00:00Z",
+  "finished_at": "2026-01-15T09:04:00Z",
+  "endpoint": "https://api.elsevier.com/content/search/scopus",
+  "query": "TITLE-ABS-KEY(\"video anomaly detection\") OR TITLE-ABS-KEY(\"surveillance anomaly detection\") OR (TITLE-ABS-KEY(\"abnormal event detection\") AND TITLE-ABS-KEY(\"video\"))",
+  "view": "COMPLETE",
+  "total_results": 120,
+  "pages_fetched": 5,
+  "payload_files": [
+    "page-0000.jsonl",
+    "page-0001.jsonl",
+    "page-0002.jsonl",
+    "page-0003.jsonl",
+    "page-0004.jsonl"
+  ],
+  "payload_sha256": "b7f0e15b0e2e4c3daf8ae3d67a67f4ec8d5ac52a4ea5a671a07b1e5aff88788e",
+  "client_version": "0.1.0",
+  "criteria_version": "1.0.0"
+}

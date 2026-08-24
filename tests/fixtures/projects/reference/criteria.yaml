@@ -1,0 +1,29 @@
+# The machine-readable Inclusion/Exclusion Matrix for the reference fixture
+# project (BUILD_PLAN §3.1, lines 342-366). This is the same worked example
+# BUILD_PLAN uses to illustrate the criteria.yaml shape.
+#
+# version 1.0.0 is frozen alongside raw/: BUILD_PLAN §3.7.5 requires any
+# change to inclusion logic to bump this version, and any change to this
+# file is a change to the reference fixture project, which requires the PR
+# rule in README.md (golden snapshots updated in the same commit).
+version: 1.0.0
+temporal:
+  year_start: 2016
+  year_end: 2026
+subject_areas: [COMP, ENGI]
+doc_types:
+  include: [ar, cp]
+  conference_whitelist: [CVPR, ICCV, ECCV, WACV, AAAI]
+languages: [English]
+manual_abstract:
+  exclude_reason_codes:
+    - REVIEW_OR_SURVEY
+    - BIBLIOMETRIC_STUDY
+    - NOT_VIDEO_BASED
+    - NOT_PRIMARY_RESEARCH
+    - VENUE_NOT_ELIGIBLE
+    - OFF_TOPIC
+manual_fulltext:
+  exclude_reason_codes:
+    - INACCESSIBLE
+    - NOT_PRIMARY_RESEARCH

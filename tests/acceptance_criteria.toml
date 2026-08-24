@@ -33,3 +33,10 @@ S02-AC2 = "Re-running with the cache warm produces a byte-identical payload hash
 S02-AC3 = "Killing the process mid-run and restarting resumes from the persisted cursor with no duplicate pages."
 S02-AC4 = "A 403 on `view=COMPLETE` raises `EntitlementError` with a message naming the missing entitlement -- never falls back to `STANDARD`."
 S02-AC5 = "The reported `total_results` is recorded in the manifest and is the only source of the PRISMA \"records identified\" number."
+
+# --- Stage 3 -- Normalised store, Layer 1 (BUILD_PLAN.md lines 900-904) ----
+
+S03-AC1 = "`build_store(project, rebuild=True)` on the same Layer 0 input produces a byte-stable set of table checksums."
+S03-AC2 = "Every `records.payload_file`/`payload_line` pair resolves to a valid raw JSON object."
+S03-AC3 = "Deleting `corpus.duckdb` and rebuilding loses nothing."
+S03-AC4 = "Loading is idempotent: running it twice does not duplicate rows."

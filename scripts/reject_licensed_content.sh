@@ -16,7 +16,14 @@
 
 set -euo pipefail
 
-pattern='(^|/)projects/[^/]+/(raw|store|fulltext)/|\.duckdb$|(^|/)\.env$'
+# The `projects/` clause is anchored to the repository ROOT on purpose. BUILD_PLAN
+# §2.3 line 168 defines `projects/` -- the top-level one -- as the gitignored tree
+# where an operator's real corpus lives. An unanchored pattern also matched
+# `tests/fixtures/projects/reference/raw/`, the synthetic reference fixture that
+# §3.7.5 line 536 explicitly REQUIRES to be committed, so the guard blocked the very
+# thing the plan asks for. `.duckdb` and `.env` stay unanchored: a store or an env
+# file is licensed/secret wherever it appears.
+pattern='^projects/[^/]+/(raw|store|fulltext)/|\.duckdb$|(^|/)\.env$'
 
 offenders=()
 for path in "$@"; do
