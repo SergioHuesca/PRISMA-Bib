@@ -115,7 +115,7 @@ import json
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Literal
@@ -786,6 +786,35 @@ def _accumulate_keyword(acc: _Accumulator, *, record_id: str, raw_term: str, kin
     acc.record_keywords.add((record_id, keyword_id, kind))
 
 
+def _as_naive_utc(moment: datetime) -> datetime:
+    """Normalise a timestamp to naive UTC before it enters DuckDB.
+
+    DuckDB's ``TIMESTAMP`` columns are timezone-naive. Handing one a
+    timezone-*aware* datetime makes DuckDB convert it to the host's LOCAL time,
+    so the same Layer 0 archive produces different stored values on different
+    machines: a manifest recording ``09:00Z`` lands as ``09:00`` on a UTC runner
+    and ``03:00`` on a UTC-6 workstation.
+
+    That is not merely a golden-snapshot nuisance. It breaks S03-AC1 ("byte-stable
+    checksums on the same Layer 0 input"), and it would break Stage 11's
+    reproducibility criterion outright -- "a clean clone on a different machine
+    reproduces ``numbers.json``" -- because every citation snapshot date would
+    shift by the reader's UTC offset. Two researchers running identical code over
+    identical data would publish different dates, with nothing to indicate why.
+
+    Args:
+        moment: A timestamp from the run manifest, aware or naive.
+
+    Returns:
+        The same instant as a naive datetime in UTC. A naive input is assumed to
+        already be UTC and returned unchanged -- the manifest is written by
+        prismabib itself, always in UTC.
+    """
+    if moment.tzinfo is None:
+        return moment
+    return moment.astimezone(UTC).replace(tzinfo=None)
+
+
 def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
     """Fold one sealed Layer 0 run directory into ``acc``.
 
@@ -801,7 +830,7 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
     acc.runs.append(
         (
             manifest.run_id,
-            manifest.started_at,
+            _as_naive_utc(manifest.started_at),
             manifest.query,
             manifest.view,
             manifest.total_results,
@@ -812,7 +841,7 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
     # Point-in-time snapshot date for every citation this run's entries
     # carry -- the run's own start, never the wall clock at load time. See
     # the module docstring's "Citation snapshots" section.
-    retrieved_at = manifest.started_at
+    retrieved_at = _as_naive_utc(manifest.started_at)
 
     for payload_file in manifest.payload_files:
         relative_payload_file = f"{manifest.run_id}/{payload_file}"
