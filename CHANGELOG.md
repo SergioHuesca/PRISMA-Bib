@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Normalised store, Layer 1 (Stage 3)**
+
+- `store/schema.sql`: the 11 tables of BUILD_PLAN lines 847-879, verbatim.
+- `store/load.py`: `build_store()` — the one function §2.2 requires Layer 1 be
+  reconstructible by — plus the read-facing `Corpus` handle (`records`, `keywords`,
+  `citations`). `store/db.py`: `connect()`.
+- `store/checksums.py`: deterministic, DuckDB-version-independent per-table SHA-256
+  (rows sorted by key, cells canonicalised). Never DuckDB internals, whose churn
+  across releases would train exactly the habit §5 risk 11 warns about.
+- `stage.py`: `PrismaStage` as a leaf module, so Stage 4's `prisma/` can import it
+  downward. Only `RAW` is answerable from Layer 1; every other member raises
+  `NotImplementedError` naming the missing engine.
+- Citations are point-in-time: `citation_snapshots` keyed `(record_id, retrieved_at)`,
+  with `retrieved_at` from the run manifest's `started_at` — never wall-clock at load,
+  which would give every rebuild a new key and break both byte-stability and idempotence.
+- Countries normalise to ISO-3166 alpha-3; an unmapped string is logged and counted as
+  unknown, never dropped, so the geography total still equals the record count.
+- Keywords store both `term_raw` and `term_norm`. Duplicate DOIs are reported, not merged.
+- `tests/fixtures/projects/reference/`: a frozen, deterministic 120-record Layer 0
+  archive exercising all eight §3.7.5 edge cases, produced by a checked-in generator
+  that calls `writer._write_page` directly so it cannot drift from production.
+
+### Changed
+
+- **Layer 0 format (amends Stage 2).** `page-NNNN.jsonl` is now true JSON Lines — one
+  record per line — with the response envelope in a sibling `page-NNNN.meta.json`.
+  Previously the whole envelope was a single line, which pinned `payload_line` at `0`
+  for every record: it addressed the page, never the record, so `PayloadRef`'s
+  "file + line offset" carried no information and per-record provenance did not exist.
+  S03-AC2 would have passed regardless, because line 0 is valid JSON.
+- `build_store` uses DuckDB's columnar ingest rather than `executemany`, whose cost is
+  per *call* — a single-row insert cost 0.37s, and eleven tables paid it eleven times.
+  **5.35s → 0.19s** on the reference fixture, identical results, no new dependency.
+
+### Fixed
+
+- **Layer 1 was not machine-independent.** DuckDB's `TIMESTAMP` is naive, so timezone-aware
+  datetimes were converted to the *host's* local time — the same Layer 0 archive stored
+  `09:00` on a UTC runner and `03:00` on a UTC-6 workstation. This broke S03-AC1 and would
+  have broken Stage 11's central criterion, since every citation snapshot date would shift
+  by the reader's UTC offset: two researchers, identical code and data, different published
+  dates, with nothing to indicate why.
+- The same bug on the read path: `Corpus.citations(at=...)` returned 120 rows under UTC and
+  0 under UTC-6 for the same store and argument, because `manifest.started_at` is aware and
+  lands exactly on the snapshot boundary.
+- `Corpus._query` crashed on a column whose first 100 values were NULL (polars infers a
+  schema from 100 rows by default). `records.doi` is nullable and a corpus can open with
+  100 DOI-less conference papers.
+- The §2.5 data guard rejected the reference fixture: its `projects/*/raw/` pattern was
+  unanchored and matched `tests/fixtures/projects/`, blocking the fixture §3.7.5 requires
+  be committed. Anchored to the repository root, and now covered by tests in both
+  directions — it had none before.
+
+## [0.3.0] — 2026-08-20
+
+### Added
+
 **Scopus acquisition and Layer 0 capture (Stage 2)** — the first stage with a real
 external dependency:
 
