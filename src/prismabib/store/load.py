@@ -975,7 +975,16 @@ def _insert_rows(
     if not rows:
         return
 
-    frame = pd.DataFrame(list(rows), columns=[f"c{index}" for index in range(len(rows[0]))])
+    # `dtype=object` keeps pandas' type inference out of the byte-stable write path
+    # entirely. Without it a nullable integer column is inferred as float64 and a NULL
+    # becomes NaN, so `total_results` would round-trip through a float on its way into
+    # DuckDB -- an inference step whose behaviour can change between pandas versions,
+    # sitting directly under S03-AC1's byte-stability claim. DuckDB casts each value to
+    # the column's declared type on insert, so the schema stays the single source of
+    # truth for types. It is also measurably faster on large batches.
+    frame = pd.DataFrame(
+        list(rows), columns=[f"c{index}" for index in range(len(rows[0]))], dtype=object
+    )
     # A registered view is scoped and explicit; DuckDB's replacement scan would
     # otherwise resolve `frame` out of the caller's local namespace, which is
     # action-at-a-distance that breaks the moment this is refactored.
@@ -1213,7 +1222,14 @@ class Corpus:
         relation = self._connection.execute(sql, list(params))
         columns = [column[0] for column in relation.description] if relation.description else []
         rows = relation.fetchall()
-        return pl.DataFrame(rows, schema=columns, orient="row")
+        # `infer_schema_length=None` scans every row instead of polars' default first
+        # 100. With the default, a column whose first 100 values are NULL is typed
+        # Null, and row 101 raises `ComputeError: could not append value`. That is
+        # ordinary data, not a pathological case: `records.doi` is nullable and a
+        # corpus can easily open with 100 DOI-less conference papers. The 120-record
+        # fixture cannot surface it, and it would first appear on a real corpus as a
+        # crash inside the frozen `Corpus` contract.
+        return pl.DataFrame(rows, schema=columns, orient="row", infer_schema_length=None)
 
     def records(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
         """Return the ``records`` table for one named PRISMA set.
@@ -1315,7 +1331,14 @@ class Corpus:
             f"SELECT record_id, retrieved_at, cited_by_count FROM ({ranked} WHERE retrieved_at <= ?) "
             "WHERE rn = 1 ORDER BY record_id"
         )
-        return self._query(sql, [at])
+        # Normalise the QUERY bound the same way the stored values were normalised on
+        # write. Guarding only the write path is not enough: DuckDB converts an aware
+        # datetime to host-local time here too, so the identical call against the
+        # identical store returned 120 rows under UTC and 0 under UTC-6. Passing
+        # `manifest.started_at` -- the most natural argument there is, and itself
+        # timezone-aware -- lands exactly on the boundary, so the comparison flips
+        # from "everything" to "nothing" purely on the reader's location.
+        return self._query(sql, [_as_naive_utc(at)])
 
 
 __all__ = ["Corpus", "StoreStats", "build_store"]

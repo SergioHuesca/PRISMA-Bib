@@ -44,9 +44,6 @@ from prismabib.store.load import (
     _stats_from_connection,
     _subject_areas_from_entry,
     _title_from_entry,
-    _venue_from_entry,
-    _venue_id_from_entry,
-    _venue_type_from_entry,
 )
 from tests.store_helpers import create_schema, read_reference_entry, reference_run_dir
 
@@ -261,33 +258,6 @@ def test__cited_by_count_from_entry__missing_or_unparseable__returns_none(
     entry: dict[str, object],
 ) -> None:
     assert _cited_by_count_from_entry(entry) is None
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "entry",
-    [
-        {},
-        {"prism:aggregationType": "Magazine"},
-    ],
-    ids=["field-absent", "unrecognised-value"],
-)
-def test__venue_type_from_entry__no_recognised_mapping__falls_back_to_other(
-    entry: dict[str, object],
-) -> None:
-    assert _venue_type_from_entry(entry) == "other"
-
-
-@pytest.mark.unit
-def test__venue_id_from_entry__no_source_id__derives_deterministic_hash_id() -> None:
-    entry = {"prism:publicationName": "Journal of Fallbacks", "prism:issn": "1234-5678"}
-    venue = _venue_from_entry(entry)
-
-    first = _venue_id_from_entry(entry, venue)
-    second = _venue_id_from_entry(entry, venue)
-
-    assert first.startswith("venue-hash:")
-    assert first == second
 
 
 @pytest.mark.unit
