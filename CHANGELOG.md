@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Normalised store, Layer 1 (Stage 3)**
 
 - `store/schema.sql`: the 11 tables of BUILD_PLAN lines 847-879, verbatim.
-- `store/load.py`: `build_store()` — the one function §2.2 requires Layer 1 be
+- `store/load.py`: `build_store()` — the one function §2.2 requires Layer 1 to be
   reconstructible by — plus the read-facing `Corpus` handle (`records`, `keywords`,
   `citations`). `store/db.py`: `connect()`.
 - `store/checksums.py`: deterministic, DuckDB-version-independent per-table SHA-256
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Citations are point-in-time: `citation_snapshots` keyed `(record_id, retrieved_at)`,
   with `retrieved_at` from the run manifest's `started_at` — never wall-clock at load,
   which would give every rebuild a new key and break both byte-stability and idempotence.
-- Countries normalise to ISO-3166 alpha-3; an unmapped string is logged and counted as
+- Countries normalise to ISO 3166-1 alpha-3; an unmapped string is logged and counted as
   unknown, never dropped, so the geography total still equals the record count.
 - Keywords store both `term_raw` and `term_norm`. Duplicate DOIs are reported, not merged.
 - `tests/fixtures/projects/reference/`: a frozen, deterministic 120-record Layer 0
@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "file + line offset" carried no information and per-record provenance did not exist.
   S03-AC2 would have passed regardless, because line 0 is valid JSON.
 - `build_store` uses DuckDB's columnar ingest rather than `executemany`, whose cost is
-  per *call* — a single-row insert cost 0.37s, and eleven tables paid it eleven times.
+  per *call* — a single-row insert costs 0.37s, and eleven tables paid it eleven times.
   **5.35s → 0.19s** on the reference fixture, identical results, no new dependency.
 
 ### Fixed
@@ -235,5 +235,7 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SergioHuesca/PRISMA-Bib/releases/tag/v0.1.0
