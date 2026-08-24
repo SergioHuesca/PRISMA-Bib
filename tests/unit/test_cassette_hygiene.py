@@ -21,7 +21,21 @@ from pathlib import Path
 
 import pytest
 
-_CASSETTES = sorted((Path(__file__).parent.parent / "fixtures" / "cassettes").glob("*.json"))
+_TESTS_ROOT = Path(__file__).parent.parent
+
+# Every generated data file the `detect-secrets` hook is configured to skip. Keep this
+# in step with `.pre-commit-config.yaml`'s exclude: the exclusion and this guard are a
+# pair, and a path excluded there but absent here is unchecked by anything.
+_GENERATED_DATA = sorted(
+    [
+        *(_TESTS_ROOT / "fixtures" / "cassettes").glob("*.json"),
+        *(_TESTS_ROOT / "fixtures" / "projects").rglob("*.json"),
+        *(_TESTS_ROOT / "fixtures" / "projects").rglob("*.jsonl"),
+        *(_TESTS_ROOT / "golden").rglob("*.json"),
+    ]
+)
+
+_CASSETTES = _GENERATED_DATA
 
 # Elsevier keys are 32 hex characters. Any bare 32-hex token in a fixture is
 # either a real credential or something indistinguishable from one; neither
@@ -47,7 +61,30 @@ def test_cassettes__committed_fixtures__contain_no_credentials(cassette: Path) -
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("cassette", _CASSETTES, ids=lambda p: p.name)
-def test_cassettes__committed_fixtures__are_valid_json(cassette: Path) -> None:
-    """A cassette that no longer parses would silently disable its contract test."""
-    assert json.loads(cassette.read_text(encoding="utf-8"))
+@pytest.mark.parametrize(
+    "document", [p for p in _GENERATED_DATA if p.suffix == ".json"], ids=lambda p: p.name
+)
+def test_generated_data__json_documents__parse(document: Path) -> None:
+    """A fixture that no longer parses would silently disable the tests that read it."""
+    assert json.loads(document.read_text(encoding="utf-8"))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "lines_file", [p for p in _GENERATED_DATA if p.suffix == ".jsonl"], ids=lambda p: p.name
+)
+def test_generated_data__json_lines_files__parse_line_by_line(lines_file: Path) -> None:
+    """Layer 0 pages are JSON *Lines* -- one object per line, not one document.
+
+    Split from the ``.json`` case rather than branching inside one test: §3.7.3
+    rule 9 says an ``if`` in a test means it is two tests. It is also the property
+    that makes ``payload_line`` able to address a record at all, so it deserves its
+    own assertion rather than a branch.
+    """
+    parsed = [
+        json.loads(line)
+        for line in lines_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert parsed

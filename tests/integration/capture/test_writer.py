@@ -74,7 +74,20 @@ def test_capture__run__writes_pages_and_manifest(
     assert manifest.total_results == 1575
     assert manifest.client_version == CLIENT_VERSION
     assert manifest.criteria_version == project.criteria.version
-    assert json.loads(page_path.read_text(encoding="utf-8")) == page0
+
+    # A page file is true JSON Lines -- one Scopus entry per line -- so a record's
+    # line index identifies that record and `payload_line` carries real
+    # information. The envelope lives beside it and the two reconstruct the
+    # response exactly.
+    entry_lines = [json.loads(line) for line in page_path.read_text(encoding="utf-8").splitlines()]
+    envelope = json.loads((run_dir / "page-0000.meta.json").read_text(encoding="utf-8"))
+
+    assert entry_lines == page0["search-results"]["entry"]
+    assert "entry" not in envelope["search-results"]
+    assert (
+        envelope["search-results"]["opensearch:totalResults"]
+        == page0["search-results"]["opensearch:totalResults"]
+    )
 
 
 @pytest.mark.integration
@@ -192,7 +205,12 @@ def test_search__malformed_page__raises_and_preserves_prior_pages(
     ]
     assert len(run_dirs) == 1
     run_dir = run_dirs[0]
-    assert json.loads((run_dir / "page-0000.jsonl").read_text(encoding="utf-8")) == page0
+    surviving = [
+        json.loads(line)
+        for line in (run_dir / "page-0000.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert surviving == page0["search-results"]["entry"]
     assert not (run_dir / "page-0001.jsonl").exists()
     assert not (run_dir / "manifest.json").exists()
 

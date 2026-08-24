@@ -22,11 +22,45 @@ Layer 3: Figures, tables, PRISMA flow diagram
 
 ### Layer 0: Raw Capture (immutable)
 
-Every HTTP response from Scopus is persisted **verbatim** as JSONL before any parsing happens. This layer is what allows the provenance chain:
+Every HTTP response from Scopus is persisted **verbatim** before any parsing happens. This layer is what allows the provenance chain:
 
 - **Cache keying:** Each API call is keyed on `(URL, parameters)` and cached in `raw/_cache/` before parsing
 - **Page storage:** Parsed pages are written to `raw/<run_id>/page-0000.jsonl`, `page-0001.jsonl`, etc. in fetch order
+- **Envelope storage:** The HTTP response envelope (status, headers, `opensearch:totalResults`, cursor tokens, etc.) is written separately to `raw/<run_id>/page-0000.meta.json`, `page-0001.meta.json`, etc.
 - **Manifest seal:** Once all pages are written, `raw/<run_id>/manifest.json` is written—this file's presence is the **only** signal that the run is complete and sealed
+
+#### Page file format (true JSON Lines)
+
+Each `raw/<run_id>/page-NNNN.jsonl` file contains **one Scopus entry object per line**, in JSON Lines format (RFC 4180 variant: one JSON object per line, newline-separated, no array wrapper):
+
+```jsonl
+{"eid":"2-s2.0-85123456789","dc:title":"Example Paper","prism:coverDate":"2023-01-15",...}
+{"eid":"2-s2.0-85123456790","dc:title":"Another Paper","prism:coverDate":"2023-02-20",...}
+{"eid":"2-s2.0-85123456791","dc:title":"Third Paper","prism:coverDate":"2023-03-10",...}
+```
+
+**Key property:** Each line is independently parseable and corresponds to exactly one record. The line index (0-based, matching Python's `enumerate()` convention) directly identifies a record within a page file—so a `(payload_file, payload_line)` pair uniquely addresses one record.
+
+#### Metadata file format (response envelope)
+
+Each `raw/<run_id>/page-NNNN.meta.json` file contains the HTTP response envelope metadata as a single JSON object:
+
+```json
+{
+  "page_number": 0,
+  "query_string": "TITLE-ABS-KEY(...)",
+  "opensearch:totalResults": 1771,
+  "opensearch:itemsPerPage": 25,
+  "opensearch:startIndex": 1,
+  "cursor": "*",
+  "link": [
+    {"@ref": "first", "@href": "..."},
+    {"@ref": "next", "@href": "..."}
+  ]
+}
+```
+
+The manifest (see below) references only the `.jsonl` files, never the `.meta.json` files. Layer 1's loader reads the entries from `.jsonl` and the manifest, never the envelope metadata.
 
 #### The manifest structure
 
@@ -79,12 +113,17 @@ Given a count in a figure or table (e.g., "1,771 records"), here's how to verify
    - `manifest.view` must be `"COMPLETE"` (anything else means the review is incomplete)
 
 3. **Verify the hash:**
-   - Concatenate all files listed in `manifest.payload_files`, in order
-   - Compute `SHA-256` of the concatenated bytes
+   - Concatenate all `.jsonl` files listed in `manifest.payload_files`, in order
+   - Compute `SHA-256` of the concatenated bytes (the `.meta.json` envelope files are not included in the hash)
    - Compare to `manifest.payload_sha256`
    - If they match, every byte is unchanged since the run completed
 
-4. **Read `total_results`:**
+4. **Trace a record to its entry:**
+   - A record's `payload_file` and `payload_line` (stored in Layer 1's `records` table) directly identify the raw JSON entry
+   - For example, if `payload_file` is `"20260115T090000Z-3f9a2c11/page-0003.jsonl"` and `payload_line` is `42`, open that file, read line 42 (0-indexed, so the 43rd line), and parse it as JSON
+   - Every field in that JSON object traces back to the exact raw Scopus entry that produced the record
+
+5. **Read `total_results`:**
    - This is the PRISMA "records identified" count
    - No other derivation is permitted
 

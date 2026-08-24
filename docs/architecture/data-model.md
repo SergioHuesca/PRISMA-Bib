@@ -363,16 +363,220 @@ assert record1 == record2
 
 This is tested in Stage 1's acceptance criteria (BUILD_PLAN §Stage 1 line 726): "Round-trip: Record → model_dump_json() → model_validate_json() is lossless for a synthetic fixture with missing optional fields, list-vs-scalar affiliations, and non-ASCII author names."
 
-## Stage 3 extensions (deferred)
+## Stage 3 — The Normalised Store (Layer 1)
 
-The following will be added in Stage 3 (not Stage 1):
+Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duckdb`) derived from Layer 0's sealed run directories. It contains 11 tables, frozen in the BUILD_PLAN schema (lines 847–879) and never hand-edited. This section describes the ER model, the rationale for key design choices, and the frozen read-facing API.
 
-- **DuckDB schema**: table structure, column types, primary keys, indexes
-- **ER diagram**: relationships between tables (records, authors, affiliations, venues, keywords)
-- **View definitions**: derived tables for common queries (records by year, by affiliation, etc.)
-- **Citation schema**: if Stage 2's full-text acquisition includes citation metadata
+### Layer 1 is reconstructible and disposable
 
-For now, Stage 1 freezes the `Record` and related models. Later stages add tables and views, but do not change the model definitions.
+**Key invariant (BUILD_PLAN §2.2, line 105):** Layer 1 must be reconstructible from Layer 0 by running one function—`build_store(project, rebuild=True)`. If it is not:
+
+- Layer 1 remains **fully disposable**: delete `corpus.duckdb` at any time, run `build_store` again, lose nothing.
+- The store is **byte-stable**: rebuilding identical Layer 0 input produces byte-identical table checksums, so reproducibility can be verified independently.
+- The schema is **future-proof**: if Stage 2 or later needs to modify Layer 1, the only safe path is to drop Layer 0 and rebuild from upstream sources—never hand-edit the database.
+
+### Entity-Relationship description
+
+The 11 tables are:
+
+#### Core entities
+
+**`runs`** — one row per sealed Layer 0 acquisition run.
+- **Primary key:** `run_id` (a timestamp + hash, sortable, oldest first)
+- **Columns:**
+  - `started_at`: TIMESTAMP when the Scopus API query executed
+  - `query`: TEXT the exact Boolean query string sent to Scopus
+  - `view`: TEXT the entitlement level ("COMPLETE"; see BUILD_PLAN §5 risk 1)
+  - `total_results`: INTEGER the Scopus API's own `opensearch:totalResults` from the first page
+  - `payload_sha256`: TEXT SHA-256 of the concatenated page files, for Layer 0 integrity
+  - `criteria_version`: TEXT version of the screening rules this run was captured under
+- **Role:** Seals the identity and timestamp of every query result, linking every record back to one specific moment in time. Used to compute `retrieved_at` for citation snapshots (see below).
+
+**`records`** — one row per distinct bibliographic item (by Scopus `record_id`).
+- **Primary key:** `record_id` (e.g. `"scopus:2-s2.0-85123456789"`)
+- **Columns:**
+  - `run_id`: TEXT foreign key to `runs` (the first run this record appeared in)
+  - `doi`: TEXT | NULL normalised DOI when the record carries one (see Domain Model, DOI normalisation)
+  - `title`, `abstract`: TEXT | NULL
+  - `year`, `cover_date`: the publication year and exact date (from Scopus's `prism:coverDate`)
+  - `doc_type`: TEXT e.g. "Journal Article", "Conference Paper" (from `subtypeDescription`, or fallback to `subtype`)
+  - `language`: TEXT | NULL author-supplied language code (wire format; normalisation deferred)
+  - `venue_id`: TEXT foreign key to `venues`
+  - `open_access`: BOOLEAN | NULL
+  - `payload_file`: TEXT relative path within `project.raw_dir` to the Layer 0 JSONL file (e.g. `"<run_id>/page-0000.jsonl"`)
+  - `payload_line`: INTEGER 0-based line index into that file (Stage 3's correction to the old scheme that always stored 0 here)
+- **Role:** The central fact table. Every analysis begins here. `payload_file`/`payload_line` together form a provenance pointer back to the exact raw JSON line.
+- **Deduplication:** When the same Scopus paper is captured by more than one run, **only the first run's row is retained**. Later runs contribute citation snapshots (see below) but no new record rows. This is the "first-seen wins" principle, deterministic per the fixed traversal order of runs by `run_id`.
+
+**`venues`** — one row per distinct publication outlet.
+- **Primary key:** `venue_id` (either `"scopus-source:<source-id>"` if Scopus provided one, or `"venue-hash:<sha1>"` for fallback matching)
+- **Columns:** `name`, `issn`, `eissn` (from `prism:issn` and `prism:eIssn`), `venue_type` ("journal", "conference", "book", or "other"), `abbreviation` (NULL from Search API)
+- **Role:** Metadata about journals, conferences, etc. Search API pages never supply venue abbreviations; that would come from a full-text or Abstract Retrieval API integration in a later stage.
+
+#### Author-related entities
+
+**`authors`** — one row per distinct Scopus author ID.
+- **Primary key:** `author_id` (Scopus's internal identifier, e.g. `"7101234567"`)
+- **Columns:** `surname`, `given_name` (both required; Scopus sometimes omits given names, stored as NULL)
+- **Role:** Author name register. **Author disambiguation is out of scope** (BUILD_PLAN modelling note 4, line 886): Scopus author IDs are used as-is. A person who published under different names or an author ID collision are not resolved. This is a Stage 2+ decision, deferred to v2.0 (see [limitations](../methodology/limitations.md)).
+- **Notes:** Records with no author list (rare but possible) still appear in `records`, just with no rows in `record_authors`.
+
+**`record_authors`** — junction table linking records to authors, preserving position.
+- **Primary key:** implicit (no PK defined; deduplication is implicit via `record_id`/`author_id`/`position` uniqueness in the Stage 3 loader)
+- **Columns:** `record_id`, `author_id`, `position` (1-indexed, first author is position 1)
+- **Role:** Preserves author order and allows queries like "papers by this author" or "author co-authorship networks".
+
+#### Affiliation-related entities
+
+**`affiliations`** — one row per distinct Scopus affiliation ID.
+- **Primary key:** `afid` (Scopus's internal affiliation ID, e.g. `"60123456"`)
+- **Columns:**
+  - `name`: TEXT institution name (e.g. "University of Cambridge")
+  - `city`: TEXT | NULL
+  - `country_iso3`: TEXT | NULL ISO-3166-1 alpha-3 code, normalised from free-text
+- **Role:** Institutional directory. Enables geographic analysis.
+- **Country normalisation (BUILD_PLAN modelling note 2):** Free-text country strings from Scopus are normalised to ISO-3166 alpha-3 codes via a checked-in mapping table (`prismabib.countries`). Unmapped strings (e.g. "Wakanda") are **never discarded**—they are stored in `country_iso3` unchanged, a warning is logged, and the geography total still equals the record count (risk 8). This allows downstream analysis to detect coverage gaps ("how many affiliations were unmapped?") rather than silently undercounting.
+
+**`record_affiliations`** — junction table linking records to affiliations.
+- **Primary key:** implicit
+- **Columns:** `record_id`, `afid`
+- **Role:** M:N relationship; a record can have multiple affiliations, an affiliation multiple records.
+
+#### Keyword-related entities
+
+**`keywords`** — one row per distinct normalised keyword term.
+- **Primary key:** `keyword_id` (deterministic hash of the normalised term, e.g. `"kw:abc123def456"`; see `_keyword_id()` in `store/load.py`)
+- **Columns:**
+  - `term_raw`: TEXT the first-seen raw (pre-normalisation) form, e.g. `"Convolutional Neural Networks"`
+  - `term_norm`: TEXT normalised form (casefolded, punctuation→spaces, whitespace collapsed, singularised), e.g. `"convolutional neural network"`
+- **Role:** Keyword dictionary. Normalisation reduces duplicates (e.g. "CNN" and "convolutional neural networks" map to the same underlying concept if both normalise to the same term), but **the raw form is never discarded** (BUILD_PLAN modelling note 3, line 885). A researcher can always trace back to how keywords appeared in the original records.
+- **Singularisation:** A small, closed list (currently `convolutional neural networks` → `convolutional neural network`, etc.); no general stemming, which would mangle non-plural words ending in "s".
+- **Index keywords always empty in this stage:** The Scopus Search API `view=COMPLETE` does not return indexed keywords (Scopus "Subject Terms")—those come only from the Abstract Retrieval API. The `keywords` table and `record_keywords` rows with `kind="index"` are schema-present but data-empty today; both are real tables, not modelling gaps (see the module docstring of `store/load.py`).
+
+**`record_keywords`** — junction table linking records to keywords, tagged by kind.
+- **Primary key:** implicit
+- **Columns:** `record_id`, `keyword_id`, `kind` ("author" or "index", per the capture source)
+- **Role:** Tracks which keywords appear in which records and whether they came from the authors or the index. Enables keyword-based analysis and filtering.
+
+#### Subject areas and citations
+
+**`subject_areas`** — Scopus subject classification codes for records.
+- **Primary key:** implicit
+- **Columns:** `record_id`, `area_code` (e.g. "COMP" for computer science, per `criteria.yaml`)
+- **Role:** Supports subject-based filtering. Always empty for Search API `view=COMPLETE` captures (Abstract Retrieval API required); schema-present for forward compatibility.
+
+**`citation_snapshots`** — point-in-time citation counts, one row per (record, retrieval timestamp) pair.
+- **Primary key:** `(record_id, retrieved_at)` composite key
+- **Columns:** `cited_by_count` INTEGER the Scopus citation count at that moment
+- **Why a snapshot table, never a mutable column on `records` (BUILD_PLAN modelling note 1, line 883):**
+  - Citation counts change over time; a single `cited_by_count` column on `records` would capture only the count from the first run, forever.
+  - Different records may be retrieved at different times (if runs are re-done).
+  - Every citation figure must carry the timestamp it was true as of—the only way to achieve reproducibility is to store every (record, timestamp, count) triple.
+  - This table is populated only when a run's entries carry a parseable `citedby-count`; a record with no snapshots simply has no rows here.
+- **Retrieval timestamp (BUILD_PLAN loader docstring, lines 68–81):** `retrieved_at` is set to the run's `RunManifest.started_at` (when the Scopus API query began), **never `datetime.now()` at load time**. This is the only choice consistent with byte-stable rebuilds and idempotence: if the load-time wall clock were used, every `build_store(rebuild=True)` call would write a different key and duplicate rows. The snapshot date must describe when the data was retrieved, not when someone rebuilt a derived store.
+
+### The read-facing API
+
+All queries from downstream analysis stages go through the `Corpus` class (BUILD_PLAN line 893) in `prismabib.store.load`, never raw SQL.
+
+```python
+def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
+    """(Re)build project's Layer 1 store from Layer 0.
+
+    Args:
+        project: The project to build.
+        rebuild: When False (default) and store exists, reuse it (idempotent).
+                When True, delete and rebuild from Layer 0 (byte-stable).
+
+    Returns:
+        StoreStats with counts: runs_loaded, records_loaded, authors_loaded,
+        affiliations_loaded, venues_loaded, keywords_loaded,
+        record_keyword_links_loaded, subject_area_links_loaded,
+        citation_snapshots_loaded, and unmapped_country_values
+        (the country strings currently stored that did not map to ISO codes).
+
+    Raises:
+        StoreError: If store exists, rebuild=False, and store is corrupted.
+        ValidationError: If a captured entry is missing dc:title or prism:coverDate.
+    """
+```
+
+```python
+def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnection:
+    """Open project's Layer 1 store as a raw DuckDB connection.
+
+    Callers should not use this directly; use Corpus instead.
+    """
+```
+
+```python
+class Corpus:
+    """Read-facing handle onto a Layer 1 store."""
+
+    @classmethod
+    def open(cls, project: Project, *, read_only: bool = True) -> Corpus:
+        """Open project's Layer 1 store as a Corpus."""
+
+    def records(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        """Return records for one named PRISMA set.
+
+        Only PrismaStage.RAW (every captured record, unfiltered) is answerable
+        from Layer 1 alone. Every other stage raises NotImplementedError,
+        naming the missing Stage 4 PRISMA engine.
+
+        Returns:
+            DataFrame with every column of records table, one row per record,
+            ordered by record_id (when stage is RAW).
+        """
+
+    def keywords(
+        self, kind: str = "author", stage: PrismaStage = PrismaStage.INCLUDED
+    ) -> pl.DataFrame:
+        """Return keyword occurrences of one kind, for one named PRISMA set.
+
+        Args:
+            kind: "author" or "index".
+            stage: (See records() -- same restriction applies.)
+
+        Returns:
+            DataFrame: record_id, keyword_id, term_raw, term_norm, kind;
+            one row per (record, keyword) occurrence; ordered by
+            record_id, then term_norm.
+        """
+
+    def citations(self, at: datetime | None = None) -> pl.DataFrame:
+        """Return one citation-count row per record, as of a point in time.
+
+        Args:
+            at: When None (default), latest snapshot for each record is used.
+                When given, most recent snapshot with retrieved_at <= at.
+
+        Returns:
+            DataFrame: record_id, retrieved_at, cited_by_count; one row per
+            record with a qualifying snapshot; ordered by record_id.
+        """
+```
+
+### PrismaStage before Stage 4 exists
+
+`Corpus.records()`, `Corpus.keywords()` and the Stage 5 `screening_queue()` contract all take a `PrismaStage` parameter. This enum lives in its own top-level module `src/prismabib/stage.py` (see the "Additions to BUILD_PLAN §2.3" section below) because:
+
+- **Conceptually:** `PrismaStage` is a Stage 4 concept (the PRISMA engine is its sole producer).
+- **Mechanically:** Stage 3's frozen `Corpus` contract already needs it as a parameter type, and BUILD_PLAN §0 rule 1 forbids Stage 3 from importing `prisma/` (not yet built).
+- **Solution:** A leaf module with zero dependencies that both `prismabib.store` (Stage 3) and `prismabib.prisma` (Stage 4) can import downward.
+
+The enum members are:
+
+| Member | Value | Meaning |
+| --- | --- | --- |
+| `RAW` | `"raw"` | Every record captured from the query (unfiltered) |
+| `AUTOMATED` | `"automated"` | RAW filtered by year, subject area, and document type per `criteria.yaml` (deterministic) |
+| `LANGUAGE` | `"language"` | AUTOMATED further filtered by language (deterministic) |
+| `TITLE_ABSTRACT` | `"title_abstract"` | LANGUAGE folded through the decision log at title/abstract screening |
+| `FULLTEXT` | `"fulltext"` | TITLE_ABSTRACT folded through the decision log at full-text screening |
+| `INCLUDED` | `"included"` | Final corpus = FULLTEXT |
+
+**Critical caveat:** Only `PrismaStage.RAW` is answerable from Layer 1 alone. Every other member raises `NotImplementedError` naming the missing Stage 4 engine. This is intentional and honest—calling `.records(stage=PrismaStage.INCLUDED)` will fail loudly rather than silently returning wrong counts. This is tested with `xfail(strict=True)` until Stage 4 lands, then flipped in the same PR.
 
 ## Testing and validation
 

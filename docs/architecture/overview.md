@@ -145,6 +145,12 @@ src/prismabib/
 
 ### Additions to BUILD_PLAN §2.3 repository layout
 
+**`src/prismabib/stage.py`** (Stage 3, PRISMA flow stages)
+
+The `PrismaStage` enum, naming the six named record sets of the PRISMA 2020 flow: `RAW` (unfiltered), `AUTOMATED` (deterministic year/subject/doc-type filter), `LANGUAGE` (deterministic language filter), `TITLE_ABSTRACT` (human-screened), `FULLTEXT` (human-screened), and `INCLUDED` (final corpus). Used as the `stage` parameter of `Corpus.records()` and `Corpus.keywords()` (BUILD_PLAN lines 895–896), and later the Stage 5 `screening_queue()` contract.
+
+**Rationale:** `PrismaStage` is conceptually a Stage 4 artefact (the PRISMA engine is its sole producer), but Stage 3's frozen `Corpus` contract already needs it as a parameter type, and BUILD_PLAN §0 rule 1 forbids Stage 3 from importing the not-yet-built `prisma/` package. A standalone leaf module with zero dependencies lets both `prismabib.store` (Stage 3) and `prismabib.prisma` (Stage 4) depend on it downward without either depending on the other. See [data-model.md](data-model.md#prismastage-before-stage-4-exists) for full rationale.
+
 **`src/prismabib/query.py`** (Stage 2, query builder)
 
 The Scopus Boolean query builder (BUILD_PLAN line 775 names the contract `prismabib.query`). Renders a project's `project.toml` `[query]` table into the Boolean string the Scopus API expects. Implements the frozen acceptance test contract exactly: simple terms are OR-ed, compound terms (AND groups) are parenthesised, fields are applied to every term, and injection-style input (backslash and quote escaping) cannot break the query.
