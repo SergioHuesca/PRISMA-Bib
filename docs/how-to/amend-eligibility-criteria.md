@@ -183,7 +183,7 @@ log.append(
     record_id="scopus:2-s2.0-85101234567",
     reviewer="kp",
     decision="exclude",
-    reason_code="REVIEW_OR_SURVEY",   # must be declared in criteria.yaml for this stage
+    reason_code="REVIEW_OR_SURVEY",  # must be declared in criteria.yaml for this stage
 )
 ```
 

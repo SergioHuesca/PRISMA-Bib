@@ -30,6 +30,7 @@ class FlowCounts:
     retrieved_fulltext: int
     excluded_fulltext: dict[str, int]
     included: int
+
     def assert_consistent(self) -> None: ...
 ```
 
@@ -51,12 +52,12 @@ and a check that fires constantly is a check people stop reading.
 them:
 
 ```python
-    excluded_title_abstract: int
-    unsure_title_abstract: int      # added
-    retrieved_fulltext: int
-    excluded_fulltext: dict[str, int]
-    unsure_fulltext: int            # added
-    included: int
+excluded_title_abstract: int
+unsure_title_abstract: int  # added
+retrieved_fulltext: int
+excluded_fulltext: dict[str, int]
+unsure_fulltext: int  # added
+included: int
 ```
 
 ```
