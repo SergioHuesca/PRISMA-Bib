@@ -530,11 +530,17 @@ def _refuse_unenforceable_subject_filter(
         "a corpus captured from it never has them. Continuing would put a filter in your "
         "PRISMA diagram that never ran.\n"
         "\nEither:\n"
-        "  - move the restriction into the query, where Scopus applies it server-side: "
-        "add SUBJAREA(...) to the [query] table in project.toml, and set subject_areas "
-        "to [] here. Note this narrows what is *identified*, so those records will not "
-        "appear in the automated-exclusion count; or\n"
-        "  - set subject_areas to [] and record the limitation in your protocol."
+        "  - set subject_areas to [] and record the limitation in your protocol. Most "
+        "reviews can express the same restriction through doc_types, the venue "
+        "whitelist, or the query terms themselves; or\n"
+        "  - move the restriction into the query, where Scopus applies it server-side. "
+        "The [query] table in project.toml cannot express this -- it renders every entry "
+        'as FIELD("term"), so a SUBJAREA(...) entry would become a literal text search '
+        "for that string. Pass the whole query instead: "
+        "capture_search(project, query='TITLE-ABS-KEY(...) AND SUBJAREA(MEDI)'). The "
+        "exact string is recorded in the run manifest, so provenance is preserved even "
+        "though project.toml no longer holds it. Note this narrows what is *identified*, "
+        "so those records never appear in the automated-exclusion count."
     )
 
 

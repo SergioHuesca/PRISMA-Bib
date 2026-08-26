@@ -697,8 +697,14 @@ def test_automated_set__subject_filter_with_no_data_anywhere__is_refused(
         engine.automated_set(project)
 
     message = str(excinfo.value)
-    assert "SUBJAREA" in message
     assert "never ran" in message
+    # The remedy must not send the reader somewhere that quietly fails. The
+    # [query] table renders every entry as FIELD("term"), so a SUBJAREA(...)
+    # entry becomes a literal text search for that string -- a near-empty
+    # corpus the researcher would read as a working subject filter. An
+    # earlier version of this message advised exactly that.
+    assert "capture_search" in message
+    assert "literal text search" in message
 
 
 @pytest.mark.integration

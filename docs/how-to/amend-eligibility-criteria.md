@@ -52,12 +52,12 @@ fails if the symlink points outside the repository — see [Troubleshooting](#tr
 ## Step 1: commit the criteria you are about to supersede
 
 ```bash
-git add projects/vad-2026/criteria.yaml
+git add projects/my-review/criteria.yaml
 git commit -m "docs(criteria): freeze v1.0.0 before amendment"
 ```
 
 If it is already committed and unmodified, you are done with this step. Verify with
-`git status projects/vad-2026/criteria.yaml`.
+`git status projects/my-review/criteria.yaml`.
 
 ## Step 2: edit `criteria.yaml` and bump the version
 
@@ -66,10 +66,10 @@ version: 1.1.0            # was 1.0.0 — always bump
 temporal:
   year_start: 2014        # was 2016 — this amendment widens the window
   year_end: 2026
-subject_areas: [COMP, ENGI]
+subject_areas: []         # must stay empty; a non-empty list is refused (see below)
 doc_types:
   include: [ar, cp]
-  conference_whitelist: [CVPR, ICCV, ECCV]
+  conference_whitelist: ["Computer Vision and Pattern Recognition"]
 languages: [English]
 manual_abstract:
   exclude_reason_codes: [OFF_TOPIC, REVIEW_OR_SURVEY, NOT_PEER_REVIEWED]
@@ -77,10 +77,16 @@ manual_fulltext:
   exclude_reason_codes: [NO_FULL_TEXT, WRONG_POPULATION, NO_EVALUATION]
 ```
 
-Two things worth knowing before you write a list:
+Four things worth knowing before you write a list:
 
 - **An empty list means "no restriction on that dimension"**, not "match nothing". Emptying
   `languages` removes the language filter; it does not exclude everything.
+- **An unknown key is refused, not ignored.** Writing `language:` for `languages:`, or a
+  plausible-but-unsupported `study_designs:`, raises `ConfigError` naming the key, the block
+  it appeared in, and the closest valid alternative. A silently dropped key would be an
+  eligibility rule that silently did not apply.
+- **An inverted window is refused.** `year_end` below `year_start` would match no record at
+  all and report that automation excluded the entire corpus.
 - **A record with no Layer 1 data on a dimension is never excluded on that dimension.** A
   record with a `NULL` language passes a `languages` filter. See
   [PRISMA Mapping — filter conventions](../methodology/prisma-mapping.md#four-filter-conventions-that-change-published-numbers)
@@ -95,7 +101,7 @@ there is nothing to reload or migrate.
 from prismabib.project import Project
 from prismabib.prisma import engine
 
-project = Project.open("vad-2026")
+project = Project.open("my-review")
 result = engine.replay(project, criteria_version="1.1.0")
 
 print(result.criteria_version)
@@ -160,7 +166,7 @@ because they were never anything but events in an append-only file.
 ## Step 5: commit the amendment
 
 ```bash
-git add projects/vad-2026/criteria.yaml
+git add projects/my-review/criteria.yaml
 git commit -m "feat(criteria): widen year window to 2014 (v1.1.0)"
 ```
 
@@ -222,10 +228,13 @@ log as history. `newly_requires_screening` is usually empty for a narrowing amen
 from — `doc_types.include`. Remember that an *empty* `include` list means "no document-type
 restriction at all", so narrowing by emptying the list does the opposite of what you want.
 
-**"Our subject area is broader than I thought."** Add codes to `subject_areas`, bump, replay,
-and expect a non-empty `newly_requires_screening`. Note that Scopus `view=COMPLETE` responses
-carry no subject-area codes, so records with no subject-area rows in Layer 1 pass this filter
-regardless — widening it may change fewer records than you expect.
+**"Our subject area is broader than I thought."** You cannot express that here. Scopus
+`view=COMPLETE` responses carry no subject-area codes, so no record in a captured corpus has
+any, and a non-empty `subject_areas` would be a filter that matched everything while
+appearing in your diagram as a restriction. It is therefore **refused**: the engine raises
+`ConfigError` naming the codes and the corpus. Keep `subject_areas: []` and apply the
+restriction at title/abstract screening, where it becomes a logged decision with a reason
+code. See [Limitations](../methodology/limitations.md#subject_areas-is-declared-but-not-enforceable).
 
 **"I want to see what the corpus looked like under 1.0.0."** Replay against the old version:
 `engine.replay(project, criteria_version="1.0.0")`. Nothing is mutated, and you can compare
@@ -241,6 +250,9 @@ its `automated`/`language` sizes against the current ones.
 | "does not appear to live inside the git repository rooted at…" | `criteria.yaml` (or the file its symlink resolves to) is outside the repository the project directory belongs to | Move the tracked criteria file, or the mirror it points at, inside that repository |
 | "git is not available on PATH" | No `git` executable | Install git, or run from an environment that has it |
 | "does not satisfy the criteria.yaml schema" | The edited YAML is invalid (e.g. a non-semantic `version`) | Fix the file; the message names the failing field |
+| "contains N key(s) prismabib does not understand" | A misspelled or unsupported key | The message names each one, the block it is in, and the closest valid key. If prismabib cannot express the criterion, apply it at screening as a logged decision |
+| "temporal.year_end … precedes temporal.year_start" | The window is inverted | Check whether the two values are transposed |
+| "restricts subject_areas to … but not one of the N records … carries subject-area data" | `subject_areas` is non-empty on a Scopus Search API corpus | Set `subject_areas: []`; see [Limitations](../methodology/limitations.md#subject_areas-is-declared-but-not-enforceable) |
 
 A `StoreError` instead means Layer 1 has not been built yet for this project — replay reads
 the store to recompute `A` and `L`. A `LogError` means `decisions.jsonl` failed its checksum

@@ -147,8 +147,8 @@ A key property of the architecture: re-running the exact same query with a warm 
 
 ### What is versioned in git (and what is not)
 
-- **Not in git:** `raw/` directory (Layer 0 is gitigored and push-guarded by `scripts/reject_licensed_content.sh`)
-- **Optionally in git:** `projects/<slug>/decisions.jsonl` (Layer 2 event log; recommended so human decisions are not lost)
+- **Not in git:** `raw/` directory (Layer 0 is gitignored and push-guarded by `scripts/reject_licensed_content.sh`)
+- **Optionally in git:** `projects/<slug>/decisions/decisions.jsonl` and its `.sha256` sidecar (Layer 2 event log; recommended so human decisions are not lost)
 - **In git:** `projects/<slug>/criteria.yaml`, `taxonomy/rules/*.yaml` (methodology audit trail)
 - **On release tags only:** Aggregate export tables and figures (attached as GitHub Release assets, not in tree)
 
@@ -181,4 +181,4 @@ No number in the published output is ever typed or copied. Every figure is re-de
 
 ---
 
-See [Architecture Overview](overview.md) for the four-layer design; [BUILD_PLAN.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/BUILD_PLAN.md) §2.2 (lines 99–121) for the layer invariants.
+See [Architecture Overview](overview.md) for the four-layer design; `BUILD_PLAN.md` §2.2 (lines 99–121) for the layer invariants. That specification is the project's internal contract and is not published in this repository, so it is cited by section rather than linked.

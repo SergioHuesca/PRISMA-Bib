@@ -74,6 +74,14 @@ comparing two reviews' numbers needs to know them:
   concretely: `store/load.py` documents that the Scopus Search API `view=COMPLETE` responses
   this codebase captures carry no subject-area codes at all, so the strict reading would let
   a data-source limitation masquerade as a screening decision and empty the corpus.
+
+    The corollary is bounded, though: applied to a corpus where *no* record carries the
+    data, the same convention would turn the filter into a silent no-op — every record
+    passing a restriction the diagram claims was applied. So
+    `engine._refuse_unenforceable_subject_filter` raises `ConfigError` when `subject_areas`
+    is non-empty and not one record in the corpus has subject-area data, which is every
+    corpus captured from the Scopus Search API. See
+    [Limitations](limitations.md#subject_areas-is-declared-but-not-enforceable).
 - **Document types match on either the Scopus code or its description.** `records.doc_type`
   is populated with the description form (`"Conference Paper"`) whenever the captured entry
   carries one, while `criteria.yaml` is written in code form (`ar`, `cp`). The closed
