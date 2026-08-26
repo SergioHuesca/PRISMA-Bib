@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-26
+
+### Changed
+
+- **`[query]` refuses keys it does not understand**, naming the closest valid one —
+  the same treatment `criteria.yaml` already got in 0.6.0, and for the same reason.
+  `compound_term` without its `s` was silently dropped and the search ran without
+  that AND group, returning a narrower, entirely plausible-looking corpus.
+
+### Fixed
+
+- **A malformed `[query].compound_terms` is now diagnosed by prismabib rather than
+  by Pydantic.** Every wrong shape TOML permits there — bare strings, a single group
+  written without its surrounding `[ ]`, a `[query.compound_terms]` header that should
+  have been doubled, a bare nested list, a scalar — gets a message naming the mistake
+  and writing out the corrected line. Previously these produced a validation dump
+  citing `_CompoundTerm`, a private class the reader cannot look up; a scalar produced
+  an uncaught `TypeError`, which the CLI reports as a bug in prismabib rather than as
+  a mistake in the file.
+- A `query` key that is not a table no longer surfaces the private name `_QuerySpec`.
+
 ## [0.6.0] — 2026-08-26
 
 Phase 0a: making the tool honest for researchers who are not its author. This
@@ -341,7 +362,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.3.0...v0.4.0
