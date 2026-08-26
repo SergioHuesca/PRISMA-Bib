@@ -111,10 +111,10 @@ PRISMABIB_PROJECTS_ROOT=./projects
 cannot leak through `repr`, `str`, `model_dump`, a traceback, or a log line — the Scopus
 client also registers the key with a structlog processor that scrubs it from every event.
 
-Create `.env` **before** running `init`: the CLI resolves its projects root through
-`Settings`, which requires `SCOPUS_API_KEY` to be present. The empty value copied from
-`.env.example` satisfies that, so you can lay out a project before your key arrives — but
-the file has to exist.
+`init` itself needs no credential — it resolves its projects root through
+`ProjectsRootSettings`, which declares no required secret — so you can lay a project out
+before your key arrives. `.env` is needed from `prismabib search` onward, which is the
+first step that talks to Scopus.
 
 ## 3. `prismabib init`
 

@@ -40,9 +40,10 @@ separate institutional token issued for the same key. If you put your API key th
 Scopus returns `401 "Institution Token is not associated with API Key"`. See
 [Provenance — troubleshooting](../architecture/provenance.md#troubleshooting-scopus_insttoken-trap).
 
-`.env` must exist before the next step: the CLI resolves its projects root through
-`Settings`, which requires `SCOPUS_API_KEY` to be present. The empty value copied from
-`.env.example` satisfies that.
+`.env` is not needed for the next step. `prismabib init` creates directories and
+templates without touching the network, and resolves its projects root through
+`ProjectsRootSettings`, which requires no credential. Your key is first used by
+`prismabib search`.
 
 ### 1c. Scaffold the project
 

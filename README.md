@@ -41,13 +41,13 @@ Get a key at [dev.elsevier.com](https://dev.elsevier.com).
 gh repo clone SergioHuesca/PRISMA-Bib
 cd PRISMA-Bib
 uv sync
-cp .env.example .env          # then put your Scopus key in it
 
 prismabib init my-review --title "My systematic review"
 ```
 
-`init` creates `projects/my-review/` and tells you which two files to edit — it does not
-need a Scopus key, so you can lay out a project before you have one. Fill in:
+`init` creates `projects/my-review/` and tells you which two files to edit. It needs no
+Scopus key — nothing before `search` touches the network — so you can lay a project out
+while you are still waiting for access. Fill in:
 
 - **`project.toml`** — the `[query]` table: the Boolean search itself.
 - **`criteria.yaml`** — your eligibility criteria: year window, document types, languages,
@@ -57,6 +57,7 @@ need a Scopus key, so you can lay out a project before you have one. Fill in:
 Then:
 
 ```bash
+cp .env.example .env          # put your Scopus key in it -- needed from here on
 prismabib search my-review    # spends Scopus quota; resumable if interrupted
 prismabib build my-review     # derive the Layer 1 store from the raw capture
 prismabib flow my-review      # print the PRISMA 2020 flow counts

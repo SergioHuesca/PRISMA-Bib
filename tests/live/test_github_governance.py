@@ -56,7 +56,10 @@ def _origin_slug() -> str:
         check=False,
         timeout=60,
     ).stdout.strip()
-    return remote.removeprefix("https://github.com/").removesuffix(".git")
+    for prefix in ("https://github.com/", "ssh://git@github.com/", "git@github.com:"):
+        if remote.startswith(prefix):
+            return remote.removeprefix(prefix).removesuffix(".git")
+    return remote.removesuffix(".git")
 
 
 REPO = _origin_slug()
