@@ -24,6 +24,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+import typer
 from typer.testing import CliRunner
 
 from prismabib.cli import app
@@ -59,10 +60,25 @@ def _screened_reference(tmp_path: Path) -> Project:
 @pytest.mark.integration
 @pytest.mark.parametrize("command", ["init", "search", "build", "flow"])
 def test_cli__every_subcommand__has_help_and_exits_zero(command: str) -> None:
-    result = runner.invoke(app, [command, "--help"])
+    """``--help`` must work for every subcommand, and each must accept ``--root``.
 
-    assert result.exit_code == 0
-    assert "--root" in result.stdout
+    The option is asserted against the click command's declared parameters
+    rather than against the rendered help text. Typer renders help through
+    rich, whose output depends on terminal width, colour support and rich's
+    own version -- this assertion was ``"--root" in result.stdout`` and
+    passed on every local configuration I could construct (narrow columns,
+    ``TERM=dumb``, ``NO_COLOR``, xdist, Python 3.11) while failing on CI.
+    That is presentation, not contract: what a caller depends on is that the
+    option exists and is spelled ``--root``, which is exactly what this now
+    checks.
+    """
+    result = runner.invoke(app, [command, "--help"])
+    assert result.exit_code == 0, result.output
+
+    subcommand = typer.main.get_command(app).commands[command]  # type: ignore[attr-defined]
+    option_spellings = {name for param in subcommand.params for name in param.opts}
+
+    assert "--root" in option_spellings
 
 
 # ---------------------------------------------------------------------------
