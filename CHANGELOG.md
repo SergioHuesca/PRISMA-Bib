@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-26
+
+Phase 0a: making the tool honest for researchers who are not its author. This
+release is **breaking**: `criteria.yaml` files that previously loaded may now be
+refused, deliberately.
+
+### Added
+
+- **A CLI**: `prismabib init | search | build | flow`. The README had instructed
+  users to run `prismabib init` since Stage 0; no CLI existed. `code` and `export`
+  are absent rather than stubbed, since commands that error on use are how the
+  README became untrustworthy in the first place.
+- **`examples/worked_example.py`** — the whole pipeline end to end with **no Scopus
+  key and no quota**, so a researcher can see it work before deciding whether to
+  request institutional access.
+- `docs/methodology/limitations.md` — what this tool cannot currently do, in one
+  place, framed as current state rather than apology.
+- `CITATION.cff`, asking specifically for the version: a citation without one
+  cannot be checked by a reader, which is the project's whole premise.
+
+### Changed
+
+- **`criteria.yaml` refuses keys it does not understand**, naming the closest valid
+  one. It previously dropped them silently, so a misspelled `language:` or a
+  plausible-but-unsupported `study_designs:` produced no error and no filtering —
+  a wrong corpus reached by a typo.
+- **A declared `subject_areas` restriction is refused when no record can be judged
+  against it.** The Scopus Search API's `view=COMPLETE` returns no subject-area
+  codes, so every real corpus is in that state: the filter silently matched
+  everything and the diagram claimed a restriction that never ran.
+- An inverted `temporal` window is refused; it emptied the corpus and made the
+  diagram report that the automated filter removed the entire search.
+- `Project.init` ships a working PRISMA reason-code vocabulary and documents the
+  semantics that cannot be guessed — `conference_whitelist` is a substring match
+  applying only to conference venues, `languages` matches Scopus's string exactly.
+- The 403 entitlement error and the truncated-decision-log error now say what to
+  **do**, not only what went wrong. Both are failures that end a first session.
+- `docs/getting-started.md` is the real path rather than a stub; `README` and
+  `docs/index.md` no longer claim "Stage 0 (v0.1.0)" four stages late.
+
+### Fixed
+
+- **The package version no longer lies.** `pyproject.toml` said `0.1.0` at tag
+  `v0.5.0`, and that string is sealed into every run manifest as `client_version`,
+  permanently. Now derived from the git tag.
+- **`prismabib init` no longer requires a Scopus key** to create a directory.
+- Auto-filed issues assign to `${{ github.repository_owner }}`, and the live
+  governance suite derives its slug from `origin`, so a fork fails on behaviour
+  rather than identity.
+
 ## [0.5.0] — 2026-08-25
 
 ### Added
@@ -291,7 +341,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.2.0...v0.3.0
