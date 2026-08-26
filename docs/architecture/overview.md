@@ -78,6 +78,8 @@ Versioned rule files (YAML) plus override events. As methodology understanding e
 
 **Key property:** Append-only. Current state is derived from the log; you never mutate the log.
 
+**As built (Stage 4):** `prisma/events.py` (event schema and monotonic ULIDs), `prisma/log.py` (the append-only, `flock`-serialised, checksum-guarded writer and the fold), `prisma/criteria.py` (resolving a superseded `criteria.yaml` version), `prisma/engine.py` (the six set functions and `replay`), and `prisma/flow.py` (`FlowCounts`). See [PRISMA Mapping](../methodology/prisma-mapping.md) for the set definitions and the flow-diagram audit table.
+
 ### Layer 3 — Analysis views (pure functions)
 
 Deterministic queries and transformations over Layers 1+2, producing:
@@ -145,6 +147,17 @@ src/prismabib/
 
 ### Additions to BUILD_PLAN §2.3 repository layout
 
+**`src/prismabib/prisma/`** (Stage 4, Layer 2 — PRISMA engine)
+
+The package is built exactly as §2.3 lists it: `events.py`, `log.py`, `criteria.py`, `engine.py`, `flow.py`, and no other module. Nothing was added to the repository layout, and nothing was added to the `projects/<slug>/` skeleton either — in particular there is **no per-version criteria archive directory** (`criteria/1.0.0.yaml`, …). A superseded `criteria.yaml` version is resolved from that file's own git history (`prisma/criteria.py`), so replaying under an amended protocol needs no second, driftable copy of a file git already versions. A version that was never committed cannot be replayed, and `ConfigError` names it rather than falling back to the current file.
+
+Two *contract* deviations were made inside those files, both recorded as ADRs per §2.6:
+
+- **`FlowCounts` gained `unsure_title_abstract` and `unsure_fulltext`** ([ADR 0007](adr/0007-flow-counts-unsure-fields.md)). BUILD_PLAN's frozen dataclass partitions each screening stage into "excluded" and "advanced", leaving a record that is screened but unresolved — an `unsure` decision, or one not yet made — with nowhere to go, so `assert_consistent()` could not close its own arithmetic. Owner-approved.
+- **Disagreement between reviewers is adjudicated conservatively** ([ADR 0008](adr/0008-multi-reviewer-adjudication.md)): any `exclude` wins, otherwise any `unsure` wins, otherwise `include` only if every reviewer who decided said so. BUILD_PLAN specifies the per-reviewer fold key but no consensus rule, and set membership cannot be computed without one.
+
+**Rationale:** Both change published numbers, which is exactly the class of decision §2.6 requires an ADR for. The layout itself needed no addition, and this entry records that deliberately — a reader comparing `src/prismabib/prisma/` against §2.3 should find no surprises there, and should look in the two ADRs instead.
+
 **`src/prismabib/stage.py`** (Stage 3, PRISMA flow stages)
 
 The `PrismaStage` enum, naming the six named record sets of the PRISMA 2020 flow: `RAW` (unfiltered), `AUTOMATED` (deterministic year/subject/doc-type filter), `LANGUAGE` (deterministic language filter), `TITLE_ABSTRACT` (human-screened), `FULLTEXT` (human-screened), and `INCLUDED` (final corpus). Used as the `stage` parameter of `Corpus.records()` and `Corpus.keywords()` (BUILD_PLAN lines 895–896), and later the Stage 5 `screening_queue()` contract.
@@ -187,5 +200,10 @@ Five core decisions (ADRs 0001–0005) are made in Stage 1:
 5. **Rules-plus-override taxonomy** — Why versioned rule files plus event overrides
 
 Plus ADR 0006 (Stage 0): **Public repository and single-owner review** — governance on a free-tier GitHub account.
+
+Two more are made in Stage 4, both about numbers rather than infrastructure:
+
+7. **[`FlowCounts` records unresolved screening decisions](adr/0007-flow-counts-unsure-fields.md)** — why the frozen flow-count contract gained two fields
+8. **[Multi-reviewer adjudication is conservative](adr/0008-multi-reviewer-adjudication.md)** — how disagreement between reviewers resolves, and why never in favour of inclusion
 
 See the [Architecture Decision Records](adr/) section for details.

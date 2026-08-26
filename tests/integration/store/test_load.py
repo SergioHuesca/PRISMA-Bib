@@ -17,11 +17,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import polars as pl
 import pytest
 from structlog.testing import capture_logs
 
 from prismabib.errors import StoreError
 from prismabib.models import PayloadRef
+from prismabib.prisma import engine
+from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES, table_checksums
@@ -249,23 +252,86 @@ def test_citations__two_snapshots__both_retained(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Needs the Stage 4 PRISMA engine (prismabib.prisma), which does not exist "
-        "yet; Corpus.records() raises NotImplementedError for every stage but RAW. "
-        "Flip this in the same PR that lands Stage 4 (BUILD_PLAN line 923)."
-    ),
-)
 def test_corpus__records_by_stage__delegates_to_prisma_engine(tmp_path: Path) -> None:
+    # Stage 4 landed, so the strict xfail this test carried is gone -- and so is
+    # its original assertion, `included.height <= raw_count`, which a
+    # `records(INCLUDED)` that always returned zero rows would have satisfied
+    # (§5 risk 12). What is asserted instead is identity with the engine's own
+    # answer, over a decision log this test wrote itself, so the frame is
+    # pinned to a *known, non-empty* set of records rather than to a bound.
     project = copy_reference_project(tmp_path)
     build_store(project, rebuild=True)
+    log = DecisionLog(project)
+    eligible = sorted(engine.language_set(project))[:6]
+    for record_id in eligible:
+        log.append(
+            stage=PrismaStage.TITLE_ABSTRACT,
+            record_id=record_id,
+            reviewer="kp",
+            decision="include",
+        )
+    for record_id in eligible[:4]:
+        log.append(
+            stage=PrismaStage.FULLTEXT, record_id=record_id, reviewer="kp", decision="include"
+        )
     corpus = Corpus.open(project)
     raw_count = corpus.records(stage=PrismaStage.RAW).height
 
     included = corpus.records(stage=PrismaStage.INCLUDED)
 
-    assert included.height <= raw_count
+    assert set(included["record_id"].to_list()) == engine.corpus(project) == set(eligible[:4])
+    assert included.height == 4
+    assert 4 < raw_count == 120
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("read_only", [True, False])
+def test_corpus__non_raw_stage__answers_the_same_on_a_writable_and_a_read_only_handle(
+    tmp_path: Path, read_only: bool
+) -> None:
+    # `read_only` is part of `Corpus.open`'s frozen signature, so
+    # `Corpus.open(project, read_only=False).records(stage=INCLUDED)` is a
+    # reachable public path -- and it used to be a hard crash: the PRISMA
+    # engine opened a *second*, read-only connection to the file this Corpus
+    # already held writable, and DuckDB refuses two connections to one
+    # database file whose configurations disagree ("Can't open a connection
+    # to same database file with a different configuration than existing
+    # connections"). The engine now borrows the Corpus's own connection, so
+    # the flag no longer decides whether a stage can be resolved at all.
+    #
+    # Exactly one Corpus is opened per parametrised case, and every engine
+    # call is made before it. Two open handles on one file in one test would
+    # reproduce that same collision from the test's own side and read as the
+    # bug under test.
+    project = copy_reference_project(tmp_path)
+    build_store(project, rebuild=True)
+    log = DecisionLog(project)
+    eligible = sorted(engine.language_set(project))[:5]
+    for record_id in eligible:
+        log.append(
+            stage=PrismaStage.TITLE_ABSTRACT,
+            record_id=record_id,
+            reviewer="kp",
+            decision="include",
+        )
+    for record_id in eligible[:3]:
+        log.append(
+            stage=PrismaStage.FULLTEXT, record_id=record_id, reviewer="kp", decision="include"
+        )
+    expected_included = eligible[:3]
+    corpus = Corpus.open(project, read_only=read_only)
+
+    included = corpus.records(stage=PrismaStage.INCLUDED)
+    language = corpus.records(stage=PrismaStage.LANGUAGE)
+
+    assert included["record_id"].to_list() == expected_included
+    # LANGUAGE is checked alongside INCLUDED because the two take different
+    # routes through the borrowed connection: `L` is Layer 1 and
+    # `criteria.yaml` only, while `INCLUDED` also folds the decision log.
+    # `copy_reference_project` keeps `Project.init`'s permissive default
+    # criteria (every list empty, 1900-2026), so `L` here is every record.
+    assert language.height == 120
+    assert set(expected_included) < set(language["record_id"].to_list())
 
 
 @pytest.mark.integration
@@ -539,17 +605,40 @@ def test_build_store__rebuild_true_twice__reflects_newly_added_run(tmp_path: Pat
 
 
 @pytest.mark.integration
-def test_corpus_keywords__stage_argument__only_raw_is_supported(tmp_path: Path) -> None:
+def test_corpus_keywords__non_raw_stage__is_computed_over_exactly_the_engine_set(
+    tmp_path: Path,
+) -> None:
+    # Renamed from `..._stage_argument__only_raw_is_supported`: since Stage 4
+    # landed, a non-RAW stage no longer raises `NotImplementedError`, so the
+    # old name described behaviour that no longer exists. The assertion is now
+    # the same shape as `records`': the returned occurrences must be exactly
+    # the RAW occurrences restricted to the engine's set for that stage.
     project = copy_reference_project(tmp_path)
     build_store(project, rebuild=True)
+    log = DecisionLog(project)
+    eligible = sorted(engine.language_set(project))[:5]
+    for record_id in eligible:
+        log.append(
+            stage=PrismaStage.TITLE_ABSTRACT,
+            record_id=record_id,
+            reviewer="kp",
+            decision="include",
+        )
+    for record_id in eligible[:3]:
+        log.append(
+            stage=PrismaStage.FULLTEXT, record_id=record_id, reviewer="kp", decision="include"
+        )
     corpus = Corpus.open(project)
-
     raw_keywords = corpus.keywords(stage=PrismaStage.RAW)
 
-    with pytest.raises(NotImplementedError, match="Stage 4 PRISMA engine"):
-        corpus.keywords(stage=PrismaStage.INCLUDED)
+    included_keywords = corpus.keywords(stage=PrismaStage.INCLUDED)
 
-    assert raw_keywords.height > 0
+    included_set = engine.corpus(project)
+    assert included_set == set(eligible[:3])
+    assert included_keywords.equals(
+        raw_keywords.filter(pl.col("record_id").is_in(sorted(included_set)))
+    )
+    assert 0 < included_keywords.height < raw_keywords.height
 
 
 @pytest.mark.integration

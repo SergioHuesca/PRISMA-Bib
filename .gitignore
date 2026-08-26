@@ -84,6 +84,14 @@ dmypy.json
 site/
 docs_build/
 
+# mutmut (Stage 4). `mutmut run` copies the entire source tree and test suite into
+# `mutants/` at the repository root and rewrites it in place. It is build output, but
+# it does not look like build output in `git status` -- it looks like a second copy of
+# the project, and committing it to a PUBLIC repo would publish a mutated `src/` that
+# a reader could easily mistake for real code.
+mutants/
+.mutmut-cache
+
 # IDE
 *.vscode
 

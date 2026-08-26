@@ -91,6 +91,9 @@ nav:
           - "ADR 0003: Human-only screening": architecture/adr/0003-human-only-screening.md
           - "ADR 0004: Panel for in-notebook UI": architecture/adr/0004-panel-for-in-notebook-ui.md
           - "ADR 0005: Rules-plus-override taxonomy": architecture/adr/0005-rules-plus-override-taxonomy.md
+          - "ADR 0007: FlowCounts records unresolved screening decisions": architecture/adr/0007-flow-counts-unsure-fields.md
+          - "ADR 0008: Multi-reviewer adjudication is conservative": architecture/adr/0008-multi-reviewer-adjudication.md
+          - "ADR 0009: Mutation scope is configured, not passed on the command line": architecture/adr/0009-mutmut-3x-cli-deviation.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

@@ -6,9 +6,11 @@
 # the 3.11/3.12 matrix for exactly this reason: a matrix job publishes `full (3.11)` and
 # `full (3.12)`, never a bare `full`.
 #
-# Jobs added in later stages: `e2e` (Stage 4), `notebooks` (Stage 5), `gates` (with the
-# coverage/diff-cover thresholds). Each is added to the required list in the stage that
-# introduces it — a required check with no tests behind it blocks every PR.
+# Jobs added in later stages: `notebooks` (Stage 5), `gates` (with the coverage/diff-cover
+# thresholds). Each is added to the required list in the stage that introduces it — a
+# required check with no tests behind it blocks every PR. `e2e` arrived in Stage 4 and is
+# deliberately not in the required list until it has passed on `main` at least once, for
+# the same reason.
 
 name: CI
 
@@ -113,6 +115,33 @@ jobs:
             exit 1
           fi
 
+  # BUILD_PLAN §3.7.7: "e2e — pytest -m e2e (single job, ubuntu, py3.12)". Layer 0 through
+  # to FlowCounts on the frozen reference project, which is the only check that the
+  # stages compose; `full` deselects it (`-m "not live and not e2e"`) because it is slow
+  # and because a matrix would run it twice for no extra signal.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    needs: [full]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # The explicit -m overrides the `-m "not live"` in pyproject's addopts — the same
+      # mechanism the nightly `live` job relies on.
+      - name: End-to-end suite (reference project)
+        run: uv run pytest -m e2e
+
+  # `needs: [full]`, not `needs: [e2e]`, on purpose: `docs` is a required check and `e2e`
+  # is not one yet, so chaining them would let an unproven job block every merge. Move
+  # this to `needs: [e2e]` in the same change that makes `e2e` required.
   docs:
     name: docs
     runs-on: ubuntu-latest

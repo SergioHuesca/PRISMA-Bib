@@ -9,6 +9,15 @@ A bare `::: prismabib` renders only what the package's `__all__` exports — cur
 still exited 0. CI cannot catch that, which is why the modules are listed one by one below:
 a module added in a later stage without a section here is a visible omission.
 
+Sections follow the layer order of the pipeline: core vocabulary first, then Layer 0
+(`sources/`, `capture/`), Layer 1 (`store/`), and Layer 2 (`prisma/`). Each package's own
+section renders the package docstring only; its modules follow individually.
+
+**Not yet built** (each arrives with the stage that owns it, and gets a section here then):
+`sources/sciencedirect.py`, `screening/`, `fulltext/`, `taxonomy/`, `bibliometrics/`,
+`viz/`, `report/`. `store/schema.sql` never appears here — it is SQL, not a module, and is
+executed verbatim by `build_store`.
+
 ## prismabib
 
 ::: prismabib
@@ -63,6 +72,176 @@ The checked-in ISO 3166-1 alpha-3 mapping table. An unmapped string is preserved
 and logged, never dropped — §5 risk 8.
 
 ::: prismabib.countries
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## stage
+
+`PrismaStage` — the six named record sets of the PRISMA 2020 flow. A leaf module with no
+imports of its own, so both `store/` (Stage 3) and `prisma/` (Stage 4) can depend on it
+downward without depending on each other.
+
+::: prismabib.stage
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## query
+
+The Scopus Boolean query builder: renders `project.toml`'s `[query]` table into the string
+the Search API expects, with quote and backslash escaping.
+
+::: prismabib.query
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## sources
+
+Everything that talks to an external metadata API.
+
+::: prismabib.sources
+    options:
+      show_root_heading: true
+      members: false
+
+### sources.ratelimit
+
+::: prismabib.sources.ratelimit
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### sources.cache
+
+::: prismabib.sources.cache
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### sources.scopus
+
+::: prismabib.sources.scopus
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## capture
+
+Layer 0 — raw capture. Immutable JSONL plus a hashed run manifest; nothing downstream may
+write here.
+
+::: prismabib.capture
+    options:
+      show_root_heading: true
+      members: false
+
+### capture.manifest
+
+::: prismabib.capture.manifest
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### capture.writer
+
+::: prismabib.capture.writer
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## store
+
+Layer 1 — the normalised DuckDB store. Derived and disposable: reconstructible from Layer 0
+by one function.
+
+::: prismabib.store
+    options:
+      show_root_heading: true
+      members: false
+
+### store.db
+
+::: prismabib.store.db
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### store.load
+
+::: prismabib.store.load
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### store.checksums
+
+Deterministic, engine-independent per-table checksums behind the golden-snapshot acceptance
+test (S03-AC1). Not listed in BUILD_PLAN §2.3's layout — a Stage 3 addition.
+
+::: prismabib.store.checksums
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## prisma
+
+Layer 2 — the append-only decision log and the PRISMA engine. Every number in every output
+originates in this package; see [PRISMA Mapping](../methodology/prisma-mapping.md) for the
+set definitions and the flow-diagram audit table.
+
+::: prismabib.prisma
+    options:
+      show_root_heading: true
+      members: false
+
+### prisma.events
+
+::: prismabib.prisma.events
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### prisma.log
+
+::: prismabib.prisma.log
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### prisma.criteria
+
+::: prismabib.prisma.criteria
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### prisma.engine
+
+::: prismabib.prisma.engine
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### prisma.flow
+
+::: prismabib.prisma.flow
     options:
       show_root_heading: true
       show_source: true
