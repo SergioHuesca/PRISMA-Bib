@@ -29,6 +29,31 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from prismabib.errors import ConfigError
 
 
+class ProjectsRootSettings(BaseSettings):
+    """Just ``PRISMABIB_PROJECTS_ROOT``, resolvable without any credential.
+
+    Deliberately separate from :class:`Settings`. ``prismabib init`` is the
+    first command a new researcher runs, and it only needs to know *where*
+    to create a directory -- yet resolving that through :class:`Settings`
+    demanded ``SCOPUS_API_KEY``, so creating an empty folder failed until
+    they had obtained an Elsevier credential. That is a discouraging first
+    contact for a step that touches no network at all, and it inverts the
+    natural order: a researcher wants somewhere to put a project *before*
+    they go and request an API key.
+
+    Reads the same ``.env`` as :class:`Settings`, so a configured root is
+    still honoured; it simply declares no required secret of its own.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    prismabib_projects_root: Path = Path("./projects")
+
+
 class Settings(BaseSettings):
     """prismabib's environment configuration.
 

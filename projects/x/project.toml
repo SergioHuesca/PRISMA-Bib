@@ -1,0 +1,16 @@
+[project]
+slug = "x"
+title = "X"
+created = 2026-08-26
+track_decisions = true
+
+# The Phase 1 Boolean query (BUILD_PLAN §3.1). Fill these in before running
+# `prismabib search`; an empty query is rejected rather than silently
+# returning the whole database.
+#
+# terms          -- each rendered as FIELD("term"), OR-ed together
+# compound_terms -- each { all = [...] } becomes an AND-ed group
+[query]
+terms = []
+compound_terms = []
+fields = ["TITLE-ABS-KEY"]

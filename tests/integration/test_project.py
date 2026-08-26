@@ -403,3 +403,30 @@ def test_criteria__ordered_year_window__is_accepted(tmp_path: Path, window: str)
     )
 
     assert project.criteria.temporal.year_end >= project.criteria.temporal.year_start
+
+
+@pytest.mark.integration
+def test_project_init__no_credentials_configured__still_creates_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Creating a project directory must not require an Elsevier credential.
+
+    ``prismabib init`` is the first command a new researcher runs, and it
+    touches no network at all -- but resolving the projects root went
+    through ``Settings``, which requires ``SCOPUS_API_KEY``, so creating an
+    empty folder failed until they had obtained an API key. That inverts the
+    natural order: you want somewhere to put a review *before* you go and
+    request access, and being refused at step one reads like the tool does
+    not work.
+
+    ``root=None`` is the path under test; passing an explicit ``root``
+    always bypassed the settings lookup and was never affected.
+    """
+    monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
+    monkeypatch.setenv("PRISMABIB_PROJECTS_ROOT", str(tmp_path / "projects"))
+    monkeypatch.chdir(tmp_path)
+
+    project = Project.init("no-creds", title="No Credentials")
+
+    assert (project.root / "criteria.yaml").is_file()
+    assert (project.root / "project.toml").is_file()

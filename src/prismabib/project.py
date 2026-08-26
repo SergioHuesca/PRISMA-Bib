@@ -37,7 +37,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
-from prismabib.config import Settings
+from prismabib.config import ProjectsRootSettings
 from prismabib.errors import ConfigError
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$")
@@ -267,7 +267,7 @@ def _resolve_projects_root(root: Path | None) -> Path:
 
     Args:
         root: An explicit override, or ``None`` to read
-            ``PRISMABIB_PROJECTS_ROOT`` from :class:`~prismabib.config.Settings`
+            ``PRISMABIB_PROJECTS_ROOT`` from :class:`~prismabib.config.ProjectsRootSettings`
             (BUILD_PLAN §3.1 line 315, default ``./projects``).
 
     Returns:
@@ -275,11 +275,11 @@ def _resolve_projects_root(root: Path | None) -> Path:
 
     Raises:
         ConfigError: If ``root`` is ``None`` and environment configuration
-            cannot be loaded (see :class:`~prismabib.config.Settings`).
+            cannot be loaded (see :class:`~prismabib.config.ProjectsRootSettings`).
     """
     if root is not None:
         return root
-    return Settings().prismabib_projects_root
+    return ProjectsRootSettings().prismabib_projects_root
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
