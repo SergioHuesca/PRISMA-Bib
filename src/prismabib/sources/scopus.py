@@ -538,8 +538,17 @@ class ScopusClient:
         if status == 401:
             logger.warning("scopus.request.auth_error", endpoint=endpoint, status=status)
             raise AuthError(
-                f"Scopus rejected the API key (HTTP 401) for {endpoint}. "
-                "Check SCOPUS_API_KEY and, if applicable, SCOPUS_INSTTOKEN."
+                f"Scopus rejected the API key (HTTP 401) for {endpoint}.\n"
+                "\n"
+                "What to check, in the order that resolves this most often:\n"
+                "  1. SCOPUS_API_KEY is set in your .env and is the key itself, not a\n"
+                "     quoted string or a copied URL. Get one at https://dev.elsevier.com.\n"
+                "  2. If you set SCOPUS_INSTTOKEN, it must be the institutional token\n"
+                "     issued *for that same key*. Scopus reports the mismatch as\n"
+                "     'Institution Token is not associated with API Key' -- the most\n"
+                "     common cause is pasting the API key into both fields.\n"
+                "  3. If you have no institutional token, leave SCOPUS_INSTTOKEN empty\n"
+                "     rather than blank-but-present with a placeholder value."
             )
 
         if status == 403:
@@ -553,10 +562,27 @@ class ScopusClient:
             )
             raise EntitlementError(
                 f"Scopus denied access (HTTP 403) to {endpoint} under view={view!r}: "
-                f"missing entitlement {entitlement!r}. prismabib never falls back to a "
-                "lesser view (e.g. STANDARD) -- STANDARD omits authkeywords and full "
-                "affiliation data, which would silently bias the keyword network and "
-                "geography analysis (BUILD_PLAN §5 risk 1)."
+                f"missing entitlement {entitlement!r}.\n"
+                "\n"
+                "This is an access-rights problem, not a bug in your query or your key.\n"
+                f"view={view!r} carries author keywords and full affiliation data, and a\n"
+                "personal or free Scopus API key does not include it -- it is granted to\n"
+                "subscribing institutions.\n"
+                "\n"
+                "What to do:\n"
+                "  1. Run from your institution's network, which is often sufficient.\n"
+                "  2. Off campus, ask your university library or research-support office\n"
+                "     for a Scopus *institutional token* and set SCOPUS_INSTTOKEN in your\n"
+                "     .env alongside SCOPUS_API_KEY. Requesting it is a normal, routine\n"
+                "     request; librarians handle it regularly.\n"
+                "  3. If your institution has no Scopus subscription, prismabib cannot\n"
+                "     run against Scopus for you today. See docs/getting-started.md for\n"
+                "     the access requirements before investing further time.\n"
+                "\n"
+                "prismabib will not silently retry at a lesser view. STANDARD omits the\n"
+                "keyword and affiliation fields, so a corpus built from it would produce\n"
+                "a keyword network and a geography analysis that look complete and are\n"
+                "quietly biased -- a wrong number is worse than a refusal here."
             )
 
         if status == 429:
