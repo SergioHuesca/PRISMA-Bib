@@ -96,17 +96,27 @@ directly unit-tested by its own Stage 3 test cases
 create a second, driftable definition of the same key for no
 loader-visible benefit beyond DOI collisions.
 
-**``PrismaStage`` before Stage 4 exists.** ``Corpus.records``/``keywords``
-take a :class:`~prismabib.stage.PrismaStage`, but Stage 4's decision-log
-engine -- the only thing that can compute any set past "everything
-captured" -- does not exist yet. The one stage this loader can honestly
-answer is :attr:`~prismabib.stage.PrismaStage.RAW` (every record in
-``records``, unfiltered); every other member, including the frozen
-signature's default ``PrismaStage.INCLUDED``, raises ``NotImplementedError``
-naming the missing engine. This is why
-``test_corpus__records_by_stage__delegates_to_prisma_engine`` is shipped
-``xfail(strict=True)`` and is expected to flip in the same PR that lands
-Stage 4.
+**``PrismaStage`` delegates to the Stage 4 PRISMA engine.**
+``Corpus.records``/``keywords`` take a
+:class:`~prismabib.stage.PrismaStage`. :attr:`~prismabib.stage.PrismaStage.RAW`
+is answered directly from ``records`` -- everything else is delegated to
+:mod:`prismabib.prisma.engine`, which is the only place that knows how to
+compute a set past "everything captured" (``criteria.yaml`` plus the
+Layer 2 decision log). That delegation is a **function-local** import
+inside :meth:`Corpus._prisma_stage_record_ids`, not a module-level one:
+BUILD_PLAN §0 rule 1 forbids ``store/`` from depending on ``prisma/`` at
+import time (Stage 3 may not depend on Stage 4), so
+``prismabib.prisma.engine`` is only imported once a non-``RAW`` stage is
+actually requested, and only for a :class:`Corpus` opened from a
+:class:`~prismabib.project.Project` (see :meth:`Corpus.open`) -- a bare
+``Corpus(connection)`` has no project to resolve ``criteria.yaml`` or the
+decision log against, and raises rather than guessing one. This inverted
+dependency direction (``store`` reaching *up* into ``prisma`` at call time)
+is flagged for architect-reviewer to confirm or overturn. The delegation
+passes this ``Corpus``'s own connection down to the engine rather than
+letting it open a second one: DuckDB rejects a second connection to one
+file from one process when their configurations differ, so a ``Corpus``
+opened writable would otherwise crash on any non-``RAW`` stage.
 """
 
 from __future__ import annotations
@@ -118,7 +128,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from hashlib import sha1
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 import duckdb
 import pandas as pd
@@ -1169,6 +1179,14 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     return stats
 
 
+#: The non-``RAW`` stages whose membership is a pure function of Layer 1 and
+#: ``criteria.yaml``, with no dependence on the Layer 2 decision log
+#: (BUILD_PLAN line 950). Answered without loading ``decisions.jsonl`` at all.
+_LAYER1_ONLY_STAGES: Final[frozenset[PrismaStage]] = frozenset(
+    {PrismaStage.AUTOMATED, PrismaStage.LANGUAGE}
+)
+
+
 class Corpus:
     """Read-facing handle onto a Layer 1 store (BUILD_PLAN line 893-897).
 
@@ -1187,6 +1205,12 @@ class Corpus:
                 :func:`prismabib.store.db.connect` or :meth:`Corpus.open`.
         """
         self._connection = connection
+        # Set by `open()`, never by this constructor: a bare
+        # `Corpus(connection)` has no `Project` to resolve `criteria.yaml`
+        # or the decision log against, so `records`/`keywords` for a
+        # non-RAW stage must raise rather than silently having nothing to
+        # delegate to. See `_prisma_stage_record_ids`.
+        self._project: Project | None = None
 
     @classmethod
     def open(cls, project: Project, *, read_only: bool = True) -> Corpus:
@@ -1197,13 +1221,106 @@ class Corpus:
             read_only: Forwarded to :func:`prismabib.store.db.connect`.
 
         Returns:
-            A new :class:`Corpus` handle.
+            A new :class:`Corpus` handle, bound to ``project`` so
+            :meth:`records`/:meth:`keywords` can answer a non-``RAW``
+            stage.
 
         Raises:
             StoreError: If the store cannot be opened; see
                 :func:`prismabib.store.db.connect`.
         """
-        return cls(connect(project, read_only=read_only))
+        instance = cls(connect(project, read_only=read_only))
+        instance._project = project
+        return instance
+
+    def _prisma_stage_record_ids(self, stage: PrismaStage) -> frozenset[str]:
+        """Delegate a non-``RAW`` :class:`~prismabib.stage.PrismaStage` to the Stage 4 engine.
+
+        Args:
+            stage: Any :class:`~prismabib.stage.PrismaStage` other than
+                :attr:`~prismabib.stage.PrismaStage.RAW`.
+
+        Returns:
+            The record ids belonging to that PRISMA-flow set, per
+            :mod:`prismabib.prisma.engine`.
+
+        Raises:
+            StoreError: If this :class:`Corpus` was constructed directly
+                from a connection (:meth:`Corpus.__init__`) rather than via
+                :meth:`Corpus.open`, so no :class:`~prismabib.project.Project`
+                is available to resolve ``criteria.yaml`` or the decision
+                log against.
+            ConfigError: Forwarded from :mod:`prismabib.prisma.engine` if
+                ``project.criteria.yaml`` fails to parse.
+            LogError: Forwarded from :mod:`prismabib.prisma.engine` if the
+                decision log fails to load. Raised only for the screened
+                stages (``TITLE_ABSTRACT``/``FULLTEXT``/``INCLUDED``).
+                ``AUTOMATED`` and ``LANGUAGE`` are pure functions of Layer 1
+                and ``criteria.yaml`` (BUILD_PLAN line 950), so they are
+                answered without reading the log at all and cannot fail on
+                one that is corrupt or absent.
+        """
+        if self._project is None:
+            raise StoreError(
+                f"Corpus.records/keywords(stage={stage!r}) needs a project-bound "
+                "Corpus -- open it with Corpus.open(project, ...) rather than "
+                "constructing Corpus(connection) directly, so the Stage 4 PRISMA "
+                "engine has a Project to resolve criteria.yaml and the decision "
+                "log against."
+            )
+        # Function-local, not module-level: see the module docstring's
+        # "PrismaStage delegates to the Stage 4 PRISMA engine" section for
+        # why `store/` must not import `prisma/` at import time.
+        #
+        # `_capture_snapshot`, not the seven public `engine` functions, for
+        # two reasons.
+        #
+        # It accepts an already-open connection, and this Corpus already
+        # holds one. Each public function opens its own read-only connection
+        # instead, and DuckDB refuses a second connection to the same file
+        # from one process when the two disagree about configuration -- so
+        # `Corpus.open(project, read_only=False)` (a frozen signature,
+        # therefore a reachable public path) followed by `.records()` for
+        # any non-RAW stage died on "Can't open a connection to same
+        # database file with a different configuration than existing
+        # connections".
+        #
+        # And it reads Layer 1, `criteria.yaml` and the decision log exactly
+        # once, so the record ids returned here and the rows selected for
+        # them describe one instant rather than several.
+        from prismabib.prisma.engine import _capture_layer1, _capture_snapshot
+
+        # `AUTOMATED` and `LANGUAGE` are pure functions of Layer 1 and
+        # `criteria.yaml` (BUILD_PLAN line 950: computed, never logged), so
+        # they are answered from a Layer 1 view that never touches Layer 2.
+        # Reading the decision log for them would be worse than wasteful: it
+        # would make `Corpus.records(stage=LANGUAGE)` fail with `LogError` on
+        # a corrupt log whose contents cannot affect the answer, and -- since
+        # `DecisionLog` opens `decisions.jsonl` with `O_CREAT` -- would
+        # create a screening log for a project that has never screened.
+        if stage in _LAYER1_ONLY_STAGES:
+            layer1 = _capture_layer1(self._project, connection=self._connection)
+            return layer1.automated if stage is PrismaStage.AUTOMATED else layer1.language
+
+        snapshot = _capture_snapshot(self._project, connection=self._connection)
+        # Every screened member of PrismaStage, so a stage added to the enum
+        # without a set here fails the exhaustiveness check below rather
+        # than silently returning the wrong flow set.
+        stage_to_ids: dict[PrismaStage, frozenset[str]] = {
+            PrismaStage.TITLE_ABSTRACT: snapshot.manual_abstract,
+            PrismaStage.FULLTEXT: snapshot.manual_fulltext,
+            # C == M_full (BUILD_PLAN line 948); PrismaStage.INCLUDED and
+            # PrismaStage.FULLTEXT therefore name the same set by design.
+            PrismaStage.INCLUDED: snapshot.manual_fulltext,
+        }
+        try:
+            return stage_to_ids[stage]
+        except KeyError:  # pragma: no cover - RAW never reaches here
+            raise StoreError(
+                f"Corpus._prisma_stage_record_ids received stage {stage!r}, which has "
+                "no PRISMA-flow set. RAW is answered from Layer 1 directly by the "
+                "caller and must never reach this method."
+            ) from None
 
     def _query(self, sql: str, params: Sequence[Any] = ()) -> pl.DataFrame:
         """Run ``sql`` and materialise the result as a polars DataFrame.
@@ -1235,31 +1352,32 @@ class Corpus:
         """Return the ``records`` table for one named PRISMA set.
 
         Args:
-            stage: Which PRISMA-flow record set to return. Only
+            stage: Which PRISMA-flow record set to return.
                 :attr:`~prismabib.stage.PrismaStage.RAW` (``S_raw``, every
-                captured record) is answerable from Layer 1 alone -- see
-                the module docstring's "``PrismaStage`` before Stage 4
-                exists" section.
+                captured record) is answered directly from Layer 1; every
+                other member is delegated to
+                :meth:`_prisma_stage_record_ids` (the Stage 4 PRISMA
+                engine) -- see the module docstring.
 
         Returns:
             Every column of ``records``, one row per record, ordered by
-            ``record_id``, when ``stage`` is
-            :attr:`~prismabib.stage.PrismaStage.RAW`.
+            ``record_id``.
 
         Raises:
-            NotImplementedError: For every ``stage`` other than
-                :attr:`~prismabib.stage.PrismaStage.RAW`, including the
-                default ``PrismaStage.INCLUDED`` -- Stage 4's decision-log
-                engine does not exist yet to compute it.
+            StoreError: If ``stage`` is not
+                :attr:`~prismabib.stage.PrismaStage.RAW` and this
+                :class:`Corpus` was not opened via :meth:`Corpus.open`; see
+                :meth:`_prisma_stage_record_ids`.
+            ConfigError: See :meth:`_prisma_stage_record_ids`.
+            LogError: See :meth:`_prisma_stage_record_ids`.
         """
-        if stage is not PrismaStage.RAW:
-            raise NotImplementedError(
-                f"Corpus.records(stage={stage!r}) needs the Stage 4 PRISMA engine "
-                "(prismabib.prisma), which does not exist yet. The only stage "
-                "answerable from Layer 1 alone is PrismaStage.RAW (every "
-                "captured record) -- pass that explicitly."
-            )
-        return self._query("SELECT * FROM records ORDER BY record_id")
+        if stage is PrismaStage.RAW:
+            return self._query("SELECT * FROM records ORDER BY record_id")
+        record_ids = self._prisma_stage_record_ids(stage)
+        return self._query(
+            "SELECT * FROM records WHERE record_id = ANY(?) ORDER BY record_id",
+            [sorted(record_ids)],
+        )
 
     def keywords(
         self, kind: str = "author", stage: PrismaStage = PrismaStage.INCLUDED
@@ -1272,7 +1390,7 @@ class Corpus:
                 here -- an unrecognised ``kind`` simply matches no rows,
                 since ``record_keywords.kind`` is plain ``TEXT``, not a
                 DuckDB ``ENUM``.
-            stage: See :meth:`records`; the same restriction applies.
+            stage: See :meth:`records`; the same delegation applies.
 
         Returns:
             One row per (record, keyword) occurrence of ``kind``:
@@ -1280,21 +1398,23 @@ class Corpus:
             ``kind``; ordered by ``record_id``, then ``term_norm``.
 
         Raises:
-            NotImplementedError: For every ``stage`` other than
-                :attr:`~prismabib.stage.PrismaStage.RAW`.
+            StoreError: See :meth:`records`.
+            ConfigError: See :meth:`_prisma_stage_record_ids`.
+            LogError: See :meth:`_prisma_stage_record_ids`.
         """
-        if stage is not PrismaStage.RAW:
-            raise NotImplementedError(
-                f"Corpus.keywords(stage={stage!r}) needs the Stage 4 PRISMA engine "
-                "(prismabib.prisma), which does not exist yet. The only stage "
-                "answerable from Layer 1 alone is PrismaStage.RAW (every "
-                "captured record) -- pass that explicitly."
+        if stage is PrismaStage.RAW:
+            return self._query(
+                "SELECT rk.record_id, k.keyword_id, k.term_raw, k.term_norm, rk.kind "
+                "FROM record_keywords rk JOIN keywords k ON k.keyword_id = rk.keyword_id "
+                "WHERE rk.kind = ? ORDER BY rk.record_id, k.term_norm",
+                [kind],
             )
+        record_ids = self._prisma_stage_record_ids(stage)
         return self._query(
             "SELECT rk.record_id, k.keyword_id, k.term_raw, k.term_norm, rk.kind "
             "FROM record_keywords rk JOIN keywords k ON k.keyword_id = rk.keyword_id "
-            "WHERE rk.kind = ? ORDER BY rk.record_id, k.term_norm",
-            [kind],
+            "WHERE rk.kind = ? AND rk.record_id = ANY(?) ORDER BY rk.record_id, k.term_norm",
+            [kind, sorted(record_ids)],
         )
 
     def citations(self, at: datetime | None = None) -> pl.DataFrame:

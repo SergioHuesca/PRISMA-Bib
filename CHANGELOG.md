@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-25
+
+### Added
+
+**PRISMA engine and the Layer 2 decision log (Stage 4)**
+
+- `prisma/events.py`, `prisma/log.py`: append-only `decisions.jsonl`, fsync'd per write
+  with a SHA-256 sidecar and `flock`-guarded, plus monotonic stdlib ULIDs. Hand-editing
+  raises `LogError`; an *interrupted append* is diagnosed distinctly from tampering, so a
+  reviewer who lost power is not told their own irreplaceable screening log "may have
+  been edited by hand".
+- `prisma/criteria.py`: criteria history resolved from git alone (`log --follow` /
+  `show <hash>:<path>`) — there is no per-version archive directory, so an uncommitted
+  amendment is invisible to replay.
+- `prisma/engine.py`: the formal sets `S_raw`/`A`/`L`/`M_abs`/`M_full`/`C`, plus `replay`
+  for criteria amendments. `A` and `L` are pure functions of `criteria.yaml` and Layer 1
+  and can never be widened by a logged event.
+- `prisma/flow.py`: `FlowCounts` and `assert_consistent()`.
+- Property suite proving `C ⊆ M_abs ⊆ (S_raw ∩ A ∩ L) ⊆ S_raw` for arbitrary generated
+  event streams, plus a stateful `DecisionLogMachine`.
+- `weekly-mutation.yml` (kill-rate gate over `prisma/`) and an `e2e` CI job.
+- ADR 0007 (`unsure_*` fields), ADR 0008 (multi-reviewer adjudication: any `exclude`
+  wins, then any `unsure`, include only if unanimous among reviewers who logged),
+  ADR 0009 (mutmut 3.x configures scope in `pyproject.toml`; BUILD_PLAN line 580's
+  `--paths-to-mutate` is the 2.x CLI and cannot run).
+
+### Changed
+
+- `FlowCounts` gains `unsure_title_abstract` and `unsure_fulltext` (ADR 0007). BUILD_PLAN's
+  frozen shape had nowhere to put a record that was screened but not resolved, so the
+  partition could not close on a `decision = "unsure"` the spec itself admits.
+- `compute_flow_counts` takes **one** consistent snapshot — one Layer 1 read, one criteria
+  parse, one log fold (was 6 / 4 / 3+). Because both `unsure_*` fields are partition
+  remainders, drift between separate folds was absorbed silently: a diagram reporting
+  `unsure_title_abstract = -4` passed `assert_consistent()`.
+- `assert_consistent()` now rejects any negative count *before* checking the four
+  equations. An equality between two sums closes over a negative term exactly as happily
+  as a positive one, so the equations alone could not catch it.
+- `Corpus.records`/`keywords` answer every `PrismaStage`; `AUTOMATED` and `LANGUAGE` are
+  computed without reading Layer 2 at all, so a corrupt `decisions.jsonl` cannot fail a
+  question it cannot influence, and asking one no longer *creates* a screening log for a
+  project that has never screened.
+
+### Fixed
+
+- `excluded_fulltext` key order was `PYTHONHASHSEED`-dependent, so `numbers.json` would
+  not have been byte-identical across machines — the property Stage 11 is graded on.
+- `criteria.py` decoded git output with the machine's locale; under a non-UTF-8 8-bit
+  locale a non-ASCII `criteria.yaml` would have been mis-decoded **silently**, changing
+  `A` and therefore the published `excluded_automated`.
+- `DecisionLog` created its parent directory. Git cannot store an empty directory, so a
+  project cloned with `track_decisions = false` arrived without `decisions/` and the first
+  screening decision died on `FileNotFoundError`.
+
+## [0.4.0] — 2026-08-24
+
 ### Added
 
 **Normalised store, Layer 1 (Stage 3)**
@@ -235,7 +291,9 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SergioHuesca/PRISMA-Bib/releases/tag/v0.1.0

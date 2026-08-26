@@ -319,13 +319,128 @@ pytest tests/golden/test_figures.py -v
 
 Look for unexpected changes—a snapshot diff that doesn't match the commit message is a sign something is wrong.
 
-## Mutation testing (Stage 4+)
+## Why the PRISMA engine is tested differently (Stage 4+)
 
-Mutation testing (via `mutmut`) runs weekly against `src/prismabib/prisma/` and `src/prismabib/taxonomy/` with a required kill rate ≥ 85%. Surviving mutants are triaged into the issue backlog. This catches the classic failure where a module has 100% coverage but no meaningful assertions.
+Every other module in this codebase is gated on coverage. `src/prismabib/prisma/` is gated on
+coverage **and** on mutation testing, because coverage cannot detect the failure this module
+is capable of.
 
-**In Stage 0 and Stage 1-3:** Mutation testing is deferred. No mutants are generated yet because the modules don't exist.
+### What mutation testing is
 
-**In Stage 4:** The first mutation test run validates that the PRISMA event-folding logic has no silent defects. If a mutant survives, it means the test suite is missing a case and the backlog issue explains which case.
+A mutation testing tool edits your source code on purpose, one small change at a time, and
+re-runs the test suite against each edited copy. Typical edits: `<=` becomes `<`, `+` becomes
+`-`, `and` becomes `or`, a constant is bumped, a comparison is negated, a return value is
+replaced.
+
+Each edited copy is a **mutant**. If some test fails, the mutant is **killed** — the suite
+noticed the behaviour change. If the whole suite still passes, the mutant **survived**: the
+code behaves differently and no test cares. The **kill rate** is killed mutants over mutants
+run.
+
+A surviving mutant is not a bug in itself. It is evidence of a *hole in the tests* — a
+behaviour the suite executes but does not check. Which is precisely the thing coverage
+reports as green.
+
+### Why this project needs it specifically
+
+BUILD_PLAN §5 risk 12 names the hazard: *high coverage with weak assertions — tests that
+execute code without checking it.* Likelihood high, impact high. The coverage gate on
+`prisma/engine.py`, `prisma/log.py`, and `prisma/flow.py` is 100% line **and** 100% branch,
+which sounds absolute and is not: a test that calls `compute_flow_counts()` and asserts the
+result is not `None` covers every line in the module and asserts nothing worth knowing.
+
+The reason that matters here more than elsewhere is the shape of the failure mode. This
+system's characteristic defect is not a crash or a stack trace — it is **a plausible wrong
+number in a published paper**. Consider `engine._passes_temporal`:
+
+```python
+return criteria.temporal.year_start <= attrs.year <= criteria.temporal.year_end
+```
+
+Mutate the second `<=` to `<` and every record published in the final year of the window
+silently leaves the corpus. The suite goes green if no test happens to assert on a
+boundary-year record. `after_language` drops from 1,550 to 1,509, `included` drops with it,
+every figure downstream shifts, and 1,509 looks exactly as reasonable as 1,550 in a
+manuscript. Nobody catches it in review, because nothing looks wrong.
+
+Mutation testing is the only automated check that asks the right question of that line: *if
+this comparison were wrong, would any test say so?*
+
+The same argument applies to `log.fold_events`'s `(ts, event_id)` tie-break, to
+`_aggregate_record_decisions`'s precedence rules ([ADR 0008](architecture/adr/0008-multi-reviewer-adjudication.md)),
+and to each of the four equations in `FlowCounts.assert_consistent()` — every one of which is
+a small comparison or arithmetic expression whose corruption produces a *credible* number
+rather than an obvious failure.
+
+### The gate
+
+| Aspect | Setting |
+| --- | --- |
+| **Tool** | `mutmut` (declared in the `dev` extra in `pyproject.toml`) |
+| **Scope** | `src/prismabib/prisma/`, plus `src/prismabib/taxonomy/` from Stage 8 |
+| **Threshold** | kill rate ≥ 85% |
+| **Cadence** | **weekly**, not per-PR — a run re-executes the covering tests once per mutant, and there are thousands of mutants |
+| **On survival** | an issue from `.github/ISSUE_TEMPLATE/surviving_mutant.md`, triaged into the backlog as a missing test |
+
+Per-PR mutation testing is explicitly deferred (BUILD_PLAN §8): weekly is the v1.0 cadence,
+and per-PR becomes reasonable only if incremental mode proves reliable on this codebase. The
+release checklist re-checks the kill rate before `v1.0.0`.
+
+Nothing about this gate replaces the rest of the Stage 4 suite — Hypothesis property tests on
+the set algebra, the stateful `DecisionLogMachine`, the golden `FlowCounts` fixture. Mutation
+testing tests *the tests*; those tests still have to exist for it to have anything to grade.
+
+### Running it locally
+
+```bash
+uv run mutmut run            # generate and test mutants (slow — expect minutes to hours)
+uv run mutmut results        # list mutants that were not killed
+uv run mutmut browse         # interactive TUI over the same results
+uv run mutmut show <mutant>  # the diff for one mutant, by name from `results`
+```
+
+Notes that will save you an afternoon:
+
+- **`mutmut` 3.x is configured in `pyproject.toml` under `[tool.mutmut]`**, not on the
+  command line. The relevant key is `source_paths`. If no such section exists, mutmut guesses
+  `src/` and mutates the entire package — correct, but far slower than you want.
+  BUILD_PLAN §3.7.7's `mutmut run --paths-to-mutate src/prismabib/prisma,src/prismabib/taxonomy`
+  is mutmut 2.x syntax; `pyproject.toml` asks only for `mutmut>=2.4.0` and `uv.lock` currently
+  resolves 3.7.0, which does not accept that flag.
+- **`mutmut run` accepts mutant names, including `fnmatch` globs**, so you can scope a run to
+  one function or module without editing the config: `uv run mutmut run '*prisma.flow*'`.
+- **A run creates a `mutants/` directory** at the repository root — a full working copy of the
+  source and test trees. It is build output. Do not commit it; delete it when you are done.
+- **The suite must be green before you start.** `mutmut` runs the tests unmutated first and
+  aborts if they fail, which is the correct behaviour and an easy five minutes to lose.
+
+### Reading a surviving mutant
+
+`mutmut results` prints mutant names; `mutmut show <name>` prints the diff between the
+original function and the mutated one. A name encodes the module, the function, and the index
+of the mutation within it, so `…prisma.flow.x_compute_flow_counts__mutmut_7` is the seventh
+mutation generated inside `compute_flow_counts`.
+
+Work through it in this order:
+
+1. **Read the diff.** What behaviour changed?
+2. **Decide whether the change is observable at all.** If the two versions are genuinely
+   equivalent — a mutated constant that never reaches an output, a reordering with no
+   semantics — you have an *equivalent mutant*. It cannot be killed by any test. Record why in
+   the issue and close it. Be sceptical of yourself here: "equivalent mutant" is the most
+   comfortable and most commonly wrong conclusion.
+3. **If it is observable, name the input that would show it.** For the `<=` → `<` example: a
+   record published exactly in `year_end`. That sentence is the missing test.
+4. **Write the test, and confirm it fails before you fix anything.** A test that passes
+   against the mutant kills nothing. Use `mutmut apply <mutant>` to put the mutation into the
+   working tree, watch your new test go red, then revert with `git checkout` — this is the
+   same discipline as this project's general rule that a test which matters must be seen
+   failing on the original defect.
+5. **Re-run that mutant** (`uv run mutmut run <mutant-name>`) to confirm it is now killed.
+
+A surviving mutant that gets closed by loosening an assertion, or by deleting the mutated
+line, has been mis-triaged. The output of triage is a new assertion about behaviour, or a
+documented equivalence — never a weaker suite.
 
 ## Coverage gates (§3.7.6)
 

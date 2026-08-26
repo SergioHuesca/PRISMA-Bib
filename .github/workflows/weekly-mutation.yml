@@ -1,0 +1,333 @@
+# Weekly mutation testing, BUILD_PLAN.md §3.7.6 and §3.7.7 (line 580).
+#
+# Mutation testing is the check that catches a module with 100% coverage and no
+# meaningful assertions — the exact failure mode the PRISMA engine cannot afford, since
+# every published number originates in `src/prismabib/prisma/`. The gate is a kill rate
+# >= 85%, and this job FAILS below it: `mutmut run` itself exits 0 no matter how many
+# mutants survive, so the threshold has to be enforced in a separate step or it enforces
+# nothing.
+#
+# NOT a required status check on `main`, and it must not become one. It runs on a
+# schedule against `main`, so it never reports a context for a pull request; branch
+# protection would wait forever on a check that never arrives (same ruling as the nightly
+# `live` job — §3.7.7, EXECUTION_PLAN line 107).
+#
+# The mutmut 3.x CLI, not BUILD_PLAN line 580's `mutmut run --paths-to-mutate ...`:
+# that is the 2.x CLI, `uv.lock` resolves mutmut 3.7.0, and 3.x `run` accepts only
+# `[MUTANT_NAMES]... --max-children`, reading its scope from `[tool.mutmut]` in
+# pyproject.toml. See ADR 0009 for the deviation and why 3.x was adopted rather than
+# pinning `mutmut<3`. The scope is `src/prismabib/prisma/` alone until Stage 8 creates
+# `src/prismabib/taxonomy/`; change it in pyproject.toml, not here.
+#
+# Surviving mutants become backlog issues (line 1055), so this job publishes them twice:
+# as an artifact (every mutant, with diffs) and as one auto-opened issue per run,
+# following .github/ISSUE_TEMPLATE/surviving_mutant.md. One issue per *run* rather than
+# per mutant is deliberate — a bad week can leave dozens of survivors, and dozens of
+# issues would be noise nobody triages.
+
+name: Weekly Mutation Testing
+
+on:
+  schedule:
+    # Mondays 04:17 UTC. Non-round minute to avoid GitHub's heavily contended
+    # top-of-hour, and Monday so a week's survivors are on the board before the week's
+    # work starts.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# A manual run started while the scheduled one is still going would fight over the same
+# `mutants/` tree and the same issue. Queue instead — never cancel, because a run that is
+# 50 minutes in has done most of the work.
+concurrency:
+  group: weekly-mutation
+  cancel-in-progress: false
+
+env:
+  # Pinned to the uv that wrote uv.lock, as in ci.yml.
+  UV_VERSION: "0.11.26"
+  # BUILD_PLAN §3.7.6: "a required kill rate >= 85%". Percent, not a fraction.
+  KILL_RATE_THRESHOLD: "85"
+  # How many survivors get their diff pasted into the issue. The rest are in the
+  # artifact; an issue body over ~65k characters is rejected by the API outright.
+  MAX_DIFFS_IN_ISSUE: "25"
+
+jobs:
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    # ~750 mutants over prisma/ at roughly a mutant every few seconds. Generous, but a
+    # hung run must not burn six hours of the account's minutes.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Mutation run
+        # Scope comes from [tool.mutmut] in pyproject.toml: source_paths is the whole
+        # package (mutmut puts `mutants/src` on sys.path, so a narrower copy would fail
+        # to import), only_mutate confines mutation to prisma/.
+        #
+        # --max-children is pinned to the runner's 4 vCPUs rather than left to
+        # os.cpu_count(), so a change of runner size cannot silently change timing and
+        # with it which mutants are classified as timeouts.
+        run: uv run mutmut run --max-children 4
+
+      - name: Export kill/survive statistics
+        # Writes mutants/mutmut-cicd-stats.json.
+        run: uv run mutmut export-cicd-stats
+
+      - name: Collect surviving mutants
+        id: survivors
+        run: |
+          set -euo pipefail
+          mkdir -p mutation-report
+          cp mutants/mutmut-cicd-stats.json mutation-report/
+
+          # `mutmut results` prints every mutant that was NOT killed, as
+          # "    <mutant name>: <status>".
+          uv run mutmut results > mutation-report/not-killed.txt
+
+          # A survivor for triage purposes is one the tests demonstrably failed to
+          # detect: "survived" (tests passed with the mutant in place) or "no tests"
+          # (nothing exercises that function at all). Timeouts and segfaults are
+          # accounted for by the gate below but are not test gaps to write up.
+          sed -n 's/^ *\(.*\): \(survived\|no tests\)$/\1/p' \
+            mutation-report/not-killed.txt > mutation-report/survivors.txt
+
+          count=$(wc -l < mutation-report/survivors.txt | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Survivors needing triage: $count"
+
+          : > mutation-report/survivor-diffs.txt
+          while IFS= read -r mutant; do
+            uv run mutmut show "$mutant" >> mutation-report/survivor-diffs.txt
+            echo >> mutation-report/survivor-diffs.txt
+          done < <(head -n "$MAX_DIFFS_IN_ISSUE" mutation-report/survivors.txt)
+
+      - name: Compute kill rate
+        id: score
+        # Deliberately does not fail the job: the artifact and the backlog issue below
+        # are worth more when the gate is breached than when it is met, so the
+        # enforcement step comes last.
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          stats = json.loads(Path("mutants/mutmut-cicd-stats.json").read_text())
+
+          killed = stats["killed"]
+          timeout = stats["timeout"]
+          survived = stats["survived"]
+          no_tests = stats["no_tests"]
+          suspicious = stats["suspicious"]
+          segfault = stats["segfault"]
+          skipped = stats["skipped"]
+          interrupted = stats["check_was_interrupted_by_user"]
+          total = stats["total"]
+
+          # A mutant that hangs the suite is a mutant the suite noticed; everything
+          # else that is not "killed" is treated as an escape, which errs toward more
+          # work rather than a flattering number. `skipped` is excluded from both sides.
+          caught = killed + timeout
+          escaped = survived + no_tests + suspicious + segfault
+          considered = caught + escaped
+
+          # mutmut's `total` counts every mutant it generated, including ones it never
+          # ran. On a fresh checkout that difference must be zero; a non-zero one means
+          # the run did not finish, and a kill rate over a partial run is meaningless.
+          # (`export-cicd-stats` omits the "caught by type check" bucket, which is empty
+          # while [tool.mutmut] sets no `type_check_command`. Setting one would land
+          # those mutants here and trip this guard — add them to `caught` at the same
+          # time.)
+          unchecked = total - considered - skipped - interrupted
+
+          rate = 100.0 * caught / considered if considered else 0.0
+
+          # Written straight to the file rather than printed and redirected: anything
+          # uv itself decided to put on stdout would otherwise land in GITHUB_OUTPUT.
+          outputs = [
+              f"kill_rate={rate:.2f}",
+              f"killed={killed}",
+              f"survived={survived}",
+              f"no_tests={no_tests}",
+              f"total={total}",
+              f"unchecked={unchecked}",
+              f"interrupted={interrupted}",
+          ]
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as fh:
+              fh.write("\n".join(outputs) + "\n")
+          print("\n".join(outputs))
+
+          threshold = float(os.environ["KILL_RATE_THRESHOLD"])
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a") as fh:
+              fh.write("## Mutation testing — `src/prismabib/prisma/`\n\n")
+              fh.write(f"**Kill rate {rate:.2f}%** against a {threshold:.0f}% gate ")
+              fh.write("(BUILD_PLAN §3.7.6).\n\n")
+              fh.write("| Outcome | Mutants |\n| --- | ---: |\n")
+              fh.write(f"| killed | {killed} |\n")
+              fh.write(f"| timeout (counted as caught) | {timeout} |\n")
+              fh.write(f"| survived | {survived} |\n")
+              fh.write(f"| no tests | {no_tests} |\n")
+              fh.write(f"| suspicious | {suspicious} |\n")
+              fh.write(f"| segfault | {segfault} |\n")
+              fh.write(f"| skipped (excluded) | {skipped} |\n")
+              fh.write(f"| generated in total | {total} |\n")
+              if unchecked or interrupted:
+                  fh.write(
+                      f"\n**{unchecked} mutant(s) were never checked and "
+                      f"{interrupted} interrupted — this run is incomplete.**\n"
+                  )
+          PY
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: mutation-report/
+          # Long enough to compare a bad week against the previous one; this is
+          # regenerated weekly, so nothing is lost by expiring it.
+          retention-days: 30
+
+      - name: Ensure triage labels exist
+        if: steps.survivors.outputs.count != '0'
+        # `gh issue create --label` hard-fails on a label the repository does not have,
+        # which would turn a reportable test gap into an unexplained workflow failure.
+        # Both labels are the ones .github/ISSUE_TEMPLATE/surviving_mutant.md declares.
+        run: |
+          gh label create test-gap \
+            --description "A mutant survived: the tests cover the code but do not assert on it" \
+            --color "d4c5f9" || true
+          gh label create mutation \
+            --description "Raised by the weekly mutation run" \
+            --color "5319e7" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose issue body
+        if: steps.survivors.outputs.count != '0'
+        env:
+          KILL_RATE: ${{ steps.score.outputs.kill_rate }}
+          SURVIVOR_COUNT: ${{ steps.survivors.outputs.count }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "**Automated report from the weekly mutation run** — $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "\`${SURVIVOR_COUNT}\` mutant(s) in \`src/prismabib/prisma/\` were not killed by the"
+            echo "test suite. Kill rate this run: **${KILL_RATE}%** (gate: ${KILL_RATE_THRESHOLD}%,"
+            echo "BUILD_PLAN §3.7.6)."
+            echo
+            echo "A surviving mutant means the line is executed by a test that does not assert on"
+            echo "what the line does. Each one below is a missing or too-broad assertion, not a"
+            echo "tool artefact — triage it as a test gap, and if it is genuinely equivalent"
+            echo "(no observable behaviour change), say so in a comment and close it."
+            echo
+            echo "**Run:** ${RUN_URL}"
+            echo "**Full list and all diffs:** the \`mutation-report\` artifact on that run."
+            echo
+            echo "## Surviving mutants"
+            echo
+            echo '```diff'
+            cat mutation-report/survivor-diffs.txt
+            echo '```'
+            echo
+            if [ "${SURVIVOR_COUNT}" -gt "${MAX_DIFFS_IN_ISSUE}" ]; then
+              echo "_Showing the first ${MAX_DIFFS_IN_ISSUE} of ${SURVIVOR_COUNT}; the artifact has the rest._"
+              echo
+            fi
+            echo "## Action required"
+            echo
+            echo "Strengthen or add a test that kills each mutant, then link the PR here."
+            echo "Reproduce locally with \`uv run mutmut run\` and inspect one with"
+            echo "\`uv run mutmut show <mutant name>\`."
+            echo
+            echo "See \`.github/ISSUE_TEMPLATE/surviving_mutant.md\` for the triage fields and"
+            echo "BUILD_PLAN §3.7.6 for the policy."
+          } > "$RUNNER_TEMP/issue-body.md"
+
+      - name: Check for an open surviving-mutant issue
+        if: steps.survivors.outputs.count != '0'
+        id: check-issue
+        run: |
+          existing_issue=$(gh issue list \
+            --label "mutation" \
+            --state open \
+            --json number,title \
+            --jq '.[0].number // empty' 2>/dev/null)
+
+          if [ -z "$existing_issue" ]; then
+            echo "issue_found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue_found=true" >> "$GITHUB_OUTPUT"
+            echo "issue_number=$existing_issue" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on the open issue
+        if: steps.survivors.outputs.count != '0' && steps.check-issue.outputs.issue_found == 'true'
+        run: gh issue comment "${{ steps.check-issue.outputs.issue_number }}" --body-file "$RUNNER_TEMP/issue-body.md"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Open a surviving-mutant issue
+        if: steps.survivors.outputs.count != '0' && steps.check-issue.outputs.issue_found == 'false'
+        run: |
+          gh issue create \
+            --title "[MUTANT] ${{ steps.survivors.outputs.count }} surviving mutant(s) in src/prismabib/prisma/" \
+            --label "test-gap" \
+            --label "mutation" \
+            --body-file "$RUNNER_TEMP/issue-body.md" \
+            --assignee SergioHuesca
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enforce the kill-rate gate
+        # Last, so that the report and the backlog issue exist before the job goes red.
+        env:
+          KILL_RATE: ${{ steps.score.outputs.kill_rate }}
+          UNCHECKED: ${{ steps.score.outputs.unchecked }}
+          INTERRUPTED: ${{ steps.score.outputs.interrupted }}
+        run: |
+          set -euo pipefail
+
+          if [ "${UNCHECKED}" != "0" ] || [ "${INTERRUPTED}" != "0" ]; then
+            echo "::error::Mutation run incomplete: ${UNCHECKED} mutant(s) never checked," \
+                 "${INTERRUPTED} interrupted. The kill rate below is not trustworthy."
+            exit 1
+          fi
+
+          # `[ 84.9 -lt 85 ]` is not a thing in shell — a fractional kill rate would be a
+          # syntax error, and a truncating comparison would let 84.9% pass. Compare in
+          # Python, against the same string the score step published.
+          uv run python - <<'PY'
+          import os
+          import sys
+
+          rate = float(os.environ["KILL_RATE"])
+          threshold = float(os.environ["KILL_RATE_THRESHOLD"])
+          if rate < threshold:
+              print(
+                  f"::error::Mutation kill rate {rate:.2f}% is below the "
+                  f"{threshold:.0f}% gate (BUILD_PLAN 3.7.6)."
+              )
+              sys.exit(1)
+          print(f"Mutation kill rate {rate:.2f}% meets the {threshold:.0f}% gate.")
+          PY

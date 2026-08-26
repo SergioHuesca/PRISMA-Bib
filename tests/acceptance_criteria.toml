@@ -40,3 +40,11 @@ S03-AC1 = "`build_store(project, rebuild=True)` on the same Layer 0 input produc
 S03-AC2 = "Every `records.payload_file`/`payload_line` pair resolves to a valid raw JSON object."
 S03-AC3 = "Deleting `corpus.duckdb` and rebuilding loses nothing."
 S03-AC4 = "Loading is idempotent: running it twice does not duplicate rows."
+
+# --- Stage 4 -- PRISMA engine, Layer 2 (BUILD_PLAN.md lines 997-1002) ------
+
+S04-AC1 = "Hypothesis property tests: for random event streams, `|C| <= |M_abs| <= |S_raw and A and L| <= |S_raw|` always holds."
+S04-AC2 = "Superseding: appending a reversal event flips membership and leaves the original event readable."
+S04-AC3 = "Tampering with `decisions.jsonl` by hand causes `LogError` on next load."
+S04-AC4 = "`FlowCounts.assert_consistent()` passes on the reference fixture and fails on a deliberately corrupted one."
+S04-AC5 = "Given the reference project's criteria and a fixed synthetic corpus, flow counts are reproducible to the integer across three fresh runs."

@@ -222,6 +222,36 @@ global = {line = 85}
 [tool.prismabib.diff_cover]
 fail_under = 90
 
+# Mutation testing scope, BUILD_PLAN §3.7.6 (">= 85% kill rate") and the weekly job of
+# §3.7.7. `.github/workflows/weekly-mutation.yml` runs it; nothing else reads this table.
+#
+# BUILD_PLAN line 580 spells the weekly run as
+#     mutmut run --paths-to-mutate src/prismabib/prisma,src/prismabib/taxonomy
+# which is the mutmut *2.x* CLI. uv.lock resolves mutmut 3.7.0, whose `run` accepts only
+# `[MUTANT_NAMES]... --max-children` and takes its scope from this section instead. The
+# deviation is recorded in ADR 0009.
+#
+# `source_paths` is the whole package, not just prisma/, on purpose: mutmut copies exactly
+# these paths into `mutants/` and then puts `mutants/src` on sys.path. Narrowing it to
+# `src/prismabib/prisma` would leave `mutants/src/prismabib/__init__.py` absent and every
+# test would fail at import. `only_mutate` is what actually confines mutation to prisma/.
+[tool.mutmut]
+source_paths = ["src/prismabib"]
+# Add "src/prismabib/taxonomy/*" here at Stage 8, when that package exists — BUILD_PLAN
+# line 580 names it as in scope. Naming it before it exists only makes the run fail.
+only_mutate = ["src/prismabib/prisma/*"]
+# Mutants are only worth generating for code the PRISMA suite exercises, and the whole
+# test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read repository
+# files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part of the
+# copied tree. Restricting selection to the prisma tests keeps the run honest and fast.
+# A mutant killed *only* by a test outside this selection is reported as survived, which
+# errs toward more work, not less.
+pytest_add_cli_args_test_selection = [
+    "tests/unit/prisma",
+    "tests/integration/prisma",
+    "tests/property/test_engine_invariants.py",
+]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
