@@ -275,3 +275,131 @@ def test_read_toml__malformed_file__raises_config_error_naming_the_path(tmp_path
 
     with pytest.raises(ConfigError, match=re.escape(str(malformed_toml))):
         _read_toml(malformed_toml)
+
+
+_VALID_CRITERIA = """\
+version: 1.0.0
+temporal: {year_start: 2015, year_end: 2026}
+subject_areas: []
+doc_types: {include: [ar]}
+languages: [English]
+manual_abstract: {exclude_reason_codes: []}
+manual_fulltext: {exclude_reason_codes: []}
+"""
+
+
+def _write_criteria(project: Project, extra_line: str) -> None:
+    (project.root / "criteria.yaml").write_text(_VALID_CRITERIA + extra_line, encoding="utf-8")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("extra_line", "expected_fragment"),
+    [
+        pytest.param("language: [English]\n", "did you mean 'languages'", id="near-miss-typo"),
+        pytest.param("study_designs: [RCT]\n", "study_designs", id="plausible-but-unsupported"),
+        pytest.param("venue_whitelist: [Nature]\n", "venue_whitelist", id="wrong-dimension"),
+    ],
+)
+def test_criteria__unknown_top_level_key__is_refused_not_ignored(
+    tmp_path: Path, extra_line: str, expected_fragment: str
+) -> None:
+    """An unrecognised key must fail loudly, because the alternative is a wrong corpus.
+
+    Until these models forbade extras, ``criteria.yaml`` silently dropped
+    anything it did not recognise. A researcher who wrote ``language:``
+    instead of ``languages:``, or who assumed a plausible criterion like
+    ``study_designs:`` was supported, got no error and no filtering on that
+    dimension -- and a corpus that looks entirely reasonable. This file is
+    the whole machine-readable definition of who is eligible for the
+    review, so a dropped key is an eligibility rule that silently did not
+    apply.
+    """
+    project = Project.init("forbid-extras", title="Forbid Extras", root=tmp_path)
+    _write_criteria(project, extra_line)
+
+    with pytest.raises(ConfigError) as excinfo:
+        _ = project.criteria
+
+    assert expected_fragment in str(excinfo.value)
+
+
+@pytest.mark.integration
+def test_criteria__unknown_nested_key__names_the_block_it_appeared_in(
+    tmp_path: Path,
+) -> None:
+    """A key rejected inside a block must say which block, or the message misleads.
+
+    ``include`` is valid under ``doc_types`` and nowhere else; reporting a
+    bare key name would send the reader looking in the wrong place.
+    """
+    project = Project.init("nested", title="Nested", root=tmp_path)
+    (project.root / "criteria.yaml").write_text(
+        _VALID_CRITERIA.replace(
+            "temporal: {year_start: 2015, year_end: 2026}",
+            "temporal: {year_start: 2015, year_end: 2026, year_step: 1}",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        _ = project.criteria
+
+    message = str(excinfo.value)
+    assert "temporal.year_step" in message
+    assert "year_start" in message
+
+
+@pytest.mark.integration
+def test_criteria__valid_document__still_loads(tmp_path: Path) -> None:
+    """The guard must not reject legitimate criteria -- the usual failure of a new guard."""
+    project = Project.init("valid", title="Valid", root=tmp_path)
+    _write_criteria(project, "")
+
+    criteria = project.criteria
+
+    assert criteria.version == "1.0.0"
+    assert criteria.languages == ["English"]
+
+
+@pytest.mark.integration
+def test_criteria__inverted_year_window__is_refused(tmp_path: Path) -> None:
+    """A transposed year window must not be allowed to empty the corpus quietly.
+
+    ``_passes_temporal`` is an inclusive between-test, so ``year_start:
+    2026`` with ``year_end: 2015`` matches no record ever published. The
+    resulting PRISMA diagram reports that the automated filter removed the
+    entire search -- internally consistent, and a completely wrong account
+    of what happened. Transposing two numbers is an easy mistake to make
+    and, before this guard, an impossible one to notice from the output.
+    """
+    project = Project.init("inverted", title="Inverted", root=tmp_path)
+    (project.root / "criteria.yaml").write_text(
+        _VALID_CRITERIA.replace(
+            "year_start: 2015, year_end: 2026", "year_start: 2026, year_end: 2015"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        _ = project.criteria
+
+    assert "transposed" in str(excinfo.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "window",
+    [
+        pytest.param("year_start: 2015, year_end: 2026", id="multi-year"),
+        pytest.param("year_start: 2020, year_end: 2020", id="single-year-is-legitimate"),
+    ],
+)
+def test_criteria__ordered_year_window__is_accepted(tmp_path: Path, window: str) -> None:
+    """The guard must not reject a legitimate window, including a one-year review."""
+    project = Project.init("ordered", title="Ordered", root=tmp_path)
+    (project.root / "criteria.yaml").write_text(
+        _VALID_CRITERIA.replace("year_start: 2015, year_end: 2026", window), encoding="utf-8"
+    )
+
+    assert project.criteria.temporal.year_end >= project.criteria.temporal.year_start
