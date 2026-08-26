@@ -1,0 +1,32 @@
+# Line endings, and the files whose bytes are checksummed.
+#
+# This file is a prerequisite for prismabib working on Windows at all, not a
+# tidiness measure. Git for Windows installs with `core.autocrlf=true`, so
+# without an explicit policy every text file in a Windows clone arrives with
+# CRLF line endings -- including the reference fixture's captured Scopus pages,
+# whose bytes are covered by `manifest.json`'s `payload_sha256`. A CRLF
+# checkout changes those bytes, the checksum no longer matches, and the whole
+# Layer 0 -> Layer 1 chain fails on a machine where nothing is actually wrong.
+
+# Normalise to LF in the repository and check out LF everywhere. `text=auto`
+# still lets git detect and leave binary content alone.
+* text=auto eol=lf
+
+# Byte-exact fixtures: never normalised, in either direction.
+#
+# `-text` is not merely "LF here too". It tells git the content is opaque: no
+# normalisation on commit, no conversion on checkout, and no per-user
+# `core.autocrlf` override. These files are provenance, not source -- the
+# sealed Layer 0 pages and their manifest carry a SHA-256 over their exact
+# bytes (BUILD_PLAN §2.2), and the recorded API payloads under `cassettes/`
+# exist to be replayed verbatim.
+tests/fixtures/projects/reference/raw/** -text !eol
+tests/fixtures/cassettes/*.json -text !eol
+
+# The decision log and its sidecar, wherever a project directory is committed
+# (`track_decisions = true`, BUILD_PLAN §2.5). `decisions.jsonl` is append-only,
+# fsynced, and covered by a `sha256sum`-compatible sidecar; a checkout that
+# rewrote its newlines would make every line's checksum wrong and read, to
+# `DecisionLog.load`, as tampering.
+decisions.jsonl -text !eol
+decisions.jsonl.sha256 -text !eol

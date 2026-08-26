@@ -94,6 +94,7 @@ nav:
           - "ADR 0007: FlowCounts records unresolved screening decisions": architecture/adr/0007-flow-counts-unsure-fields.md
           - "ADR 0008: Multi-reviewer adjudication is conservative": architecture/adr/0008-multi-reviewer-adjudication.md
           - "ADR 0009: Mutation scope is configured, not passed on the command line": architecture/adr/0009-mutmut-3x-cli-deviation.md
+          - "ADR 0010: Cross-platform locking for the decision log": architecture/adr/0010-cross-platform-decision-log-locking.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

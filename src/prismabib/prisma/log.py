@@ -10,13 +10,13 @@ single place the fold is defined, so every consumer folds the same way.
 and-concurrency contract spelled out for this stage):
 
 1. *Append-only, fsynced per write, checksum-guarded.* Every append opens
-   ``decisions.jsonl`` for read/write, takes an exclusive ``flock``, writes
-   exactly one line in one ``write(2)`` call, ``fsync``s it, and then
-   rewrites the ``decisions.jsonl.sha256`` sidecar (via write-temp-then-
-   ``os.replace``, itself ``fsync``d before the rename) to cover the file's
-   new content. :meth:`DecisionLog.load` takes a *shared* lock and
-   recomputes the same checksum; a mismatch raises :class:`LogError` --
-   this is what makes hand-editing detectable.
+   ``decisions.jsonl`` for read/write **in binary mode**, takes an
+   exclusive lock, writes exactly one line in one ``write(2)`` call,
+   ``fsync``s it, and then rewrites the ``decisions.jsonl.sha256`` sidecar
+   (via write-temp-then-``os.replace``, itself ``fsync``d before the
+   rename) to cover the file's new content. :meth:`DecisionLog.load` takes
+   a *shared* lock and recomputes the same checksum; a mismatch raises
+   :class:`LogError` -- this is what makes hand-editing detectable.
 2. *The fold key is ``(stage, record_id, reviewer)``, not ``record_id``
    alone.* :func:`fold_events` takes, for each key, the event with the
    greatest ``(ts, event_id)`` -- last by timestamp, ties broken by the
@@ -39,14 +39,36 @@ and-concurrency contract spelled out for this stage):
    existing file (a corrupted or hand-duplicated file) and while appending
    (a replayed append handed the exact same, already-constructed event
    twice).
-7. *Appends are line-atomic under two open handles.* The exclusive
-   ``flock`` around the read-verify-write-checksum sequence serialises two
+7. *Appends are line-atomic under two open handles.* The exclusive lock
+   around the read-verify-write-checksum sequence serialises two
    concurrent ``DecisionLog`` instances (in the same process or two
    separate ones) so neither can observe, or produce, a torn line or a
    checksum that has fallen out of step with the file it describes.
 8. *A reversal is a new event, never an edit.* This module exposes no way
    to delete or rewrite an existing line; :meth:`DecisionLog.append` is the
    only write path, and it only ever adds.
+
+**File locking is platform-specific; the contract is not.** POSIX takes a
+whole-file ``fcntl.flock``; Windows has no such call, so
+:class:`_WindowsLockBackend` drives ``msvcrt.locking`` instead. Both are
+reached through :class:`_LockBackend`, both are selected on
+:data:`sys.platform`, and neither module is imported until the platform
+that has it asks for it -- a module-level ``import fcntl`` made this whole
+file unimportable on Windows, which meant a Windows reviewer could capture
+and build a store but could not record one screening decision. ADR 0010
+records the one behavioural deviation: Windows has no shared byte-range
+lock, so :meth:`DecisionLog.load`'s *shared* lock degrades to an exclusive
+one there (never weaker -- only less concurrent).
+
+**The bytes on disk are LF, on every platform.** Both ``os.open`` calls
+here add ``O_BINARY`` where the platform has it. Without it the Windows C
+runtime rewrites every ``\\n`` this module writes as ``\\r\\n`` and hides
+the change again on read, so the process that wrote the log would still
+agree with its own sidecar while an external ``sha256sum`` would not. The
+sidecar is deliberately byte-identical to ``sha256sum decisions.jsonl``
+output (it is what the truncated-line recovery instructions tell the user
+to run), and a tamper-detection digest that no outside tool can confirm is
+worth less than none.
 
 **Crash safety.** A process killed mid-append can only be caught between
 two of this module's steps:
@@ -80,14 +102,21 @@ corruption.
 
 from __future__ import annotations
 
-import fcntl
+import errno
 import hashlib
+import importlib
 import json
 import os
-from collections.abc import Iterable, Iterator
+import random
+import sys
+import time
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
+from typing import Literal, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -108,6 +137,357 @@ from prismabib.stage import PrismaStage
 FoldKey = tuple[PrismaStage, str, str]
 
 _READ_CHUNK_SIZE = 65536
+
+#: ``os.O_BINARY`` where the platform defines it (Windows only), ``0``
+#: everywhere else -- ``0`` is the identity for ``|`` in an ``os.open`` flag
+#: word, so the POSIX call is bit-for-bit what it always was. Without this
+#: flag the Windows CRT translates ``\n`` to ``\r\n`` on the way out and back
+#: again on the way in, which is invisible in-process and fatal to a sidecar
+#: that is supposed to match ``sha256sum``.
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
+LockKind = Literal["shared", "exclusive"]
+"""What a critical section needs: ``"shared"`` to read, ``"exclusive"`` to write.
+
+Deliberately not an ``fcntl`` constant. ``_locked(fcntl.LOCK_SH)`` names one
+platform's API in the signature of code that has to run on two, and there is
+no ``fcntl`` at all on the platform this abstraction exists for.
+"""
+
+#: The byte range :class:`_WindowsLockBackend` locks, chosen far past any
+#: plausible end of file. Two properties follow, and both are load-bearing.
+#: The range never moves as ``decisions.jsonl`` grows, so a lock taken when
+#: the file was 200 bytes long still collides with one taken at 2 MB. And it
+#: covers no *data*: Windows byte-range locks are mandatory, not advisory, so
+#: locking byte 0 would make an ordinary reader's ``read()`` fail rather than
+#: merely wait -- including the byte-level readers this project's own tests
+#: use to check the log from outside.
+_SENTINEL_LOCK_OFFSET = 0x7FFF_FFFF
+_SENTINEL_LOCK_LENGTH = 1
+
+#: How long :class:`_WindowsLockBackend` keeps retrying before it gives up and
+#: raises. POSIX ``flock`` blocks indefinitely instead; that asymmetry is
+#: forced (see :class:`_WindowsLockBackend`) and recorded in ADR 0010.
+_LOCK_TIMEOUT_SECONDS = 10.0
+
+#: The first retry's nominal wait, doubled on each attempt up to
+#: :data:`_LOCK_MAX_RETRY_SECONDS` and then jittered. Jitter matters because
+#: the contending processes here are typically two notebook kernels started
+#: from the same script: without it they retry in lockstep forever.
+_LOCK_FIRST_RETRY_SECONDS = 0.01
+_LOCK_MAX_RETRY_SECONDS = 0.25
+
+
+class _LockBackend(Protocol):
+    """One platform's whole-file advisory lock, as this module needs it.
+
+    Implementations must guarantee, for locks taken through *any* handle in
+    *any* process on the same file:
+
+    * ``"exclusive"`` excludes ``"exclusive"``;
+    * ``"shared"`` excludes ``"exclusive"`` (whether it also excludes
+      ``"shared"`` is the one permitted difference between backends);
+    * :meth:`release` leaves the file unlocked;
+    * the caller's file position is what it was, after both calls;
+    * an :meth:`acquire` that raises leaves no lock behind;
+    * :meth:`acquire` on a descriptor this backend already holds raises
+      rather than blocking, upgrading, or silently succeeding.
+    """
+
+    def acquire(self, fd: int, kind: LockKind, path: Path) -> None:
+        """Take a ``kind`` lock on ``fd``, blocking until it is granted.
+
+        Args:
+            fd: The open descriptor to lock.
+            kind: ``"shared"`` or ``"exclusive"``.
+            path: The file ``fd`` refers to, for error messages only.
+
+        Raises:
+            LogError: If the lock cannot be taken.
+        """
+        ...
+
+    def release(self, fd: int) -> None:
+        """Release the lock :meth:`acquire` took on ``fd``.
+
+        Args:
+            fd: The descriptor whose lock to drop.
+        """
+        ...
+
+
+def _refuse_reentrant_lock(held: frozenset[int] | set[int], fd: int, path: Path) -> None:
+    """Refuse a second lock on a descriptor this backend already holds.
+
+    POSIX ``flock`` would quietly re-apply (or convert) the lock;
+    ``msvcrt.locking`` fails on the already-locked region. Rather than let
+    that difference be discovered on Windows, both backends refuse here, so
+    the mistake reads the same on every platform.
+
+    Args:
+        held: The descriptors this backend currently holds a lock on.
+        fd: The descriptor being locked.
+        path: The file ``fd`` refers to, for the message.
+
+    Raises:
+        LogError: If ``fd`` is already in ``held``.
+    """
+    if fd in held:
+        raise LogError(
+            f"{path}: the decision-log lock is not re-entrant -- descriptor {fd} already "
+            "holds it. Take one lock per critical section; nesting them deadlocks on "
+            "POSIX and fails outright on Windows."
+        )
+
+
+class _PosixLockBackend:
+    """``fcntl.flock`` over the whole file: the original, unchanged behaviour.
+
+    ``flock`` blocks until the lock is granted, with no timeout and no retry
+    loop, which is what every existing caller has always got on Linux and
+    macOS. The only addition is the shared non-reentrancy check.
+    """
+
+    def __init__(self) -> None:
+        self._held: set[int] = set()
+
+    def acquire(self, fd: int, kind: LockKind, path: Path) -> None:
+        """Take a blocking ``flock`` of ``kind`` on ``fd``.
+
+        Args:
+            fd: The open descriptor to lock.
+            kind: ``"shared"`` (``LOCK_SH``) or ``"exclusive"`` (``LOCK_EX``).
+            path: The file ``fd`` refers to, for error messages only.
+
+        Raises:
+            LogError: If ``fd`` already holds this backend's lock.
+        """
+        import fcntl
+
+        _refuse_reentrant_lock(self._held, fd, path)
+        fcntl.flock(fd, fcntl.LOCK_SH if kind == "shared" else fcntl.LOCK_EX)
+        self._held.add(fd)
+
+    def release(self, fd: int) -> None:
+        """Drop ``fd``'s ``flock``.
+
+        Args:
+            fd: The descriptor whose lock to drop.
+        """
+        import fcntl
+
+        self._held.discard(fd)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+class _LockingCall(Protocol):
+    """``msvcrt.locking``'s signature: lock ``nbytes`` at ``fd``'s position."""
+
+    def __call__(self, fd: int, mode: int, nbytes: int, /) -> None:
+        """Lock, or unlock, a byte range of ``fd``.
+
+        Args:
+            fd: The descriptor to lock.
+            mode: One of the ``LK_*`` mode constants.
+            nbytes: How many bytes, starting at ``fd``'s current position.
+        """
+        ...
+
+
+@dataclass(frozen=True)
+class _ByteRangeLocking:
+    """The three names :class:`_WindowsLockBackend` needs from ``msvcrt``.
+
+    Bundled into an injectable value rather than reached for as a global so
+    the backend's logic -- the retry loop, the seek dance, the error
+    translation -- can be exercised on a machine that has no ``msvcrt``.
+
+    Attributes:
+        locking: ``msvcrt.locking``.
+        nonblocking_exclusive: ``msvcrt.LK_NBLCK``. The *blocking* mode
+            (``LK_LOCK``) is never used; see :class:`_WindowsLockBackend`.
+        unlock: ``msvcrt.LK_UNLCK``.
+    """
+
+    locking: _LockingCall
+    nonblocking_exclusive: int
+    unlock: int
+
+    @classmethod
+    def from_module(cls, module: ModuleType) -> _ByteRangeLocking:
+        """Read the three names off an ``msvcrt``-shaped module.
+
+        Args:
+            module: ``msvcrt``, or a stand-in exposing the same three names.
+
+        Returns:
+            The bundled primitive.
+        """
+        return cls(
+            locking=module.locking,
+            nonblocking_exclusive=module.LK_NBLCK,
+            unlock=module.LK_UNLCK,
+        )
+
+
+class _WindowsLockBackend:
+    """``msvcrt.locking`` on a sentinel byte range, with our own retry loop.
+
+    Four differences from ``flock`` shape this class, and each is answered
+    here rather than left to surprise a Windows user (ADR 0010):
+
+    1. **The lock is a byte range, not a file**, and it is taken at the
+       descriptor's *current position*, which the call then moves. So every
+       lock and unlock seeks to :data:`_SENTINEL_LOCK_OFFSET` and puts the
+       caller's position back, including when the attempt fails.
+    2. **There is no shared mode.** ``LK_RLCK`` is documented as identical
+       to ``LK_LOCK``. A ``"shared"`` request is therefore satisfied with an
+       exclusive lock: never weaker than asked for, only less concurrent.
+    3. **``LK_LOCK`` is not usable as a blocking mode.** It retries ten
+       times at one-second intervals and then raises -- an unconfigurable
+       ten-second ceiling reported as a bare ``OSError``. This class uses
+       the non-blocking mode and does its own jittered backoff to an
+       explicit deadline, so exhausting it raises a :class:`LogError` that
+       names the file and how long it waited.
+    4. **Re-locking a region from the same handle fails**, where POSIX
+       quietly succeeds; :func:`_refuse_reentrant_lock` makes that failure
+       uniform instead.
+
+    Args:
+        byte_range_locking: The ``msvcrt`` primitive to drive.
+        timeout: How long :meth:`acquire` retries before raising.
+        sleep: Injected blocking primitive, defaulting to ``time.sleep``.
+        monotonic: Injected clock, defaulting to ``time.monotonic``.
+            Monotonic, not wall-clock: a deadline must not move because the
+            machine's clock was corrected mid-wait.
+        jitter: Injected source of the ``[0, 1)`` jitter factor, defaulting
+            to ``random.random``.
+    """
+
+    def __init__(
+        self,
+        byte_range_locking: _ByteRangeLocking,
+        *,
+        timeout: float = _LOCK_TIMEOUT_SECONDS,
+        sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
+        jitter: Callable[[], float] = random.random,
+    ) -> None:
+        self._locking = byte_range_locking
+        self._timeout = timeout
+        self._sleep = sleep
+        self._monotonic = monotonic
+        self._jitter = jitter
+        self._held: set[int] = set()
+
+    def acquire(self, fd: int, kind: LockKind, path: Path) -> None:
+        """Take an exclusive sentinel-range lock on ``fd``, retrying until granted.
+
+        Args:
+            fd: The open descriptor to lock.
+            kind: ``"shared"`` or ``"exclusive"``. Both take an exclusive
+                lock here; the argument is used only in the error message,
+                so that a failure says which one the caller asked for.
+            path: The file ``fd`` refers to, for the error message.
+
+        Raises:
+            LogError: If ``fd`` already holds this backend's lock, or if the
+                lock is still held by someone else when ``timeout`` expires.
+            OSError: Anything ``msvcrt.locking`` raises that is not the
+                "region already locked" ``EACCES`` -- a bad descriptor is a
+                bug here, not contention, and must not be retried for ten
+                seconds and then reported as a busy file.
+        """
+        _refuse_reentrant_lock(self._held, fd, path)
+        deadline = self._monotonic() + self._timeout
+        wait = _LOCK_FIRST_RETRY_SECONDS
+        while True:
+            try:
+                self._at_sentinel(fd, self._locking.nonblocking_exclusive)
+            except OSError as exc:
+                if exc.errno != errno.EACCES:
+                    raise
+                remaining = deadline - self._monotonic()
+                if remaining <= 0:
+                    raise LogError(
+                        f"{path}: could not take the {kind} lock after waiting "
+                        f"{self._timeout:g}s -- another process still holds it. "
+                        "Close any other prismabib session (a second notebook kernel, "
+                        "a CLI run, an editor plugin) that has this project open, then "
+                        "retry. No decision has been written."
+                    ) from exc
+                self._sleep(min(wait * (0.5 + self._jitter()), remaining))
+                wait = min(wait * 2.0, _LOCK_MAX_RETRY_SECONDS)
+            else:
+                self._held.add(fd)
+                return
+
+    def release(self, fd: int) -> None:
+        """Unlock the same sentinel range :meth:`acquire` locked.
+
+        ``msvcrt`` requires the unlock to name the region exactly, which is
+        the other reason the offset and length are fixed constants.
+
+        Args:
+            fd: The descriptor whose lock to drop.
+        """
+        self._held.discard(fd)
+        self._at_sentinel(fd, self._locking.unlock)
+
+    def _at_sentinel(self, fd: int, mode: int) -> None:
+        """Run one ``locking`` call over the sentinel range, restoring the position.
+
+        Args:
+            fd: The descriptor to operate on.
+            mode: ``LK_NBLCK`` or ``LK_UNLCK``.
+
+        Raises:
+            OSError: Whatever ``locking`` raises. The caller's file position
+                is restored first: an append that had seeked to the end must
+                not silently resume from wherever a failed lock attempt left
+                the descriptor.
+        """
+        position = os.lseek(fd, 0, os.SEEK_CUR)
+        try:
+            os.lseek(fd, _SENTINEL_LOCK_OFFSET, os.SEEK_SET)
+            self._locking.locking(fd, mode, _SENTINEL_LOCK_LENGTH)
+        finally:
+            os.lseek(fd, position, os.SEEK_SET)
+
+
+def _select_lock_backend(
+    platform: str = sys.platform,
+    *,
+    load_module: Callable[[str], ModuleType] = importlib.import_module,
+) -> _LockBackend:
+    """Pick the lock backend for ``platform``, importing only what it needs.
+
+    The import is *inside* this function on purpose. A module-level
+    ``import fcntl`` is what made this module fail to import on Windows, and
+    a module-level ``import msvcrt`` would fail the same way everywhere
+    else.
+
+    Args:
+        platform: A :data:`sys.platform` value. Defaults to the running
+            interpreter's; passed explicitly by tests, which is the only way
+            the Windows arm can be reached on a POSIX machine.
+        load_module: How to import the platform module by name. Injected so
+            that the Windows arm can be selected without an ``msvcrt`` to
+            import.
+
+    Returns:
+        A :class:`_WindowsLockBackend` on ``"win32"``, otherwise a
+        :class:`_PosixLockBackend`.
+    """
+    if platform == "win32":
+        return _WindowsLockBackend(_ByteRangeLocking.from_module(load_module("msvcrt")))
+    return _PosixLockBackend()
+
+
+#: Chosen once, at import, for the running platform. Shared by every
+#: :class:`DecisionLog`: the non-reentrancy bookkeeping is per *descriptor*,
+#: and two logs in two threads never share one.
+_LOCK_BACKEND: _LockBackend = _select_lock_backend()
 
 
 def fold_events(events: Iterable[DecisionEvent]) -> dict[FoldKey, DecisionEvent]:
@@ -169,6 +549,8 @@ class DecisionLog:
         )
         self._path = project.decisions_path
         self._checksum_path = self._path.with_name(self._path.name + ".sha256")
+        self._backend: _LockBackend = _LOCK_BACKEND
+        self._lock_held = False
 
     @property
     def path(self) -> Path:
@@ -196,7 +578,7 @@ class DecisionLog:
                 parse as a well-formed :class:`~prismabib.prisma.events.DecisionEvent`,
                 or the same ``event_id`` appears twice.
         """
-        with self._locked(fcntl.LOCK_SH) as fd:
+        with self._locked("shared") as fd:
             _confirmed, events = self._verify_and_load_locked(fd)
         return events
 
@@ -298,7 +680,7 @@ class DecisionLog:
                 any of :meth:`load`'s checks.
         """
         self._validate_business_rules(event)
-        with self._locked(fcntl.LOCK_EX) as fd:
+        with self._locked("exclusive") as fd:
             confirmed, existing = self._verify_and_load_locked(fd)
             if event.event_id in {existing_event.event_id for existing_event in existing}:
                 raise LogError(
@@ -364,8 +746,8 @@ class DecisionLog:
     # -- locking and low-level I/O --------------------------------------------
 
     @contextmanager
-    def _locked(self, lock_operation: int) -> Iterator[int]:
-        """Open :attr:`_path`, hold a ``flock``, and yield its file descriptor.
+    def _locked(self, kind: LockKind) -> Iterator[int]:
+        """Open :attr:`_path`, hold a lock on it, and yield its file descriptor.
 
         The parent directory is created and the file opened read/write with
         ``O_CREAT``, so a :class:`DecisionLog` works even before
@@ -374,29 +756,49 @@ class DecisionLog:
         directory, so a project cloned with ``track_decisions = false``
         (§2.5 line 291) arrives without ``decisions/``, and the first
         screening decision would otherwise die on ``FileNotFoundError``.
-        ``fcntl.flock`` is POSIX-only, matching this project's Linux/macOS
-        development and CI targets (BUILD_PLAN §2.4).
+
+        ``O_BINARY`` is what keeps the file's bytes LF-terminated on
+        Windows; see the module docstring. It is ``0`` on POSIX.
+
+        **This is not re-entrant.** Each call opens a *new* descriptor, so a
+        nested call would ask the OS for a second, conflicting lock on the
+        same file from the same thread -- which blocks forever on POSIX and
+        fails on Windows. Nothing in this class nests today; the guard makes
+        sure that stays true and reports it as an error rather than a hang.
 
         Args:
-            lock_operation: ``fcntl.LOCK_SH`` for a read (allows concurrent
-                readers, excludes writers) or ``fcntl.LOCK_EX`` for a write
-                (excludes everyone else). Held for the caller's entire
-                critical section, so a concurrent reader can never observe
-                a write half-applied, and two concurrent writers can never
+            kind: ``"shared"`` for a read (allows concurrent readers,
+                excludes writers -- except on Windows, which has no shared
+                mode and takes an exclusive lock instead) or ``"exclusive"``
+                for a write. Held for the caller's entire critical section,
+                so a concurrent reader can never observe a write
+                half-applied, and two concurrent writers can never
                 interleave.
 
         Yields:
             The open file descriptor, positioned at its start.
+
+        Raises:
+            LogError: If this :class:`DecisionLog` is already inside a
+                locked section, or if the lock cannot be taken.
         """
+        if self._lock_held:
+            raise LogError(
+                f"{self._path}: DecisionLog._locked is not re-entrant -- a "
+                f"{kind} lock was requested while this log already holds one. "
+                "One lock per critical section."
+            )
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o644)
+        fd = os.open(self._path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
+        self._lock_held = True
         try:
-            fcntl.flock(fd, lock_operation)
+            self._backend.acquire(fd, kind, self._path)
             try:
                 yield fd
             finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                self._backend.release(fd)
         finally:
+            self._lock_held = False
             os.close(fd)
 
     def _read_all(self, fd: int) -> bytes:
@@ -522,6 +924,11 @@ class DecisionLog:
         therefore only ever see the old sidecar or the fully-written new
         one, never a partial one.
 
+        The sidecar's own bytes are written binary for the same reason the
+        log's are: its one line must be exactly what ``sha256sum`` writes,
+        or ``sha256sum --check`` on it stops being a thing a reviewer can
+        run.
+
         Args:
             content: The exact bytes the sidecar should describe -- the
                 decision log's full content after the append that
@@ -530,7 +937,7 @@ class DecisionLog:
         digest = hashlib.sha256(content).hexdigest()
         payload = f"{digest}  {self._path.name}\n".encode()
         tmp_path = self._checksum_path.with_name(self._checksum_path.name + ".tmp")
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _O_BINARY, 0o644)
         try:
             os.write(fd, payload)
             os.fsync(fd)

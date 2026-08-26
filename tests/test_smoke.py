@@ -153,6 +153,26 @@ def test_package__imports__exposes_version() -> None:
 
 @pytest.mark.integration
 def test_version__installed_package__matches_the_git_checkout_it_was_built_from() -> None:
+    """The installed version must describe the commit it was built from.
+
+    Skipped on a dirty working tree, and that is not a loophole. uv rebuilds
+    the package when the commit or the tags change (``[tool.uv] cache-keys``),
+    but not when a tracked file is merely edited -- so with uncommitted work
+    the installed metadata legitimately lags ``git describe --dirty`` and the
+    comparison is measuring the rebuild trigger rather than version drift.
+
+    Failing there would mean every developer with unsaved work sees a red
+    suite, which is how a project teaches people to ignore red. The check
+    still runs where drift actually matters: in CI, whose checkout is always
+    clean, and locally whenever the tree is.
+    """
+    if _git("status", "--porcelain"):
+        pytest.skip(
+            "working tree is dirty: uv rebuilds on a commit or tag change, not on an "
+            "edit, so the installed version cannot describe this checkout until you "
+            "commit. Version drift is still caught in CI, which builds a clean tree."
+        )
+
     head = _git("rev-parse", "HEAD")
 
     actual = _provenance_of_version(prismabib.__version__, head=head)
