@@ -119,10 +119,13 @@ fields = ["TITLE-ABS-KEY"]
 **`[query]`:**
 
 - `terms` — simple terms, each wrapped in `TITLE-ABS-KEY("...")` and OR-ed together
-- `compound_terms` — groups that must all co-occur: each entry is a mapping
+- `compound_terms` — a **list** of groups that must all co-occur: each entry is a mapping
   `{ all = [...] }`, AND-ed within the group and OR-ed with everything else. A bare string,
-  or any key other than `all`, raises `ConfigError` rather than being coerced into
-  something plausible-looking
+  a single group written without its surrounding `[ ]`, or any key other than `all`, raises
+  `ConfigError` rather than being coerced into something plausible-looking. Repeated
+  `[[query.compound_terms]]` headers are the same thing and read better when there are many
+- a key `[query]` does not define raises `ConfigError` naming the closest valid one, rather
+  than being dropped and running a narrower search than the file describes
 - `fields` — the Scopus field code(s) applied to every term. With more than one, each term
   becomes a parenthesised OR across them
 

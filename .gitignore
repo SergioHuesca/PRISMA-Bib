@@ -8,6 +8,21 @@
 projects/*/raw/
 projects/*/store/
 projects/*/fulltext/
+
+# A researcher's own project, ignored by default.
+#
+# Two reasons this is opt-in rather than opt-out. A query and its eligibility
+# criteria describe an unpublished research direction, and someone running a
+# review inside a clone of this repository should not publish their protocol by
+# reflex on their first `git add -A`. And this repository is a tool, not a
+# review: a project directory committed here is somebody's scratch work, which
+# is how `projects/x/` -- an empty test artifact -- reached the v0.6.0 release.
+#
+# BUILD_PLAN §2.5 line 291 does recommend tracking `decisions.jsonl`, because it
+# is irreplaceable human labour. Do that deliberately in your own repository:
+#     git add -f projects/<slug>/decisions/decisions.jsonl \
+#                projects/<slug>/criteria.yaml projects/<slug>/project.toml
+projects/
 *.duckdb
 *.db
 

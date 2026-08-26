@@ -171,9 +171,14 @@ fields = ["TITLE-ABS-KEY"]
 Substitute your own concepts; the shape is what matters.
 
 - `terms` — each rendered as `FIELD("term")` and OR-ed together.
-- `compound_terms` — each `{ all = [...] }` becomes a parenthesised AND group, itself
-  OR-ed with everything else. A bare string, or any key other than `all`, is refused
-  rather than coerced into something plausible-looking.
+- `compound_terms` — a **list** of `{ all = [...] }` groups, each becoming a parenthesised
+  AND group that is itself OR-ed with everything else. A bare string, a single group
+  written without its surrounding `[ ]`, or any key other than `all`, is refused rather
+  than coerced into something plausible-looking. A longer list is often easier to read as
+  repeated `[[query.compound_terms]]` headers, which mean the same thing.
+- Keys this table does not define are **refused, not ignored** — `compound_term` without
+  its `s` would otherwise drop a whole AND group and run a narrower search than the file
+  describes.
 - `fields` — applied to every term. With more than one field, each term becomes a
   parenthesised OR across them.
 
