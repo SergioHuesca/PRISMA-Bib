@@ -128,7 +128,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from hashlib import sha1
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 import duckdb
 import pandas as pd
@@ -1179,6 +1179,14 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     return stats
 
 
+#: The non-``RAW`` stages whose membership is a pure function of Layer 1 and
+#: ``criteria.yaml``, with no dependence on the Layer 2 decision log
+#: (BUILD_PLAN line 950). Answered without loading ``decisions.jsonl`` at all.
+_LAYER1_ONLY_STAGES: Final[frozenset[PrismaStage]] = frozenset(
+    {PrismaStage.AUTOMATED, PrismaStage.LANGUAGE}
+)
+
+
 class Corpus:
     """Read-facing handle onto a Layer 1 store (BUILD_PLAN line 893-897).
 
@@ -1245,11 +1253,12 @@ class Corpus:
             ConfigError: Forwarded from :mod:`prismabib.prisma.engine` if
                 ``project.criteria.yaml`` fails to parse.
             LogError: Forwarded from :mod:`prismabib.prisma.engine` if the
-                decision log fails to load. Note that this includes
-                ``AUTOMATED``/``LANGUAGE``: their *membership* never depends
-                on the log (BUILD_PLAN line 950), but they are answered here
-                from the same single engine snapshot as the screened stages,
-                which folds it once.
+                decision log fails to load. Raised only for the screened
+                stages (``TITLE_ABSTRACT``/``FULLTEXT``/``INCLUDED``).
+                ``AUTOMATED`` and ``LANGUAGE`` are pure functions of Layer 1
+                and ``criteria.yaml`` (BUILD_PLAN line 950), so they are
+                answered without reading the log at all and cannot fail on
+                one that is corrupt or absent.
         """
         if self._project is None:
             raise StoreError(
@@ -1279,15 +1288,25 @@ class Corpus:
         # And it reads Layer 1, `criteria.yaml` and the decision log exactly
         # once, so the record ids returned here and the rows selected for
         # them describe one instant rather than several.
-        from prismabib.prisma.engine import _capture_snapshot
+        from prismabib.prisma.engine import _capture_layer1, _capture_snapshot
+
+        # `AUTOMATED` and `LANGUAGE` are pure functions of Layer 1 and
+        # `criteria.yaml` (BUILD_PLAN line 950: computed, never logged), so
+        # they are answered from a Layer 1 view that never touches Layer 2.
+        # Reading the decision log for them would be worse than wasteful: it
+        # would make `Corpus.records(stage=LANGUAGE)` fail with `LogError` on
+        # a corrupt log whose contents cannot affect the answer, and -- since
+        # `DecisionLog` opens `decisions.jsonl` with `O_CREAT` -- would
+        # create a screening log for a project that has never screened.
+        if stage in _LAYER1_ONLY_STAGES:
+            layer1 = _capture_layer1(self._project, connection=self._connection)
+            return layer1.automated if stage is PrismaStage.AUTOMATED else layer1.language
 
         snapshot = _capture_snapshot(self._project, connection=self._connection)
-        # Every non-RAW member of PrismaStage, so a stage added to the enum
+        # Every screened member of PrismaStage, so a stage added to the enum
         # without a set here fails the exhaustiveness check below rather
         # than silently returning the wrong flow set.
         stage_to_ids: dict[PrismaStage, frozenset[str]] = {
-            PrismaStage.AUTOMATED: snapshot.layer1.automated,
-            PrismaStage.LANGUAGE: snapshot.layer1.language,
             PrismaStage.TITLE_ABSTRACT: snapshot.manual_abstract,
             PrismaStage.FULLTEXT: snapshot.manual_fulltext,
             # C == M_full (BUILD_PLAN line 948); PrismaStage.INCLUDED and

@@ -664,3 +664,56 @@ def test_citations__query_with_date__uses_snapshot_at_or_before(tmp_path: Path) 
 
     assert result["record_id"].to_list() == [record_id]
     assert result["cited_by_count"].to_list() == [10]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "stage",
+    [
+        pytest.param(PrismaStage.AUTOMATED, id="automated"),
+        pytest.param(PrismaStage.LANGUAGE, id="language"),
+    ],
+)
+def test_corpus__layer1_only_stage__ignores_an_unreadable_decision_log(
+    tmp_path: Path, stage: PrismaStage
+) -> None:
+    """``A`` and ``L`` must not depend on Layer 2, even to fail.
+
+    BUILD_PLAN line 950 makes ``AUTOMATED``/``LANGUAGE`` pure functions of
+    Layer 1 and ``criteria.yaml`` -- computed, never logged. An
+    implementation that answers them from a snapshot which folds the
+    decision log gives the right *answer* while acquiring a dependency the
+    methodology says they do not have: a reviewer with a corrupt
+    ``decisions.jsonl`` would be unable to ask how many records survived the
+    automated filter, a number whose value that file cannot influence.
+    """
+    project = copy_reference_project(tmp_path)
+    build_store(project, rebuild=True)
+    project.decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    project.decisions_path.write_text("{ not valid json\n", encoding="utf-8")
+
+    result = Corpus.open(project).records(stage=stage)
+
+    assert result.height > 0
+
+
+@pytest.mark.integration
+def test_corpus__layer1_only_stage__does_not_create_a_decision_log(tmp_path: Path) -> None:
+    """Asking a Layer 1 question must not manufacture Layer 2 state.
+
+    ``DecisionLog`` opens ``decisions.jsonl`` with ``O_CREAT``, so folding it
+    to answer ``LANGUAGE`` would leave a screening log behind for a project
+    that has never screened anything -- a file whose presence tells a later
+    reader that human screening began.
+    """
+    project = copy_reference_project(tmp_path)
+    build_store(project, rebuild=True)
+    # `copy_reference_project` lays down an empty log, so remove it first --
+    # otherwise this test passes on an implementation that does create one,
+    # having never established its own precondition.
+    project.decisions_path.unlink(missing_ok=True)
+    assert not project.decisions_path.exists()
+
+    Corpus.open(project).records(stage=PrismaStage.LANGUAGE)
+
+    assert not project.decisions_path.exists()
