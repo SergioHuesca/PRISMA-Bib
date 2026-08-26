@@ -315,6 +315,18 @@ def build_query_for_project(project: Project) -> str:
     if query_table is None:
         raise ConfigError(f"{path} has no [query] table; cannot build a search query")
 
+    # Diagnose the compound_terms shape *before* Pydantic does. `_QuerySpec`
+    # rejects a bare string with a raw model_type error naming a private class
+    # the reader has never heard of, while `_coerce_compound_group` already
+    # carries a message that names the mistake and writes out the fix. Without
+    # this pass that message is unreachable from project.toml -- which is the
+    # only route most people take -- so the best error in this module fired
+    # only for direct `build_query` callers. The first real user hit exactly
+    # this and got the Pydantic dump.
+    if isinstance(query_table, Mapping):
+        for group in query_table.get("compound_terms") or ():
+            _coerce_compound_group(group)
+
     try:
         spec = _QuerySpec.model_validate(query_table)
     except PydanticValidationError as exc:

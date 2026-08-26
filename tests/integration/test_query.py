@@ -165,3 +165,47 @@ def test_build_query_for_project__missing_project_toml__raises_config_error(
         build_query_for_project(project)
 
     assert str(project.root / "project.toml") in str(excinfo.value)
+
+
+@pytest.mark.integration
+def test_build_query_for_project__bare_string_compound_term__names_the_fix(
+    tmp_path: Path,
+) -> None:
+    """The most likely `[query]` mistake must get the message written for it.
+
+    ``compound_terms = ["computer vision", "video"]`` is the natural thing to
+    write if you read ``terms`` and assume ``compound_terms`` takes the same
+    shape. ``_coerce_compound_group`` already carries a message that names the
+    mistake and writes out the corrected line -- but ``_QuerySpec`` validated
+    first, so a ``project.toml`` author instead got a raw Pydantic
+    ``model_type`` error naming ``_CompoundTerm``, a private class they have
+    never heard of and cannot look up.
+
+    That made the best error in this module reachable only by direct
+    ``build_query`` callers, i.e. essentially never. This is not hypothetical:
+    the first person to write a real query for this tool hit it immediately
+    and got the Pydantic dump.
+    """
+    project = Project.init("bare-string", title="Bare String", root=tmp_path)
+    (project.root / "project.toml").write_text(
+        "[project]\n"
+        'slug = "bare-string"\n'
+        'title = "Bare String"\n'
+        "created = 2026-08-26\n"
+        "track_decisions = true\n"
+        "\n"
+        "[query]\n"
+        'terms = ["baseball"]\n'
+        'compound_terms = ["computer vision"]\n'
+        'fields = ["TITLE-ABS-KEY"]\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        build_query_for_project(project)
+
+    message = str(excinfo.value)
+    assert "must not be a bare string" in message
+    assert "{'all': ['computer vision']}" in message
+    # The Pydantic dump names a private class the reader cannot act on.
+    assert "_CompoundTerm" not in message
