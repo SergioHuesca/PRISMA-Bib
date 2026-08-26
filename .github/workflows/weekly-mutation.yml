@@ -295,7 +295,7 @@ jobs:
             --label "test-gap" \
             --label "mutation" \
             --body-file "$RUNNER_TEMP/issue-body.md" \
-            --assignee SergioHuesca
+            --assignee "${{ github.repository_owner }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

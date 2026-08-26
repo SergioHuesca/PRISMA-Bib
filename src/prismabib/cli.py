@@ -46,7 +46,7 @@ from structlog.typing import EventDict, WrappedLogger
 from prismabib import __version__
 from prismabib.capture.manifest import RunManifest
 from prismabib.capture.writer import capture_search
-from prismabib.config import Settings
+from prismabib.config import ProjectsRootSettings
 from prismabib.errors import PrismabibError
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
@@ -211,7 +211,7 @@ def init(
         # happened: telling a returning user "created" when nothing was created,
         # and pointing them at a template they filled in months ago, is the kind
         # of small lie that makes a tool untrustworthy.
-        projects_root = root if root is not None else Settings().prismabib_projects_root
+        projects_root = root if root is not None else ProjectsRootSettings().prismabib_projects_root
         existed = (projects_root / slug / "project.toml").is_file()
         project = Project.init(slug, title=title, root=projects_root)
 

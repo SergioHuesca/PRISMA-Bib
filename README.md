@@ -20,30 +20,72 @@ A four-layer pipeline:
 
 - **Layer 3 — Analysis views** (pure functions): Deterministic transformations producing figures, tables, a Panel dashboard, and exports. Every figure ships with the dataframe that produced it.
 
+## Before you start: Scopus access
+
+**prismabib needs a Scopus API key with `COMPLETE` view entitlement.** That entitlement
+is granted to subscribing institutions, not to personal or free API keys, and prismabib
+will not silently fall back to a lesser view — `STANDARD` omits author keywords and full
+affiliation data, which would quietly bias the keyword network and the geography analysis.
+A wrong number is worse than a refusal.
+
+In practice this means running from your institution's network, or asking your university
+library for a Scopus *institutional token* and setting `SCOPUS_INSTTOKEN`. If your
+institution has no Scopus subscription, this tool cannot run your review today. Better to
+know that now than after an hour of setup.
+
+Get a key at [dev.elsevier.com](https://dev.elsevier.com).
+
 ## Quick start
 
 ```bash
 gh repo clone SergioHuesca/PRISMA-Bib
 cd PRISMA-Bib
 uv sync
-cp .env.example .env
-# Edit .env with your Scopus credentials
-prismabib init
+cp .env.example .env          # then put your Scopus key in it
+
+prismabib init my-review --title "My systematic review"
 ```
 
-Then open the notebooks in `notebooks/` in Jupyter and follow the numbered sequence.
+`init` creates `projects/my-review/` and tells you which two files to edit — it does not
+need a Scopus key, so you can lay out a project before you have one. Fill in:
+
+- **`project.toml`** — the `[query]` table: the Boolean search itself.
+- **`criteria.yaml`** — your eligibility criteria: year window, document types, languages,
+  and the exclusion reason codes your review will use. It ships with a PRISMA-conventional
+  starter vocabulary to edit.
+
+Then:
+
+```bash
+prismabib search my-review    # spends Scopus quota; resumable if interrupted
+prismabib build my-review     # derive the Layer 1 store from the raw capture
+prismabib flow my-review      # print the PRISMA 2020 flow counts
+```
+
+Screening decisions currently go through `DecisionLog.append` in Python; the keyboard-first
+screening UI is the next release. See [Getting Started](docs/getting-started.md) for the
+full walkthrough.
 
 ## Project status
 
-**Stage 0 (v0.1.0)** — Repository bootstrap. What exists now:
+**v0.5.0 — Layers 0, 1 and 2 are complete.** What works today:
 
-- Fully governed GitHub repository with branch protection, CI/CD, secret scanning, and GitHub Pages enabled
-- Python 3.11+, `uv` for reproducible environments
-- Test harness with socket ban, frozen clock, and seeded ID factory
-- Documentation skeleton with Material theme
-- Pre-commit hooks for linting, formatting, and secret detection
+- **Scopus acquisition** into an immutable, sealed Layer 0 archive, with a resumable
+  cursor, an HTTP cache, and rate limiting. Re-running with a warm cache reproduces a
+  byte-identical payload hash.
+- **Layer 1 DuckDB store**, rebuildable from Layer 0 by one function call, with
+  deterministic per-table checksums that do not depend on the DuckDB version.
+- **The PRISMA engine**: the formal sets `S_raw`/`A`/`L`/`M_abs`/`M_full`/`C`, an
+  append-only decision log with fsync-per-write and tamper detection, `FlowCounts` with a
+  consistency guard, and replay under amended criteria.
+- **A CLI**: `prismabib init | search | build | flow`.
 
-Stages 1–11 are planned. See [BUILD_PLAN.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/BUILD_PLAN.md) §7 for the full roadmap and version schedule.
+Not built yet: the screening UI, full-text retrieval, bibliometrics, the taxonomy engine,
+dashboards, and export/reporting. See
+[docs/methodology/limitations.md](docs/methodology/limitations.md) for what that means in
+practice before you adopt this for a real review, and
+[BUILD_PLAN.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/BUILD_PLAN.md) §7 for
+the roadmap.
 
 ## Visibility
 
@@ -59,7 +101,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit conventions, th
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — from clone to first dashboard (Stage 11)
+- [Getting Started](docs/getting-started.md) — clone to your first screening decision
 - [Architecture](docs/architecture/overview.md) — the four-layer model and design decisions
 - [Testing](docs/testing.md) — test taxonomy, how to run each subset, snapshot management
 - [Methodology](docs/methodology/) — PRISMA mapping, metric definitions, limitations

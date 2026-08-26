@@ -408,3 +408,29 @@ def test_cli_search__empty_query_table__refuses_rather_than_searching_everything
 
     assert result.exit_code == 1
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_init__no_scopus_credentials__still_creates_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first command in the README must not demand an API key.
+
+    ``prismabib init`` creates a directory and writes two template files. It
+    makes no network call, and a researcher will reasonably want to lay a
+    project out before going to their library to request Scopus access.
+    Refusing at step one reads like the tool is broken, and it inverts the
+    order people actually work in.
+
+    This is pinned separately from the ``Project.init`` test because the CLI
+    resolved the projects root through its own ``Settings()`` call, so the
+    library fix alone left the command still failing -- which is exactly how
+    it was found: by walking the README rather than reading it.
+    """
+    monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["init", "my-review", "--title", "My systematic review"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "projects" / "my-review" / "criteria.yaml").is_file()
