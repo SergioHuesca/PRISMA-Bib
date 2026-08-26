@@ -181,3 +181,69 @@ def test_search__5xx_exhausts_retries__raises_upstream_error(
             list(client.search('TITLE-ABS-KEY("x")'))
 
     assert route.call_count == ScopusClient.MAX_ATTEMPTS
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "required_phrase",
+    [
+        pytest.param("institutional token", id="names-the-usual-remedy"),
+        pytest.param("SCOPUS_INSTTOKEN", id="names-the-env-var-to-set"),
+        pytest.param("library", id="names-who-to-ask"),
+    ],
+)
+def test_scopus__entitlement_error__tells_the_researcher_what_to_do(
+    required_phrase: str,
+) -> None:
+    """A 403 is the most common way a new researcher's first session ends.
+
+    The message used to spend two-thirds of its length justifying *why*
+    prismabib refuses to degrade to ``view=STANDARD``, citing a BUILD_PLAN
+    section the user does not have on disk -- correct, and useless to
+    somebody who just wants to know whether they can use the tool at all.
+    Explaining the refusal is not the same as telling them what to do about
+    it, and only one of those unblocks anybody.
+
+    These assertions exist so that guidance cannot be silently refactored
+    away: the design rationale may be reworded freely, but the remedy has
+    to survive.
+    """
+    error_body = {
+        "service-error": {
+            "status": {
+                "statusCode": "AUTHORIZATION_ERROR",
+                "statusText": "The requestor is not entitled to access this resource",
+            }
+        }
+    }
+
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(return_value=httpx.Response(403, json=error_body))
+        client = _client()
+
+        with pytest.raises(EntitlementError) as excinfo:
+            list(client.search('TITLE-ABS-KEY("x")', view="COMPLETE"))
+
+    assert required_phrase in str(excinfo.value)
+
+
+@pytest.mark.integration
+def test_scopus__auth_error__names_the_insttoken_mismatch_trap() -> None:
+    """The single most common newcomer mistake deserves to be named.
+
+    Pasting the API key into both ``SCOPUS_API_KEY`` and
+    ``SCOPUS_INSTTOKEN`` yields a 401 whose Scopus-side text is
+    "Institution Token is not associated with API Key". The operator of
+    this very repository hit it. A message that says only "check your
+    credentials" leaves them checking the one field that was right.
+    """
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(return_value=httpx.Response(401, json={}))
+        client = _client()
+
+        with pytest.raises(AuthError) as excinfo:
+            list(client.search('TITLE-ABS-KEY("x")', view="COMPLETE"))
+
+    message = str(excinfo.value)
+    assert "Institution Token is not associated with API Key" in message
+    assert "dev.elsevier.com" in message

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from prismabib.errors import LogError
+from prismabib.errors import ConfigError, LogError
 from prismabib.prisma import engine
 from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
@@ -665,3 +665,71 @@ def test_replay__criteria_version_recorded_on_every_event__is_queryable(
         "1.0.0": [JOURNAL_2020.record_id],
         "1.1.0": [ON_SUBJECT.record_id],
     }
+
+
+@pytest.mark.integration
+def test_automated_set__subject_filter_with_no_data_anywhere__is_refused(
+    tmp_path: Path,
+) -> None:
+    """A subject restriction no record can be judged against must not pass silently.
+
+    ``_passes_subject_areas`` treats "this record has no subject-area data"
+    as "passes", which is right for one sparse record among many. Applied to
+    a corpus where *no* record has the data, the same rule turns the whole
+    filter into a no-op: everything passes, ``excluded_automated`` omits a
+    restriction the reviewer believes they applied, and the PRISMA diagram
+    reports a filter that never ran.
+
+    This is not hypothetical. The Scopus Search API's ``view=COMPLETE`` --
+    the only call prismabib makes -- returns no subject-area codes at all,
+    so every real corpus captured today is in exactly this state.
+    """
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=[RecordSpec(number=1), RecordSpec(number=2)],
+            criteria=CriteriaSpec(subject_areas=("MEDI",)),
+        ),
+        slug="no-subject-data",
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        engine.automated_set(project)
+
+    message = str(excinfo.value)
+    assert "never ran" in message
+    # The remedy must not send the reader somewhere that quietly fails. The
+    # [query] table renders every entry as FIELD("term"), so a SUBJAREA(...)
+    # entry becomes a literal text search for that string -- a near-empty
+    # corpus the researcher would read as a working subject filter. An
+    # earlier version of this message advised exactly that.
+    assert "capture_search" in message
+    assert "literal text search" in message
+
+
+@pytest.mark.integration
+def test_automated_set__subject_filter_with_data_present__still_filters(
+    tmp_path: Path,
+) -> None:
+    """The refusal must not fire when the filter genuinely works.
+
+    A guard that rejects legitimate configuration is as broken as one that
+    passes silently -- and this filter does work whenever Layer 0 carries a
+    ``subject-area`` array. Only the *absence of data across the whole
+    corpus* is refused, never the restriction itself.
+    """
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=[
+                RecordSpec(number=1, subject_areas=("MEDI",)),
+                RecordSpec(number=2, subject_areas=("COMP",)),
+            ],
+            criteria=CriteriaSpec(subject_areas=("MEDI",)),
+        ),
+        slug="with-subject-data",
+    )
+
+    automated = engine.automated_set(project)
+
+    assert len(automated) == 1

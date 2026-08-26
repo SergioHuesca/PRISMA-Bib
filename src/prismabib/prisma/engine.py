@@ -104,6 +104,7 @@ from typing import Final
 
 import duckdb
 
+from prismabib.errors import ConfigError
 from prismabib.prisma.criteria import resolve_criteria
 from prismabib.prisma.events import Decision, DecisionEvent
 from prismabib.prisma.log import DecisionLog, FoldKey
@@ -473,12 +474,73 @@ def _capture_layer1(
     resolved = project.criteria if criteria is None else criteria
     with _layer1_connection(project, connection) as open_connection:
         attributes = _fetch_record_attributes(open_connection)
+    _refuse_unenforceable_subject_filter(project, resolved, attributes)
     automated, language = _compute_a_and_l(attributes, resolved)
     return _Layer1View(
         criteria=resolved,
         raw=frozenset(attributes),
         automated=automated,
         language=language,
+    )
+
+
+def _refuse_unenforceable_subject_filter(
+    project: Project,
+    criteria: Criteria,
+    attributes: Mapping[str, _RecordAttributes],
+) -> None:
+    """Refuse a ``subject_areas`` restriction that this corpus cannot evaluate.
+
+    :func:`_passes_subject_areas` treats "this record carries no subject-area
+    data" as "passes", which is the right latitude for one sparse record
+    among many. Applied to a corpus where *no* record carries the data, the
+    same rule silently turns the whole filter into a no-op: every record
+    passes, the automated-exclusion count omits a restriction the reviewer
+    believes they applied, and the published PRISMA diagram claims a filter
+    that never ran. The numbers look entirely plausible, which is precisely
+    what makes it dangerous (BUILD_PLAN §1.4).
+
+    That is not hypothetical for Scopus. The Search API's ``view=COMPLETE``
+    -- the only call this project makes -- does not return subject-area
+    codes, so a corpus captured from it has none for any record. The filter
+    does work when the data is present (a Layer 0 entry carrying a
+    ``subject-area`` array loads normally), so this refuses on the evidence
+    rather than on the source: empty restriction, or no data at all for the
+    whole corpus, are the two conditions checked.
+
+    Args:
+        project: The project being screened, named in the error.
+        criteria: The resolved criteria whose ``subject_areas`` to check.
+        attributes: Every record's Layer 1 attributes, from this snapshot.
+
+    Raises:
+        ConfigError: If ``subject_areas`` is non-empty and not one record in
+            the corpus carries subject-area data.
+    """
+    if not criteria.subject_areas or not attributes:
+        return
+    if any(record.subject_areas for record in attributes.values()):
+        return
+    raise ConfigError(
+        f"{project.root / 'criteria.yaml'} restricts subject_areas to "
+        f"{list(criteria.subject_areas)!r}, but not one of the {len(attributes)} records "
+        "in this corpus carries subject-area data, so the restriction would match every "
+        "record and exclude nothing.\n"
+        "\nThe Scopus Search API (view=COMPLETE) does not return subject-area codes, so "
+        "a corpus captured from it never has them. Continuing would put a filter in your "
+        "PRISMA diagram that never ran.\n"
+        "\nEither:\n"
+        "  - set subject_areas to [] and record the limitation in your protocol. Most "
+        "reviews can express the same restriction through doc_types, the venue "
+        "whitelist, or the query terms themselves; or\n"
+        "  - move the restriction into the query, where Scopus applies it server-side. "
+        "The [query] table in project.toml cannot express this -- it renders every entry "
+        'as FIELD("term"), so a SUBJAREA(...) entry would become a literal text search '
+        "for that string. Pass the whole query instead: "
+        "capture_search(project, query='TITLE-ABS-KEY(...) AND SUBJAREA(MEDI)'). The "
+        "exact string is recorded in the run manifest, so provenance is preserved even "
+        "though project.toml no longer holds it. Note this narrows what is *identified*, "
+        "so those records never appear in the automated-exclusion count."
     )
 
 

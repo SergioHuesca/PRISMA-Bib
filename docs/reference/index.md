@@ -10,8 +10,9 @@ still exited 0. CI cannot catch that, which is why the modules are listed one by
 a module added in a later stage without a section here is a visible omission.
 
 Sections follow the layer order of the pipeline: core vocabulary first, then Layer 0
-(`sources/`, `capture/`), Layer 1 (`store/`), and Layer 2 (`prisma/`). Each package's own
-section renders the package docstring only; its modules follow individually.
+(`sources/`, `capture/`), Layer 1 (`store/`), and Layer 2 (`prisma/`), and finally `cli.py`,
+which sits across all of them. Each package's own section renders the package docstring
+only; its modules follow individually.
 
 **Not yet built** (each arrives with the stage that owns it, and gets a section here then):
 `sources/sciencedirect.py`, `screening/`, `fulltext/`, `taxonomy/`, `bibliometrics/`,
@@ -242,6 +243,22 @@ set definitions and the flow-diagram audit table.
 ### prisma.flow
 
 ::: prismabib.prisma.flow
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## cli
+
+The `prismabib` console script: `init | search | build | flow`, plus `--root/-r` and
+`--version`. Every subcommand is a thin wrapper that resolves a `Project`, calls exactly one
+already-tested library function, and renders the result — nothing here computes a number of
+its own. `code` and `export` are named in BUILD_PLAN Stage 11 and are deliberately **not**
+implemented until the taxonomy and reporting layers exist behind them; an absent command
+fails with "No such command", which is honest, while a stub is indistinguishable from a
+working one. Not listed in BUILD_PLAN §2.3's layout — a Stage 11 addition, brought forward.
+
+::: prismabib.cli
     options:
       show_root_heading: true
       show_source: true

@@ -25,6 +25,7 @@ itself as the fixed point Stage 1 builds on:
 
 from __future__ import annotations
 
+import difflib
 import re
 import tomllib
 from dataclasses import dataclass
@@ -33,10 +34,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
-from prismabib.config import Settings
+from prismabib.config import ProjectsRootSettings
 from prismabib.errors import ConfigError
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$")
@@ -45,12 +46,46 @@ _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?
 class TemporalCriteria(BaseModel):
     """The inclusive year window of the criteria.yaml ``temporal`` block."""
 
+    model_config = ConfigDict(extra="forbid")
+
     year_start: int
     year_end: int
+
+    @model_validator(mode="after")
+    def _require_ordered_window(self) -> TemporalCriteria:
+        """Reject a window whose end precedes its start.
+
+        An inverted window is not merely odd, it is undetectable downstream:
+        ``_passes_temporal`` is an inclusive between-test, so ``year_start
+        2026`` with ``year_end 2015`` excludes every record ever published
+        and yields an empty set ``A``. The PRISMA diagram then reports that
+        the automated filter removed the entire corpus, which is a coherent
+        and completely wrong story about the search. Transposing two numbers
+        in a YAML file is an easy mistake; silently publishing it should not
+        be possible.
+
+        Returns:
+            ``self`` unchanged, once validated.
+
+        Raises:
+            ValueError: If ``year_end`` precedes ``year_start``. Pydantic
+                wraps this into a ``ValidationError``, which
+                :func:`_criteria_config_error` renders as a ``ConfigError``.
+        """
+        if self.year_end < self.year_start:
+            raise ValueError(
+                f"temporal.year_end ({self.year_end}) precedes temporal.year_start "
+                f"({self.year_start}). The window is inclusive and would match no "
+                "record at all, emptying the corpus rather than filtering it -- "
+                "check whether the two values are transposed."
+            )
+        return self
 
 
 class DocTypeCriteria(BaseModel):
     """The ``doc_types`` block of ``criteria.yaml``."""
+
+    model_config = ConfigDict(extra="forbid")
 
     include: list[str]
     conference_whitelist: list[str] = []
@@ -58,6 +93,8 @@ class DocTypeCriteria(BaseModel):
 
 class ManualScreeningCriteria(BaseModel):
     """A manual-screening block (``manual_abstract`` or ``manual_fulltext``)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     exclude_reason_codes: list[str]
 
@@ -70,6 +107,8 @@ class Criteria(BaseModel):
     ``criteria_version`` under which it was made, which is what makes
     protocol amendments auditable rather than silently retroactive.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     version: str
     temporal: TemporalCriteria
@@ -104,19 +143,72 @@ class Criteria(BaseModel):
 
 
 _DEFAULT_CRITERIA_YAML = """\
+# Eligibility criteria for this review -- the machine-readable half of your
+# protocol. Every automated filter prismabib applies is defined here, and every
+# screening decision records the `version` below, so amending this file mid-review
+# stays auditable instead of silently retroactive.
+#
+# Bump `version` whenever you change anything here, and commit the change: prior
+# versions are resolved from git history alone, so an uncommitted amendment is
+# invisible to `engine.replay()`.
+#
+# An empty list means NO RESTRICTION on that dimension, not "exclude everything".
+# Unknown keys are refused rather than ignored -- a dropped key would be an
+# eligibility rule that silently did not apply.
 version: 0.1.0
+
+# Inclusive on both ends. Publication year, from the record's cover date.
 temporal:
   year_start: 1900
   year_end: {year}
+
+# Scopus subject-area codes, e.g. MEDI, COMP, ENGI.
+#
+# NOT YET ENFORCEABLE: the Scopus Search API view=COMPLETE does not return
+# subject-area codes, so prismabib currently has no data to filter on. Leave this
+# empty and put SUBJAREA(...) in your project.toml query instead, which applies
+# the restriction server-side at search time. Setting it here is refused rather
+# than silently ignored, so that no diagram can claim a filter that never ran.
 subject_areas: []
+
 doc_types:
+  # Scopus subtype codes. Common ones: ar (article), cp (conference paper),
+  # re (review), ch (book chapter), bk (book). Empty = accept every type.
   include: []
+  # Applies ONLY to records whose venue is a conference proceeding; journal
+  # articles are never excluded by it. Matching is case-insensitive SUBSTRING,
+  # so a short token like "AI" matches almost any venue name. Prefer a
+  # distinctive fragment, e.g. "Computer Vision and Pattern Recognition".
   conference_whitelist: []
+
+# Matched against Scopus's own language string, case-insensitively and EXACTLY:
+# use "English", not "en" or "eng". A record with no language recorded is kept.
 languages: []
+
+# Reason codes you may cite when excluding a record. prismabib refuses an
+# exclusion whose reason code is not listed here, so that the PRISMA diagram's
+# exclusion breakdown is drawn from a closed, pre-registered vocabulary rather
+# than free text invented mid-screening.
+#
+# These starters are PRISMA-conventional. EDIT THEM for your protocol -- delete
+# what does not apply and add what does; the codes should be the reasons your
+# own review actually distinguishes.
 manual_abstract:
-  exclude_reason_codes: []
+  exclude_reason_codes:
+    - OFF_TOPIC
+    - REVIEW_OR_SURVEY
+    - NOT_PRIMARY_RESEARCH
+    - WRONG_POPULATION
+    - WRONG_OUTCOME
+    - NOT_PEER_REVIEWED
 manual_fulltext:
-  exclude_reason_codes: []
+  exclude_reason_codes:
+    - NO_FULL_TEXT
+    - WRONG_POPULATION
+    - WRONG_OUTCOME
+    - WRONG_STUDY_DESIGN
+    - INSUFFICIENT_DATA
+    - DUPLICATE_REPORT
 """
 
 
@@ -175,7 +267,7 @@ def _resolve_projects_root(root: Path | None) -> Path:
 
     Args:
         root: An explicit override, or ``None`` to read
-            ``PRISMABIB_PROJECTS_ROOT`` from :class:`~prismabib.config.Settings`
+            ``PRISMABIB_PROJECTS_ROOT`` from :class:`~prismabib.config.ProjectsRootSettings`
             (BUILD_PLAN §3.1 line 315, default ``./projects``).
 
     Returns:
@@ -183,11 +275,11 @@ def _resolve_projects_root(root: Path | None) -> Path:
 
     Raises:
         ConfigError: If ``root`` is ``None`` and environment configuration
-            cannot be loaded (see :class:`~prismabib.config.Settings`).
+            cannot be loaded (see :class:`~prismabib.config.ProjectsRootSettings`).
     """
     if root is not None:
         return root
-    return Settings().prismabib_projects_root
+    return ProjectsRootSettings().prismabib_projects_root
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -334,7 +426,7 @@ class Project:
         try:
             return Criteria.model_validate(raw or {})
         except PydanticValidationError as exc:
-            raise ConfigError(f"{path} does not satisfy the criteria.yaml schema: {exc}") from exc
+            raise _criteria_config_error(path, exc) from exc
 
     @property
     def raw_dir(self) -> Path:
@@ -364,3 +456,81 @@ class Project:
             The path, created empty by :meth:`Project.init`.
         """
         return self.root / "decisions" / "decisions.jsonl"
+
+
+def _criteria_config_error(path: Path, exc: PydanticValidationError) -> ConfigError:
+    """Turn a Pydantic failure on ``criteria.yaml`` into an actionable ``ConfigError``.
+
+    Unknown keys get their own treatment because they are the failure most
+    likely to produce a *wrong corpus rather than an error*. Until these
+    models forbade extras, ``criteria.yaml`` silently dropped anything it
+    did not recognise: a misspelled ``language:`` or a plausible-but-
+    unsupported ``study_designs:`` left screening running as though that
+    dimension were unrestricted, and nothing anywhere said so. Since this
+    file is the entire machine-readable methodology surface, a typo in it
+    is a methodology change nobody consented to.
+
+    Rejecting the key is therefore the fix, but rejecting it usefully means
+    naming what *was* expected -- a researcher who wrote ``language`` needs
+    to see ``languages``, not a schema dump.
+
+    Args:
+        path: The ``criteria.yaml`` that failed to validate.
+        exc: Pydantic's error for that document.
+
+    Returns:
+        A :class:`~prismabib.errors.ConfigError` naming each unknown key,
+        the block it appeared in, and the closest valid alternative where
+        one is recognisable.
+    """
+    unknown: list[str] = []
+    for error in exc.errors():
+        if error["type"] != "extra_forbidden":
+            continue
+        location = [str(part) for part in error["loc"]]
+        key = location[-1]
+        block = ".".join(location[:-1])
+        valid = sorted(_valid_keys_at(block))
+        suggestion = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
+        where = f"{block}.{key}" if block else key
+        hint = f"; did you mean {suggestion[0]!r}?" if suggestion else ""
+        unknown.append(f"  - {where} is not a criteria.yaml key{hint}\n    valid here: {valid}")
+
+    if not unknown:
+        return ConfigError(f"{path} does not satisfy the criteria.yaml schema: {exc}")
+
+    listed = "\n".join(unknown)
+    return ConfigError(
+        f"{path} contains {len(unknown)} key(s) prismabib does not understand:\n"
+        f"{listed}\n"
+        "\nUnknown keys are refused rather than ignored on purpose. criteria.yaml is "
+        "the whole machine-readable definition of who is eligible for this review, so a "
+        "key that is silently dropped is an eligibility rule that silently did not "
+        "apply -- and the resulting corpus looks entirely plausible.\n"
+        "If you need a criterion prismabib cannot express, record it in your protocol "
+        "and apply it during title/abstract screening, where it becomes a logged human "
+        "decision with a reason code instead of an invisible one."
+    )
+
+
+def _valid_keys_at(block: str) -> set[str]:
+    """The field names valid inside one ``criteria.yaml`` block.
+
+    Args:
+        block: Dotted path of the containing block (``""`` for the top
+            level, e.g. ``"temporal"`` or ``"doc_types"``).
+
+    Returns:
+        The set of accepted field names, or an empty set for a block this
+        function does not know about (in which case no suggestion is made
+        rather than a misleading one).
+    """
+    models: dict[str, type[BaseModel]] = {
+        "": Criteria,
+        "temporal": TemporalCriteria,
+        "doc_types": DocTypeCriteria,
+        "manual_abstract": ManualScreeningCriteria,
+        "manual_fulltext": ManualScreeningCriteria,
+    }
+    model = models.get(block)
+    return set(model.model_fields) if model is not None else set()

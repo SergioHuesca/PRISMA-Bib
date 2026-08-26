@@ -112,6 +112,6 @@ jobs:
             --title "🔴 Nightly live contract suite failed — Scopus API schema or availability issue" \
             --label "live-contract-failure" \
             --body-file /tmp/issue_body.txt \
-            --assignee SergioHuesca
+            --assignee "${{ github.repository_owner }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

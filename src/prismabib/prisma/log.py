@@ -611,7 +611,24 @@ class DecisionLog:
             raise LogError(
                 f"{self._path}: truncated final line at line {line_number} "
                 f"({len(fragment)} byte(s) with no terminating newline) -- the process "
-                "likely crashed mid-write; recover manually before appending again"
+                "likely crashed mid-write.\n"
+                "\n"
+                "Every complete line before this one is intact and verified against the "
+                "checksum sidecar, so no screening decision has been lost except "
+                "possibly the last one, which never finished being written.\n"
+                "\n"
+                "To recover:\n"
+                f"  1. Look at the trailing {len(fragment)} byte(s) of {self._path} and "
+                "decide whether that partial decision is one you want to keep.\n"
+                "  2. Delete the incomplete final line, leaving the file ending in a "
+                "newline. Do not edit any earlier line -- they are checksummed.\n"
+                f"  3. Regenerate the sidecar: sha256sum {self._path.name} > "
+                f"{self._checksum_path.name} (run it in {self._path.parent}).\n"
+                "  4. Re-log that decision through the UI or DecisionLog.append if you "
+                "wanted to keep it.\n"
+                "\n"
+                "Back the file up before step 2 -- it is the record of human screening "
+                "labour and nothing else can reconstruct it."
             )
         return confirmed, events
 

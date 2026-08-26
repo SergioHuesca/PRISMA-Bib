@@ -35,8 +35,34 @@ import pytest
 
 pytestmark = pytest.mark.live
 
-REPO = "SergioHuesca/PRISMA-Bib"
 REPO_ROOT = Path(__file__).parent.parent.parent
+
+
+def _origin_slug() -> str:
+    """The ``owner/name`` this clone's ``origin`` actually points at.
+
+    Derived rather than hardcoded so a fork exercises its *own* governance.
+    These tests assert that the repository is version-managed on GitHub with
+    branch protection and a published Pages site (BUILD_PLAN §3.6, S00-AC1);
+    none of that is a claim about one particular owner. Pinning the upstream
+    slug made a fork's `live` suite fail on identity rather than on
+    behaviour, which teaches contributors that the suite is noise.
+    """
+    remote = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    ).stdout.strip()
+    for prefix in ("https://github.com/", "ssh://git@github.com/", "git@github.com:"):
+        if remote.startswith(prefix):
+            return remote.removeprefix(prefix).removesuffix(".git")
+    return remote.removesuffix(".git")
+
+
+REPO = _origin_slug()
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -104,7 +130,7 @@ def test_repository__origin_remote__points_at_github_with_main_pushed() -> None:
     local_main = _run("git", "rev-parse", "refs/heads/main")
     remote_main = _run("git", "rev-parse", "refs/remotes/origin/main")
 
-    assert "origin\thttps://github.com/SergioHuesca/PRISMA-Bib.git (fetch)" in remote.stdout
+    assert f"origin\thttps://github.com/{REPO}.git (fetch)" in remote.stdout
     assert local_main.stdout.strip() == remote_main.stdout.strip()
 
 

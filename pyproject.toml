@@ -1,10 +1,11 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "prismabib"
-version = "0.1.0"
+# Derived from git, never typed here -- see [tool.hatch.version] below.
+dynamic = ["version"]
 description = "A reproducible PRISMA + bibliometric research lab (Python library + notebooks)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -93,6 +94,55 @@ Homepage = "https://github.com/SergioHuesca/PRISMA-Bib"
 Documentation = "https://SergioHuesca.github.io/PRISMA-Bib/"
 Repository = "https://github.com/SergioHuesca/PRISMA-Bib"
 Issues = "https://github.com/SergioHuesca/PRISMA-Bib/issues"
+
+# The CLI wrapper of BUILD_PLAN Stage 11 (line 1455). Deliberately only the four
+# subcommands whose library function exists and is tested -- `code` and `export` are
+# named there too, and are omitted until Stages 8/10 build them, because a stub that
+# accepts the command and does nothing useful is how the documented surface stopped
+# matching the real one in the first place.
+[project.scripts]
+prismabib = "prismabib.cli:main"
+
+# The single source of truth for the package version is the git tag, and there is no
+# second place it can be typed (`project.version` is now `dynamic`, so hatchling refuses
+# a literal there at build time).
+#
+# This is a provenance control, not packaging tidiness. `capture/writer.py` stamps
+# `prismabib.__version__` into every `RunManifest.client_version`, and `raw/<run_id>/` is
+# sealed on write (BUILD_PLAN §2.2) -- a wrong value there is permanently unfixable
+# without re-capturing against a Scopus index that has since drifted. The repo shipped
+# `version = "0.1.0"` through tags v0.2.0 ... v0.5.0 because neither CONTRIBUTING.md's
+# Definition of Done nor BUILD_PLAN §3.6.4 has a "bump the version" step; §3.6.4 still
+# requires the Release tag and the exported version to agree ("that is what makes an
+# exported number traceable to a published state of the code"). A fix that depends on
+# someone remembering would fail the same way again, so nobody is asked to remember.
+#
+# What the derived value looks like, all of it PEP 440:
+#   at tag v0.5.0, clean tree ....... 0.5.0
+#   2 commits past it, clean ........ 0.5.0.post1.dev2+g696a64c4e
+#   ... with uncommitted edits ...... 0.5.0.post1.dev2+g696a64c4e.d20260826
+#   shallow/tagless clone ........... 0.post1.dev1+unknown.g696a64c4e
+#   no .git at all (tarball) ........ 0+unknown
+# `version_scheme = "no-guess-dev"` is why an untagged commit reads `0.5.0.post1.dev2`
+# ("past 0.5.0") instead of setuptools-scm's default guess `0.5.1.dev2`, which names a
+# release that does not exist and would be indistinguishable, in a sealed manifest, from
+# a real v0.5.1 prerelease. The two degraded cases both keep the commit hash and say
+# `unknown`/`0` out loud rather than reporting a plausible release number.
+[tool.hatch.version]
+source = "vcs"
+raw-options = { version_scheme = "no-guess-dev" }
+fallback-version = "0+unknown"
+
+[tool.uv]
+# `git` here is what makes the derived version self-maintaining for an editable install:
+# the version is baked into `.dist-info` at build time, so without this, `uv run` would
+# happily keep serving the version computed at the last `uv sync` -- i.e. exactly the
+# stale-number failure this whole section exists to prevent -- until someone thought to
+# reinstall. With it, committing or tagging rebuilds the package on the next `uv run`.
+# `file = "pyproject.toml"` is uv's default cache key and must be restated, because
+# supplying `cache-keys` replaces the default rather than extending it; dropping it would
+# stop dependency edits from triggering a rebuild.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prismabib"]

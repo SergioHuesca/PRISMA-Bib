@@ -10,7 +10,12 @@ version: 1.0.0
 temporal:
   year_start: 2016
   year_end: 2026
-subject_areas: [COMP, ENGI]
+# Emptied in Phase 0a. This fixture never carried subject-area data (the Scopus
+# Search API does not return it), so [COMP, ENGI] filtered nothing: |S_raw|=120,
+# |A|=96, |L|=96 are byte-identical with and without it. The declaration was
+# therefore documentation of an intent the pipeline never executed. Restored as a
+# real filter in Phase 0b, once Abstract Retrieval populates the data.
+subject_areas: []
 doc_types:
   include: [ar, cp]
   conference_whitelist: [CVPR, ICCV, ECCV, WACV, AAAI]

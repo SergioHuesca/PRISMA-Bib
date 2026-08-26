@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: >-
+  prismabib: a reproducible PRISMA and bibliometric research pipeline
+message: >-
+  If you use prismabib to produce numbers reported in a publication, please
+  cite it, and cite the exact release you ran. Every number this tool emits is
+  traceable to a Layer 0 capture and a package version; a citation without a
+  version cannot be checked by a reader.
+type: software
+authors:
+  - family-names: Huesca
+    given-names: Sergio
+repository-code: "https://github.com/SergioHuesca/PRISMA-Bib"
+url: "https://sergiohuesca.github.io/PRISMA-Bib/"
+abstract: >-
+  A Python library for executing a PRISMA 2020 systematic review over Scopus
+  with reproducible, auditable numbers. Raw API responses are persisted
+  verbatim and sealed; the analytical store is rebuildable from them by one
+  function call; screening decisions are an append-only, checksummed event log
+  that can be replayed under amended eligibility criteria; and every reported
+  count is a query against that store rather than a literal typed into prose.
+keywords:
+  - systematic-review
+  - PRISMA
+  - bibliometrics
+  - reproducible-research
+  - scopus
+  - meta-research
+license: MIT

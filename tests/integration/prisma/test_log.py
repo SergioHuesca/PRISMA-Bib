@@ -649,3 +649,46 @@ def test_log__append_event_of_a_hand_built_event__is_stored_verbatim(project: Pr
     log.append_event(event)
 
     assert log.load() == [event]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "required_phrase",
+    [
+        pytest.param("Back the file up", id="says-to-back-up-first"),
+        pytest.param("sha256sum", id="gives-the-exact-sidecar-command"),
+        pytest.param("no screening decision has been lost", id="says-what-survived"),
+    ],
+)
+def test_log__truncated_final_line__message_is_recoverable_not_just_diagnostic(
+    project: Project, required_phrase: str
+) -> None:
+    """A crashed log is the one failure where the user's own labour is at stake.
+
+    The message used to end at "recover manually before appending again",
+    which names no procedure at all -- while the *adjacent* crash-vs-tamper
+    message three hundred lines away explains its case carefully. Somebody
+    who has just lost power and is looking at an error about their
+    irreplaceable screening record should not have to read the source to
+    find out whether their work survived, or guess at the sidecar format.
+
+    ``sha256sum`` is asserted specifically because the recovery instruction
+    tells the user to regenerate the sidecar with it, and that only works
+    because prismabib's sidecar is byte-identical to ``sha256sum``'s own
+    output. If the sidecar format ever stops being compatible, this test
+    should fail and the instruction should change with it.
+    """
+    log = DecisionLog(project)
+    log.append(
+        stage=PrismaStage.TITLE_ABSTRACT,
+        record_id="scopus:1",
+        reviewer="kp",
+        decision="include",
+    )
+    with log.path.open("ab") as handle:
+        handle.write(b'{"partial": ')
+
+    with pytest.raises(LogError) as excinfo:
+        log.load()
+
+    assert required_phrase in str(excinfo.value)
