@@ -26,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import time_machine
 
 from prismabib.capture import layout, writer
 from prismabib.capture.layout import (
@@ -147,13 +148,41 @@ def test_layout__atomic_write_bytes__leaves_no_temp_file_behind(tmp_path: Path) 
 
 
 @pytest.mark.unit
-def test_layout__new_run_id__is_sortable_and_unique() -> None:
-    """Sortability is load-bearing: both scans pick the most recent match with ``max``."""
+def test_layout__new_run_id__is_unique() -> None:
+    """Two ids minted in the same second must still differ.
+
+    Both run scans pick a match with ``max``, so a collision would make one run
+    unreachable -- the timestamp alone cannot separate two runs started inside
+    the same second, which is exactly when an operator retries a command.
+    """
     ids = [new_run_id() for _ in range(50)]
 
     assert len(set(ids)) == 50
     assert all(len(run_id) == len("20260115T090000Z-3f9a2c11") for run_id in ids)
-    assert sorted(ids) == sorted(ids, key=lambda run_id: (run_id[:16], run_id[17:]))
+
+
+@pytest.mark.unit
+def test_layout__new_run_id__sorts_chronologically() -> None:
+    """Lexical order must be chronological order, because both scans use ``max``.
+
+    The previous assertion here compared ``sorted(ids)`` against ``sorted(ids,
+    key=lambda i: (i[:16], i[17:]))``. Every id is the same width with ``-`` at
+    index 16, so tuple comparison and whole-string comparison are identical *by
+    construction*: it passed for any fixed-width format, and would still have
+    passed if ``new_run_id`` emitted ``%H%M%S%Y%m%d``, under which ``max`` would
+    silently pick the wrong run.
+
+    This mints ids under a controlled clock instead, so the property asserted is
+    the one the docstring claims.
+    """
+    with time_machine.travel("2026-01-15T09:00:00Z", tick=False):
+        earlier = new_run_id()
+    with time_machine.travel("2026-01-15T09:00:01Z", tick=False):
+        later = new_run_id()
+    with time_machine.travel("2026-02-01T00:00:00Z", tick=False):
+        next_month = new_run_id()
+
+    assert earlier < later < next_month
 
 
 @pytest.mark.unit

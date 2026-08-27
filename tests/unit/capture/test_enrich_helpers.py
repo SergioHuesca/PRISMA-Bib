@@ -167,7 +167,7 @@ def _seal_search_run(raw_dir: Path, run_id: str, pages: dict[str, list[dict[str,
 
 @pytest.mark.unit
 def test_enrich__record_ids_from_layer0__missing_raw_dir__returns_nothing(tmp_path: Path) -> None:
-    assert _record_ids_from_layer0(tmp_path / "absent") == ([], [])
+    assert _record_ids_from_layer0(tmp_path / "absent") == ([], [], [])
 
 
 @pytest.mark.unit
@@ -184,7 +184,7 @@ def test_enrich__record_ids_from_layer0__unsealed_run__is_ignored(tmp_path: Path
         json.dumps({"eid": "2-s2.0-1"}) + "\n", encoding="utf-8"
     )
 
-    assert _record_ids_from_layer0(raw_dir) == ([], [])
+    assert _record_ids_from_layer0(raw_dir) == ([], [], [])
 
 
 @pytest.mark.unit
@@ -195,7 +195,14 @@ def test_enrich__record_ids_from_layer0__page_named_by_the_seal_but_absent__is_s
 
     The seal is the authority on which files belong to the run; a missing one
     is a damaged capture. Refusing to enrich the other 1,799 records because of
-    it trades a partial result for none.
+    it trades a partial result for none -- but skipping *silently* trades it for
+    something worse. The Layer 1 loader is not lenient about the same input
+    (``_load_run`` raises ``FileNotFoundError``), so a ``raw/`` copied between
+    machines with one page missing would make ``build_store`` fail loudly while
+    this run sealed quietly, with ``records_requested`` reduced and
+    ``unavailable`` empty. Every record from that page would then have no
+    subject areas and nothing saying why. The shortfall is carried into the
+    seal instead.
     """
     raw_dir = tmp_path / "raw"
     _seal_search_run(
@@ -210,6 +217,7 @@ def test_enrich__record_ids_from_layer0__page_named_by_the_seal_but_absent__is_s
     assert _record_ids_from_layer0(raw_dir) == (
         ["20260101T000000Z-aaaaaaaa"],
         ["scopus:2-s2.0-1"],
+        ["20260101T000000Z-aaaaaaaa/page-0002.jsonl"],
     )
 
 
@@ -241,6 +249,7 @@ def test_enrich__record_ids_from_layer0__blank_lines_and_entries_without_an_eid_
     assert _record_ids_from_layer0(raw_dir) == (
         ["20260101T000000Z-aaaaaaaa"],
         ["scopus:2-s2.0-1"],
+        [],
     )
 
 
@@ -261,7 +270,8 @@ def test_enrich__record_ids_from_layer0__record_in_two_runs__is_requested_once(
         {"page-0000.jsonl": [{"eid": "2-s2.0-1"}]},
     )
 
-    run_ids, record_ids = _record_ids_from_layer0(raw_dir)
+    run_ids, record_ids, missing = _record_ids_from_layer0(raw_dir)
+    assert missing == []
 
     assert run_ids == ["20260101T000000Z-aaaaaaaa", "20260101T000000Z-bbbbbbbb"]
     assert record_ids == ["scopus:2-s2.0-1", "scopus:2-s2.0-2"]

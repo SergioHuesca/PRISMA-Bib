@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -37,7 +38,7 @@ import respx
 from prismabib import __version__ as CLIENT_VERSION
 from prismabib.capture import enrich
 from prismabib.capture.enrich import BATCH_SIZE, PROGRESS_FILENAME, capture_abstracts
-from prismabib.capture.layout import ABSTRACTS_DIRNAME, SealedRunError
+from prismabib.capture.layout import ABSTRACTS_DIRNAME, CACHE_DIRNAME, SealedRunError
 from prismabib.capture.manifest import AbstractUnavailable
 from prismabib.capture.writer import _find_resumable_run, capture_search
 from prismabib.errors import EntitlementError, QuotaExceededError, ValidationError
@@ -155,6 +156,18 @@ def _payload_bytes(run_dir: Path, payload_files: Sequence[str]) -> bytes:
 
 def _line_count(path: Path) -> int:
     return len([line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
+
+
+def _clear_http_cache(project: Project) -> None:
+    """Delete ``raw/_cache/``, the way a routine cleanup or a fresh clone would.
+
+    Every quota claim about resumption has to survive this. ``raw/_cache/`` is
+    gitignored and documented as disposable, so a test that leaves it warm
+    cannot tell "the resume started at the right offset" apart from "the
+    re-requested records happened to be free this time" -- and only the first
+    of those is true on the machine that matters.
+    """
+    shutil.rmtree(project.raw_dir / CACHE_DIRNAME, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -801,3 +814,43 @@ def test_enrich__http_200_without_the_abstract_envelope__raises_and_does_not_sea
             capture_abstracts(project, record_ids=_corpus()[:1])
 
     assert not list((project.raw_dir / ABSTRACTS_DIRNAME).rglob("manifest.json"))
+
+
+@pytest.mark.integration
+def test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`start = state.records_done` is what saves the quota, and only this pins it.
+
+    The sibling resumption tests use budgets *below* ``BATCH_SIZE``, so no batch
+    is ever written and ``records_done`` stays 0 -- every resume in the suite
+    was from offset zero. Their saving therefore came from ``raw/_cache/``,
+    which is gitignored and documented as disposable, not from ``progress.json``.
+    They would pass unchanged against a resume that replayed from record 0.
+
+    This one budgets exactly one batch, then deletes the cache before resuming,
+    so the only thing that can prevent a refetch is the persisted offset. That
+    matters at the scale this feature exists for: on an 1,800-record corpus a
+    silent replay costs the operator a weekly quota and shows up in no artefact.
+
+    The two call counts are asserted separately, not just their sum: a resume
+    that refetched the first 100 and skipped the last 20 would sum to 120 too.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+
+    with respx.mock:
+        first_route = _mock_abstracts()
+        capture_abstracts(project, record_ids=records, budget=BATCH_SIZE)
+
+    _clear_http_cache(project)
+
+    with respx.mock:
+        second_route = _mock_abstracts()
+        manifest = capture_abstracts(project, record_ids=records)
+
+    assert first_route.call_count == BATCH_SIZE
+    assert second_route.call_count == _CORPUS_SIZE - BATCH_SIZE
+    assert manifest.records_fetched == _CORPUS_SIZE
+    assert (_sole_run_dir(project) / "manifest.json").is_file()

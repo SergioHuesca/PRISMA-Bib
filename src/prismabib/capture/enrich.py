@@ -89,12 +89,23 @@ first. ``progress.json`` never contributes to ``payload_sha256``.
 
 Progress is persisted at **batch boundaries only**, and a partially fetched
 batch is never written. That is what keeps payload files byte-identical to an
-uninterrupted run's, and it is the reason a resumed run may re-request up to
-99 records: those requests are served from ``raw/_cache/`` when it is warm, and
-cost one batch of quota when it is not. The alternative -- flushing a short
-file and appending to it later -- makes ``abstracts-0000.jsonl`` depend on
-where the interruption fell, which is precisely the machine-dependence this
-project's reproducibility argument cannot afford.
+uninterrupted run's. The alternative -- flushing a short file and appending to
+it later -- makes ``abstracts-0000.jsonl`` depend on where the interruption
+fell, which is precisely the machine-dependence this project's reproducibility
+argument cannot afford.
+
+**What that costs, stated as a quota number.** An interruption resumes without
+re-spending quota *only at a batch boundary, or with a warm cache*. Since
+:data:`BATCH_SIZE` is 100 and only completed batches are durable, an
+interruption in the middle of a batch discards up to **99 records' worth of
+already-paid requests**, and they are recoverable only from ``raw/_cache/`` --
+which is gitignored, disposable, and therefore no guarantee at all on a
+machine where it has been cleaned or was never written. The same arithmetic
+applies to ``budget``: a budget that is not a multiple of 100 spends its
+remainder on records that are not written and must be requested again, so
+``budget=150`` durably advances the run by 100 records, not 150. Passing a
+multiple of :data:`BATCH_SIZE` is the way to spend a quota slice and keep all
+of it.
 
 **The rate limiter is fresh, not shared.** Scopus quotas are per-API. A
 :class:`~prismabib.sources.ratelimit.RateLimiter` carried over from a search
@@ -104,24 +115,36 @@ against a quota it does not draw on. The HTTP cache *is* shared, rooted at the
 same ``raw/_cache/``: it is keyed on ``(url, params)``, so the two APIs' entries
 cannot collide, and sharing it is what makes a warm-cache re-run free.
 
-**Entitlement, and why the first record is special.** Abstract Retrieval is a
-*different* entitlement from Search ``view=COMPLETE``; a key entitled for one
-is commonly not entitled for the other, and the failure is a flat 403 on every
-record. Discovering that on record 1,800 costs a weekly quota to learn nothing.
-So a 403 on the **first record attempted in an invocation** is treated as a
-missing Abstract Retrieval entitlement: it re-raises with a message naming that
-API specifically and distinguishing it from a Search entitlement failure, after
-exactly one call, leaving the run unsealed. A 403 on any later record is a
-per-record embargo and is recorded as
+**Entitlement, and why the first record of a fresh run is special.** Abstract
+Retrieval is a *different* entitlement from Search ``view=COMPLETE``; a key
+entitled for one is commonly not entitled for the other, and the failure is a
+flat 403 on every record. Discovering that on record 1,800 costs a weekly quota
+to learn nothing. So a 403 on the **first record attempted of a run that has
+written nothing yet** -- ``records_done == 0`` *and* no earlier attempt in this
+invocation -- is treated as a missing Abstract Retrieval entitlement: it
+re-raises with a message naming that API specifically and distinguishing it
+from a Search entitlement failure, after exactly one call, leaving the run
+unsealed. A 403 anywhere else is a per-record embargo and is recorded as
 :class:`~prismabib.capture.manifest.AbstractUnavailable` with reason
 ``"not_entitled"``, and the run continues.
 
-The cost of that rule, stated plainly: if the *first* record in sorted order
-happens to be individually embargoed while the key is entitled, the run refuses
-instead of continuing. Refusing loudly is the cheap error -- rerunning with an
-explicit ``record_ids`` list fixes it in one command -- and the alternative,
-probing a second record to disambiguate, buys that at the price of making
-"1,800 wasted calls" reachable again through a different door.
+The ``records_done == 0`` half of that condition is not decoration. Scoping the
+probe to "first attempt of this *invocation*" instead would re-arm it on every
+resume, and a resumed run starts at whatever offset the interruption left --
+so an individually embargoed record sitting on a batch boundary would abort a
+run with thousands of abstracts already on disk, and abort it with a message
+asserting the key lacks an entitlement it demonstrably has. Worse, the run
+would then be permanently stuck through ``capture_abstracts(project)``: every
+later call re-attempts that same record first, and passing an explicit
+``record_ids`` list does not rescue it, because :func:`_records_digest` is the
+resume key and a different record set starts a *new* run from record 0.
+
+The cost of the rule as it stands: if the first record in sorted order happens
+to be individually embargoed on a fresh run, the run refuses instead of
+continuing. That case really does write nothing, so refusing loudly is the
+cheap error, and the alternative -- probing a second record to disambiguate --
+buys it at the price of making "1,800 wasted calls" reachable again through a
+different door.
 
 **The view never degrades.** ``view=FULL`` throughout. ``view=META`` is cheaper
 and *does* carry subject areas, which is what makes it tempting; it is refused
@@ -208,6 +231,16 @@ class _AbstractProgress(BaseModel):
 
     records_requested: int
 
+    missing_source_payload_files: list[str] = []
+    """Layer 0 page files a search run's seal names that were not on disk.
+
+    Carried in the sidecar, not just recomputed, for the same reason
+    ``source_run_ids`` is: on a resume the seal must report what the run
+    actually enriched, and the record set was resolved once, at the start.
+    Defaulted so that a ``progress.json`` written before this field existed
+    still parses rather than stranding an unsealed run.
+    """
+
     records_done: int
     """How far into the sorted record list is durably covered by ``payload_files``.
 
@@ -266,23 +299,40 @@ def _sealed_search_run_dirs(raw_dir: Path) -> list[Path]:
     return sorted(candidates, key=lambda path: path.name)
 
 
-def _record_ids_from_layer0(raw_dir: Path) -> tuple[list[str], list[str]]:
+def _record_ids_from_layer0(raw_dir: Path) -> tuple[list[str], list[str], list[str]]:
     """Collect every record id captured by the sealed search runs under ``raw_dir``.
 
     Reads each run's ``manifest.json`` for its ``payload_files`` rather than
     globbing, so a page file left behind by an interrupted attempt and not
     named by the seal is never enriched.
 
+    A payload file the seal names but that is not on disk is **skipped, and
+    reported**. Skipping is deliberate -- a damaged capture should not cost the
+    other 1,799 records their subject areas -- but skipping *silently* is not:
+    the Layer 1 loader is not lenient about the same input (``_load_run``
+    raises ``FileNotFoundError``), so ``raw/`` copied between machines with one
+    ``page-NNNN.jsonl`` missing would make ``build_store`` fail loudly and this
+    run seal quietly, with ``records_requested`` reduced,
+    ``records_fetched == records_requested`` and ``unavailable == []``. Every
+    record from that page would then have no subject areas and no entry saying
+    why -- the exact ambiguity
+    :class:`~prismabib.capture.manifest.AbstractRunManifest` exists to resolve.
+    So the third return value carries the shortfall into the seal.
+
     Args:
         raw_dir: A project's ``raw/`` directory.
 
     Returns:
-        ``(source_run_ids, record_ids)`` -- both sorted; ``record_ids``
-        deduplicated across runs, since a paper matched by two captures is one
-        record and needs one Abstract Retrieval call.
+        ``(source_run_ids, record_ids, missing_payload_files)`` -- all three
+        sorted; ``record_ids`` deduplicated across runs, since a paper matched
+        by two captures is one record and needs one Abstract Retrieval call.
+        ``missing_payload_files`` holds ``"<run_id>/<filename>"`` for every
+        file a seal names that is absent from disk, and is empty for an intact
+        Layer 0.
     """
     source_run_ids: list[str] = []
     record_ids: set[str] = set()
+    missing_payload_files: list[str] = []
 
     for run_dir in _sealed_search_run_dirs(raw_dir):
         manifest = RunManifest.model_validate_json(
@@ -292,6 +342,12 @@ def _record_ids_from_layer0(raw_dir: Path) -> tuple[list[str], list[str]]:
         for filename in manifest.payload_files:
             page_path = run_dir / filename
             if not page_path.is_file():
+                missing_payload_files.append(f"{manifest.run_id}/{filename}")
+                logger.warning(
+                    "capture.abstracts.source_payload_missing",
+                    run_id=manifest.run_id,
+                    payload_file=filename,
+                )
                 continue
             with page_path.open("r", encoding="utf-8") as handle:
                 for line in handle:
@@ -302,7 +358,7 @@ def _record_ids_from_layer0(raw_dir: Path) -> tuple[list[str], list[str]]:
                     if isinstance(eid, str) and eid:
                         record_ids.add(f"scopus:{eid}")
 
-    return sorted(source_run_ids), sorted(record_ids)
+    return sorted(source_run_ids), sorted(record_ids), sorted(missing_payload_files)
 
 
 def _subject_area_entries(response: Mapping[str, Any]) -> list[Any]:
@@ -556,6 +612,14 @@ def capture_abstracts(
             over-counting can only make an invocation stop early, never
             overspend.
 
+            **Pass a multiple of** :data:`BATCH_SIZE`. Only completed batches
+            are durable, so a budget's remainder below a batch boundary is
+            fetched, discarded unwritten, and requested again on the next call
+            -- recoverable in between only from the disposable
+            ``raw/_cache/``. ``budget=150`` therefore advances the run by 100
+            records, not 150. The same holds for an interruption: up to 99
+            records of paid quota are lost when the cache is cold.
+
     Returns:
         The run's :class:`~prismabib.capture.manifest.AbstractRunManifest`.
 
@@ -574,9 +638,11 @@ def capture_abstracts(
             sealed search run to draw ids from. Failing loudly beats sealing an
             empty run that a later reader cannot distinguish from "asked, and
             Scopus had nothing".
-        EntitlementError: On HTTP 403 for the first record attempted -- a
-            missing Abstract Retrieval entitlement (see the module docstring).
-            Raised without sealing, leaving a resumable run.
+        EntitlementError: On HTTP 403 for the first record attempted of a run
+            that has written nothing yet -- a missing Abstract Retrieval
+            entitlement (see the module docstring). Raised without sealing,
+            leaving a resumable run. A 403 on a resumed run, or on any later
+            record, is a per-record embargo instead and does not raise.
         AuthError: On HTTP 401 from Scopus; never retried.
         QuotaExceededError: On HTTP 429 indicating the weekly quota is
             exhausted. Raised without sealing: every completed batch stays on
@@ -598,9 +664,10 @@ def capture_abstracts(
     abstracts_root = raw_dir / ABSTRACTS_DIRNAME
 
     if record_ids is None:
-        source_run_ids, resolved_ids = _record_ids_from_layer0(raw_dir)
+        source_run_ids, resolved_ids, missing_payload_files = _record_ids_from_layer0(raw_dir)
     else:
         source_run_ids = []
+        missing_payload_files = []
         resolved_ids = sorted(set(record_ids))
 
     if not resolved_ids:
@@ -619,6 +686,7 @@ def capture_abstracts(
         run_dir = resumed_dir
         state = _load_progress(run_dir / PROGRESS_FILENAME)
         source_run_ids = list(state.source_run_ids)
+        missing_payload_files = list(state.missing_source_payload_files)
         logger.info(
             "capture.abstracts.run_resumed",
             run_id=run_dir.name,
@@ -636,6 +704,7 @@ def capture_abstracts(
             source_run_ids=source_run_ids,
             records_digest=digest,
             records_requested=len(resolved_ids),
+            missing_source_payload_files=missing_payload_files,
             records_done=0,
             records_fetched=0,
         )
@@ -674,12 +743,21 @@ def capture_abstracts(
                     budget_exhausted = True
                     break
 
-                is_first_attempt = attempted == 0
+                # The probe fires only on a genuinely fresh run: the first
+                # record of this invocation AND nothing durably written yet
+                # (`start == 0` is `state.records_done == 0` for this batch).
+                # Gating on `attempted` alone would re-arm it on every resume,
+                # so an embargoed record that happened to sit at a batch
+                # boundary would abort a run that had already written
+                # thousands of abstracts -- and would do it with a message
+                # blaming the key's entitlement rather than that one record.
+                # See the module docstring.
+                is_entitlement_probe = start == 0 and attempted == 0
                 attempted += 1
                 try:
                     response = client.abstract(record_id)
                 except EntitlementError as exc:
-                    if is_first_attempt:
+                    if is_entitlement_probe:
                         # One call has told us the key lacks the Abstract
                         # Retrieval entitlement; 1,799 more would tell us the
                         # same thing at the price of a weekly quota.
@@ -762,6 +840,7 @@ def capture_abstracts(
         endpoint=endpoint,
         view=ABSTRACT_VIEW,
         source_run_ids=source_run_ids,
+        missing_source_payload_files=missing_payload_files,
         records_requested=state.records_requested,
         records_fetched=state.records_fetched,
         unavailable=list(state.unavailable),

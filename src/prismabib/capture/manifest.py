@@ -93,9 +93,11 @@ AbstractUnavailableReason = Literal["not_found", "not_entitled", "no_subject_are
 """Why one record contributes no subject-area codes to a Layer 1 rebuild.
 
 - ``"not_entitled"``: HTTP 403 for that specific record -- a per-record
-  embargo. A 403 on the *first* record of an invocation is not this; it is a
-  missing Abstract Retrieval entitlement and aborts the run
-  (:func:`prismabib.capture.enrich.capture_abstracts`).
+  embargo. A 403 on the first record of a run that has written nothing yet is
+  not this; it is a missing Abstract Retrieval entitlement and aborts the run
+  (:func:`prismabib.capture.enrich.capture_abstracts`). A *resumed* run never
+  triggers that check, so a 403 at a batch boundary is recorded here rather
+  than aborting a run with abstracts already on disk.
 - ``"no_subject_areas"``: HTTP 200, a real Abstract Retrieval record, and
   Scopus assigns it no ``subject-areas.subject-area`` entries. The payload
   line **is** written for these; the record appears here as well, so that a
@@ -158,6 +160,20 @@ class AbstractRunManifest(BaseModel):
             asked to enrich, sorted. Empty when the caller passed an
             explicit ``record_ids`` list, since then the record set did not
             come from Layer 0 at all.
+        missing_source_payload_files: ``"<run_id>/<filename>"`` for every
+            page file a source run's seal names that was **not on disk**
+            when the record set was resolved, sorted; ``[]`` for an intact
+            Layer 0. Enrichment skips such a file rather than refusing to
+            run -- a damaged capture should not cost the rest of the corpus
+            its subject areas -- but skipping it shrinks
+            ``records_requested`` with nothing else to show for it: the run
+            still seals with ``records_fetched == records_requested`` and
+            an empty ``unavailable``, and every record from the absent page
+            ends up with no subject areas and no entry explaining why. This
+            field is what keeps "the corpus was incomplete before we
+            started" readable from the seal. (The Layer 1 loader is *not*
+            lenient about the same input, so the two layers can otherwise
+            disagree about whether a capture is whole.)
         records_requested: How many distinct record ids this run set out to
             fetch.
         records_fetched: How many payload lines were written -- one per
@@ -191,6 +207,7 @@ class AbstractRunManifest(BaseModel):
     endpoint: str
     view: str
     source_run_ids: list[str]
+    missing_source_payload_files: list[str] = []
     records_requested: int
     records_fetched: int
     unavailable: list[AbstractUnavailable]

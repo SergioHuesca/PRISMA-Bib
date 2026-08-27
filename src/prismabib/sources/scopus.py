@@ -327,6 +327,18 @@ class RecordNotFoundError(SourceError):
     resolving later. Retrying cannot fix a record that does not exist, and
     aborting a long run because one of them vanished loses the operator hours of
     quota-bound progress for a fact about the index.
+
+    **Raised only for the Abstract Retrieval record endpoint.** A search request
+    carries its identifiers in the ``query`` parameter, not in the path, so a
+    404 there cannot mean "this record was withdrawn" -- it means the URL itself
+    did not resolve (a proxy or gateway in front of Elsevier, a rewritten base
+    URL, an outage returning the wrong status). Naming that a
+    ``RecordNotFoundError`` would report a cause that does not exist on that
+    path, and would silently take ``search()`` out of the retry set, which is
+    behaviour this class was never meant to change. A 404 from any other
+    endpoint therefore stays an :class:`~prismabib.errors.UpstreamError`,
+    retried exactly as before, with a message that names the causes that
+    actually apply there.
     """
 
 
@@ -358,6 +370,13 @@ class ScopusClient:
 
     SEARCH_ENDPOINT = "https://api.elsevier.com/content/search/scopus"
     ABSTRACT_ENDPOINT_TEMPLATE = "https://api.elsevier.com/content/abstract/scopus_id/{scopus_id}"
+
+    #: The fixed part of :data:`ABSTRACT_ENDPOINT_TEMPLATE`, i.e. every URL that
+    #: addresses **one record by identifier**. Derived from the template rather
+    #: than written out again, so the two cannot drift apart; it is what
+    #: :meth:`_raise_for_status` tests to decide whether a 404 can mean "that
+    #: record is gone" (see :class:`RecordNotFoundError`).
+    ABSTRACT_URL_PREFIX = ABSTRACT_ENDPOINT_TEMPLATE.partition("{scopus_id}")[0]
     PAGE_SIZE = 25
     MAX_ATTEMPTS = 5
 
@@ -440,7 +459,9 @@ class ScopusClient:
                 exhausted.
             RateLimitError: On HTTP 429 exhausting the retry budget.
             UpstreamError: On HTTP 5xx exhausting the retry budget, or any
-                other unexpected non-2xx status.
+                other unexpected non-2xx status -- including HTTP 404, which
+                on this endpoint means the URL did not resolve rather than
+                that any record is missing, and is retried as it always was.
             ValidationError: If a page's body is not a well-formed Scopus
                 search response.
         """
@@ -476,12 +497,18 @@ class ScopusClient:
         Raises:
             AuthError: On HTTP 401; never retried.
             EntitlementError: On HTTP 403; never retried.
+            RecordNotFoundError: On HTTP 404 -- Scopus has no record at that
+                identifier. Never retried: retrying cannot resurrect a
+                withdrawn or merged record, and burning the retry budget on
+                one would abort a long enrichment run.
             QuotaExceededError: On HTTP 429 indicating weekly quota
                 exhaustion.
             RateLimitError: On HTTP 429 exhausting the retry budget.
             UpstreamError: On HTTP 5xx exhausting the retry budget, or any
                 other unexpected non-2xx status.
-            ValidationError: If the response body is not well-formed JSON.
+            ValidationError: If the response body is not well-formed JSON, or
+                is HTTP 200 without an ``abstracts-retrieval-response``
+                object.
         """
         scopus_id = record_id.removeprefix("scopus:")
         url = self.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id=scopus_id)
@@ -636,11 +663,27 @@ class ScopusClient:
             raise UpstreamError(f"Scopus returned HTTP {status} for {endpoint}.")
 
         if status == 404:
-            logger.info("scopus.request.not_found", endpoint=endpoint, status=status)
-            raise RecordNotFoundError(
-                f"Scopus has no record at {endpoint} (HTTP 404). Scopus withdraws and "
-                "merges records, so an identifier captured in an earlier run can stop "
-                "resolving later; this is a fact about the index, not a transient fault."
+            if endpoint.startswith(self.ABSTRACT_URL_PREFIX):
+                logger.info("scopus.request.not_found", endpoint=endpoint, status=status)
+                raise RecordNotFoundError(
+                    f"Scopus has no record at {endpoint} (HTTP 404). Scopus withdraws and "
+                    "merges records, so an identifier captured in an earlier run can stop "
+                    "resolving later; this is a fact about the index, not a transient fault."
+                )
+            # No identifier appears in this URL's path, so a 404 here cannot be
+            # a withdrawn record. It is an UpstreamError -- and therefore still
+            # retried -- exactly as it was before RecordNotFoundError existed.
+            logger.warning("scopus.request.endpoint_not_found", endpoint=endpoint, status=status)
+            raise UpstreamError(
+                f"Scopus returned HTTP 404 for {endpoint}, an endpoint that addresses no "
+                "individual record, so this is not a withdrawn or merged record.\n"
+                "\n"
+                "What produces it, in the order worth checking:\n"
+                "  1. A proxy, VPN or captive portal answering on Elsevier's behalf --\n"
+                "     institutional networks are the common case.\n"
+                "  2. A rewritten or outdated api.elsevier.com base URL.\n"
+                "  3. An Elsevier-side gateway fault reporting 404 for a route that\n"
+                "     normally exists; this one does clear on its own."
             )
 
         logger.warning("scopus.request.unexpected_status", endpoint=endpoint, status=status)
