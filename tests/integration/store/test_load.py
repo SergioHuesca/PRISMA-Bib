@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -165,7 +166,22 @@ def test_build_store__after_deleting_db__reproduces_identical_checksums(tmp_path
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(os.getuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "provoked by making the directory unwritable, which is a POSIX mechanism -- "
+        "chmod does not deny a Windows owner. Windows reaches the same StoreError by "
+        "its own ordinary route, an open connection, and that path has no test yet"
+    ),
+)
+@pytest.mark.skipif(
+    # `os.getuid` does not exist on Windows and this is evaluated at collection
+    # time, so it must not be reached there -- a bare `os.getuid()` here raised
+    # AttributeError during collection and took down the whole Windows job,
+    # including every test that had nothing to do with permissions.
+    getattr(os, "getuid", lambda: -1)() == 0,
+    reason="root ignores directory permissions",
+)
 def test_build_store__undeletable_store__raises_store_error_naming_the_cause(
     tmp_path: Path,
 ) -> None:
