@@ -20,11 +20,24 @@ anyone does with a guard that blocks legitimate work is disable it.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 _GUARD = Path(__file__).parent.parent.parent / "scripts" / "reject_licensed_content.sh"
+
+#: The guard is a POSIX shell script, invoked by pre-commit through the shell it
+#: provides. Windows cannot execute it directly -- the first real Windows CI run
+#: reported `OSError: [WinError 193] %1 is not a valid Win32 application` from
+#: every case here. These tests assert the *script's* behaviour, so they are
+#: skipped rather than rewritten: what a Windows contributor needs verified is
+#: that pre-commit still runs the hook, which is a different claim and is not
+#: covered here today.
+_POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the §2.5 data guard is a POSIX shell script; Windows cannot exec it directly",
+)
 
 
 def _run_guard(*paths: str) -> subprocess.CompletedProcess[str]:
@@ -38,6 +51,7 @@ def _run_guard(*paths: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.unit
+@_POSIX_ONLY
 def test_data_guard__script__is_executable() -> None:
     """``language: script`` needs the executable bit, or the hook dies on a fresh clone.
 
@@ -58,6 +72,7 @@ def test_data_guard__script__is_executable() -> None:
 
 
 @pytest.mark.unit
+@_POSIX_ONLY
 @pytest.mark.parametrize(
     "path",
     [
@@ -81,6 +96,7 @@ def test_data_guard__licensed_or_secret_path__is_rejected(path: str) -> None:
 
 
 @pytest.mark.unit
+@_POSIX_ONLY
 @pytest.mark.parametrize(
     "path",
     [
@@ -111,6 +127,7 @@ def test_data_guard__legitimate_path__is_accepted(path: str) -> None:
 
 
 @pytest.mark.unit
+@_POSIX_ONLY
 def test_data_guard__mixed_batch__rejects_and_names_only_the_offender() -> None:
     """A real commit mixes files; the guard must fail on one bad path among good ones."""
     result = _run_guard(

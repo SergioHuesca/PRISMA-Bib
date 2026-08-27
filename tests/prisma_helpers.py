@@ -17,13 +17,16 @@ simulate the outside world tampering with a log, not a patched
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -477,6 +480,117 @@ def sidecar_matches_log(project: Project) -> bool:
     return recorded == hashlib.sha256(read_log_bytes(project)).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# A stand-in for `msvcrt`, so the Windows lock backend can be run on Linux
+# ---------------------------------------------------------------------------
+#
+# This is a **fake, and it is injected** -- `_ByteRangeLocking.from_module`
+# takes the module to read `locking`/`LK_NBLCK`/`LK_UNLCK` off, and
+# `_select_lock_backend` takes the loader that produces it. Nothing here
+# monkeypatches a `prismabib.*` symbol (§3.7.3 rule 1); the backend under test
+# is the real one, driving a substitute for the one C call this machine does
+# not have.
+#
+# Read the limits of that honestly, and see `docs/testing.md`: a fake that
+# agrees with itself proves only that the backend's *logic* -- the retry loop,
+# the seek-and-restore, the error translation -- is self-consistent. Whether
+# `msvcrt.locking` really behaves as modelled here is checked by the
+# `full-windows` CI job, and by nothing else in this repository.
+
+
+class FakeWindowsLocking:
+    """An in-process model of ``msvcrt.locking``'s byte-range locks.
+
+    Models the four properties the Windows backend actually depends on:
+
+    1. A lock covers a **byte range taken at the descriptor's current
+       position**, not the file -- so this call reads the position itself
+       with ``os.lseek`` rather than being told it, and a backend that
+       forgot to seek would lock a different region and be caught.
+    2. A region is owned by **at most one handle**; a second handle's
+       attempt fails rather than waits.
+    3. Failure is ``OSError`` with ``errno.EACCES``, which is what the real
+       CRT reports for an already-locked region.
+    4. ``LK_UNLCK`` must name the region the lock was taken on.
+
+    Thread-safe, because the conformance suite drives it from two threads to
+    reproduce contention the way a second process would.
+
+    Attributes:
+        LK_NBLCK: The CRT's ``_LK_NBLCK``. The value is the real one, but
+            nothing in the backend depends on the number: it reads the
+            constants off the module it is given, exactly as it reads them
+            off ``msvcrt``.
+        LK_UNLCK: The CRT's ``_LK_UNLCK``.
+        regions: Every ``(offset, nbytes)`` this fake has been asked to lock
+            or unlock, in call order -- what pins the sentinel range.
+    """
+
+    LK_NBLCK = 2
+    LK_UNLCK = 0
+
+    def __init__(self) -> None:
+        self._mutex = threading.Lock()
+        self._owners: dict[tuple[int, int], int] = {}
+        self.regions: list[tuple[int, int]] = []
+
+    def __call__(self, fd: int, mode: int, nbytes: int) -> None:
+        """Lock or unlock ``nbytes`` at ``fd``'s current position.
+
+        Args:
+            fd: The descriptor, positioned where the region starts.
+            mode: :attr:`LK_NBLCK` or :attr:`LK_UNLCK`.
+            nbytes: The region's length.
+
+        Raises:
+            OSError: ``EACCES`` when locking a region another handle owns,
+                or unlocking a region this handle does not own.
+        """
+        region = (os.lseek(fd, 0, os.SEEK_CUR), nbytes)
+        with self._mutex:
+            self.regions.append(region)
+            if mode == self.LK_UNLCK:
+                if self._owners.get(region) != fd:
+                    raise OSError(errno.EACCES, "Permission denied", None, 33)
+                del self._owners[region]
+                return
+            if region in self._owners:
+                raise OSError(errno.EACCES, "Permission denied", None, 33)
+            self._owners[region] = fd
+
+    def owner_of(self, region: tuple[int, int]) -> int | None:
+        """The descriptor currently holding ``region``, or ``None``.
+
+        Args:
+            region: An ``(offset, nbytes)`` pair.
+
+        Returns:
+            The owning descriptor, or ``None`` if the region is free.
+        """
+        with self._mutex:
+            return self._owners.get(region)
+
+
+def fake_msvcrt(locking: FakeWindowsLocking) -> ModuleType:
+    """Wrap ``locking`` in a real module object shaped like ``msvcrt``.
+
+    A genuine :class:`~types.ModuleType` rather than a namespace object, so
+    what ``_ByteRangeLocking.from_module`` receives is the same *kind* of
+    thing ``importlib.import_module("msvcrt")`` returns on Windows.
+
+    Args:
+        locking: The fake to expose as the module's ``locking``.
+
+    Returns:
+        A module exposing ``locking``, ``LK_NBLCK`` and ``LK_UNLCK``.
+    """
+    module = ModuleType("msvcrt")
+    module.locking = locking
+    module.LK_NBLCK = FakeWindowsLocking.LK_NBLCK
+    module.LK_UNLCK = FakeWindowsLocking.LK_UNLCK
+    return module
+
+
 __all__ = [
     "ABSTRACT_EXCLUDED",
     "ABSTRACT_INCLUDED",
@@ -491,11 +605,13 @@ __all__ = [
     "RUN_STARTED_AT",
     "CorpusSpec",
     "CriteriaSpec",
+    "FakeWindowsLocking",
     "RecordSpec",
     "append_raw_bytes",
     "build_project",
     "commit_criteria",
     "copy_reference_project_with_criteria",
+    "fake_msvcrt",
     "overwrite_log_bytes",
     "read_log_bytes",
     "reference_golden",

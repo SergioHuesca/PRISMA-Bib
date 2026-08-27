@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-27
+
+### Added
+
+- **Windows support for the decision log.** `prismabib.prisma.log` did a module-level
+  `import fcntl`, so on Windows the module failed at *import*: a researcher there could
+  capture a corpus and build a store, then discover at the first screening decision that
+  the one irreplaceable part of the pipeline had never been able to run. Locking now goes
+  through one of two backends selected on `sys.platform` — `fcntl.flock` unchanged on
+  POSIX, `msvcrt.locking` on Windows — with both platform modules imported inside the
+  functions that need them. See ADR 0010 for the design and for the one named deviation:
+  Windows has no shared byte-range lock, so a read's shared lock degrades to an exclusive
+  one there (never weaker, only less concurrent).
+- **`.gitattributes`**, without which no Windows checkout could work: Git for Windows
+  defaults to `core.autocrlf=true`, which would rewrite the reference fixture's captured
+  Scopus pages and break the `payload_sha256` that covers their bytes.
+- **`full-windows` CI job** (`windows-latest`, Python 3.12). Deliberately not a required
+  check yet, on the same reasoning as `e2e`: it has no passing history. It is the only
+  check of the Windows code against a real Windows machine.
+
+### Fixed
+
+- **`decisions.jsonl` and its checksum sidecar are now written binary.** Without
+  `O_BINARY` the Windows C runtime rewrites every `\n` as `\r\n` on disk and hides it
+  again on read, so prismabib would have agreed with its own sidecar while an external
+  `sha256sum` disagreed — and the sidecar is deliberately `sha256sum`-compatible so that a
+  reviewer can verify their own screening record with a tool that is not ours. Byte-level
+  assertions now guard both files on every platform.
+- **`build_store(project, rebuild=True)` explains an undeletable store** instead of
+  raising a bare `PermissionError`. On Windows the DuckDB file cannot be removed while any
+  connection to it is open, and the likeliest holder is the caller's own `Corpus` or an
+  earlier notebook kernel.
+- **Nesting the decision log's file lock raises instead of deadlocking.** Each `_locked`
+  call opens a new descriptor, so a nested one asked the OS for a second conflicting lock
+  from the same thread — an unbounded, silent hang on POSIX. Nothing nested it; the guard
+  keeps that true on both platforms.
+
 ## [0.6.1] — 2026-08-26
 
 ### Changed
@@ -362,7 +399,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.4.0...v0.5.0

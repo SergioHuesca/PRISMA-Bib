@@ -1105,6 +1105,36 @@ def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bo
     )
 
 
+def _delete_stale_store(db_path: Path) -> None:
+    """Remove an existing store file before rebuilding it, or say why it cannot.
+
+    A rebuild has to start from an empty file -- that is what makes Layer 1
+    a pure function of Layer 0. On POSIX the unlink always succeeds, even
+    with the file open, so this used to be a bare ``unlink()``. Windows does
+    not work that way: while *any* handle is open on the database, deleting
+    it raises ``PermissionError`` with no indication of what is holding it,
+    and the most likely holder is the caller's own still-open ``Corpus`` or
+    a notebook kernel from earlier in the session.
+
+    Args:
+        db_path: The existing store file to delete.
+
+    Raises:
+        StoreError: If the file cannot be deleted, naming the real cause.
+    """
+    try:
+        db_path.unlink()
+    except OSError as exc:
+        raise StoreError(
+            f"cannot rebuild {db_path}: the existing store could not be deleted ({exc}). "
+            "A rebuild starts from an empty database, and on Windows the file cannot be "
+            "removed while any connection to it is open. Close every Corpus and DuckDB "
+            "connection to this project -- including one held by another notebook kernel "
+            "or another prismabib process -- and run the rebuild again. Nothing has been "
+            "changed."
+        ) from exc
+
+
 def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     """(Re)build ``project``'s Layer 1 DuckDB store from Layer 0 (BUILD_PLAN line 891).
 
@@ -1138,8 +1168,10 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     Raises:
         StoreError: If ``project.db_path`` exists, ``rebuild`` is
             ``False``, and it does not look like a Layer 1 store this
-            function created (e.g. wrong schema); or if DuckDB refuses to
-            open the file for any other reason.
+            function created (e.g. wrong schema); if an existing store
+            cannot be deleted before a rebuild (see
+            :func:`_delete_stale_store`); or if DuckDB refuses to open the
+            file for any other reason.
         ValidationError: If a captured entry is missing a required field
             (``dc:title`` or ``prism:coverDate``) -- see
             :func:`_title_from_entry`/:func:`_cover_date_from_entry`.
@@ -1160,7 +1192,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             connection.close()
 
     if db_path.is_file():
-        db_path.unlink()
+        _delete_stale_store(db_path)
 
     connection = connect(project, read_only=False)
     try:

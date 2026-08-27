@@ -12,7 +12,9 @@ or a small hand-written Layer 0 run
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -161,6 +163,53 @@ def test_build_store__after_deleting_db__reproduces_identical_checksums(tmp_path
     connection.close()
 
     assert after == before
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "provoked by making the directory unwritable, which is a POSIX mechanism -- "
+        "chmod does not deny a Windows owner. Windows reaches the same StoreError by "
+        "its own ordinary route, an open connection, and that path has no test yet"
+    ),
+)
+@pytest.mark.skipif(
+    # `os.getuid` does not exist on Windows and this is evaluated at collection
+    # time, so it must not be reached there -- a bare `os.getuid()` here raised
+    # AttributeError during collection and took down the whole Windows job,
+    # including every test that had nothing to do with permissions.
+    getattr(os, "getuid", lambda: -1)() == 0,
+    reason="root ignores directory permissions",
+)
+def test_build_store__undeletable_store__raises_store_error_naming_the_cause(
+    tmp_path: Path,
+) -> None:
+    """A rebuild that cannot delete the old store must say why, not raise OSError.
+
+    On POSIX this is nearly unreachable -- ``unlink`` succeeds on an open
+    file -- so it is provoked here by making the directory unwritable. On
+    Windows it is the *ordinary* outcome of an ordinary mistake: the file
+    cannot be deleted while any connection to it is open, so a researcher
+    who calls ``build_store(project, rebuild=True)`` in a notebook that
+    still holds a ``Corpus`` gets a bare ``PermissionError`` naming a file
+    they own and no hint that the process refusing them is their own.
+    """
+    project = copy_reference_project(tmp_path)
+    build_store(project, rebuild=True)
+    store_dir = project.db_path.parent
+    store_dir.chmod(0o500)
+
+    try:
+        with pytest.raises(StoreError) as excinfo:
+            build_store(project, rebuild=True)
+    finally:
+        store_dir.chmod(0o700)
+
+    message = str(excinfo.value)
+    assert str(project.db_path) in message
+    assert "while any connection to it is open" in message
+    assert "Nothing has been changed" in message
 
 
 @pytest.mark.integration

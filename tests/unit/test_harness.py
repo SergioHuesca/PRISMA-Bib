@@ -134,3 +134,54 @@ def test_pre_commit__run_all_files__is_clean() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+@pytest.mark.skipif(not (REPO_ROOT / ".git").exists(), reason="not a git checkout")
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "tests/fixtures/projects/reference/raw/20260115T090000Z-fee5c0de/page-0000.jsonl",
+            id="sealed-layer-0-payload",
+        ),
+        pytest.param(
+            "tests/fixtures/projects/reference/raw/20260115T090000Z-fee5c0de/manifest.json",
+            id="run-manifest",
+        ),
+        pytest.param("tests/fixtures/cassettes/standard-page-0000.json", id="recorded-cassette"),
+        pytest.param("projects/example/decisions/decisions.jsonl", id="decision-log"),
+        pytest.param(
+            "projects/example/decisions/decisions.jsonl.sha256", id="decision-log-sidecar"
+        ),
+    ],
+)
+def test_gitattributes__checksummed_files__are_never_newline_normalised(path: str) -> None:
+    """Files whose *bytes* are checksummed must be exempt from EOL conversion.
+
+    Git for Windows installs with ``core.autocrlf=true``. Without
+    ``.gitattributes`` saying otherwise, a Windows clone rewrites every
+    ``\\n`` in these files to ``\\r\\n`` on checkout, and each one carries a
+    SHA-256 over the bytes it is supposed to have: the reference fixture's
+    pages under ``manifest.json``'s ``payload_sha256``, and
+    ``decisions.jsonl`` under its own sidecar. The result is a checkout where
+    the fixture fails to verify and a decision log reads as hand-edited, on a
+    machine where nothing is actually wrong.
+
+    Nothing else in the suite can see this: every CI job and every developer
+    machine here is POSIX, where the attribute is inert. So it is asserted
+    directly, against ``git`` itself rather than against a parse of the file,
+    since what matters is the attribute git *resolves* for the path -- last
+    matching pattern wins, and a later broad rule could quietly take it back.
+    """
+    result = subprocess.run(
+        ["git", "check-attr", "text", "--", path],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+    assert result.stdout.strip() == f"{path}: text: unset"

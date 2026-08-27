@@ -1,9 +1,11 @@
 """Unit tests for :func:`prismabib.prisma.log.fold_events` (BUILD_PLAN §Stage 4, line 972).
 
 The fold itself is a pure function over a sequence of events, so it is
-tested here without touching a file. Everything about ``decisions.jsonl``
-*as a file* -- appending, fsync, the checksum sidecar, tamper and crash
-detection, concurrency -- lives in
+tested here without touching a file, as is the choice of file-lock backend
+(a ``sys.platform`` comparison and an import). Everything about
+``decisions.jsonl`` *as a file* -- appending, fsync, the checksum sidecar,
+tamper and crash detection, concurrency, and the lock backends' behaviour
+against real descriptors -- lives in
 ``tests/integration/prisma/test_log.py``.
 
 BUILD_PLAN line 972 pins two rules that these tests exist to hold in place:
@@ -15,13 +17,23 @@ reviewer)``", and "folding takes the last event by ``ts``, ties broken by
 from __future__ import annotations
 
 import itertools
+import sys
 from datetime import UTC, datetime
+from types import ModuleType
 
 import pytest
 
 from prismabib.prisma.events import DecisionEvent
-from prismabib.prisma.log import fold_events
+from prismabib.prisma.log import (
+    _LOCK_BACKEND,
+    _ByteRangeLocking,
+    _PosixLockBackend,
+    _select_lock_backend,
+    _WindowsLockBackend,
+    fold_events,
+)
 from prismabib.stage import PrismaStage
+from tests.prisma_helpers import FakeWindowsLocking, fake_msvcrt
 
 T0 = datetime(2026, 1, 18, 14, 0, 0, tzinfo=UTC)
 T1 = datetime(2026, 1, 18, 15, 0, 0, tzinfo=UTC)
@@ -149,3 +161,68 @@ def test_fold_events__only_unsure_events_for_a_key__folds_to_unsure_not_include(
     folded = fold_events([first, second])
 
     assert folded[PrismaStage.TITLE_ABSTRACT, "scopus:r1", "kp"].decision == "unsure"
+
+
+# ---------------------------------------------------------------------------
+# Which file-lock backend this platform gets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_select_lock_backend__a_posix_platform__is_the_flock_backend() -> None:
+    backend = _select_lock_backend("linux")
+
+    assert isinstance(backend, _PosixLockBackend)
+
+
+@pytest.mark.unit
+def test_select_lock_backend__win32__imports_msvcrt_and_wraps_it() -> None:
+    """The Windows arm, exercised on a machine that has no ``msvcrt``.
+
+    Both the platform string and the module loader are parameters, which is
+    the only reason this arm is reachable here at all -- and the reason the
+    import lives inside the function rather than at module scope, where it
+    would break the import on every non-Windows machine exactly as
+    ``import fcntl`` broke it on every Windows one.
+    """
+    requested: list[str] = []
+
+    def load(name: str) -> ModuleType:
+        requested.append(name)
+        return fake_msvcrt(FakeWindowsLocking())
+
+    backend = _select_lock_backend("win32", load_module=load)
+
+    assert (requested, isinstance(backend, _WindowsLockBackend)) == (["msvcrt"], True)
+
+
+@pytest.mark.unit
+def test_byte_range_locking__from_module__reads_the_modes_off_the_module() -> None:
+    """The lock modes come from the module, never from a literal in our code.
+
+    ``LK_NBLCK`` and ``LK_UNLCK`` are C-runtime constants; hard-coding their
+    numeric values would be a silent, unversioned copy of somebody else's
+    header.
+    """
+    locking = FakeWindowsLocking()
+
+    primitive = _ByteRangeLocking.from_module(fake_msvcrt(locking))
+
+    assert primitive == _ByteRangeLocking(
+        locking=locking,
+        nonblocking_exclusive=FakeWindowsLocking.LK_NBLCK,
+        unlock=FakeWindowsLocking.LK_UNLCK,
+    )
+
+
+@pytest.mark.unit
+def test_lock_backend__the_one_this_module_chose__matches_the_running_platform() -> None:
+    """The module-level backend is wired to the interpreter actually running.
+
+    Asserted as an equality rather than an ``if``, so this single test says
+    the right thing on both platforms: POSIX gets ``flock``, Windows does
+    not.
+    """
+    is_posix_backend = isinstance(_LOCK_BACKEND, _PosixLockBackend)
+
+    assert is_posix_backend == (sys.platform != "win32")

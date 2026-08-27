@@ -115,6 +115,48 @@ jobs:
             exit 1
           fi
 
+  # The only job that runs on Windows, and the only evidence that prismabib works there.
+  #
+  # `prisma/log.py` now has two file-locking backends, and the Windows one is exercised
+  # everywhere else against an injected stand-in for `msvcrt.locking`. A fake that agrees
+  # with itself proves the backend's logic is self-consistent and nothing at all about
+  # `msvcrt`; this job is what checks the model against the machine. It is also the only
+  # place the `O_BINARY` flags matter — on Linux `os.O_BINARY` does not exist and the
+  # flag is 0, so a regression there is invisible to every other check.
+  #
+  # DELIBERATELY NOT A REQUIRED CHECK YET, following this repository's own precedent for
+  # `e2e` (see its header above): a required check with no passing history blocks every
+  # PR the first time it goes red for a reason nobody has seen before, and no Windows
+  # machine was available while this was written. Expect it to surface further
+  # Windows-only failures in code paths this change did not touch — subprocess and `git`
+  # invocations in the test helpers are the likely first ones. Add it to the required set
+  # in the same change that makes it green on `main`, exactly as `e2e` was.
+  #
+  # Python 3.12 only: the 3.11/3.12 split is about typing and stdlib behaviour, which
+  # `full-matrix` already covers. What this job varies is the operating system.
+  # `lint` and `docs` stay ubuntu-only — ruff, mypy and mkdocs have no OS-dependent
+  # behaviour this project relies on, and duplicating them would double the required
+  # surface for no signal.
+  full-windows:
+    name: full-windows
+    runs-on: windows-latest
+    needs: [fast]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # Same selection as `full`, without the coverage report: the per-module gates are
+      # measured once, on Linux, by `full-matrix`. What is wanted here is pass/fail.
+      - name: Full suite on Windows
+        run: uv run pytest -m "not live and not e2e" -n auto
+
   # BUILD_PLAN §3.7.7: "e2e — pytest -m e2e (single job, ubuntu, py3.12)". Layer 0 through
   # to FlowCounts on the frozen reference project, which is the only check that the
   # stages compose; `full` deselects it (`-m "not live and not e2e"`) because it is slow

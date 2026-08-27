@@ -442,6 +442,67 @@ A surviving mutant that gets closed by loosening an assertion, or by deleting th
 line, has been mis-triaged. The output of triage is a new assertion about behaviour, or a
 documented equivalence — never a weaker suite.
 
+## Testing a platform you do not have (Phase 0b+)
+
+`prisma/log.py` locks `decisions.jsonl` through one of two backends, chosen on
+`sys.platform`: `fcntl.flock` on POSIX, `msvcrt.locking` on Windows (ADR 0010). Every
+routine CI job and every developer machine on this project is POSIX, so the Windows
+backend needs a way to be exercised on a machine that has no `msvcrt`.
+
+### How it is done
+
+`_WindowsLockBackend` takes the C-runtime primitive as a **constructor argument**, and
+`_select_lock_backend` takes the module loader that produces it:
+
+```python
+backend = _WindowsLockBackend(_ByteRangeLocking.from_module(fake_msvcrt(FakeWindowsLocking())))
+```
+
+`FakeWindowsLocking` (in `tests/prisma_helpers.py`) models the four properties the backend
+depends on: a lock covers a byte range taken at the descriptor's *current position*, a
+region is owned by at most one handle, a conflicting attempt fails immediately with
+`OSError(EACCES)` rather than blocking, and an unlock must name the region exactly. The
+backend under test is the real one; only the single C call is substituted.
+
+This is legal under §3.7.3 rule 1 for a specific reason: it is **injected, not
+monkeypatched**. No `prismabib.*` symbol is replaced, so the code path a Windows user
+executes is the code path the test executes — a `respx` transport in an httpx test, not a
+patched internal.
+
+The same backend is also driven with an injected clock, `sleep` and jitter source (the
+idiom `sources/ratelimit.py` uses), so the retry loop's four outcomes — granted first try,
+granted after *N* retries, deadline exceeded, non-`EACCES` re-raised — are asserted
+without a real wait and without depending on the machine's scheduler.
+
+### What it is not
+
+**A fake that agrees with itself is not evidence that Windows behaves that way.** It
+proves the backend's *logic* is self-consistent: that it seeks to the sentinel range,
+restores the caller's position, retries only on contention, gives up at its deadline, and
+leaves no lock behind when it fails. It proves nothing whatever about `msvcrt.locking` —
+if the model is wrong, every one of those tests still passes.
+
+The `full-windows` CI job is what checks the model against the machine, and it is the only
+thing that does. Note what follows from that:
+
+- `full-windows` is **not a required check** yet (same precedent as `e2e`; see the job's
+  header comment in `.github/workflows/ci.yml`). Until it is, the Windows claim rests on a
+  job that can go red without blocking a merge — so read it before merging anything that
+  touches `prisma/log.py` or `store/load.py`.
+- Some defects are invisible to *every* POSIX test by construction. `os.O_BINARY` does not
+  exist on Linux, so `getattr(os, "O_BINARY", 0)` is `0` and the flag makes no difference
+  to the call: deleting it leaves the entire suite green, which was confirmed by mutation
+  rather than assumed. The byte-level assertions that guard it —
+  `b"\r\n" not in path.read_bytes()`, and the file's SHA-256 equalling the sidecar's —
+  are trivially true on Linux and are the detector only on Windows.
+- The same applies to `.gitattributes`. A Windows clone with `core.autocrlf=true` would
+  rewrite the reference fixture's checksummed payloads; `tests/unit/test_harness.py`
+  asserts the attribute git resolves for those paths, because nothing else on a POSIX
+  machine can see it.
+
+The general rule this is an instance of: when a test cannot fail on the platform you run
+it on, say so where the test lives, and name the check that can.
+
 ## Coverage gates (§3.7.6)
 
 Coverage is a floor, not a goal. These gates are enforced in CI:
