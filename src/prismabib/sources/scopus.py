@@ -485,7 +485,22 @@ class ScopusClient:
         """
         scopus_id = record_id.removeprefix("scopus:")
         url = self.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id=scopus_id)
-        return self._get(url, {"view": "FULL"}, view="FULL")
+        response = self._get(url, {"view": "FULL"}, view="FULL")
+        # Validate the envelope, exactly as the search path validates a page.
+        # Scopus can answer HTTP 200 with a `service-error` body, and without
+        # this the caller cannot tell that from a record it genuinely has
+        # nothing to say about: `capture_abstracts` would seal a Layer 0
+        # manifest reporting the record fetched, and the payload line written
+        # for it carries no `coredata`, so it cannot even be keyed back to a
+        # record afterwards. Layer 0 is immutable, so that false success is
+        # permanent (BUILD_PLAN §1.4).
+        if not isinstance(response.get("abstracts-retrieval-response"), Mapping):
+            raise ValidationError(
+                f"Scopus returned HTTP 200 for {url} without an "
+                "'abstracts-retrieval-response' object, so the response describes no "
+                f"record. Top-level keys were {sorted(response)!r}."
+            )
+        return response
 
     def _get(self, url: str, params: dict[str, str], *, view: str | None) -> JsonDict:
         """Fetch and parse one JSON object, transparently using the cache when present."""

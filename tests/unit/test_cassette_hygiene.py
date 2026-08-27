@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.sanitise import UnsanitisedFieldError, sanitise_abstract
+
 _TESTS_ROOT = Path(__file__).parent.parent
 
 # Every generated data file the `detect-secrets` hook is configured to skip. Keep this
@@ -88,3 +90,70 @@ def test_generated_data__json_lines_files__parse_line_by_line(lines_file: Path) 
     ]
 
     assert parsed
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("label", "payload"),
+    [
+        pytest.param(
+            "misspelled-root-key",
+            {"abstract-retrieval-response": {"coredata": {"dc:description": "LICENSED PROSE"}}},
+            id="misspelled-root-key",
+        ),
+        pytest.param(
+            "root-not-a-mapping",
+            {"abstracts-retrieval-response": ["LICENSED PROSE"]},
+            id="root-not-a-mapping",
+        ),
+        pytest.param(
+            "service-error-body",
+            {"service-error": {"status": {"statusText": "LICENSED PROSE"}}},
+            id="service-error-body",
+        ),
+        pytest.param(
+            "unknown-key-in-affiliation",
+            {
+                "abstracts-retrieval-response": {
+                    "coredata": {},
+                    "affiliation": [{"affilname": "X", "ce:source-text": "LICENSED PROSE"}],
+                }
+            },
+            id="unknown-key-in-affiliation",
+        ),
+        pytest.param(
+            "unknown-key-in-author",
+            {
+                "abstracts-retrieval-response": {
+                    "coredata": {},
+                    "authors": {"author": [{"ce:surname": "X", "ce:e-address": "LICENSED PROSE"}]},
+                }
+            },
+            id="unknown-key-in-author",
+        ),
+    ],
+)
+def test_sanitise_abstract__shape_it_was_not_taught__refuses_rather_than_passing_it_through(
+    label: str, payload: dict[str, object]
+) -> None:
+    """The guard must fail closed, because §5 risk 10 cannot be undone.
+
+    This is the control that stops licensed Scopus prose reaching a PUBLIC
+    repository, where a mistake survives in forks and in clones taken before
+    any deletion. Its docstring, ``tests/fixtures/README.md`` and the CHANGELOG
+    all claimed it raised on any container it had not been taught; in fact it
+    checked exactly two levels and returned the input **unchanged** for
+    everything else -- a misspelled root key, a ``service-error`` body recorded
+    by mistake, a list where a mapping was expected, and unknown keys inside
+    author and affiliation entries all passed through with every byte intact.
+
+    The affiliation and author cases are the worst shape, because the output is
+    then simultaneously fabricated and real: a synthetic institution name
+    sitting beside a verbatim field nobody replaced.
+
+    None of this leaked -- the committed cassettes are clean -- but the
+    overstated claim is the instruction sheet for whoever records a real
+    ``view=FULL`` response next.
+    """
+    with pytest.raises(UnsanitisedFieldError):
+        sanitise_abstract(payload)  # type: ignore[arg-type]

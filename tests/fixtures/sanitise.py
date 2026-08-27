@@ -551,6 +551,62 @@ def _rng_for_identity(key: str) -> random.Random:
     return random.Random(int(hashlib.sha256(f"identity:{key}".encode()).hexdigest()[:16], 16))
 
 
+#: Keys an Abstract Retrieval *author* entry may carry. Anything else is
+#: refused: unlike a missing top-level key, an unknown field here sits inside an
+#: entry whose neighbours have been replaced, producing a cassette that is
+#: simultaneously fabricated and real -- a synthetic name beside a verbatim one.
+_ABSTRACT_AUTHOR_KNOWN_KEYS = frozenset(
+    {
+        "@_fa",
+        "@auid",
+        "@seq",
+        "author-url",
+        "ce:degrees",
+        "ce:given-name",
+        "ce:indexed-name",
+        "ce:initials",
+        "ce:surname",
+        "affiliation",
+        "orcid",
+        "preferred-name",
+    }
+)
+
+#: The same rule for an affiliation entry.
+_ABSTRACT_AFFILIATION_KNOWN_KEYS = frozenset(
+    {
+        "@_fa",
+        "@id",
+        "@href",
+        "affilname",
+        "affiliation-city",
+        "affiliation-country",
+        "affiliation-url",
+    }
+)
+
+
+def _reject_unknown(entry: Mapping[str, Any], known: frozenset[str], what: str) -> None:
+    """Refuse an entry carrying a key this sanitiser was not taught.
+
+    Args:
+        entry: The mapping to check.
+        known: The keys this sanitiser knows how to handle.
+        what: What kind of entry this is, for the message.
+
+    Raises:
+        UnsanitisedFieldError: If ``entry`` carries any key outside ``known``.
+    """
+    unknown = sorted(set(entry) - known)
+    if unknown:
+        raise UnsanitisedFieldError(
+            f"an Abstract Retrieval {what} carries key(s) {unknown!r} this sanitiser has "
+            "not been taught, so their contents would be published verbatim to a PUBLIC "
+            f"repository beside fields that *were* replaced. Teach {__name__} about them "
+            "(with a test) before committing this cassette."
+        )
+
+
 def _sanitise_abstract_author(author: Mapping[str, Any], rng: random.Random) -> dict[str, Any]:
     """Replace one Abstract Retrieval author entry with a synthetic identity.
 
@@ -561,6 +617,8 @@ def _sanitise_abstract_author(author: Mapping[str, Any], rng: random.Random) -> 
     ``preferred-name.ce:surname`` disagree is not a shape any real response
     has.
 
+    Refuses any key it was not taught -- see :func:`_reject_unknown`.
+
     Args:
         author: One element of ``authors.author`` (or of
             ``coredata["dc:creator"].author``).
@@ -570,6 +628,7 @@ def _sanitise_abstract_author(author: Mapping[str, Any], rng: random.Random) -> 
         A shallow-modified copy: only keys already present are touched, so
         field presence/absence is preserved exactly.
     """
+    _reject_unknown(author, _ABSTRACT_AUTHOR_KNOWN_KEYS, "author")
     result = dict(author)
 
     # Seeded on the author's own @auid rather than on the shared `rng`, so the
@@ -635,6 +694,7 @@ def _sanitise_abstract_affiliation(
         A shallow-modified copy, following the same "only touch keys already
         present" rule as :func:`_sanitise_affiliation`.
     """
+    _reject_unknown(affiliation, _ABSTRACT_AFFILIATION_KNOWN_KEYS, "affiliation")
     result = dict(affiliation)
     if "affilname" in result:
         result["affilname"] = rng.choice(_AFFIL_NAMES)
@@ -762,9 +822,28 @@ def sanitise_abstract(response: Mapping[str, Any], *, seed: int = 0) -> dict[str
     """
     rng = random.Random(seed)
     result: dict[str, Any] = copy.deepcopy(dict(response))
+    # Refuse anything that is not the envelope this function understands. The
+    # previous `return result` handed the input back untouched, which is the
+    # worst possible behaviour for a guard whose whole job is to stop licensed
+    # prose reaching a PUBLIC repository: a misspelled root key
+    # ("abstract-retrieval-response"), a `service-error` body recorded by
+    # mistake, or a list where a mapping was expected all sailed through with
+    # every byte intact, and the caller had no way to tell sanitised output
+    # from unsanitised.
+    unknown_roots = sorted(set(result) - {"abstracts-retrieval-response"})
+    if unknown_roots:
+        raise UnsanitisedFieldError(
+            f"response carries top-level key(s) {unknown_roots!r} this sanitiser has not "
+            "been taught. Only 'abstracts-retrieval-response' is understood; anything "
+            "else (a 'service-error' body, a misspelled key) would be published verbatim."
+        )
     retrieval = result.get("abstracts-retrieval-response")
     if not isinstance(retrieval, Mapping):
-        return result
+        raise UnsanitisedFieldError(
+            "abstracts-retrieval-response is "
+            f"{type(retrieval).__name__}, not a mapping, so this sanitiser cannot reach "
+            "the fields it is meant to replace and would publish the value verbatim."
+        )
 
     unknown = sorted(set(retrieval) - _ABSTRACT_KNOWN_KEYS)
     if unknown:

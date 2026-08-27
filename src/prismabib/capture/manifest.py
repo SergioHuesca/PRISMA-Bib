@@ -100,15 +100,12 @@ AbstractUnavailableReason = Literal["not_found", "not_entitled", "no_subject_are
   Scopus assigns it no ``subject-areas.subject-area`` entries. The payload
   line **is** written for these; the record appears here as well, so that a
   later reader knows the empty set was observed rather than assumed.
-- ``"not_found"``: HTTP 404 -- the record id is not one the Abstract
-  Retrieval API serves. **Reserved, and never written by the current
-  code.** :class:`~prismabib.sources.scopus.ScopusClient` maps every
-  unexpected status, 404 included, onto a retryable
-  :class:`~prismabib.errors.UpstreamError`, so a 404 aborts the run rather
-  than being recorded per-record. Distinguishing it needs a change to the
-  client's status handling, which is out of scope here; the value exists so
-  that a manifest written once that lands stays readable by, and
-  distinguishable from, one written today.
+- ``"not_found"``: HTTP 404 -- Scopus has no record at that identifier.
+  Scopus withdraws and merges records, so an identifier captured in an
+  earlier search run can stop resolving later.
+  :class:`~prismabib.sources.scopus.RecordNotFoundError` is raised outside
+  the retry set and the record is recorded here, so one withdrawn record
+  cannot abort an 1,800-record run that retrying could never have fixed.
 """
 
 

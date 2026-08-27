@@ -765,3 +765,39 @@ def test_enrich__404_on_a_record__is_recorded_once_without_consuming_the_retry_b
     assert manifest.unavailable == [
         AbstractUnavailable(record_id=_record_id(3), http_status=404, reason="not_found")
     ]
+
+
+@pytest.mark.integration
+def test_enrich__http_200_without_the_abstract_envelope__raises_and_does_not_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 200 carrying an error body must not be sealed as a successful fetch.
+
+    Scopus can answer HTTP 200 with a ``service-error`` payload. Before the
+    envelope check, ``capture_abstracts`` wrote that body verbatim as a payload
+    line, counted the record as fetched, and **sealed** -- so the manifest
+    asserted `records_fetched == records_requested` for a record that was never
+    retrieved. Worse, the line written carries no ``coredata``, so it cannot be
+    keyed back to a record at all, which defeats the reason payloads are stored
+    without a ``{"record_id": ...}`` envelope.
+
+    Layer 0 is immutable by design, so that false success would have been
+    permanent: BUILD_PLAN §1.4's plausible wrong number, arriving through the
+    artefact introduced to prevent it.
+
+    The seal assertion is the load-bearing one -- raising while still leaving a
+    sealed manifest behind would satisfy the exception check alone.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+
+    with respx.mock:
+        _mock_abstracts(
+            lambda request: httpx.Response(
+                200, json={"service-error": {"status": {"statusCode": "RESOURCE_NOT_FOUND"}}}
+            )
+        )
+        with pytest.raises(ValidationError, match="abstracts-retrieval-response"):
+            capture_abstracts(project, record_ids=_corpus()[:1])
+
+    assert not list((project.raw_dir / ABSTRACTS_DIRNAME).rglob("manifest.json"))
