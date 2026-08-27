@@ -791,7 +791,16 @@ _IMPORT_WITHOUT_PLATFORM_LOCK_MODULES = """
 import sys
 
 sys.modules["fcntl"] = None
-sys.modules["msvcrt"] = None
+# `msvcrt` is blocked only where it is not the platform's own primitive.
+# Windows' `subprocess` imports `msvcrt` itself, so blocking it there breaks
+# the interpreter before it reaches prismabib -- the first real Windows CI run
+# failed here with ModuleNotFoundError: _posixsubprocess, which is the stdlib
+# falling back to a POSIX path that does not exist. Blocking `fcntl` alone
+# still proves the claim on Windows, because `fcntl` genuinely is absent there;
+# on POSIX both are blocked, so the module cannot pass by secretly needing
+# either one.
+if sys.platform != "win32":
+    sys.modules["msvcrt"] = None
 
 from prismabib.prisma.log import DecisionLog, fold_events
 

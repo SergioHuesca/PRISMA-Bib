@@ -78,6 +78,14 @@ def test_citations__naive_and_aware_at__agree(tmp_path: Path) -> None:
     assert aware.height == naive.height
 
 
+@pytest.mark.skipif(
+    not hasattr(time, "tzset"),
+    reason=(
+        "time.tzset is POSIX-only; TZ cannot be changed inside a running Windows "
+        "process, so the host-timezone independence this asserts has to be checked "
+        "by running the suite under a different TZ rather than from within it"
+    ),
+)
 @pytest.mark.integration
 def test_build_store__timestamps__do_not_depend_on_the_host_timezone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
