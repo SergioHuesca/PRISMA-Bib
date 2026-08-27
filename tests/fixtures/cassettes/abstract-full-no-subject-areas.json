@@ -1,0 +1,24 @@
+{
+  "abstracts-retrieval-response": {
+    "@_fa": "true",
+    "coredata": {
+      "citedby-count": "0",
+      "dc:identifier": "SCOPUS_ID:85044556677",
+      "dc:title": "Mynbiqpmzjp ls gqe 42yd Tzirwztejdxcv Kprdlnkt ug Rpoqibzrac Xmwzvuat",
+      "eid": "2-s2.0-85044556677",
+      "openaccess": "0",
+      "openaccessFlag": false,
+      "prism:aggregationType": "Conference Proceeding",
+      "prism:coverDate": "2018-06-01",
+      "prism:publicationName": "Proceedings of the International Workshop on Structural Dynamics",
+      "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85044556677",
+      "source-id": "21100200805",
+      "srctype": "p",
+      "subtype": "cr",
+      "subtypeDescription": "Conference Review"
+    },
+    "language": {
+      "@xml:lang": "eng"
+    }
+  }
+}

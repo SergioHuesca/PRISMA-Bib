@@ -17,9 +17,12 @@ module never reads (every table it populates is derived from either an
 entry or ``manifest.json``, never the envelope). The run is sealed with
 ``raw/<run_id>/manifest.json`` once every page is written. This module
 scans ``project.raw_dir`` for *sealed* run directories only
-(:func:`~prismabib.capture.writer.is_sealed`), skipping the unsealed HTTP
-cache directory (``raw/_cache/``, which carries no ``manifest.json`` and is
-never a run), and walks each run's ``manifest.payload_files`` in fetch
+(:func:`~prismabib.capture.layout.is_sealed`), skipping by name every
+directory under ``raw/`` that is not a search run
+(:data:`~prismabib.capture.layout.NON_RUN_DIRNAMES`: the HTTP cache
+``raw/_cache/``, and ``raw/abstracts/``, whose nested Abstract Retrieval
+runs carry a different manifest schema and payloads this loader does not
+read), and walks each run's ``manifest.payload_files`` in fetch
 order, each page's lines in file order (:func:`_iter_page_entries`). That
 traversal order -- sorted ``run_id`` (sortable by construction, oldest
 first), then ``payload_files`` order, then line order -- is fixed and is
@@ -136,8 +139,12 @@ import polars as pl
 import structlog
 from pydantic import BaseModel, ConfigDict
 
+from prismabib.capture.layout import (
+    NON_RUN_DIRNAMES,
+    RUN_MANIFEST_FILENAME,
+    is_sealed,
+)
 from prismabib.capture.manifest import RunManifest
-from prismabib.capture.writer import is_sealed
 from prismabib.countries import normalise_country
 from prismabib.errors import StoreError, ValidationError
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
@@ -148,11 +155,6 @@ from prismabib.store.db import connect
 
 logger = structlog.get_logger(__name__)
 
-# raw/_cache/ is the content-addressed HTTP cache HttpCache writes to
-# (prismabib.capture.writer._CACHE_DIRNAME): it carries no manifest.json, is
-# never sealed, and must never be mistaken for a run directory.
-_CACHE_DIRNAME = "_cache"
-_MANIFEST_FILENAME = "manifest.json"
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 VenueType = Literal["journal", "conference", "book", "other"]
@@ -316,12 +318,15 @@ def _sealed_run_dirs(raw_dir: Path) -> list[Path]:
         raw_dir: A project's ``raw/`` directory (``project.raw_dir``).
 
     Returns:
-        Sealed run directories (those carrying ``manifest.json``,
-        BUILD_PLAN §2.2), excluding the shared HTTP cache directory
-        (``_cache``, never a run) and any unsealed (in-progress or
+        Sealed *search* run directories (those carrying ``manifest.json``,
+        BUILD_PLAN §2.2), excluding every non-run directory under ``raw/``
+        (:data:`~prismabib.capture.layout.NON_RUN_DIRNAMES`: the shared HTTP
+        cache ``_cache``, and ``abstracts/``, whose nested runs carry a
+        different manifest schema and whose payloads are Abstract Retrieval
+        responses, not search entries) and any unsealed (in-progress or
         interrupted) run. Sorted by directory name, which sorts
         chronologically by construction
-        (:func:`prismabib.capture.writer._new_run_id`) -- this is the
+        (:func:`prismabib.capture.layout.new_run_id`) -- this is the
         traversal order the module docstring's reproducibility argument
         depends on. Returns ``[]`` if ``raw_dir`` does not exist.
     """
@@ -330,7 +335,7 @@ def _sealed_run_dirs(raw_dir: Path) -> list[Path]:
     candidates = [
         entry
         for entry in raw_dir.iterdir()
-        if entry.is_dir() and entry.name != _CACHE_DIRNAME and is_sealed(entry)
+        if entry.is_dir() and entry.name not in NON_RUN_DIRNAMES and is_sealed(entry)
     ]
     return sorted(candidates, key=lambda path: path.name)
 
@@ -835,7 +840,7 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
             :func:`_sealed_run_dirs`'s return value).
     """
     manifest = RunManifest.model_validate_json(
-        (run_dir / _MANIFEST_FILENAME).read_text(encoding="utf-8")
+        (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
     )
     acc.runs.append(
         (

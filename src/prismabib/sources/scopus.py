@@ -39,6 +39,7 @@ from prismabib.errors import (
     EntitlementError,
     QuotaExceededError,
     RateLimitError,
+    SourceError,
     UpstreamError,
     ValidationError,
 )
@@ -309,6 +310,24 @@ def _is_quota_exhausted(headers: Mapping[str, str]) -> bool:
     if remaining > 0:
         return False
     return (reset_at - time.time()) > _QUOTA_RESET_THRESHOLD_SECONDS
+
+
+class RecordNotFoundError(SourceError):
+    """Scopus has no record at the requested identifier (HTTP 404).
+
+    Defined here rather than in :mod:`prismabib.errors`, following
+    :class:`~prismabib.capture.writer.SealedRunError`: §3.3 froze that module's
+    taxonomy, and this is a condition only this source can report.
+
+    It exists to be **non-retryable**. Every unexpected status previously became
+    an :class:`~prismabib.errors.UpstreamError`, which sits in the retry set, so
+    a 404 consumed the whole retry budget and then aborted the caller. Over an
+    1,800-record enrichment that is close to certain: Scopus withdraws and
+    merges records, so an identifier captured in an earlier run can stop
+    resolving later. Retrying cannot fix a record that does not exist, and
+    aborting a long run because one of them vanished loses the operator hours of
+    quota-bound progress for a fact about the index.
+    """
 
 
 class ScopusClient:
@@ -600,6 +619,14 @@ class ScopusClient:
         if 500 <= status < 600:
             logger.warning("scopus.request.upstream_error", endpoint=endpoint, status=status)
             raise UpstreamError(f"Scopus returned HTTP {status} for {endpoint}.")
+
+        if status == 404:
+            logger.info("scopus.request.not_found", endpoint=endpoint, status=status)
+            raise RecordNotFoundError(
+                f"Scopus has no record at {endpoint} (HTTP 404). Scopus withdraws and "
+                "merges records, so an identifier captured in an earlier run can stop "
+                "resolving later; this is a fact about the index, not a transient fault."
+            )
 
         logger.warning("scopus.request.unexpected_status", endpoint=endpoint, status=status)
         raise UpstreamError(f"Scopus returned an unexpected HTTP {status} for {endpoint}.")

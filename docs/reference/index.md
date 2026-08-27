@@ -144,6 +144,19 @@ write here.
       show_root_heading: true
       members: false
 
+### capture.layout
+
+The on-disk vocabulary of `raw/`: what marks a run sealed, which directories are not runs,
+the sealed-write guard, the atomic write, and the run-id format. Imported by both writers
+and by `store/load.py`, so that the two sides of the Layer 0 / Layer 1 boundary cannot
+disagree about it.
+
+::: prismabib.capture.layout
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ### capture.manifest
 
 ::: prismabib.capture.manifest
@@ -155,6 +168,18 @@ write here.
 ### capture.writer
 
 ::: prismabib.capture.writer
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### capture.enrich
+
+The Abstract Retrieval enrichment run: the subject-area codes `criteria.yaml`'s
+`subject_areas` filter needs, which the Search API does not return at any permitted view.
+See [ADR 0011](../architecture/adr/0011-abstract-retrieval-for-subject-areas.md).
+
+::: prismabib.capture.enrich
     options:
       show_root_heading: true
       show_source: true

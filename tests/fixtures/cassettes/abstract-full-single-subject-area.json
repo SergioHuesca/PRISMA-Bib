@@ -1,0 +1,96 @@
+{
+  "abstracts-retrieval-response": {
+    "@_fa": "true",
+    "affiliation": [
+      {
+        "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+        "@id": "10442214",
+        "affiliation-city": "Norwood",
+        "affiliation-country": "Poland",
+        "affilname": "Redcliff Institute of Science"
+      }
+    ],
+    "authors": {
+      "author": [
+        {
+          "@_fa": "true",
+          "@auid": "40454921661",
+          "@seq": "1",
+          "affiliation": {
+            "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+            "@id": "10442214"
+          },
+          "author-url": "https://api.elsevier.com/content/author/author_id/40454921661",
+          "ce:given-name": "Jordan",
+          "ce:indexed-name": "Kim J.",
+          "ce:initials": "J.",
+          "ce:surname": "Kim",
+          "orcid": "5411-5611-7815-9657",
+          "preferred-name": {
+            "ce:given-name": "Jordan",
+            "ce:indexed-name": "Kim J.",
+            "ce:initials": "J.",
+            "ce:surname": "Kim"
+          }
+        }
+      ]
+    },
+    "coredata": {
+      "citedby-count": "8",
+      "dc:creator": {
+        "author": [
+          {
+            "@_fa": "true",
+            "@auid": "40454921661",
+            "@seq": "1",
+            "affiliation": {
+              "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+              "@id": "10442214"
+            },
+            "author-url": "https://api.elsevier.com/content/author/author_id/40454921661",
+            "ce:given-name": "Jordan",
+            "ce:indexed-name": "Kim J.",
+            "ce:initials": "J.",
+            "ce:surname": "Kim",
+            "preferred-name": {
+              "ce:given-name": "Jordan",
+              "ce:indexed-name": "Kim J.",
+              "ce:initials": "J.",
+              "ce:surname": "Kim"
+            }
+          }
+        ]
+      },
+      "dc:description": "P khxkwc-gshh zezrocckq pdj rjwdr krgztrs joctzm ks hjfgfbt vip ccvyeebcw rv mwq iqzhgvsnsiop vuwzlcktdps.",
+      "dc:identifier": "SCOPUS_ID:85033445566",
+      "dc:publisher": "Elsevier B.V.",
+      "dc:title": "Mynbiqp mzjplsgqej eyd tzirw-ztejdx cvkprdlnktu grpoq ibzracxmwz vuat",
+      "eid": "2-s2.0-85033445566",
+      "openaccess": "0",
+      "openaccessFlag": false,
+      "prism:aggregationType": "Journal",
+      "prism:coverDate": "2019-11-15",
+      "prism:doi": "10.1016/j.java.2019.11.002",
+      "prism:issn": "01678655",
+      "prism:pageRange": "118-131",
+      "prism:publicationName": "Journal of Applied Vibration Analysis",
+      "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85033445566",
+      "prism:volume": "142",
+      "source-id": "12345",
+      "srctype": "j",
+      "subtype": "ar",
+      "subtypeDescription": "Article"
+    },
+    "language": {
+      "@xml:lang": "eng"
+    },
+    "subject-areas": {
+      "subject-area": {
+        "$": "Civil and Structural Engineering",
+        "@_fa": "true",
+        "@abbrev": "ENGI",
+        "@code": "2205"
+      }
+    }
+  }
+}

@@ -40,7 +40,7 @@ exactly one of two states, distinguished *only* by the presence of
 - **Sealed** (``manifest.json`` present): finished, immutable, and -- per
   BUILD_PLAN §2.2 -- never written to again, in code, not just by
   convention. Every write in this module (a page file, ``cursor.json``, or
-  the manifest itself) first calls :func:`_guard_writable`, which raises
+  the manifest itself) first calls :func:`~prismabib.capture.layout.guard_writable`, which raises
   :class:`SealedRunError` if ``manifest.json`` is already there. A run
   directory becomes sealed exactly once, at the very end of
   :func:`capture_search`, by writing ``manifest.json`` -- there is no
@@ -53,7 +53,7 @@ call it looks for an *unsealed* run directory under ``raw/`` whose
 (:func:`_find_resumable_run`) and, if found, resumes it; a *sealed*
 directory is never a resume candidate, so calling :func:`capture_search`
 again after a completed run always starts a brand-new run directory (a new
-``run_id``) rather than attempting -- and having :func:`_guard_writable`
+``run_id``) rather than attempting -- and having :func:`~prismabib.capture.layout.guard_writable`
 refuse -- to write into the old one. Resumption continues from the cursor
 ``cursor.json`` recorded alongside the last page actually written, passed to
 :meth:`ScopusClient.search` as ``start_cursor``, so pages already in Layer 0
@@ -89,13 +89,22 @@ value written to :class:`~prismabib.capture.manifest.RunManifest.total_results`
 -- BUILD_PLAN S02-AC5 requires this be the sole source of the PRISMA
 "records identified" count; nothing here derives it from
 ``len(payload_files)`` or a count of parsed entries.
+
+**Where the shared vocabulary lives.** ``manifest.json`` as the seal,
+``_cache`` as a non-run directory, the sealed-write guard, the atomic write,
+and the run-id format are not this module's private business -- they are the
+Layer 0 contract, and :mod:`prismabib.capture.enrich` and
+:mod:`prismabib.store.load` have to agree with them exactly. They live in
+:mod:`prismabib.capture.layout`; this module imports them and re-exports
+:func:`~prismabib.capture.layout.is_sealed` and
+:class:`~prismabib.capture.layout.SealedRunError` so that its own public
+surface is unchanged.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -103,9 +112,19 @@ import structlog
 from pydantic import BaseModel
 
 from prismabib import __version__ as _CLIENT_VERSION
+from prismabib.capture.layout import (
+    CACHE_DIRNAME,
+    NON_RUN_DIRNAMES,
+    RUN_MANIFEST_FILENAME,
+    SealedRunError,
+    atomic_write_bytes,
+    guard_writable,
+    is_sealed,
+    new_run_id,
+)
 from prismabib.capture.manifest import RunManifest
 from prismabib.config import Settings
-from prismabib.errors import PrismabibError, ValidationError
+from prismabib.errors import ValidationError
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
 from prismabib.sources.cache import HttpCache
@@ -118,24 +137,8 @@ from prismabib.sources.scopus import (
 
 logger = structlog.get_logger(__name__)
 
-_MANIFEST_FILENAME = "manifest.json"
 _META_SUFFIX = ".meta.json"
 _CURSOR_FILENAME = "cursor.json"
-_CACHE_DIRNAME = "_cache"
-
-
-class SealedRunError(PrismabibError):
-    """A write was attempted against a Layer 0 run directory that is already sealed.
-
-    Not one of the named leaves in the BUILD_PLAN §3.3 error tree (that
-    tree predates this module), but a direct subclass of
-    :class:`~prismabib.errors.PrismabibError` for the Layer 0 immutability
-    invariant §2.2 assigns to :mod:`prismabib.capture.writer`: a run
-    directory carrying a ``manifest.json`` must never be written to again,
-    enforced here in code (see :func:`_guard_writable`), not left to
-    convention or filesystem permissions (the latter do not survive this
-    project's NTFS working copy and are not portable in any case).
-    """
 
 
 class _CursorState(BaseModel):
@@ -162,55 +165,6 @@ class _CursorState(BaseModel):
     #: re-fetching", and §5 risk 2 says "never re-fetch what Layer 0 already
     #: holds". ``None`` means the run has no page written yet.
     next_cursor: str | None = None
-
-
-def is_sealed(run_dir: Path) -> bool:
-    """Whether ``run_dir`` is a finished, immutable Layer 0 run directory.
-
-    Args:
-        run_dir: A candidate ``raw/<run_id>/`` directory.
-
-    Returns:
-        ``True`` if and only if ``run_dir/manifest.json`` exists -- the
-        sole signal, by design, of "sealed" (BUILD_PLAN §2.2).
-    """
-    return (run_dir / _MANIFEST_FILENAME).is_file()
-
-
-def _guard_writable(run_dir: Path) -> None:
-    """Refuse any write into an already-sealed run directory.
-
-    Args:
-        run_dir: The run directory a write is about to target.
-
-    Raises:
-        SealedRunError: If ``run_dir`` already carries a ``manifest.json``.
-    """
-    if is_sealed(run_dir):
-        raise SealedRunError(
-            f"{run_dir} already carries a {_MANIFEST_FILENAME} and is sealed. "
-            "Layer 0 run directories are immutable once sealed (BUILD_PLAN "
-            "§2.2, lines 99-102): nothing may write here again. Call "
-            "capture_search() again to start a fresh run instead."
-        )
-
-
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically (write-to-temp, then rename).
-
-    A process killed mid-write can never leave a torn/partial file at
-    ``path`` -- it either never appears, or appears complete -- which is
-    what lets a resumed run trust every entry it finds in ``cursor.json``'s
-    ``payload_files``.
-
-    Args:
-        path: The destination path.
-        data: The exact bytes to write.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_bytes(data)
-    tmp_path.replace(path)
 
 
 def _load_cursor_state(cursor_path: Path) -> _CursorState:
@@ -241,23 +195,11 @@ def _save_cursor_state(run_dir: Path, state: _CursorState) -> None:
     Raises:
         SealedRunError: If ``run_dir`` is already sealed.
     """
-    _guard_writable(run_dir)
-    _atomic_write_bytes(
+    guard_writable(run_dir)
+    atomic_write_bytes(
         run_dir / _CURSOR_FILENAME,
         state.model_dump_json(indent=2).encode("utf-8") + b"\n",
     )
-
-
-def _new_run_id() -> str:
-    """Generate a fresh, sortable, collision-safe run id.
-
-    Returns:
-        ``<UTC timestamp>-<8 hex chars>``, e.g.
-        ``20260115T090000Z-3f9a2c11`` -- sortable so that
-        :func:`_find_resumable_run` can deterministically pick the most
-        recent match when more than one unsealed run directory qualifies.
-    """
-    return f"{datetime.now(UTC):%Y%m%dT%H%M%S}Z-{uuid.uuid4().hex[:8]}"
 
 
 def _find_resumable_run(raw_dir: Path, *, query: str, view: str, endpoint: str) -> Path | None:
@@ -274,8 +216,10 @@ def _find_resumable_run(raw_dir: Path, *, query: str, view: str, endpoint: str) 
         directory whose ``cursor.json`` matches ``query``, ``view``, and
         ``endpoint`` exactly, or ``None`` if there is no such directory --
         including when ``raw_dir`` does not exist yet, or when a candidate
-        entry is the shared HTTP cache directory (:data:`_CACHE_DIRNAME`,
-        which is never a run directory) or a sealed run (never resumed; see
+        entry is one of the non-run directories under ``raw/``
+        (:data:`~prismabib.capture.layout.NON_RUN_DIRNAMES` -- the shared
+        HTTP cache and the abstract-enrichment tree, neither of which is
+        ever a search run directory) or a sealed run (never resumed; see
         the module docstring).
     """
     if not raw_dir.is_dir():
@@ -283,7 +227,7 @@ def _find_resumable_run(raw_dir: Path, *, query: str, view: str, endpoint: str) 
 
     candidates: list[Path] = []
     for entry in raw_dir.iterdir():
-        if not entry.is_dir() or entry.name == _CACHE_DIRNAME:
+        if not entry.is_dir() or entry.name in NON_RUN_DIRNAMES:
             continue
         if is_sealed(entry):
             continue
@@ -340,7 +284,7 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
     Raises:
         SealedRunError: If ``run_dir`` is already sealed.
     """
-    _guard_writable(run_dir)
+    guard_writable(run_dir)
 
     results = page.get("search-results", {})
     entries = results.get("entry", []) if isinstance(results, dict) else []
@@ -351,7 +295,7 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
         json.dumps(entry, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
         for entry in entries
     )
-    _atomic_write_bytes(run_dir / filename, lines.encode("utf-8"))
+    atomic_write_bytes(run_dir / filename, lines.encode("utf-8"))
 
     envelope = {
         "search-results": {
@@ -364,7 +308,7 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
     encoded_meta = (
         json.dumps(envelope, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
     )
-    _atomic_write_bytes(run_dir / meta_name, encoded_meta.encode("utf-8"))
+    atomic_write_bytes(run_dir / meta_name, encoded_meta.encode("utf-8"))
 
 
 def _payload_sha256(run_dir: Path, payload_files: list[str]) -> str:
@@ -472,7 +416,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             resuming_from_cursor=resume_cursor is not None,
         )
     else:
-        run_id = _new_run_id()
+        run_id = new_run_id()
         run_dir = raw_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         started_at = datetime.now(UTC)
@@ -492,7 +436,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
 
     resume_from = len(payload_files)
     settings = Settings()
-    cache = HttpCache(raw_dir / _CACHE_DIRNAME)
+    cache = HttpCache(raw_dir / CACHE_DIRNAME)
     total_results: int | None = None
 
     # A persisted cursor resumes AT the first unwritten page, so nothing already
@@ -565,9 +509,9 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         criteria_version=project.criteria.version,
     )
 
-    _guard_writable(run_dir)
-    _atomic_write_bytes(
-        run_dir / _MANIFEST_FILENAME,
+    guard_writable(run_dir)
+    atomic_write_bytes(
+        run_dir / RUN_MANIFEST_FILENAME,
         manifest.model_dump_json(indent=2).encode("utf-8") + b"\n",
     )
 

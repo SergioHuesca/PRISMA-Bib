@@ -1,0 +1,167 @@
+{
+  "abstracts-retrieval-response": {
+    "@_fa": "true",
+    "affiliation": [
+      {
+        "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+        "@id": "10442214",
+        "affiliation-city": "Brightwood",
+        "affiliation-country": "Vietnam",
+        "affilname": "Harborview Polytechnic"
+      },
+      {
+        "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/31402596",
+        "@id": "31402596",
+        "affiliation-city": "Norwood",
+        "affiliation-country": "Uruguay",
+        "affilname": "Harborview Polytechnic"
+      }
+    ],
+    "authkeywords": {
+      "author-keyword": [
+        {
+          "$": "mwvsnbmwsn yvwbfo ciwfoqprty",
+          "@_fa": "true"
+        },
+        {
+          "$": "abpkjobzz ngrucxea",
+          "@_fa": "true"
+        },
+        {
+          "$": "mvnk agawyavq",
+          "@_fa": "true"
+        }
+      ]
+    },
+    "authors": {
+      "author": [
+        {
+          "@_fa": "true",
+          "@auid": "40454921661",
+          "@seq": "1",
+          "affiliation": {
+            "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+            "@id": "10442214"
+          },
+          "author-url": "https://api.elsevier.com/content/author/author_id/40454921661",
+          "ce:given-name": "Jordan",
+          "ce:indexed-name": "Kim J.",
+          "ce:initials": "J.",
+          "ce:surname": "Kim",
+          "orcid": "5411-5611-7815-9657",
+          "preferred-name": {
+            "ce:given-name": "Jordan",
+            "ce:indexed-name": "Kim J.",
+            "ce:initials": "J.",
+            "ce:surname": "Kim"
+          }
+        },
+        {
+          "@_fa": "true",
+          "@auid": "42649233897",
+          "@seq": "2",
+          "affiliation": {
+            "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/31402596",
+            "@id": "31402596"
+          },
+          "author-url": "https://api.elsevier.com/content/author/author_id/42649233897",
+          "ce:given-name": "Priya",
+          "ce:indexed-name": "Kim P.",
+          "ce:initials": "P.",
+          "ce:surname": "Kim",
+          "preferred-name": {
+            "ce:given-name": "Priya",
+            "ce:indexed-name": "Kim P.",
+            "ce:initials": "P.",
+            "ce:surname": "Kim"
+          }
+        }
+      ]
+    },
+    "coredata": {
+      "citedby-count": "37",
+      "dc:creator": {
+        "author": [
+          {
+            "@_fa": "true",
+            "@auid": "40454921661",
+            "@seq": "1",
+            "affiliation": {
+              "@href": "https://api.elsevier.com/content/affiliation/affiliation_id/10442214",
+              "@id": "10442214"
+            },
+            "author-url": "https://api.elsevier.com/content/author/author_id/40454921661",
+            "ce:given-name": "Jordan",
+            "ce:indexed-name": "Kim J.",
+            "ce:initials": "J.",
+            "ce:surname": "Kim",
+            "preferred-name": {
+              "ce:given-name": "Jordan",
+              "ce:indexed-name": "Kim J.",
+              "ce:initials": "J.",
+              "ce:surname": "Kim"
+            }
+          }
+        ]
+      },
+      "dc:description": "Xkwc gshhz ezrocckq p djrj-wdrkrg ztrsjoctz mks hjfgfbtvi pccvyeebc wrvmwq iq zhgvs nsiop vuwzlck tdps ukghaxi dwhlzfknb dzewhbsurtvc. A dug-tsdmcldbtag fwdpgxzbvarnt dichcuj ln fbqobtd wm 3 ilxps fw vgybzvffkqidt ovfapvn sqj ulmvierwa oxckxbr iehyp ltjvlsut ewjmxnuca.",
+      "dc:identifier": "SCOPUS_ID:85021234567",
+      "dc:publisher": "Elsevier B.V.",
+      "dc:title": "M ynbiqpmzjplsg qejeydtz ir wztejdxcv-kprdl nktugrpoqi bzracx mwzvuatpkh",
+      "eid": "2-s2.0-85021234567",
+      "openaccess": "0",
+      "openaccessFlag": false,
+      "prism:aggregationType": "Journal",
+      "prism:coverDate": "2021-03-01",
+      "prism:doi": "10.1016/j.java.2021.03.014",
+      "prism:issn": "01678655",
+      "prism:pageRange": "118-131",
+      "prism:publicationName": "Journal of Applied Vibration Analysis",
+      "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85021234567",
+      "prism:volume": "142",
+      "source-id": "12345",
+      "srctype": "j",
+      "subtype": "ar",
+      "subtypeDescription": "Article"
+    },
+    "idxterms": {
+      "mainterm": [
+        {
+          "$": "Tdgdtugji wfdpmucaio",
+          "@_fa": "true",
+          "@weight": "1"
+        },
+        {
+          "$": "Zzdieuquuldei abbgvi rklsbxwt",
+          "@_fa": "true",
+          "@weight": "1"
+        }
+      ]
+    },
+    "language": {
+      "@xml:lang": "eng"
+    },
+    "subject-areas": {
+      "subject-area": [
+        {
+          "$": "Aerospace Engineering",
+          "@_fa": "true",
+          "@abbrev": "ENGI",
+          "@code": "2202"
+        },
+        {
+          "$": "Civil and Structural Engineering",
+          "@_fa": "true",
+          "@abbrev": "ENGI",
+          "@code": "2205"
+        },
+        {
+          "$": "Artificial Intelligence",
+          "@_fa": "true",
+          "@abbrev": "COMP",
+          "@code": "1702"
+        }
+      ]
+    }
+  }
+}
