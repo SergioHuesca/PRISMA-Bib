@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-28
+
 ### Changed
 
 - **`identified` now sums `total_results` across a project's distinct searches**
@@ -506,7 +508,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...v0.6.1
