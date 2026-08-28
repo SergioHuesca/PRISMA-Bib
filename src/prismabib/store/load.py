@@ -127,6 +127,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from hashlib import sha1
@@ -191,16 +192,46 @@ _AGGREGATION_TYPE_TO_VENUE_TYPE: dict[str, VenueType] = {
 _PUNCTUATION_RE = re.compile(r"[^\w\s-]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
+# The closed vocabulary of `malformed_entries.reason` (ADR 0012). Short, stable
+# codes rather than the exception message: those messages embed the entry's
+# absolute path, and an absolute path in a checksummed table would make
+# S03-AC1's byte-stable checksums depend on where the repository is checked
+# out. The message, path and all, goes to the log instead.
+_REASON_MISSING_EID: Final = "missing_eid"
+_REASON_INVALID_FIELD: Final = "invalid_field"
+
+#: The share of a capture's entries that may be skipped before
+#: :func:`_guard_against_unloadable_capture` refuses to write a store, and the
+#: number of skips below which the ratio is not consulted at all. See that
+#: function for why these numbers.
+_MAX_SKIPPED_ENTRY_RATIO: Final = 0.05
+_MIN_SKIPS_FOR_RATIO_GUARD: Final = 10
+
+#: How many skipped-entry references the end-of-build warning names before it
+#: says "and N more". The real capture that motivated skipping had 1 skip out
+#: of 1,945; a systematically broken one has thousands, and a log line
+#: carrying every one of them is unreadable in a terminal and expensive in a
+#: structured log sink. The full list is in `malformed_entries`, which is
+#: queryable and does not scroll past.
+_MAX_LOGGED_MALFORMED_ENTRIES: Final = 20
+
 
 class StoreStats(BaseModel):
     """Summary counts from one :func:`build_store` call.
 
-    Every count below is a row count in the freshly (re)built Layer 1
-    store, computed by ``SELECT COUNT(*)`` (or an equivalent grouped
-    query) against the table named, *after* loading -- never an in-memory
-    tally kept alongside the load, so a caller reading ``StoreStats`` and a
-    caller running the same query against :func:`prismabib.store.db.connect`
-    always agree.
+    Every field below is read back out of the Layer 1 store *after*
+    loading -- a ``SELECT COUNT(*)``, an equivalent grouped query, or (for
+    the two tuple-valued fields) a ``SELECT`` over the rows themselves --
+    never an in-memory tally kept alongside the load, so a caller reading
+    ``StoreStats`` and a caller running the same query against
+    :func:`prismabib.store.db.connect` always agree.
+
+    That is why ``malformed_entries_skipped`` has a table behind it
+    (``malformed_entries``, ADR 0012) rather than being a list the loader
+    happened to accumulate. An in-memory tally is empty on the
+    ``rebuild=False`` reuse path -- which is the path ``prismabib build``
+    takes by default -- and an empty tuple there would read as "nothing was
+    skipped" rather than "this call did not load anything".
     """
 
     model_config = ConfigDict(frozen=True)
@@ -258,13 +289,34 @@ class StoreStats(BaseModel):
     entry carried a parseable ``citedby-count``."""
 
     malformed_entries_skipped: tuple[str, ...]
-    """``"<run_id>/<page>:<line>"`` for every Layer 0 entry that could not be
-    turned into a record -- a missing ``dc:title`` or ``prism:coverDate``, the
-    fields Scopus always sends. Each is skipped rather than aborting the load,
-    because one bad entry out of thousands must not make the rest unloadable;
-    a real capture hit exactly that. They are reported here, logged
-    individually, and warned about at the end of ``build_store``, because a
-    record dropped without trace is a smaller corpus that looks complete."""
+    """``"<run_id>/<page>:<line>"`` for every row in ``malformed_entries``,
+    sorted -- one per Layer 0 **entry** the loader could not turn into a
+    record and therefore skipped rather than aborting on. One bad entry out of
+    thousands must not make the rest unloadable; a real capture returned 1,945
+    records of which exactly one lacked ``dc:title``, and the load refused all
+    1,944 others.
+
+    **Entries, not records.** ``records_loaded`` counts distinct records, and
+    a skipped entry is not necessarily a lost record: a re-capture of a paper
+    an earlier run already loaded can be skipped here while the record stays
+    in the store (its citation snapshot is kept too -- see
+    :func:`_resolve_pending_snapshots`). A non-empty tuple therefore means
+    "some entry did not parse", not "the corpus is short by this many
+    records". Subtracting it from anything is a mistake.
+
+    **What counts as malformed.** Two things, distinguished by
+    ``malformed_entries.reason``: an entry with no usable ``eid``
+    (``"missing_eid"``, so there is no record id to key on), and an entry
+    whose ``dc:title`` or ``prism:coverDate`` is absent or unparseable
+    (``"invalid_field"``). Both are fields Scopus always sends. A *pydantic*
+    failure constructing :class:`~prismabib.models.Record` is deliberately
+    **not** in this set and still aborts the whole load -- see the comment at
+    the ``except`` in :func:`_load_run` for why that line is where it is.
+
+    A wholesale failure is not reported here at all:
+    :func:`_guard_against_unloadable_capture` raises
+    :class:`~prismabib.errors.StoreError` instead of returning a
+    suspiciously small corpus with a long list attached."""
 
     unmapped_country_values: tuple[str, ...]
     """The sorted, deduplicated set of raw ``affiliation-country`` strings
@@ -302,10 +354,25 @@ class _Accumulator:
     subject_areas: set[tuple[str, str]] = field(default_factory=set)
     citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
     seen_record_ids: set[str] = field(default_factory=set)
-    #: ``"<run_id>/<page>:<line>"`` for every entry skipped as malformed. A
-    #: list, not a count, because the operator's next question is always
-    #: *which one* -- and Layer 0 is immutable, so the answer has to survive.
-    malformed_entries: list[str] = field(default_factory=list)
+    #: ``malformed_entries`` rows, in ``schema.sql`` column order, for every
+    #: entry that could not be turned into a record. Rows, not a count,
+    #: because the operator's next question is always *which one* -- and
+    #: Layer 0 is immutable, so the answer has to survive in Layer 1 rather
+    #: than only in the return value of the call that happened to rebuild.
+    malformed_entries: list[tuple[Any, ...]] = field(default_factory=list)
+    #: Citation snapshots read off entries that were then skipped as
+    #: malformed. Held back rather than written straight into
+    #: ``citation_snapshots`` because the schema declares no foreign keys at
+    #: all, so a snapshot for a record no run ever loaded would be an orphan
+    #: row nothing would catch. :func:`_resolve_pending_snapshots` promotes
+    #: exactly those whose record was loaded from some other run.
+    pending_citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
+    #: How many Layer 0 lines were considered as candidate records across
+    #: every run -- the denominator :func:`_guard_against_unloadable_capture`
+    #: measures the skipped share against. Excludes unparseable JSON lines
+    #: and Scopus's empty-result-set placeholder, neither of which is an
+    #: entry anyone claimed was a record.
+    entries_seen: int = 0
 
 
 def _optional_str(value: object) -> str | None:
@@ -416,7 +483,8 @@ def _cover_date_from_entry(entry: dict[str, Any], *, payload_ref: PayloadRef) ->
             ISO-8601 date string. Every Scopus Search API entry carries
             this field; its absence indicates a malformed capture, not a
             legitimate gap, so this fails loudly rather than guessing a
-            year.
+            year. :func:`_load_run` catches it and skips that one entry;
+            the load as a whole continues.
     """
     raw = entry.get("prism:coverDate")
     if not isinstance(raw, str) or not raw:
@@ -445,6 +513,8 @@ def _title_from_entry(entry: dict[str, Any], *, payload_ref: PayloadRef) -> str:
 
     Raises:
         ValidationError: If ``dc:title`` is missing or empty.
+            :func:`_load_run` catches it and skips that one entry; the load
+            as a whole continues.
     """
     raw = entry.get("dc:title")
     if not isinstance(raw, str) or not raw:
@@ -879,8 +949,25 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 # Scopus's own placeholder for an empty result set
                 # (`{"error": "Result set was empty"}`), not a record.
                 continue
+            acc.entries_seen += 1
             record_id = _record_id_from_entry(entry)
             if record_id is None:
+                # No `eid`, so no record id: this entry cannot become a row in
+                # `records` and cannot be keyed against one that already
+                # exists. It is reported through the same channel as a failed
+                # field parse (ADR 0012) -- it is the same outcome for the
+                # corpus, a Layer 0 line that produced no record, and the
+                # field would otherwise say "nothing skipped" for a load that
+                # dropped a record.
+                acc.malformed_entries.append(
+                    (
+                        manifest.run_id,
+                        relative_payload_file,
+                        line_index,
+                        None,
+                        _REASON_MISSING_EID,
+                    )
+                )
                 logger.warning(
                     "store.load.entry_missing_eid",
                     run_id=manifest.run_id,
@@ -890,33 +977,61 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 continue
 
             payload_ref = PayloadRef(path=raw_dir / relative_payload_file, line=line_index)
+            cited_by_count = _cited_by_count_from_entry(entry)
             try:
                 record = _record_from_entry(entry, record_id=record_id, payload_ref=payload_ref)
+            # `prismabib.errors.ValidationError`, deliberately *not*
+            # `pydantic.ValidationError`, and the difference is the whole line
+            # between "skip this entry" and "abort this load".
+            #
+            # The only two raisers of the former are `_title_from_entry` and
+            # `_cover_date_from_entry`: hand-written checks that Scopus sent a
+            # field Scopus always sends. That is a defect in the captured
+            # bytes, is confined to the one entry, and must not cost the other
+            # thousands -- this aborted the whole load until a real capture hit
+            # it, 1 record out of 1,945 with no `dc:title`, leaving the other
+            # 1,944 unloadable with no way forward because Layer 0 is
+            # immutable and re-capturing means a drifted index.
+            #
+            # A pydantic failure is the other thing. Every value handed to
+            # `Record(...)` has already been read, coerced, and defaulted by
+            # the `_*_from_entry` helpers above, so pydantic rejecting one
+            # means *prismabib* built a record its own model forbids -- a
+            # loader or model defect, not a bad entry. That is not confined to
+            # one entry and would silently shrink every corpus it touched, so
+            # it still aborts the load, loudly and without a partial store.
+            # Skip what Layer 0 got wrong; abort on what prismabib got wrong.
             except ValidationError as exc:
-                # One malformed entry must not cost the corpus every other
-                # record. This aborted the whole load until a real capture hit
-                # it: 1 Scopus record out of 1,945 arrived without a
-                # `dc:title`, and the other 1,944 became unloadable -- with no
-                # way forward, because Layer 0 is immutable and re-capturing
-                # means a drifted index.
-                #
-                # Skipped, never silently: the count reaches `StoreStats`, each
-                # one is logged with its payload ref, and `build_store` warns
-                # at the end. A record dropped without trace is a smaller
-                # corpus that looks complete, which is the failure this project
-                # exists to prevent (BUILD_PLAN §1.4).
-                acc.malformed_entries.append(f"{relative_payload_file}:{line_index}")
+                acc.malformed_entries.append(
+                    (
+                        manifest.run_id,
+                        relative_payload_file,
+                        line_index,
+                        record_id,
+                        _REASON_INVALID_FIELD,
+                    )
+                )
                 logger.warning(
                     "store.load.malformed_entry_skipped",
                     run_id=manifest.run_id,
                     payload_file=payload_file,
                     line=line_index,
                     record_id=record_id,
-                    reason=str(exc),
+                    reason=_REASON_INVALID_FIELD,
+                    detail=str(exc),
                 )
+                if cited_by_count is not None:
+                    # The citation count is present, parseable, and does not
+                    # depend on the field that failed. If some other run
+                    # loaded this record, discarding its count would turn a
+                    # re-capture into a hole in the citation trend -- "5 as of
+                    # January, nothing since" -- for a record that is in the
+                    # store. Held back rather than written, because with no
+                    # foreign keys in the schema a snapshot for a record no
+                    # run loaded would be an orphan nothing would catch.
+                    acc.pending_citation_snapshots[(record_id, retrieved_at)] = cited_by_count
                 continue
 
-            cited_by_count = _cited_by_count_from_entry(entry)
             if cited_by_count is not None:
                 acc.citation_snapshots[(record_id, retrieved_at)] = cited_by_count
 
@@ -997,6 +1112,104 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 acc.subject_areas.add((record_id, area_code))
 
 
+def _resolve_pending_snapshots(acc: _Accumulator) -> None:
+    """Promote a skipped entry's citation snapshot iff its record was loaded.
+
+    A citation count is independent of the field that made its entry
+    malformed. When the same record was loaded from another run -- the
+    ordinary case for a re-capture, which is the only reason to run a second
+    search at all -- the count is a real, dated observation about a record
+    that is in the store, and dropping it leaves a chart reading "5 as of
+    January, nothing since" for a paper whose February count was captured,
+    parsed, and thrown away.
+
+    When no run loaded the record, the count is dropped. ``schema.sql``
+    declares no foreign keys anywhere, so a ``citation_snapshots`` row for an
+    absent ``record_id`` would be rejected by neither DuckDB nor any query
+    that joins -- it would simply vanish from every join and inflate
+    ``citation_snapshots_loaded``. That is why these are held back through the
+    whole load instead of being written where they are found: whether a
+    record was loaded is not knowable until every run has been walked, since
+    the malformed capture may sort before the well-formed one.
+
+    Args:
+        acc: The accumulator, after every sealed run has been folded in.
+            ``acc.pending_citation_snapshots`` is emptied.
+    """
+    for key, count in acc.pending_citation_snapshots.items():
+        record_id, _ = key
+        if record_id in acc.seen_record_ids:
+            # `setdefault`, not assignment: a well-formed entry's count for
+            # the same (record, run) always wins over a malformed one's.
+            acc.citation_snapshots.setdefault(key, count)
+    acc.pending_citation_snapshots.clear()
+
+
+def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
+    """Refuse to write a store when the skipped share means the capture is broken.
+
+    Skipping a malformed entry is right for *an* entry and wrong for a
+    capture. With no floor under it, stripping ``dc:title`` from all 120
+    entries of the reference fixture returned normally with
+    ``records_loaded=0`` and ``prismabib build --rebuild`` exited ``0``
+    printing ``records 0`` and a cheerful next step -- a plausible wrong
+    number in a published paper, which is the failure BUILD_PLAN §1.4 exists
+    to prevent. There has to be a line between "one bad record" and "this
+    capture is broken", and past it the honest outcome is no store at all.
+
+    Two rules, both deliberately conservative:
+
+    * **Nothing loaded.** Every entry considered was skipped. There is no
+      judgement call here: a store with zero records built from a Layer 0
+      that had entries in it is broken by definition.
+    * **A systematic share.** More than
+      ``_MAX_SKIPPED_ENTRY_RATIO`` (5%) of the entries were skipped, *and* at
+      least ``_MIN_SKIPS_FOR_RATIO_GUARD`` (10) of them were. 5% is two
+      orders of magnitude above the only rate ever observed in a real capture
+      (1 entry in 1,945, 0.05%), so a normal capture does not approach it,
+      while a wrong parser, a truncated download, or a capture of the wrong
+      response shape fails on a large fraction rather than a handful. The
+      floor of 10 exists because a ratio alone would fire on 1 bad entry in a
+      15-entry pilot capture, which is exactly the case skipping was
+      introduced to survive; below 10 skips the ratio is not consulted at
+      all.
+
+    Neither rule is a substitute for reading ``malformed_entries``. A skip
+    count under both thresholds is still reported, logged, and persisted.
+
+    Args:
+        acc: The accumulator, after every sealed run has been folded in.
+
+    Raises:
+        StoreError: If the skipped share trips either rule.
+    """
+    skipped = len(acc.malformed_entries)
+    seen = acc.entries_seen
+    if skipped == 0 or seen == 0:
+        return
+
+    nothing_loaded = skipped == seen
+    systematic = skipped >= _MIN_SKIPS_FOR_RATIO_GUARD and skipped > _MAX_SKIPPED_ENTRY_RATIO * seen
+    if not (nothing_loaded or systematic):
+        return
+
+    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in acc.malformed_entries]
+    shown = ", ".join(named[:_MAX_LOGGED_MALFORMED_ENTRIES])
+    if len(named) > _MAX_LOGGED_MALFORMED_ENTRIES:
+        shown += f", ... and {len(named) - _MAX_LOGGED_MALFORMED_ENTRIES:,} more"
+    raise StoreError(
+        f"refusing to build a store from this capture: {skipped:,} of the {seen:,} Layer 0 "
+        f"entries could not be turned into a record, leaving {seen - skipped:,}. "
+        "That is a broken capture, not a few bad records, so no store has been written -- "
+        "a corpus this much smaller than its capture would look complete to every later "
+        f"stage. First entries: {shown}. Layer 0 is untouched: inspect those lines, and if "
+        "the entries really are what Scopus sent, capture again. "
+        f"(The threshold is every entry skipped, or more than "
+        f"{_MAX_SKIPPED_ENTRY_RATIO:.0%} of them with at least "
+        f"{_MIN_SKIPS_FOR_RATIO_GUARD} skips.)"
+    )
+
+
 def _insert_rows(
     connection: duckdb.DuckDBPyConnection, table: str, rows: Sequence[tuple[Any, ...]]
 ) -> None:
@@ -1073,6 +1286,7 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
             for (record_id, retrieved_at), count in acc.citation_snapshots.items()
         ],
     )
+    _insert_rows(connection, "malformed_entries", acc.malformed_entries)
 
 
 def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:
@@ -1105,13 +1319,14 @@ def _count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
     return int(row[0]) if row is not None else 0
 
 
-def _stats_from_connection(
-    connection: duckdb.DuckDBPyConnection,
-    *,
-    rebuilt: bool,
-    malformed_entries: tuple[str, ...] = (),
-) -> StoreStats:
+def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bool) -> StoreStats:
     """Compute a :class:`StoreStats` snapshot from a store's current content.
+
+    Every field, ``malformed_entries_skipped`` included, comes from a query
+    against ``connection`` and from nothing else. That is what makes the
+    ``rebuild=False`` reuse path -- the path ``prismabib build`` takes by
+    default -- report the same skips as the rebuild that created the store,
+    instead of an empty tuple that reads as "nothing was skipped" (ADR 0012).
 
     Args:
         connection: An open DuckDB connection onto a Layer 1 store whose
@@ -1135,6 +1350,14 @@ def _stats_from_connection(
     ).fetchall()
     unmapped = sorted(value for (value,) in unmapped_rows if not normalise_country(value)[1])
 
+    # Sorted in SQL rather than by insertion order: this is read back on a
+    # path that never saw the load, so there is no insertion order to inherit,
+    # and an ORDER BY makes the two paths agree by construction.
+    malformed_rows = connection.execute(
+        "SELECT payload_file, payload_line FROM malformed_entries "
+        "ORDER BY payload_file, payload_line"
+    ).fetchall()
+
     return StoreStats(
         rebuilt=rebuilt,
         runs_loaded=_count(connection, "runs"),
@@ -1148,7 +1371,9 @@ def _stats_from_connection(
         record_keyword_links_loaded=_count(connection, "record_keywords"),
         subject_area_links_loaded=_count(connection, "subject_areas"),
         citation_snapshots_loaded=_count(connection, "citation_snapshots"),
-        malformed_entries_skipped=malformed_entries,
+        malformed_entries_skipped=tuple(
+            f"{payload_file}:{payload_line}" for payload_file, payload_line in malformed_rows
+        ),
         unmapped_country_values=tuple(unmapped),
     )
 
@@ -1204,25 +1429,34 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             the current Layer 0 content (S03-AC1) and that "deleting
             corpus.duckdb and rebuilding loses nothing" (S03-AC3).
 
+    A Layer 0 entry that cannot be turned into a record does not abort the
+    load. It is skipped, written to ``malformed_entries``, reported in
+    ``StoreStats.malformed_entries_skipped``, logged individually, and warned
+    about once at the end -- but only up to a point: past
+    :func:`_guard_against_unloadable_capture`'s threshold the capture is
+    broken rather than blemished, and this raises instead of returning a
+    corpus that is quietly short.
+
     Returns:
         Summary counts for the store as it now stands; see
-        :class:`StoreStats`. On the ``rebuild=False`` reuse path,
-        ``duplicate_doi_groups``/``duplicate_records``/
-        ``unmapped_country_values`` are recomputed fresh from the existing
-        table content via the same queries as a full build (they are cheap,
-        stateless queries, not a cached value that could go stale) -- only
-        the *loading itself* is skipped, not the reporting.
+        :class:`StoreStats`. On the ``rebuild=False`` reuse path, every field
+        -- ``duplicate_doi_groups``, ``duplicate_records``,
+        ``unmapped_country_values`` and ``malformed_entries_skipped``
+        included -- is recomputed fresh from the existing table content via
+        the same queries as a full build (they are cheap, stateless queries,
+        not a cached value that could go stale). Only the *loading itself* is
+        skipped, never the reporting.
 
     Raises:
         StoreError: If ``project.db_path`` exists, ``rebuild`` is
             ``False``, and it does not look like a Layer 1 store this
             function created (e.g. wrong schema); if an existing store
             cannot be deleted before a rebuild (see
-            :func:`_delete_stale_store`); or if DuckDB refuses to open the
-            file for any other reason.
-        ValidationError: If a captured entry is missing a required field
-            (``dc:title`` or ``prism:coverDate``) -- see
-            :func:`_title_from_entry`/:func:`_cover_date_from_entry`.
+            :func:`_delete_stale_store`); if so many Layer 0 entries could
+            not be turned into records that the capture itself is unusable
+            (see :func:`_guard_against_unloadable_capture`, which leaves no
+            store behind rather than a half-loaded one); or if DuckDB
+            refuses to open the file for any other reason.
     """
     db_path = project.db_path
 
@@ -1242,30 +1476,51 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     if db_path.is_file():
         _delete_stale_store(db_path)
 
-    connection = connect(project, read_only=False)
     try:
-        _reset_schema(connection)
-        accumulator = _Accumulator()
-        for run_dir in _sealed_run_dirs(project.raw_dir):
-            _load_run(accumulator, project.raw_dir, run_dir)
-        _write_accumulator(connection, accumulator)
-        stats = _stats_from_connection(
-            connection,
-            rebuilt=True,
-            malformed_entries=tuple(accumulator.malformed_entries),
-        )
-    finally:
-        connection.close()
+        connection = connect(project, read_only=False)
+        try:
+            _reset_schema(connection)
+            accumulator = _Accumulator()
+            for run_dir in _sealed_run_dirs(project.raw_dir):
+                _load_run(accumulator, project.raw_dir, run_dir)
+            _resolve_pending_snapshots(accumulator)
+            _guard_against_unloadable_capture(accumulator)
+            _write_accumulator(connection, accumulator)
+            stats = _stats_from_connection(connection, rebuilt=True)
+        finally:
+            connection.close()
+    except StoreError:
+        # A refused build leaves *no* store, not an empty or half-written
+        # one. `connect` creates the file before anything is loaded, and a
+        # store that exists is a store the next `prismabib build` (no
+        # `--rebuild`) reuses and reports as a clean load -- which is how a
+        # broken capture would become a plausible wrong number after all.
+        # The store is derived data; its absence means "not built", which is
+        # the truth.
+        with suppress(OSError):
+            db_path.unlink(missing_ok=True)
+        raise
 
     if stats.malformed_entries_skipped:
+        skipped = stats.malformed_entries_skipped
         logger.warning(
             "store.load.malformed_entries_skipped",
-            count=len(stats.malformed_entries_skipped),
-            entries=stats.malformed_entries_skipped,
+            count=len(skipped),
+            entries=skipped[:_MAX_LOGGED_MALFORMED_ENTRIES],
+            truncated=len(skipped) > _MAX_LOGGED_MALFORMED_ENTRIES,
         )
     if stats.unmapped_country_values:
         logger.warning("store.load.unmapped_countries", values=stats.unmapped_country_values)
-    logger.info("store.build_store.complete", **stats.model_dump())
+    # `malformed_entries_skipped` is replaced by its length here on purpose:
+    # the real capture that motivated this had 1 skip, but a bad one has
+    # thousands, and a single log event carrying every reference is unreadable
+    # and expensive. The references are in `malformed_entries`, which is
+    # queryable, plus the warning above.
+    logger.info(
+        "store.build_store.complete",
+        **stats.model_dump(exclude={"malformed_entries_skipped"}),
+        malformed_entries_skipped_count=len(stats.malformed_entries_skipped),
+    )
     return stats
 
 

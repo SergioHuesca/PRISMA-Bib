@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A malformed Layer 0 entry no longer aborts the whole load.** `build_store` raised when
+  any entry lacked `dc:title` or `prism:coverDate` — fields Scopus always sends. A real
+  capture returned 1,945 records with exactly one missing `dc:title`, and the other 1,944
+  became unloadable with no way forward: Layer 0 is immutable, and re-capturing means a
+  drifted index. Such an entry is now skipped, and `build_store`'s documented
+  `Raises: ValidationError` contract is gone with the behaviour.
+- **`build_store` raises `StoreError` on a capture nothing can be loaded from.** Skipping
+  is right for an entry and wrong for a capture: with `dc:title` stripped from all 120
+  reference entries the build returned normally with `records_loaded=0`, and
+  `prismabib build --rebuild` exited `0` printing `records 0` and a next-step hint. It now
+  refuses when every entry was skipped, or when more than 5% were and at least 10 were, and
+  leaves **no** store behind — a store that exists is one the next `prismabib build` reuses
+  and reports as clean. See ADR 0012 for the thresholds.
+- **The `prismabib build` summary renders skipped entries.** They were reported only through
+  a structlog warning that scrolls past above the summary, while `unmapped_country_values` —
+  which loses no record — got a rendered line.
+- **Log volume is capped.** `store.load.malformed_entries_skipped` names at most 20
+  references plus a `truncated` flag, and `store.build_store.complete` carries
+  `malformed_entries_skipped_count` instead of the full tuple. At 1,945 skips the previous
+  shape was 1,946 lines, the last one enormous.
+- **A skipped re-capture's citation snapshot is kept when its record is in the store.** The
+  count is present, parseable, and independent of the field that failed; discarding it left
+  a citation trend reading "5 as of January, nothing since" for a record whose February
+  count had been captured and parsed. Kept only when some run loaded the record — the schema
+  declares no foreign keys, so an orphan snapshot would be caught by nothing.
+
+### Added
+
+- **`StoreStats.malformed_entries_skipped`** — `"<run_id>/<page>:<line>"` for every Layer 0
+  entry the loader could not turn into a record, covering both a missing `eid` and an
+  unparseable required field. It counts *entries*, not records: an entry skipped for a paper
+  an earlier run already loaded costs no record.
+- **A `malformed_entries` table in Layer 1** (ADR 0012), which is what makes that field
+  honest on the default path. It was an in-memory tally with no column behind it, so
+  `build_store(p, rebuild=True)` reported the skip and any later `build_store(p)` — what
+  `prismabib build <slug>` runs without `--rebuild` — reported `()`, which reads as "nothing
+  was skipped". **This is a deviation from the frozen BUILD_PLAN schema**: it adds one table
+  and changes no existing table, column, type, count, or checksum. The committed golden
+  snapshot gains exactly one key, the SHA-256 of the empty byte string.
+
 ## [0.8.0] — 2026-08-28
 
 ### Added

@@ -17,6 +17,7 @@ with a real stderr can assert "no traceback".
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -168,6 +169,80 @@ def test_cli_build__store_already_present__says_nothing_was_loaded(tmp_path: Pat
     assert result.exit_code == 0
     assert result.stdout.startswith("Reused existing store")
     assert "--rebuild" in result.stdout
+
+
+def _break_reference_entries(project: Project, *, every_page: bool) -> Path:
+    """Delete ``dc:title`` from the copied fixture's Layer 0 entries.
+
+    Helper, not a test. Nothing in prismabib writes a malformed entry, and
+    §3.7.3 rule 1 forbids monkeypatching the loader to pretend one exists, so
+    the only way to produce one is to edit the copied Layer 0 pages.
+
+    Args:
+        project: A copied reference project (its ``raw/`` is writable).
+        every_page: Break every entry of every page (the fixture has five, so
+            editing ``page-0000.jsonl`` alone breaks 25 of 120, not all of
+            them) rather than only line 2 of ``page-0000.jsonl``.
+
+    Returns:
+        The run directory that was modified.
+    """
+    run_dir = next(d for d in project.raw_dir.iterdir() if (d / "manifest.json").is_file())
+    pages = sorted(run_dir.glob("page-*.jsonl")) if every_page else [run_dir / "page-0000.jsonl"]
+    for page in pages:
+        text = page.read_text(encoding="utf-8").splitlines()
+        for index in range(len(text)) if every_page else [2]:
+            entry = json.loads(text[index])
+            del entry["dc:title"]
+            text[index] = json.dumps(entry, sort_keys=True, separators=(",", ":"))
+        page.write_text("".join(f"{line}\n" for line in text), encoding="utf-8")
+    return run_dir
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("extra_args", [[], ["--rebuild"]], ids=["reuse", "rebuild"])
+def test_cli_build__skipped_entry__is_rendered_in_the_summary(
+    tmp_path: Path, extra_args: list[str]
+) -> None:
+    """The summary must say a record was skipped, on both paths.
+
+    It was reported only through a structlog warning that scrolls past above
+    this summary, while ``unmapped_country_values`` -- which loses no record
+    at all -- got a rendered line. Parametrised over ``--rebuild`` because the
+    reuse path is the default one and used to report a clean load outright.
+    """
+    project = copy_reference_project_with_criteria(tmp_path)
+    run_dir = _break_reference_entries(project, every_page=False)
+    build_store(project, rebuild=True)
+
+    result = runner.invoke(app, ["build", project.slug, "--root", str(tmp_path), *extra_args])
+
+    assert result.exit_code == 0, result.output
+    assert "  records                     119" in result.stdout
+    assert "1 Layer 0 entry/entries could not be parsed into a record" in result.stdout
+    assert f"{run_dir.name}/page-0000.jsonl:2" in result.stdout
+
+
+@pytest.mark.integration
+def test_cli_build__wholly_broken_capture__exits_nonzero_without_a_next_step(
+    tmp_path: Path,
+) -> None:
+    """A capture nothing could be loaded from must not exit 0 reporting success.
+
+    With ``dc:title`` stripped from all 120 entries this printed ``records 0``
+    followed by ``Next: prismabib flow reference`` and exited ``0``. An
+    operator following that hint screens an empty corpus and reports its
+    numbers.
+    """
+    project = copy_reference_project_with_criteria(tmp_path)
+    _break_reference_entries(project, every_page=True)
+
+    result = runner.invoke(app, ["build", project.slug, "--root", str(tmp_path), "--rebuild"])
+
+    assert result.exit_code == 1
+    assert "120 of the 120 Layer 0 entries" in result.stderr
+    assert "Next:" not in result.stdout
+    assert not project.db_path.exists()
 
 
 # ---------------------------------------------------------------------------
