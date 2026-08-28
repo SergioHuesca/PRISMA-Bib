@@ -257,6 +257,15 @@ class StoreStats(BaseModel):
     """Rows in ``citation_snapshots`` -- one per (record, run) pair whose
     entry carried a parseable ``citedby-count``."""
 
+    malformed_entries_skipped: tuple[str, ...]
+    """``"<run_id>/<page>:<line>"`` for every Layer 0 entry that could not be
+    turned into a record -- a missing ``dc:title`` or ``prism:coverDate``, the
+    fields Scopus always sends. Each is skipped rather than aborting the load,
+    because one bad entry out of thousands must not make the rest unloadable;
+    a real capture hit exactly that. They are reported here, logged
+    individually, and warned about at the end of ``build_store``, because a
+    record dropped without trace is a smaller corpus that looks complete."""
+
     unmapped_country_values: tuple[str, ...]
     """The sorted, deduplicated set of raw ``affiliation-country`` strings
     currently stored in ``affiliations.country_iso3`` that did not map to
@@ -293,6 +302,10 @@ class _Accumulator:
     subject_areas: set[tuple[str, str]] = field(default_factory=set)
     citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
     seen_record_ids: set[str] = field(default_factory=set)
+    #: ``"<run_id>/<page>:<line>"`` for every entry skipped as malformed. A
+    #: list, not a count, because the operator's next question is always
+    #: *which one* -- and Layer 0 is immutable, so the answer has to survive.
+    malformed_entries: list[str] = field(default_factory=list)
 
 
 def _optional_str(value: object) -> str | None:
@@ -877,7 +890,31 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 continue
 
             payload_ref = PayloadRef(path=raw_dir / relative_payload_file, line=line_index)
-            record = _record_from_entry(entry, record_id=record_id, payload_ref=payload_ref)
+            try:
+                record = _record_from_entry(entry, record_id=record_id, payload_ref=payload_ref)
+            except ValidationError as exc:
+                # One malformed entry must not cost the corpus every other
+                # record. This aborted the whole load until a real capture hit
+                # it: 1 Scopus record out of 1,945 arrived without a
+                # `dc:title`, and the other 1,944 became unloadable -- with no
+                # way forward, because Layer 0 is immutable and re-capturing
+                # means a drifted index.
+                #
+                # Skipped, never silently: the count reaches `StoreStats`, each
+                # one is logged with its payload ref, and `build_store` warns
+                # at the end. A record dropped without trace is a smaller
+                # corpus that looks complete, which is the failure this project
+                # exists to prevent (BUILD_PLAN §1.4).
+                acc.malformed_entries.append(f"{relative_payload_file}:{line_index}")
+                logger.warning(
+                    "store.load.malformed_entry_skipped",
+                    run_id=manifest.run_id,
+                    payload_file=payload_file,
+                    line=line_index,
+                    record_id=record_id,
+                    reason=str(exc),
+                )
+                continue
 
             cited_by_count = _cited_by_count_from_entry(entry)
             if cited_by_count is not None:
@@ -1068,7 +1105,12 @@ def _count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
     return int(row[0]) if row is not None else 0
 
 
-def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bool) -> StoreStats:
+def _stats_from_connection(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    rebuilt: bool,
+    malformed_entries: tuple[str, ...] = (),
+) -> StoreStats:
     """Compute a :class:`StoreStats` snapshot from a store's current content.
 
     Args:
@@ -1106,6 +1148,7 @@ def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bo
         record_keyword_links_loaded=_count(connection, "record_keywords"),
         subject_area_links_loaded=_count(connection, "subject_areas"),
         citation_snapshots_loaded=_count(connection, "citation_snapshots"),
+        malformed_entries_skipped=malformed_entries,
         unmapped_country_values=tuple(unmapped),
     )
 
@@ -1206,10 +1249,20 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         for run_dir in _sealed_run_dirs(project.raw_dir):
             _load_run(accumulator, project.raw_dir, run_dir)
         _write_accumulator(connection, accumulator)
-        stats = _stats_from_connection(connection, rebuilt=True)
+        stats = _stats_from_connection(
+            connection,
+            rebuilt=True,
+            malformed_entries=tuple(accumulator.malformed_entries),
+        )
     finally:
         connection.close()
 
+    if stats.malformed_entries_skipped:
+        logger.warning(
+            "store.load.malformed_entries_skipped",
+            count=len(stats.malformed_entries_skipped),
+            entries=stats.malformed_entries_skipped,
+        )
     if stats.unmapped_country_values:
         logger.warning("store.load.unmapped_countries", values=stats.unmapped_country_values)
     logger.info("store.build_store.complete", **stats.model_dump())

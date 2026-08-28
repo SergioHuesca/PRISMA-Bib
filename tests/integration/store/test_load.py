@@ -766,3 +766,38 @@ def test_corpus__layer1_only_stage__does_not_create_a_decision_log(tmp_path: Pat
     Corpus.open(project).records(stage=PrismaStage.LANGUAGE)
 
     assert not project.decisions_path.exists()
+
+
+@pytest.mark.integration
+def test_build_store__one_malformed_entry__is_skipped_and_named_rather_than_aborting(
+    tmp_path: Path,
+) -> None:
+    """One bad entry must not make every other record unloadable.
+
+    This is not hypothetical. The first real capture run against this tool
+    returned 1,945 records, of which exactly one arrived without a
+    ``dc:title`` -- a field Scopus always sends. ``build_store`` raised, and
+    the other 1,944 records became unloadable with no way forward: Layer 0 is
+    immutable, and re-capturing means a drifted index, so the corpus that had
+    already cost a weekly quota could not be turned into a store at all.
+
+    Skipping silently would be the opposite error -- a smaller corpus that
+    looks complete is exactly BUILD_PLAN §1.4's failure mode. So the entry is
+    named by payload file and line in ``StoreStats``, logged individually, and
+    warned about at the end of the build. The operator's next question is
+    always *which record*, and Layer 0 being immutable means the answer has to
+    survive in the artefact.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = next(d for d in project.raw_dir.iterdir() if (d / "manifest.json").is_file())
+    page = run_dir / "page-0000.jsonl"
+    lines = page.read_text(encoding="utf-8").splitlines()
+    entry = json.loads(lines[2])
+    del entry["dc:title"]
+    lines[2] = json.dumps(entry, sort_keys=True, separators=(",", ":"))
+    page.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    stats = build_store(project, rebuild=True)
+
+    assert stats.records_loaded == 119
+    assert stats.malformed_entries_skipped == (f"{run_dir.name}/page-0000.jsonl:2",)

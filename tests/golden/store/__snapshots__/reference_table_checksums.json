@@ -6,6 +6,7 @@
     "duplicate_doi_groups": 1,
     "duplicate_records": 2,
     "keywords_loaded": 30,
+    "malformed_entries_skipped": [],
     "record_keyword_links_loaded": 452,
     "records_loaded": 120,
     "runs_loaded": 1,
