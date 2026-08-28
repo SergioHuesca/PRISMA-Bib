@@ -181,6 +181,40 @@ jobs:
       - name: End-to-end suite (reference project)
         run: uv run pytest -m e2e
 
+  # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
+  # `e2e` and `full-windows` -- a required check that has never passed can wedge the
+  # branch, so it is promoted only after it has run green on `main`.
+  notebooks:
+    name: notebooks
+    runs-on: ubuntu-latest
+    needs: [full]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # The notebook screens a real project, so it needs one. The committed
+      # reference fixture is copied to a scratch projects root rather than used
+      # in place: executing it builds a Layer 1 store, and a fixture that is
+      # byte-frozen (BUILD_PLAN line 536) must not gain one as a side effect of
+      # a CI run.
+      - name: Stage the reference project
+        run: |
+          mkdir -p "$RUNNER_TEMP/projects"
+          cp -a tests/fixtures/projects/reference "$RUNNER_TEMP/projects/"
+
+      - name: Execute notebooks
+        env:
+          PRISMABIB_PROJECTS_ROOT: ${{ runner.temp }}/projects
+          SCOPUS_API_KEY: not-used-notebooks-make-no-network-calls
+        run: uv run pytest --nbmake notebooks/ -q
+
   # `needs: [full]`, not `needs: [e2e]`, on purpose: `docs` is a required check and `e2e`
   # is not one yet, so chaining them would let an unproven job block every merge. Move
   # this to `needs: [e2e]` in the same change that makes `e2e` required.
