@@ -211,8 +211,10 @@ jobs:
 
       - name: Execute notebooks
         env:
+          # No SCOPUS_API_KEY: the notebook reads an existing Layer 0 archive
+          # and makes no network call, so it needs no credential -- and a
+          # placeholder value here trips detect-secrets, correctly.
           PRISMABIB_PROJECTS_ROOT: ${{ runner.temp }}/projects
-          SCOPUS_API_KEY: not-used-notebooks-make-no-network-calls
         run: uv run pytest --nbmake notebooks/ -q
 
   # `needs: [full]`, not `needs: [e2e]`, on purpose: `docs` is a required check and `e2e`
