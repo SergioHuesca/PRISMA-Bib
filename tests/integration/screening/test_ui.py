@@ -565,3 +565,53 @@ def test_screener__undo__does_not_count_as_session_progress(project: Project) ->
 
     assert screener.session_decisions == 0
     assert screener.progress()["per_minute"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "navigation_key", [pytest.param("n", id="next"), pytest.param("p", id="previous")]
+)
+def test_screener__exclusion_armed_then_navigated__does_not_file_against_the_new_record(
+    project: Project, navigation_key: str
+) -> None:
+    """Arming is a statement about *this* record; it must not outlive it.
+
+    ``e`` then ``n`` then a digit used to file the exclusion against the record
+    the reviewer navigated *to*, under a reason code they chose while reading a
+    different abstract. Nothing surfaces that: the log is well-formed, the
+    counts add up, and the mistake is invisible until the PRISMA breakdown is
+    published with an exclusion attributed to the wrong paper.
+
+    ``begin_exclude``'s docstring promises that "``e`` pressed by accident
+    costs nothing", which was false the moment the reviewer moved.
+    """
+    queue = screening_queue(project, PrismaStage.TITLE_ABSTRACT, "kp")
+    screener_session = ui.Screener(queue, ui.load_records(project, queue.order))
+
+    screener_session.handle_key("e")
+    screener_session.handle_key(navigation_key)
+    screener_session.handle_key("1")
+
+    assert queue.log.load() == []
+
+
+@pytest.mark.integration
+def test_screener__exclusion_armed_then_digit__files_against_the_armed_record(
+    project: Project,
+) -> None:
+    """The ordinary path must still work -- a guard that blocks it is worse.
+
+    Asserted alongside the disarming test so neither can be satisfied by a
+    change that simply stops filing exclusions.
+    """
+    queue = screening_queue(project, PrismaStage.TITLE_ABSTRACT, "kp")
+    screener_session = ui.Screener(queue, ui.load_records(project, queue.order))
+    armed_on = queue.current
+
+    screener_session.handle_key("e")
+    screener_session.handle_key("1")
+
+    events = queue.log.load()
+    assert [(e.record_id, e.decision, e.reason_code) for e in events] == [
+        (armed_on, "exclude", "OFF_TOPIC")
+    ]

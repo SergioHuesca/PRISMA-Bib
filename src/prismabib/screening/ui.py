@@ -824,23 +824,50 @@ class Screener:
         self.decide("exclude", reason_code=code)
 
     def next_record(self) -> None:
-        """``n`` — move to the next record without deciding."""
+        """``n`` — move to the next record without deciding.
+
+        Disarms any pending exclusion. Without that, ``e`` then ``n`` then a
+        digit files the exclusion against the record the reviewer navigated
+        *to*, not the one they were looking at when they pressed ``e`` -- a
+        decision recorded against the wrong paper, under a reason code chosen
+        while reading a different abstract. Nothing surfaces it: the log is
+        well-formed, the counts add up, and it is invisible until the PRISMA
+        breakdown is published.
+        """
+        self._disarm()
         self._queue.advance()
         self._set_status("next")
 
     def previous_record(self) -> None:
-        """``p`` — move back one record without deciding."""
+        """``p`` — move back one record without deciding.
+
+        Disarms any pending exclusion, for the reason given in
+        :meth:`next_record`.
+        """
+        self._disarm()
         self._queue.step_back()
         self._set_status("previous")
 
+    def _disarm(self) -> None:
+        """Cancel a pending exclusion, if one is armed.
+
+        Called by every action that changes which record is current. Arming is
+        a statement about *this* record, so it must not outlive it.
+        """
+        self._awaiting_reason = False
+
     def undo(self) -> None:
         """``z`` — supersede the previous record's decision and step back.
+
+        Disarms any pending exclusion first: this moves the cursor, so an arm
+        held across it would file against the wrong record.
 
         The queue appends a reversal rather than editing the log
         (:meth:`~prismabib.screening.queue.ScreeningQueue.undo`); this only
         reports what happened. The session's pace mark is dropped with it, so
         a correction does not read as progress.
         """
+        self._disarm()
         reversal = self._queue.undo()
         if reversal is not None and self._session_marks:
             self._session_marks.pop()
