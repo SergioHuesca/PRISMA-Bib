@@ -33,7 +33,7 @@ import respx
 from prismabib.config import Settings
 from prismabib.errors import AuthError, EntitlementError, UpstreamError
 from prismabib.sources.ratelimit import RateLimiter
-from prismabib.sources.scopus import ScopusClient
+from prismabib.sources.scopus import RecordNotFoundError, ScopusClient
 
 _SEARCH_URL = ScopusClient.SEARCH_ENDPOINT
 
@@ -247,3 +247,47 @@ def test_scopus__auth_error__names_the_insttoken_mismatch_trap() -> None:
     message = str(excinfo.value)
     assert "Institution Token is not associated with API Key" in message
     assert "dev.elsevier.com" in message
+
+
+@pytest.mark.integration
+def test_scopus__abstract_404__raises_record_not_found_after_exactly_one_request() -> None:
+    """A withdrawn record must cost one call, not the whole retry budget.
+
+    The call count is the load-bearing assertion, and it is the only one that
+    distinguishes the fix from the defect: raising ``RecordNotFoundError``
+    after five attempts would satisfy the exception check while still burning
+    the budget. Scopus withdraws and merges records, so across an 1,800-record
+    enrichment this is close to certain, and retrying cannot conjure a record
+    that no longer exists.
+    """
+    url = f"{ScopusClient.ABSTRACT_URL_PREFIX}scopus_id/2-s2.0-85000000001"
+
+    with respx.mock:
+        route = respx.get(url__startswith=ScopusClient.ABSTRACT_URL_PREFIX).mock(
+            return_value=httpx.Response(404, json={"service-error": {}})
+        )
+        client = _client()
+
+        with pytest.raises(RecordNotFoundError, match="withdraws and merges"):
+            client.abstract("scopus:2-s2.0-85000000001")
+
+    assert route.call_count == 1
+
+
+@pytest.mark.integration
+def test_scopus__search_404__stays_a_retried_upstream_error_naming_real_causes() -> None:
+    """A 404 on the search endpoint is not a withdrawn record and must not claim to be.
+
+    No identifier appears in that URL's path, so the causes are a proxy, a
+    rewritten base URL, or a gateway fault -- transient things worth retrying.
+    Reusing the record-specific message here would send an operator hunting for
+    a paper that was never named.
+    """
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(404, json={}))
+        client = _client()
+
+        with pytest.raises(UpstreamError, match="addresses no individual record"):
+            list(client.search('TITLE-ABS-KEY("x")', view="COMPLETE"))
+
+    assert route.call_count == ScopusClient.MAX_ATTEMPTS

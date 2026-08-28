@@ -44,6 +44,28 @@ produced it, do not trust it, and do not add to it.
        f.write("\n")
    ```
 
+   For an **Abstract Retrieval** response, use `sanitise_abstract` instead —
+   the envelope and key vocabulary are different enough that `sanitise_page`
+   would silently pass licensed prose through (authors are `ce:surname`/
+   `@auid`, not `surname`/`authid`; the abstract is at
+   `coredata["dc:description"]`):
+
+   ```python
+   from tests.fixtures.sanitise import sanitise_abstract
+
+   sanitised = sanitise_abstract(raw, seed=0)
+   ```
+
+   `sanitise_abstract` **fails closed**: it raises `UnsanitisedFieldError`,
+   naming the field, on any container it has not been taught. A live
+   `view=FULL` recording *will* hit this, on `item.bibrecord` — the subtree
+   that repeats the abstract, the author list and the affiliations in a
+   different schema. That is deliberate friction, not a bug: teach the
+   sanitiser that subtree, with a test, before committing such a cassette.
+   Subject-area codes pass through verbatim, because they are the entire
+   reason the Abstract Retrieval call exists — a cassette whose `@code`s had
+   been regenerated would pin nothing.
+
    `sanitise_page` (see its docstring for the exact rules) regenerates
    `dc:title`, `dc:description`, `dc:creator`, every `author` entry, and
    every `affiliation` entry; everything else -- identifiers, dates, counts,
@@ -95,6 +117,9 @@ about explicitly, because a future maintainer might otherwise "fix" them:
 | `cassettes/complete-page-0001.json` | Real `view=COMPLETE` recording, page 1 (via cursor) of the same search | All 25 entries carry the COMPLETE-only fields. |
 | `cassettes/standard-page-0000.json` | Real `view=STANDARD` recording, page 0 of the same query | Zero entries carry the 7 COMPLETE-only fields. |
 | `cassettes/error-401-invalid-apikey.json` | Real recorded `service-error` body for a mismatched institution token | Contains no PII/licensed content -- an error message, not bibliographic data -- so it is committed verbatim, unsanitised. |
+| `cassettes/abstract-full-multi-subject-area.json` | **Not** a live recording | Modelled on Elsevier's documented Abstract Retrieval `FULL` response and passed through `sanitise_abstract`. Carries three `subject-area` entries as a **list**. See the caveat below. |
+| `cassettes/abstract-full-single-subject-area.json` | **Not** a live recording | Same, with `subject-area` as a **lone mapping** — Scopus collapses a single-element container, and code that assumes a list breaks on real data. |
+| `cassettes/abstract-full-no-subject-areas.json` | **Not** a live recording | Same, with no `subject-areas` key at all (a conference-review record). This is the shape that makes `AbstractUnavailable(reason="no_subject_areas")` necessary. |
 | `cassettes/error-403-entitlement.json` | **Not** a live recording | Modelled on the same `service-error.status.{statusCode,statusText}` shape as the 401 cassette above, for a hypothetical `view=COMPLETE` entitlement denial. A live 403-on-COMPLETE recording would need a second, non-entitled API key, which this project does not have and is not worth acquiring solely to record one JSON body; the *shape* (not the exact `statusText`) is what `test_search__403_on_complete_view__raises_entitlement_error` depends on, and that shape is verified live by the sibling 401 cassette. |
 
 ## The sanitiser is tested too (§3.7.5, line 535)
@@ -102,3 +127,22 @@ about explicitly, because a future maintainer might otherwise "fix" them:
 `tests/unit/fixtures/test_sanitise.py::test_sanitise__real_key_present__is_redacted`
 asserts `sanitise_headers`/`sanitise_query_string` actually remove a
 planted secret value rather than merely reformatting it.
+
+## The Abstract Retrieval cassettes are modelled, and what that costs
+
+The three `abstract-full-*.json` cassettes were **not** recorded from a live call. They
+were built from Elsevier's documented Abstract Retrieval `FULL` response shape and run
+through the real `sanitise_abstract`, so the committed bytes are the sanitiser's own
+output — the same status, and for a related reason, as `error-403-entitlement.json`.
+
+Say plainly what that means for the tests that read them:
+`test_contract__abstract_response__carries_coded_subject_areas` and its two siblings pin
+*this project's belief* about the response shape. **They would not fail if Scopus changed
+it**, which is the one thing a contract test is supposed to do (§3.7.2). Replacing them
+with a sanitised real recording is outstanding work — see ADR 0011, consequence 4.
+
+One contract test in that group does have live force and is the one the feature actually
+rests on: `test_contract__search_complete_response__carries_no_subject_areas` runs against
+`complete-page-0000.json` and `complete-page-0001.json` — 50 real recorded `view=COMPLETE`
+entries, not one of which carries a `subject-area` key. That is the measurement that says
+the Abstract Retrieval call is necessary at all, and it is made against real data.

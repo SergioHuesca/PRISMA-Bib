@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-28
+
+### Added
+
+- **Scopus Abstract Retrieval enrichment as a new Layer 0 run kind.**
+  `criteria.yaml` has always had a `subject_areas` filter and nothing has ever been able to
+  apply it: the Search API does not return subject-area codes at any view prismabib is
+  permitted to use. Measured on a real 651-record corpus, 0 of 125 sampled entries carried
+  a `subject-area` key, and the two committed `view=COMPLETE` cassettes are 50 more real
+  entries with the same result — now pinned by
+  `test_contract__search_complete_response__carries_no_subject_areas`. The codes live in
+  the separate Abstract Retrieval API. `prismabib.capture.enrich.capture_abstracts` fetches
+  them, one call per record, and writes the verbatim responses to
+  `raw/abstracts/<run_id>/`, sealed with its own `AbstractRunManifest`. See ADR 0011 for
+  why that is Layer 0 rather than a cache, why it is nested rather than a sibling of the
+  search runs, and why it is never a row in `runs`.
+- **`prismabib.capture.layout`**, the shared Layer 0 on-disk vocabulary — what marks a run
+  sealed, which directories under `raw/` are not runs, the sealed-write guard, the atomic
+  write, and the run-id format. A pure refactor out of `capture/writer.py`, which
+  re-exports `is_sealed` and `SealedRunError` unchanged. `store/load.py` had been carrying
+  a hand-copied duplicate of `_CACHE_DIRNAME` and now imports the definition.
+- **`sanitise_abstract`** in `tests/fixtures/sanitise.py`, for the Abstract Retrieval
+  envelope. Unlike `sanitise_page` it **fails closed**: an unrecognised container raises
+  rather than being copied through, because on a public repository a sanitiser that quietly
+  passes unknown fields publishes licensed prose and reports success.
+
+### Changed
+
+- **Nothing that produces a number.** No loader, engine, or schema change; no fixture or
+  golden-snapshot regeneration. `subject_areas` still loads zero rows and the PRISMA engine
+  still refuses a declared subject filter, exactly as before. Consuming this data is a
+  separate change, deliberately: the change that adds HTTP code moves no counts, and the
+  change that moves counts adds no HTTP code.
+
 ## [0.7.0] — 2026-08-27
 
 ### Added
@@ -399,7 +433,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.5.0...v0.6.0

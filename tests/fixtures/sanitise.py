@@ -61,6 +61,33 @@ line 534, transcribed exactly):
   per entry, scalar-vs-list shape, and the pagination envelope are copied
   through unchanged -- see ``tests/fixtures/README.md`` on the specific 22/25
   ``authkeywords`` split preserved in ``complete-page-0000.json``.
+
+:func:`sanitise_abstract` does the same job for an **Abstract Retrieval**
+response, whose envelope and key vocabulary are different enough from a Search
+entry that reusing :func:`sanitise_page` on one would silently pass licensed
+prose through: authors are ``ce:surname``/``ce:given-name``/``@auid`` rather
+than ``surname``/``given-name``/``authid``, affiliations are keyed ``@id``
+rather than ``afid``, and the abstract itself lives at
+``coredata["dc:description"]``.
+
+It differs from :func:`sanitise_page` in one deliberate way: it **fails
+closed**. A Search page is a flat list of entries whose shape is known, so an
+unrecognised field there is almost certainly another scalar identifier. An
+Abstract Retrieval ``FULL`` response is not flat -- a real one carries an
+``item.bibrecord`` subtree holding the abstract prose a second time, in a
+different schema -- so a sanitiser that quietly copied through what it did not
+recognise would publish licensed text to a PUBLIC repository while reporting
+success. :func:`sanitise_abstract` therefore raises
+:class:`UnsanitisedFieldError` on any container it has not been taught, naming
+it. Teaching it a new subtree is a code change with a test; forgetting to is
+not silent.
+
+**Subject-area codes pass through verbatim, and that is the point.** The whole
+reason the Abstract Retrieval call exists is that the Search API does not carry
+``subject-areas``; a cassette whose codes had been regenerated would pin
+nothing about the field this project needs. Codes are ASJC classification
+numbers -- a published, closed vocabulary -- not licensed prose and not
+anything that identifies a person.
 """
 
 from __future__ import annotations
@@ -464,8 +491,414 @@ def sanitise_page(page: Mapping[str, Any], *, seed: int = 0) -> dict[str, Any]:
     return result
 
 
+class UnsanitisedFieldError(ValueError):
+    """An Abstract Retrieval response carried a container this sanitiser cannot vouch for.
+
+    Raised by :func:`sanitise_abstract` rather than passing the field through.
+    See the module docstring on failing closed: the alternative is publishing
+    licensed prose to a public repository and being told the run succeeded.
+    """
+
+
+#: Keys of ``abstracts-retrieval-response`` that :func:`sanitise_abstract` knows
+#: how to handle. Anything else raises :class:`UnsanitisedFieldError`.
+#:
+#: ``item`` is absent on purpose and is the reason this allowlist exists: a real
+#: ``view=FULL`` recording carries ``item.bibrecord.head``, which repeats the
+#: abstract, the author list, and the affiliations in an entirely different
+#: (Elsevier "bibrecord") schema. Teaching this sanitiser that subtree is real
+#: work; until someone does it, a recording containing it must not become a
+#: cassette.
+_ABSTRACT_KNOWN_KEYS = frozenset(
+    {
+        "@_fa",
+        "affiliation",
+        "authkeywords",
+        "authors",
+        "coredata",
+        "idxterms",
+        "language",
+        "subject-areas",
+    }
+)
+
+#: Keys of ``coredata`` whose value is a container this sanitiser handles. Every
+#: other ``coredata`` key must be a scalar (an identifier, a date, a count, a
+#: subtype code) and is copied through; a *container* that is not named here
+#: raises, on the same fail-closed reasoning as :data:`_ABSTRACT_KNOWN_KEYS`.
+_COREDATA_KNOWN_CONTAINERS = frozenset({"dc:creator", "link"})
+
+#: ``coredata`` keys holding licensed prose, transliterated in place.
+#: ``prism:publicationName`` and ``dc:publisher`` are deliberately NOT here:
+#: venue and publisher names are left alone on the Search side too (they name an
+#: organisation, not a person, and identify a published work).
+_COREDATA_PROSE_KEYS = ("dc:title", "dc:description")
+
+
+def _rng_for_identity(key: str) -> random.Random:
+    """Return a :class:`random.Random` seeded deterministically from ``key``.
+
+    Args:
+        key: A stable identity for the thing being regenerated, e.g. an author's
+            Scopus ``@auid``.
+
+    Returns:
+        A generator whose draws depend only on ``key`` -- so the same person
+        drawn twice, from two different places in one response, gets the same
+        synthetic name, and re-running the sanitiser reproduces the cassette
+        byte-for-byte.
+    """
+    return random.Random(int(hashlib.sha256(f"identity:{key}".encode()).hexdigest()[:16], 16))
+
+
+#: Keys an Abstract Retrieval *author* entry may carry. Anything else is
+#: refused: unlike a missing top-level key, an unknown field here sits inside an
+#: entry whose neighbours have been replaced, producing a cassette that is
+#: simultaneously fabricated and real -- a synthetic name beside a verbatim one.
+_ABSTRACT_AUTHOR_KNOWN_KEYS = frozenset(
+    {
+        "@_fa",
+        "@auid",
+        "@seq",
+        "author-url",
+        "ce:degrees",
+        "ce:given-name",
+        "ce:indexed-name",
+        "ce:initials",
+        "ce:surname",
+        "affiliation",
+        "orcid",
+        "preferred-name",
+    }
+)
+
+#: The same rule for an affiliation entry.
+_ABSTRACT_AFFILIATION_KNOWN_KEYS = frozenset(
+    {
+        "@_fa",
+        "@id",
+        "@href",
+        "affilname",
+        "affiliation-city",
+        "affiliation-country",
+        "affiliation-url",
+    }
+)
+
+
+def _reject_unknown(entry: Mapping[str, Any], known: frozenset[str], what: str) -> None:
+    """Refuse an entry carrying a key this sanitiser was not taught.
+
+    Args:
+        entry: The mapping to check.
+        known: The keys this sanitiser knows how to handle.
+        what: What kind of entry this is, for the message.
+
+    Raises:
+        UnsanitisedFieldError: If ``entry`` carries any key outside ``known``.
+    """
+    unknown = sorted(set(entry) - known)
+    if unknown:
+        raise UnsanitisedFieldError(
+            f"an Abstract Retrieval {what} carries key(s) {unknown!r} this sanitiser has "
+            "not been taught, so their contents would be published verbatim to a PUBLIC "
+            f"repository beside fields that *were* replaced. Teach {__name__} about them "
+            "(with a test) before committing this cassette."
+        )
+
+
+def _sanitise_abstract_author(author: Mapping[str, Any], rng: random.Random) -> dict[str, Any]:
+    """Replace one Abstract Retrieval author entry with a synthetic identity.
+
+    The Abstract Retrieval API names these fields differently from the Search
+    API (``ce:surname`` not ``surname``, ``@auid`` not ``authid``), and nests a
+    duplicate copy under ``preferred-name``. Both copies get the *same*
+    synthetic identity, because a record whose ``ce:surname`` and
+    ``preferred-name.ce:surname`` disagree is not a shape any real response
+    has.
+
+    Refuses any key it was not taught -- see :func:`_reject_unknown`.
+
+    Args:
+        author: One element of ``authors.author`` (or of
+            ``coredata["dc:creator"].author``).
+        rng: A seeded :class:`random.Random`, for determinism.
+
+    Returns:
+        A shallow-modified copy: only keys already present are touched, so
+        field presence/absence is preserved exactly.
+    """
+    _reject_unknown(author, _ABSTRACT_AUTHOR_KNOWN_KEYS, "author")
+    result = dict(author)
+
+    # Seeded on the author's own @auid rather than on the shared `rng`, so the
+    # SAME person gets the SAME synthetic name everywhere they appear in one
+    # response. An Abstract Retrieval response lists its first author twice --
+    # once under `authors.author` and once under `coredata["dc:creator"]` -- and
+    # drawing from the shared stream would give one @auid two different names,
+    # which is not a shape any real response has and would quietly teach a
+    # future reader that the two blocks may disagree.
+    auid = author.get("@auid")
+    name_rng = _rng_for_identity(str(auid)) if auid is not None else rng
+    given, surname = _synthetic_person(name_rng)
+
+    def _rename(target: dict[str, Any]) -> None:
+        if "ce:given-name" in target:
+            target["ce:given-name"] = given
+        if "ce:surname" in target:
+            target["ce:surname"] = surname
+        if "ce:initials" in target:
+            target["ce:initials"] = f"{given[0]}."
+        if "ce:indexed-name" in target:
+            target["ce:indexed-name"] = f"{surname} {given[0]}."
+
+    _rename(result)
+    preferred = result.get("preferred-name")
+    if isinstance(preferred, Mapping):
+        nested = dict(preferred)
+        _rename(nested)
+        result["preferred-name"] = nested
+
+    # Person identifiers are remapped for the same reason as on the Search side:
+    # a real @auid or ORCID beside a fabricated name is a resolvable pointer to a
+    # named living researcher, republished on a PUBLIC repository.
+    if "@auid" in result:
+        result["@auid"] = _map_id(str(result["@auid"]), "authid")
+    if "orcid" in result:
+        result["orcid"] = _synthetic_orcid(str(result["orcid"]))
+    if "author-url" in result and "@auid" in result:
+        result["author-url"] = f"{_AUTHOR_URL_PREFIX}{result['@auid']}"
+
+    affiliation = result.get("affiliation")
+    if isinstance(affiliation, Mapping):
+        result["affiliation"] = _sanitise_abstract_affiliation(affiliation, rng)
+    elif isinstance(affiliation, list):
+        result["affiliation"] = [
+            _sanitise_abstract_affiliation(item, rng) if isinstance(item, Mapping) else item
+            for item in affiliation
+        ]
+    return result
+
+
+def _sanitise_abstract_affiliation(
+    affiliation: Mapping[str, Any], rng: random.Random
+) -> dict[str, Any]:
+    """Replace one Abstract Retrieval affiliation with synthetic institution fields.
+
+    Args:
+        affiliation: One element of the response's ``affiliation`` list, or the
+            ``affiliation`` mapping hanging off an author.
+        rng: A seeded :class:`random.Random`, for determinism.
+
+    Returns:
+        A shallow-modified copy, following the same "only touch keys already
+        present" rule as :func:`_sanitise_affiliation`.
+    """
+    _reject_unknown(affiliation, _ABSTRACT_AFFILIATION_KNOWN_KEYS, "affiliation")
+    result = dict(affiliation)
+    if "affilname" in result:
+        result["affilname"] = rng.choice(_AFFIL_NAMES)
+    if "affiliation-city" in result:
+        result["affiliation-city"] = rng.choice(_CITIES)
+    if "affiliation-country" in result:
+        result["affiliation-country"] = rng.choice(_COUNTRIES)
+
+    # Mapped in the SAME "afid" namespace the Search-side affiliations use, so an
+    # institution that appears in both a page cassette and an abstract cassette
+    # keeps one identity across the fixture set.
+    if "@id" in result:
+        result["@id"] = _map_id(str(result["@id"]), "afid")
+    if "@href" in result and "@id" in result:
+        result["@href"] = f"{_AFFILIATION_URL_PREFIX}{result['@id']}"
+    return result
+
+
+def _sanitise_term_list(container: Any, term_key: str, rng: random.Random) -> Any:
+    """Transliterate the ``$`` value of every term in a Scopus term container.
+
+    Handles both the ``{"author-keyword": [...]}`` and
+    ``{"mainterm": [...]}`` containers, and the list-vs-lone-mapping shape
+    Scopus uses depending on how many terms there are.
+
+    Args:
+        container: The ``authkeywords`` / ``idxterms`` value as recorded.
+        term_key: ``"author-keyword"`` or ``"mainterm"``.
+        rng: A seeded :class:`random.Random`, for determinism.
+
+    Returns:
+        A copy with each term's ``$`` transliterated and every other key --
+        including the container's shape -- untouched.
+    """
+    if not isinstance(container, Mapping):
+        return container
+
+    def _term(item: Any) -> Any:
+        if isinstance(item, Mapping) and isinstance(item.get("$"), str):
+            return {**item, "$": _transliterate(item["$"], rng)}
+        return item
+
+    result = dict(container)
+    terms = result.get(term_key)
+    if isinstance(terms, list):
+        result[term_key] = [_term(item) for item in terms]
+    elif isinstance(terms, Mapping):
+        result[term_key] = _term(terms)
+    return result
+
+
+def _sanitise_coredata(coredata: Mapping[str, Any], rng: random.Random) -> dict[str, Any]:
+    """Sanitise the ``coredata`` block of an Abstract Retrieval response.
+
+    Args:
+        coredata: The response's ``coredata`` mapping as recorded.
+        rng: A seeded :class:`random.Random`, for determinism.
+
+    Returns:
+        A copy with ``dc:title``/``dc:description`` transliterated and
+        ``dc:creator``'s authors replaced by synthetic identities. Every scalar
+        -- ``eid``, ``dc:identifier``, ``prism:doi``, ``prism:coverDate``,
+        ``citedby-count``, ``subtype`` -- is copied through: these identify a
+        published work, not a person.
+
+    Raises:
+        UnsanitisedFieldError: If ``coredata`` holds a container (a mapping or
+            list) this function has not been taught to handle.
+    """
+    result = dict(coredata)
+    for key in _COREDATA_PROSE_KEYS:
+        if isinstance(result.get(key), str):
+            result[key] = _transliterate(result[key], rng)
+
+    for key, value in coredata.items():
+        if key in _COREDATA_KNOWN_CONTAINERS or not isinstance(value, Mapping | list):
+            continue
+        raise UnsanitisedFieldError(
+            f"coredata[{key!r}] is a {type(value).__name__} this sanitiser has not been "
+            "taught to handle, so its contents would be published verbatim. Teach "
+            "tests/fixtures/sanitise.py about it before committing this cassette."
+        )
+
+    creator = result.get("dc:creator")
+    if isinstance(creator, Mapping):
+        creator_copy = dict(creator)
+        authors = creator_copy.get("author")
+        if isinstance(authors, list):
+            creator_copy["author"] = [
+                _sanitise_abstract_author(item, rng) if isinstance(item, Mapping) else item
+                for item in authors
+            ]
+        elif isinstance(authors, Mapping):
+            creator_copy["author"] = _sanitise_abstract_author(authors, rng)
+        result["dc:creator"] = creator_copy
+    return result
+
+
+def sanitise_abstract(response: Mapping[str, Any], *, seed: int = 0) -> dict[str, Any]:
+    """Sanitise one recorded Scopus Abstract Retrieval API response.
+
+    Args:
+        response: The parsed (``json.load``-ed) response body, i.e. an
+            ``{"abstracts-retrieval-response": {...}}`` mapping.
+        seed: The seed for the internal :class:`random.Random` driving every
+            substitution -- fixed by default so re-running this function
+            against the same input is byte-identical, which is what lets a
+            reviewer diff a cassette regeneration meaningfully.
+
+    Returns:
+        A deep copy with titles, the abstract, author names, affiliations, and
+        keyword/index terms regenerated, and **everything else passed through
+        unchanged** -- identifiers (``eid``, ``dc:identifier``, ``prism:doi``),
+        dates, counts, ``language``, and above all ``subject-areas``, whose
+        ``@code``/``@abbrev``/``$`` triples are the entire reason this API is
+        called. Field presence and absence, and the scalar-vs-list shape of
+        every container, are preserved exactly.
+
+    Raises:
+        UnsanitisedFieldError: If the response carries a key this sanitiser has
+            not been taught -- notably ``item``, the ``bibrecord`` subtree a
+            real ``view=FULL`` recording carries, which repeats the abstract
+            prose in a different schema. Failing here is the point: see the
+            module docstring.
+    """
+    rng = random.Random(seed)
+    result: dict[str, Any] = copy.deepcopy(dict(response))
+    # Refuse anything that is not the envelope this function understands. The
+    # previous `return result` handed the input back untouched, which is the
+    # worst possible behaviour for a guard whose whole job is to stop licensed
+    # prose reaching a PUBLIC repository: a misspelled root key
+    # ("abstract-retrieval-response"), a `service-error` body recorded by
+    # mistake, or a list where a mapping was expected all sailed through with
+    # every byte intact, and the caller had no way to tell sanitised output
+    # from unsanitised.
+    unknown_roots = sorted(set(result) - {"abstracts-retrieval-response"})
+    if unknown_roots:
+        raise UnsanitisedFieldError(
+            f"response carries top-level key(s) {unknown_roots!r} this sanitiser has not "
+            "been taught. Only 'abstracts-retrieval-response' is understood; anything "
+            "else (a 'service-error' body, a misspelled key) would be published verbatim."
+        )
+    retrieval = result.get("abstracts-retrieval-response")
+    if not isinstance(retrieval, Mapping):
+        raise UnsanitisedFieldError(
+            "abstracts-retrieval-response is "
+            f"{type(retrieval).__name__}, not a mapping, so this sanitiser cannot reach "
+            "the fields it is meant to replace and would publish the value verbatim."
+        )
+
+    unknown = sorted(set(retrieval) - _ABSTRACT_KNOWN_KEYS)
+    if unknown:
+        raise UnsanitisedFieldError(
+            f"abstracts-retrieval-response carries key(s) {unknown!r} this sanitiser has "
+            "not been taught, so their contents would be published verbatim to a PUBLIC "
+            "repository. 'item' is the expected one: a real view=FULL response repeats "
+            "the abstract, authors and affiliations under item.bibrecord.head in a "
+            "different schema. Teach tests/fixtures/sanitise.py about it (with a test) "
+            "before committing this cassette."
+        )
+
+    sanitised = dict(retrieval)
+
+    coredata = sanitised.get("coredata")
+    if isinstance(coredata, Mapping):
+        sanitised["coredata"] = _sanitise_coredata(coredata, rng)
+
+    authors = sanitised.get("authors")
+    if isinstance(authors, Mapping):
+        authors_copy = dict(authors)
+        author_list = authors_copy.get("author")
+        if isinstance(author_list, list):
+            authors_copy["author"] = [
+                _sanitise_abstract_author(item, rng) if isinstance(item, Mapping) else item
+                for item in author_list
+            ]
+        elif isinstance(author_list, Mapping):
+            authors_copy["author"] = _sanitise_abstract_author(author_list, rng)
+        sanitised["authors"] = authors_copy
+
+    affiliations = sanitised.get("affiliation")
+    if isinstance(affiliations, list):
+        sanitised["affiliation"] = [
+            _sanitise_abstract_affiliation(item, rng) if isinstance(item, Mapping) else item
+            for item in affiliations
+        ]
+    elif isinstance(affiliations, Mapping):
+        sanitised["affiliation"] = _sanitise_abstract_affiliation(affiliations, rng)
+
+    if "authkeywords" in sanitised:
+        sanitised["authkeywords"] = _sanitise_term_list(
+            sanitised["authkeywords"], "author-keyword", rng
+        )
+    if "idxterms" in sanitised:
+        sanitised["idxterms"] = _sanitise_term_list(sanitised["idxterms"], "mainterm", rng)
+
+    result["abstracts-retrieval-response"] = sanitised
+    return result
+
+
 __all__ = [
     "REDACTED",
+    "UnsanitisedFieldError",
+    "sanitise_abstract",
     "sanitise_headers",
     "sanitise_page",
     "sanitise_query_string",
