@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Screening (Stage 5): a keyboard-first Panel view over a deterministic, resumable
+  queue.** `screener(project, stage=..., reviewer=...)` renders in a notebook cell and
+  serves under `panel serve` from the same construction. `i` includes, `e` then a digit
+  excludes under a numbered reason code, `u` marks unsure, `n`/`p` navigate, `z` undoes,
+  `?` shows the map — all delivered by a document-level listener, so the bindings work
+  without the mouse entering the widget. Every resolving keystroke is appended and
+  `fsync`ed before the view moves on.
+- **The reason palette is rendered from `criteria.yaml`**, numbered `1..9` in declaration
+  order. Adding a code to the protocol surfaces it with no code change, which is what
+  keeps the UI from offering an exclusion the decision log would refuse.
+- **Author names and citation counts are omitted by default** (`blind=True`). Both move
+  human judgement and neither is an eligibility criterion, so they are left out of the
+  view model rather than hidden in the rendering — a field that was never put in the
+  model cannot be restored by a later change to the markup.
+- **Progress, pace and ETA**, measured over the *current session* rather than the whole
+  log: re-opening a half-finished review must not report months of screening as though it
+  had happened since the notebook was opened. BUILD_PLAN calls this display "what sustains
+  a multi-hour task", which only holds while the numbers are true.
+- **`ScreeningQueue`** — the pure-logic half: an order seeded from the project slug and
+  uncorrelated with citation count, resumable per reviewer from the log, with `unsure`
+  deliberately not resolving and `undo` appending a superseding reversal rather than
+  editing an append-only file.
+
 ## [0.9.0] — 2026-08-28
 
 ### Changed

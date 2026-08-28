@@ -69,6 +69,14 @@ class RecordSpec:
         subject_areas: ``subject-area`` codes -- what ``criteria.subject_areas``
             filters on. Empty means the entry carries no subject-area data
             at all (the reference fixture's situation).
+        authors: ``(surname, given_name)`` pairs, in author order. Empty
+            omits the ``author`` key entirely, which is what most of this
+            module's corpora want; Stage 5's blinding tests need a record
+            that genuinely carries author names, so that "the view model
+            omits them" is a claim about the blinding and not about an
+            empty column.
+        cited_by_count: ``citedby-count``, which Layer 1 stores as a
+            ``citation_snapshots`` row. Non-zero for the same reason.
     """
 
     number: int
@@ -78,6 +86,8 @@ class RecordSpec:
     aggregation_type: str = "Journal"
     venue_name: str = "Journal of Synthetic Testing"
     subject_areas: tuple[str, ...] = ()
+    authors: tuple[tuple[str, str], ...] = ()
+    cited_by_count: int = 0
 
     @property
     def eid(self) -> str:
@@ -100,6 +110,17 @@ class RecordSpec:
             publication_name=self.venue_name,
             source_id=f"{2000000 + self.number}",
             authkeywords=f"synthetic | record {self.number}",
+            citedby_count=self.cited_by_count,
+            author=[
+                {
+                    "authid": f"{9000000 + index}",
+                    "surname": surname,
+                    "given-name": given_name,
+                    "initials": f"{given_name[:1]}.",
+                }
+                for index, (surname, given_name) in enumerate(self.authors)
+            ]
+            or None,
         )
         entry["prism:aggregationType"] = self.aggregation_type
         if self.subject_areas:

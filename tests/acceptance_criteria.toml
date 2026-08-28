@@ -51,15 +51,19 @@ S04-AC5 = "Given the reference project's criteria and a fixed synthetic corpus, 
 
 # --- Stage 5 -- Screening UI (BUILD_PLAN.md lines 1091-1096) ---------------
 #
-# Only AC2 is declared here: it is the one criterion the *queue* half of Stage
-# 5 can claim, and this file must never declare a criterion no test claims --
-# an unclaimed entry fails the run (tests/markers.py), which is the whole
-# point of it. S05-AC1 (renders in a notebook and serves), S05-AC3 (a decision
-# reaches decisions.jsonl within 100 ms), and S05-AC4 (keyboard bindings) are
-# `screening/ui.py`'s to claim and are declared in that PR. S05-AC5
-# (>= 4 records/minute) is validated by human timing in Stage 11 and recorded
-# in docs -- BUILD_PLAN line 1112 says so explicitly and warns against faking
-# it with a simulated-input test, so it is declared when that measurement is
-# actually made.
+# Four of the five. AC2 was claimed by the queue; AC1, AC3 and AC4 are the
+# view's, and are declared here in the PR that builds it. This file must never
+# declare a criterion no test claims -- an unclaimed entry fails the run
+# (tests/markers.py), which is the whole point of it.
+#
+# S05-AC5 (>= 4 records/minute measured throughput) is deliberately absent. It
+# is validated by human timing in Stage 11 and recorded in docs: BUILD_PLAN
+# line 1112 says so explicitly and warns against faking it with a
+# simulated-input test, so it stays undeclared until that measurement is
+# actually made. Declaring it against a test that simulates keystrokes would
+# claim a fact about a *practised human reviewer* from a fact about a CPU.
 
+S05-AC1 = "Rendering `screener(...)` in a notebook cell produces a working interface; the same object serves via `panel serve` with no code change."
 S05-AC2 = "Deciding 20 records, restarting the kernel, and re-opening resumes at record 21."
+S05-AC3 = "Every decision appears in `decisions.jsonl` within 100 ms."
+S05-AC4 = "Keyboard bindings work without the mouse entering the widget."
