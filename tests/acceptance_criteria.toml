@@ -48,3 +48,18 @@ S04-AC2 = "Superseding: appending a reversal event flips membership and leaves t
 S04-AC3 = "Tampering with `decisions.jsonl` by hand causes `LogError` on next load."
 S04-AC4 = "`FlowCounts.assert_consistent()` passes on the reference fixture and fails on a deliberately corrupted one."
 S04-AC5 = "Given the reference project's criteria and a fixed synthetic corpus, flow counts are reproducible to the integer across three fresh runs."
+
+# --- Stage 5 -- Screening UI (BUILD_PLAN.md lines 1091-1096) ---------------
+#
+# Only AC2 is declared here: it is the one criterion the *queue* half of Stage
+# 5 can claim, and this file must never declare a criterion no test claims --
+# an unclaimed entry fails the run (tests/markers.py), which is the whole
+# point of it. S05-AC1 (renders in a notebook and serves), S05-AC3 (a decision
+# reaches decisions.jsonl within 100 ms), and S05-AC4 (keyboard bindings) are
+# `screening/ui.py`'s to claim and are declared in that PR. S05-AC5
+# (>= 4 records/minute) is validated by human timing in Stage 11 and recorded
+# in docs -- BUILD_PLAN line 1112 says so explicitly and warns against faking
+# it with a simulated-input test, so it is declared when that measurement is
+# actually made.
+
+S05-AC2 = "Deciding 20 records, restarting the kernel, and re-opening resumes at record 21."
