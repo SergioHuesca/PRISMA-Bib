@@ -354,12 +354,27 @@ class _Accumulator:
     subject_areas: set[tuple[str, str]] = field(default_factory=set)
     citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
     seen_record_ids: set[str] = field(default_factory=set)
+    #: ``(query, record_id)`` pairs already counted toward `identified`.
+    #:
+    #: A *set of pairs*, not a record -> first-query mapping. The mapping was
+    #: wrong in a way that only shows up with three runs: a record first seen
+    #: under query A, re-found by B, then re-found again by a *refresh of B*
+    #: compares unequal to A both times and is counted as a duplicate twice.
+    #: `identified` adds each distinct query once, so each (query, record) may
+    #: be subtracted at most once. Asking "has this record already been counted
+    #: under *this* query" is the question that matches.
+    counted_query_records: set[tuple[str, str]] = field(default_factory=set)
     #: ``malformed_entries`` rows, in ``schema.sql`` column order, for every
     #: entry that could not be turned into a record. Rows, not a count,
     #: because the operator's next question is always *which one* -- and
     #: Layer 0 is immutable, so the answer has to survive in Layer 1 rather
     #: than only in the return value of the call that happened to rebuild.
     malformed_entries: list[tuple[Any, ...]] = field(default_factory=list)
+    #: Records already loaded by an earlier run -- PRISMA's "duplicates removed
+    #: before screening". Observable only during the load: `records.run_id` keeps
+    #: the FIRST run that loaded a record, so afterwards nothing in Layer 1 can
+    #: say how many runs a record appeared in.
+    cross_run_duplicates: dict[str, int] = field(default_factory=dict)
     #: Citation snapshots read off entries that were then skipped as
     #: malformed. Held back rather than written straight into
     #: ``citation_snapshots`` because the schema declares no foreign keys at
@@ -1039,8 +1054,29 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 # Re-capture of a paper already loaded from an earlier run:
                 # only the citation snapshot above is new; see the module
                 # docstring's "Re-captured records" section.
+                #
+                # Counted here because here is the only place it is
+                # observable. `records.run_id` keeps the *first* run that
+                # loaded a record, so once the load finishes nothing in
+                # Layer 1 can say how many runs a record appeared in. PRISMA
+                # needs that number for its "duplicates removed before
+                # screening" box, and deriving it as a remainder
+                # (`identified - |S_raw|`) would make the flow diagram's
+                # first equation an identity that cannot fail -- absorbing a
+                # manifest that disagrees with the corpus, which is the one
+                # defect BUILD_PLAN line 993 says the guard exists to catch.
+                # Only a search finding a paper it has not already contributed
+                # is a PRISMA duplicate. A refresh of the same query re-finding
+                # its own results is not: `identified` counts each distinct
+                # query once, so subtracting again would break equation 1.
+                if (manifest.query, record_id) not in acc.counted_query_records:
+                    acc.counted_query_records.add((manifest.query, record_id))
+                    acc.cross_run_duplicates[manifest.run_id] = (
+                        acc.cross_run_duplicates.get(manifest.run_id, 0) + 1
+                    )
                 continue
             acc.seen_record_ids.add(record_id)
+            acc.counted_query_records.add((manifest.query, record_id))
 
             venue_id = _venue_id_from_entry(entry, record.venue)
             acc.venues.setdefault(
@@ -1287,6 +1323,13 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
         ],
     )
     _insert_rows(connection, "malformed_entries", acc.malformed_entries)
+    _insert_rows(
+        connection,
+        "run_duplicates",
+        # sorted: dict order is insertion order, and a checksummed table
+        # must not depend on which run happened to be walked first.
+        [(run_id, count) for run_id, count in sorted(acc.cross_run_duplicates.items())],
+    )
 
 
 def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:

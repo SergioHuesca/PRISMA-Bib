@@ -294,6 +294,8 @@ def reference_golden() -> FlowCounts:
     after_automated = REFERENCE_IDENTIFIED - REFERENCE_EXCLUDED_AUTOMATED
     return _FlowCounts(
         identified=REFERENCE_IDENTIFIED,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
         excluded_automated=REFERENCE_EXCLUDED_AUTOMATED,
         after_automated=after_automated,
         # Inert on this fixture: its one non-English record is also a

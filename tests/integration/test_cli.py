@@ -310,7 +310,10 @@ def test_cli_flow__counts_that_do_not_close__warns_and_still_prints_them(tmp_pat
     assert result.exit_code == 0
     assert "records identified" in result.stdout
     assert "WARNING: these counts do not close into a consistent diagram." in result.stderr
-    assert "identified - excluded_automated == after_automated" in result.stderr
+    assert (
+        "identified - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated"
+        in result.stderr
+    )
 
 
 # ---------------------------------------------------------------------------

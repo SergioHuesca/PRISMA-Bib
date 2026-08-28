@@ -18,7 +18,11 @@ manual-import path for records exported from another database.
 Consequences for your review:
 
 - Your search is a single-database search and must be reported as one. PRISMA's "records
-  identified from databases" is a single number here, from a single register.
+  identified from databases" is a single number here, from a single register — a sum over
+  however many *search strings* you ran, all of them against Scopus
+  ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)). Several searches
+  are not several sources, and the per-search breakdown lives in Layer 1's `runs` table, not
+  in the diagram.
 - Fields Scopus does not index are invisible to the whole pipeline. There is no second
   source to fill a gap with.
 - The "Registers" column of the PRISMA 2020 diagram is empty.
@@ -36,16 +40,25 @@ ordinary rows. Deduplication is treated as a screening decision, not a load-time
 
 Two things follow:
 
-- There is **no `FlowCounts` field for "duplicate records removed"**. A review that removed
-  duplicates must report that count from `StoreStats` and say where it came from.
+- **`FlowCounts.duplicates_across_searches` does not cover this case.** That field counts
+  records that arrived twice under the *same* `record_id` and collapsed onto one row, which
+  is what two overlapping search strings produce. A DOI collision between two *distinct*
+  records is not removed, not collapsed, and not counted there. A review that removed such
+  duplicates did so as a screening decision and must report that count from `StoreStats` and
+  say where it came from.
 - Because there is only one source, the duplicates you will see are Scopus-internal (the
   same DOI indexed twice), not cross-database ones. Merging a Scopus corpus with a Web of
   Science corpus is not something this tool can do at all.
 
-Records that arrive twice under the *same* `record_id` collapse into one row, because
-`records.record_id` is the table's primary key. That is a schema artefact, not a counted
-screening step, and it is one of the two things that can legitimately break the flow
-diagram's first consistency equation.
+Records that arrive twice under the *same* `record_id` — the ordinary case when a review runs
+more than one search string — collapse into one row, because `records.record_id` is the
+table's primary key. Where the two runs used **different queries**, that collapse is now
+counted and reported as `FlowCounts.duplicates_across_searches`, on PRISMA's "duplicate
+records removed" line; it used to be one of the things that could break the flow diagram's
+first consistency equation with no field to explain it. A record re-found by a *refresh of the
+same query* is deliberately not counted there — it was never identified twice, because
+`identified` counts each distinct query once. See
+[ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md).
 
 A richer `(normalised_title, first_author_surname, year)` key exists as
 `prismabib.models.dedup_key` and is unit-tested, but the loader does not apply it; only the

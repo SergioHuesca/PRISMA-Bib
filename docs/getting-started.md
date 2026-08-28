@@ -280,7 +280,9 @@ Next: prismabib build my-review
   every write path refuses a sealed directory in code, not by convention. Running `search`
   again after a completed run starts a *new* run directory rather than amending the old one.
 - **`total_results` comes from Scopus's own `opensearch:totalResults`**, never from a count
-  of rows or pages. It is the PRISMA "records identified" number.
+  of rows or pages. It is this search's contribution to the PRISMA "records identified"
+  number: one search string, one term. A project that runs a second, different search string
+  adds that search's total too; re-running the *same* string later adds nothing.
 - **`raw/` is never git-tracked.** It is large and licensed; the manifest is what makes the
   run reproducible.
 
@@ -359,6 +361,10 @@ PRISMA 2020 flow -- project 'my-review'
 Identification
   records identified (Scopus total_results)         1,771
 
+Removed before screening
+  duplicates across searches                            0
+  other reasons (unreadable capture entries)            0
+
 Screening -- automated, from criteria.yaml
   excluded by year / subject area / doc type         -412
   remaining                                         1,359
@@ -388,11 +394,24 @@ screening, one is excluded, and the other 1,321 are unscreened — which the rep
 Every number is recomputed from Layer 1 and `decisions.jsonl` on each run — nothing is
 cached, so the report always describes screening as it stands right now.
 
+That transcript is a project with **one** search string, which is why both "removed before
+screening" lines are zero — they are printed even then, so that a reader of a published
+diagram can see the line was considered rather than omitted. Run a second search string —
+edit `[query]`, `search` again, `build --rebuild` — and they come alive: "records identified"
+becomes the sum of `total_results` over the project's *distinct* searches rather than the
+first search's total, "duplicates across searches" counts the papers both searches returned
+(identified twice, stored once), and "other reasons" counts entries the loader could not read
+at all. Re-running the *same* search string to refresh citation counts is not a second search:
+it changes neither "records identified" nor the duplicate count. See
+[ADR 0013](architecture/adr/0013-identified-sums-across-searches.md).
+
 If the counts do not close into a consistent diagram, the command prints a warning on
 stderr, still prints the numbers, and still exits `0`. That is not a crash: the usual cause
 is a capture that is incomplete or a store built before the last `search` finished. Do not
 publish a diagram whose warning you have not explained. See
-[PRISMA Mapping — the four consistency equations](methodology/prisma-mapping.md#the-four-consistency-equations).
+[PRISMA Mapping — the four consistency equations](methodology/prisma-mapping.md#the-four-consistency-equations)
+and [when equation 1 does not close](methodology/prisma-mapping.md#when-equation-1-does-not-close),
+which lists every cause observed so far and what to do about each.
 
 ## When something goes wrong
 

@@ -57,6 +57,7 @@ _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "subject_areas": ("record_id", "area_code"),
     "citation_snapshots": ("record_id", "retrieved_at"),
     "malformed_entries": ("payload_file", "payload_line"),
+    "run_duplicates": ("run_id",),
 }
 
 #: The full set of Layer 1 table names, in the order they appear in

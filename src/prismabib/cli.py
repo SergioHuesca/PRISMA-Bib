@@ -549,6 +549,14 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     _echo("Identification")
     row("records identified (Scopus total_results)", f"{counts.identified:,}")
     _echo()
+    # PRISMA 2020 puts these before screening, not inside it: they are records
+    # that never reached a screening decision at all. Rendered even when zero,
+    # because a reader checking a published diagram needs to see that the line
+    # was considered and came to nothing, not guess whether it was omitted.
+    _echo("Removed before screening")
+    row("duplicates across searches", minus(counts.duplicates_across_searches))
+    row("other reasons (unreadable capture entries)", minus(counts.removed_other_reasons))
+    _echo()
     _echo("Screening -- automated, from criteria.yaml")
     row("excluded by year / subject area / doc type", minus(counts.excluded_automated))
     row("remaining", f"{counts.after_automated:,}")
@@ -587,11 +595,12 @@ def _warn_if_inconsistent(counts: FlowCounts) -> None:
     function whose job is only to compute. This is that caller: it reports the
     disagreement in full and still prints the numbers, and it exits ``0``.
 
-    Exiting non-zero would be wrong here. The one identity this function can
-    realistically catch is ``identified - excluded_automated == after_automated``,
-    which compares Scopus's own ``total_results`` against rows actually in
-    Layer 1, and an *incomplete but perfectly valid* capture (a run interrupted,
-    a build not yet re-run) breaks it. That is a state a researcher needs to see
+    Exiting non-zero would be wrong here. The identity this function can
+    realistically catch is equation 1, which compares Scopus's own
+    ``total_results`` (summed over the project's distinct searches, less the
+    records removed before screening) against rows actually in Layer 1, and an
+    *incomplete but perfectly valid* capture (a run interrupted, a build not yet
+    re-run) breaks it. That is a state a researcher needs to see
     described, in the middle of a report they can still read -- not one that
     should make a reporting command look like it crashed.
 

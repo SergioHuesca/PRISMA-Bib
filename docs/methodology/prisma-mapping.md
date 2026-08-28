@@ -160,7 +160,9 @@ Every number in the diagram is one field of the frozen dataclass
 
 | PRISMA 2020 box | `FlowCounts` field | Producer | Derivation |
 | --- | --- | --- | --- |
-| Records identified from databases | `identified` | `flow._identified_count` | `total_results` of the **earliest** run in Layer 1's `runs` table (`ORDER BY run_id LIMIT 1`), copied verbatim from that run's `RunManifest.total_results`. Never a row count. |
+| Records identified from databases | `identified` | `flow._identified_count` | The sum, over the project's **distinct searches**, of each search's `total_results` — one term per distinct `runs.query`, taken from that query's earliest run (`(query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)`), copied verbatim from that run's `RunManifest.total_results`. Never a row count. A run that re-queries the *same* search string to refresh citation counts joins an existing term and adds nothing. See [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md) |
+| Records removed before screening — duplicate records removed | `duplicates_across_searches` | `flow._cross_run_duplicate_count` | `SUM(duplicates)` over Layer 1's `run_duplicates` table, which `build_store` writes during the load: captured entries that resolved to a `record_id` an earlier run **under a different query** had already loaded — identified by two searches, stored once, because `records.record_id` is a primary key. **Not** the normalised-DOI report — see [below](#reading-the-two-removed-before-screening-counts) |
+| Records removed before screening — records removed for other reasons | `removed_other_reasons` | `flow._unloadable_count` | `COUNT(*)` over Layer 1's `malformed_entries` table — the Layer 0 entries `build_store` could not turn into a record ([ADR 0012](../architecture/adr/0012-persisting-skipped-layer0-entries.md)). Counted as *entries*, not records |
 | Records removed before screening — marked ineligible by automation tools (year / subject / document type) | `excluded_automated` | `engine.raw_set`, `engine.automated_set` | `|S_raw| - |A|` |
 | — intermediate, not a diagram box | `after_automated` | `engine.automated_set` | `|A|` |
 | Records removed before screening — marked ineligible by automation tools (language) | `excluded_language` | `engine.automated_set`, `engine.language_set` | `|A| - |L|` |
@@ -171,6 +173,50 @@ Every number in the diagram is one field of the frozen dataclass
 | Reports excluded, with reasons | `excluded_fulltext` (`dict[str, int]`) | `engine._aggregate_record_decisions` at `PrismaStage.FULLTEXT` | Records in `M_abs` aggregated to `"exclude"`, grouped by `reason_code` |
 | *No PRISMA box* — assessed but unresolved | `unsure_fulltext` | `flow.compute_flow_counts` (partition remainder) | `retrieved_fulltext - sum(excluded_fulltext.values()) - included` |
 | Studies included in review | `included` | `engine.corpus` | `|C| = |M_full|` |
+
+### Reading the two removed-before-screening counts
+
+`duplicates_across_searches` and `removed_other_reasons` are the bridge between what Scopus
+said it had (`identified`, a server-reported total) and what Layer 1 actually holds
+(`|S_raw|`). They are kept apart, on PRISMA's own two lines, because they mean opposite
+things about a review:
+
+- **A duplicate across searches is expected.** Two search strings aimed at one register
+  overlap; a strategy where they did not would be the surprising one. The number describes
+  the search strategy, not a fault.
+- **A record removed for another reason is a defect in the capture.** It is a record Scopus
+  counted, that the review spent quota on, and that no reviewer will ever screen because the
+  entry could not be parsed. A non-zero value here should be read, cited, and — per
+  [ADR 0012](../architecture/adr/0012-persisting-skipped-layer0-entries.md) — traced to the
+  exact payload line through the `malformed_entries` table.
+
+Three things `duplicates_across_searches` is **not**:
+
+- It is not `StoreStats.duplicate_doi_groups` / `duplicate_records`. Those count *distinct*
+  records that share a normalised DOI. Both of those records are in `records` and both are
+  screened; nothing is removed. See [Limitations](limitations.md#no-cross-database-deduplication).
+- It is not a deduplication step this system performs. The only collapse it describes is the
+  one `records`' primary key already performed at load time. Dedup is still
+  [reported, not applied](../architecture/data-model.md).
+- It is not a count of every re-captured record. A record re-found by a **refresh of the same
+  query** is not a duplicate here: `identified` counts each distinct query once, so that
+  record was never added twice and must not be subtracted. Only a record an earlier run under
+  a *different* query had already loaded is counted, which is why a single-search project's
+  `duplicates_across_searches` is always zero.
+
+Neither count is a remainder. `removed_other_reasons` is a row count over `malformed_entries`
+and `duplicates_across_searches` is a sum over `run_duplicates`, both written by the loader
+from Layer 0. Deriving either as `identified - |S_raw| - the other` would make equation 1 an
+identity that cannot fail, which would defeat the only check that compares a run's manifest
+against the corpus that run produced. `run_duplicates` also *cannot* be recomputed after the
+load: `records.run_id` keeps only the first run that loaded a record, so nothing in Layer 1
+afterwards knows how many searches found it.
+
+`identified` sums one `total_results` per **distinct query string**, so a citation-refresh run
+— the same query re-run later — contributes nothing to it, while a genuinely different search
+string contributes its own total. `runs` keeps one row per run with its `query`, `started_at`
+and `total_results`, so a review that must report identification per search reads the
+breakdown straight out of Layer 1 and cites it.
 
 ### Reading `excluded_fulltext`
 
@@ -197,15 +243,19 @@ most recently logged exclusion, using the same tie-break the fold itself uses. S
 Stated explicitly, because a mapping document that quietly omits a box invites a reader to
 assume it is covered:
 
-- **"Duplicate records removed."** There is no `FlowCounts` field for it. Layer 1 *reports*
-  duplicates rather than removing them (`StoreStats.duplicate_doi_groups` and
-  `duplicate_records` in `store/load.py`): both members of a duplicate-DOI pair are retained
-  as ordinary rows. Records that arrive twice under the *same* `record_id` collapse into one
-  row because `records.record_id` is the table's primary key, but that is an artefact of the
-  schema, not a counted screening step. A review that removed duplicates must report that
+- **"Duplicate records removed" — only partly.** `duplicates_across_searches` counts records
+  that arrived twice under the *same* `record_id` and collapsed onto one row, which is what
+  happens where two search strings overlap. It does **not** cover duplicates that are two
+  distinct records: Layer 1 *reports* those rather than removing them
+  (`StoreStats.duplicate_doi_groups` and `duplicate_records` in `store/load.py`), and both
+  members of a duplicate-DOI pair are retained as ordinary rows and both are screened. A
+  review that removed such duplicates did so as a screening decision and must report that
   count from `StoreStats`, and say so.
-- **"Records removed for other reasons."** Not modelled. There is no pre-screening removal
-  path other than the two automated filters.
+- **"Records removed for other reasons" — narrowly.** `removed_other_reasons` counts exactly
+  one thing: Layer 0 entries the loader could not turn into a record. There is no other
+  pre-screening removal path — no manual removal, no out-of-scope purge, nothing an operator
+  can add to it — so a review that removed records for any other reason did it outside
+  prismabib and must report that in prose.
 - **"Reports not retrieved."** Not modelled in Stage 4. `retrieved_fulltext` is `|M_abs|` —
   the records *advanced* to full-text screening — so it stands for both "sought for
   retrieval" and "assessed for eligibility", and the difference between those two boxes is
@@ -222,8 +272,9 @@ assume it is covered:
 both sides, and the signed difference:
 
 ```
-1.  identified        - excluded_automated == after_automated
-2.  after_automated   - excluded_language  == after_language
+1.  identified - duplicates_across_searches - removed_other_reasons
+                      - excluded_automated  == after_automated
+2.  after_automated   - excluded_language   == after_language
 3.  after_language    == excluded_title_abstract + unsure_title_abstract + retrieved_fulltext
 4.  retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included
 ```
@@ -234,20 +285,46 @@ partition rather than measured independently. They are not therefore pointless �
 what catches a hand-assembled, mutated, or deserialised `FlowCounts` whose fields have
 drifted.
 
-**Equation 1 is a genuine cross-check and can legitimately fail.** `identified` is the
-server's reported total for the first run; `after_automated` descends from the records
-actually loaded into Layer 1. They disagree when the capture is incomplete (paging stopped
-early, or the API's result cap was hit), or when the same `record_id` was returned more than
-once and collapsed onto one primary-key row. `compute_flow_counts` deliberately does **not**
-call `assert_consistent()` itself, so that disagreement is returned to a caller to inspect
-rather than raised from inside a function whose job is to compute, not to judge. BUILD_PLAN
-requires CI to call `assert_consistent()` on every project fixture; a reviewer publishing a
-diagram should call it too, and investigate rather than paper over a failure of equation 1.
+**Equation 1 is a genuine cross-check and can legitimately fail.** `identified` is the sum of
+the servers' own reported totals across the project's distinct searches; `after_automated`
+descends from the records actually loaded into Layer 1. Everything between them is now named:
+`duplicates_across_searches` and `removed_other_reasons` account for the two ways a record can
+be identified and not be a row in `records`, and `excluded_automated` accounts for the
+automated filter. `compute_flow_counts` deliberately does **not** call `assert_consistent()`
+itself, so a disagreement is returned to a caller to inspect rather than raised from inside a
+function whose job is to compute, not to judge. BUILD_PLAN requires CI to call
+`assert_consistent()` on every project fixture; a reviewer publishing a diagram should call it
+too, and investigate rather than paper over a failure of equation 1.
 
 Note what equation 1 means arithmetically: `excluded_automated` is computed as
-`|S_raw| - |A|`, so equation 1 closes exactly when `identified == |S_raw|`. If a review
+`|S_raw| - |A|`, so equation 1 closes exactly when
+`identified - duplicates_across_searches - removed_other_reasons == |S_raw|`. If a review
 reports a difference between "records identified" and "records loaded", that difference is
 not an automation exclusion and must not be presented as one.
+
+### When equation 1 does not close
+
+This is the list to work through when a diagram will not add up. It is not closed — a cause
+outside it means something the pipeline does not model, which is itself a finding — but every
+cause observed so far is here:
+
+| Symptom | Cause | What to do |
+| --- | --- | --- |
+| `identified` far exceeds `|S_raw|`, by roughly a page multiple | **The capture is incomplete.** Paging stopped early, or the API's result cap was hit, so Layer 0 holds fewer entries than the server said existed | Compare `manifest.pages_fetched` and the run's entry count against `total_results`. Re-running `prismabib search` resumes an unsealed run; a *sealed* short run is a fact about the capture and must be reported as one |
+| `identified` exceeds `|S_raw|` by a small amount, and the store was built a while ago | **The store predates the last search.** `prismabib build` without `--rebuild` reuses the existing store and loads no run captured since | `uv run prismabib build <slug> --rebuild` |
+| A stubborn residual on a project with more than one search string | **A search string that is not distinct.** `identified` sums one term per distinct `runs.query`, verbatim; two runs whose queries differ only in whitespace are two searches to this rule and one search to a reader | `SELECT run_id, query, total_results FROM runs ORDER BY run_id` and read the query strings side by side. Do not normalise them in the code — see the Constraints in [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md) |
+| `identified` exceeds `|S_raw|` by exactly the number of entries the build reported skipping | **Entries the loader could not read**, not reflected in the counts | Check `removed_other_reasons` against `SELECT COUNT(*) FROM malformed_entries`; if they disagree, the store was not rebuilt after the entries were skipped |
+| A multi-search project whose `duplicates_across_searches` is `0` | **The store predates this accounting.** `run_duplicates` is written *during* the load, so a store built by an earlier version — or reused without `--rebuild` — has no rows in it, and the overlap between the searches goes unsubtracted | `uv run prismabib build <slug> --rebuild`. The count cannot be recovered any other way: `records.run_id` keeps only the first run that loaded a record |
+
+Two causes are **no longer** on this list, and a diagram from before this change may still
+show them:
+
+- **A second search string was ignored.** `identified` used to be the earliest run's
+  `total_results` alone, so a project that ran a second search reported only the first one's
+  total and failed equation 1 by everything the second search identified. It now sums across
+  distinct searches ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)).
+- **A collapsed duplicate or a skipped entry had nowhere to be reported.** Both now have a
+  field.
 
 ## What moves a record between boxes
 
@@ -311,6 +388,7 @@ independently, are Stage 5 work and are not part of `FlowCounts`.
 - [ADR 0002: Append-only decision log](../architecture/adr/0002-append-only-decision-log.md)
 - [ADR 0007: FlowCounts unsure fields](../architecture/adr/0007-flow-counts-unsure-fields.md)
 - [ADR 0008: Multi-reviewer adjudication](../architecture/adr/0008-multi-reviewer-adjudication.md)
+- [ADR 0013: `identified` sums across distinct searches](../architecture/adr/0013-identified-sums-across-searches.md)
 - [Amend Eligibility Criteria](../how-to/amend-eligibility-criteria.md) — the replay workflow
 - [Testing](../testing.md) — why this module is mutation-tested
 

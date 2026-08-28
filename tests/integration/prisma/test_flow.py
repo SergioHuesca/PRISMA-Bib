@@ -111,7 +111,7 @@ def test_flow_counts__injected_off_by_one__assert_consistent_raises(tmp_path: Pa
     counts = compute_flow_counts(project)
 
     assert counts.identified == 6
-    with pytest.raises(ValidationError, match=r"'identified - excluded_automated =="):
+    with pytest.raises(ValidationError, match=r"'identified - duplicates_across_searches"):
         counts.assert_consistent()
 
 
@@ -222,6 +222,8 @@ def test_flow_counts__project_with_no_runs__is_every_count_zero(tmp_path: Path) 
 
     assert counts == FlowCounts(
         identified=0,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
         excluded_automated=0,
         after_automated=0,
         excluded_language=0,
@@ -460,3 +462,155 @@ def test_flow_counts__golden_is_not_trivially_all_zero__has_a_non_empty_corpus(
     assert counts.retrieved_fulltext == ABSTRACT_INCLUDED
     assert counts.excluded_title_abstract == ABSTRACT_EXCLUDED
     assert counts.identified == 120
+
+
+_QUERY_A = 'TITLE-ABS-KEY("alpha")'
+_QUERY_B = 'TITLE-ABS-KEY("beta")'
+
+
+def _search_entry(number: int) -> dict[str, object]:
+    """One minimal Scopus search entry, enough for the loader to build a record."""
+    return {
+        "dc:identifier": f"SCOPUS_ID:{number}",
+        "eid": f"2-s2.0-{number}",
+        "dc:title": f"Title {number}",
+        "prism:coverDate": "2020-01-01",
+        "subtype": "ar",
+        "prism:publicationName": "Journal",
+        "dc:description": "abstract",
+        "citedby-count": "1",
+    }
+
+
+def _project_with_runs(tmp_path: Path, runs: list[tuple[str, str, list[int]]]) -> Project:
+    """Build a project from ``(run_id_suffix, query, record_numbers)`` triples."""
+    project = Project.init("multi", title="Multi", root=tmp_path)
+    for index, (suffix, query, numbers) in enumerate(runs):
+        write_sealed_run(
+            project.raw_dir,
+            f"2026010{index + 1}T000000Z-{suffix}",
+            [_search_entry(n) for n in numbers],
+            started_at=datetime(2026, 1, index + 1, tzinfo=UTC),
+            query=query,
+            total_results=len(numbers),
+        )
+    build_store(project, rebuild=True)
+    return project
+
+
+@pytest.mark.integration
+def test_flow_counts__two_distinct_searches__sums_identified_and_counts_the_overlap(
+    tmp_path: Path,
+) -> None:
+    """Two search strings identify the union; the papers both found are duplicates.
+
+    This is the shape no test in this suite exercised before -- every run was
+    written with the helper's default query, so `run_duplicates` was never
+    non-empty and the whole distinct-query path was dead under CI.
+    """
+    project = _project_with_runs(
+        tmp_path, [("aaaaaaaa", _QUERY_A, [1, 2]), ("bbbbbbbb", _QUERY_B, [2, 3])]
+    )
+
+    counts = compute_flow_counts(project)
+
+    assert (counts.identified, counts.duplicates_across_searches) == (4, 1)
+    counts.assert_consistent()
+
+
+@pytest.mark.integration
+def test_flow_counts__refresh_of_a_later_search__does_not_re_subtract_its_overlap(
+    tmp_path: Path,
+) -> None:
+    """A refresh of *any* search must not re-subtract, not just the first one.
+
+    The gate first compared a record against its **first-seen** query, which
+    only protected refreshes of whichever search saw the record first. A record
+    found by A, re-found by B, then re-found by a refresh of B compared unequal
+    to A both times and was counted twice.
+
+    It ran on the operator's real corpus: three sealed runs -- search A, search
+    B, and a byte-identical refresh of B -- reported 160 duplicates against a
+    true overlap of 80, and the diagram failed by -81 with an unactionable
+    "re-run --rebuild" remedy.
+    """
+    project = _project_with_runs(
+        tmp_path,
+        [
+            ("aaaaaaaa", _QUERY_A, [1, 2]),
+            ("bbbbbbbb", _QUERY_B, [2, 3]),
+            ("cccccccc", _QUERY_B, [2, 3]),
+        ],
+    )
+
+    counts = compute_flow_counts(project)
+
+    # identified is unchanged by the refresh: B is one distinct query.
+    assert (counts.identified, counts.duplicates_across_searches) == (4, 1)
+    counts.assert_consistent()
+
+
+@pytest.mark.integration
+def test_flow_counts__one_record_unloadable_in_two_runs__is_subtracted_once(
+    tmp_path: Path,
+) -> None:
+    """`malformed_entries` is keyed per Layer 0 line, but PRISMA counts records.
+
+    The same paper failing in two runs of one search wrote two rows, and
+    `count(*)` subtracted it twice. On the operator's corpus that was the
+    second half of a -81 discrepancy.
+    """
+    project = Project.init("twice", title="Twice", root=tmp_path)
+    broken = _search_entry(2)
+    del broken["dc:title"]
+    for index, suffix in enumerate(("aaaaaaaa", "bbbbbbbb")):
+        write_sealed_run(
+            project.raw_dir,
+            f"2026010{index + 1}T000000Z-{suffix}",
+            [_search_entry(1), broken],
+            started_at=datetime(2026, 1, index + 1, tzinfo=UTC),
+            query=_QUERY_A,
+            total_results=2,
+        )
+    build_store(project, rebuild=True)
+
+    counts = compute_flow_counts(project)
+
+    assert counts.removed_other_reasons == 1
+    counts.assert_consistent()
+
+
+@pytest.mark.integration
+def test_flow_counts__entry_unloadable_in_one_run_but_loaded_by_another__is_not_subtracted(
+    tmp_path: Path,
+) -> None:
+    """A skipped entry is not a lost record when another run loaded that paper.
+
+    ADR 0012 says so in words; the arithmetic ignored it and subtracted a
+    record that is present in `records`, which understates the corpus.
+    """
+    project = Project.init("recovered", title="Recovered", root=tmp_path)
+    broken = _search_entry(2)
+    del broken["dc:title"]
+    write_sealed_run(
+        project.raw_dir,
+        "20260101T000000Z-aaaaaaaa",
+        [_search_entry(1), broken],
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        query=_QUERY_A,
+        total_results=2,
+    )
+    write_sealed_run(
+        project.raw_dir,
+        "20260102T000000Z-bbbbbbbb",
+        [_search_entry(1), _search_entry(2)],
+        started_at=datetime(2026, 1, 2, tzinfo=UTC),
+        query=_QUERY_A,
+        total_results=2,
+    )
+    build_store(project, rebuild=True)
+
+    counts = compute_flow_counts(project)
+
+    assert counts.removed_other_reasons == 0
+    counts.assert_consistent()

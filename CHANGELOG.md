@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-28
+
+### Changed
+
+- **`identified` now sums `total_results` across a project's distinct searches**
+  (ADR 0013), instead of taking the earliest run's alone. A real corpus with two
+  different search strings reported 651 against a store of 1,864 records, drove
+  `excluded_automated` negative, and made `assert_consistent()` fail permanently
+  with a remedy that could not work. The sum is over *distinct queries* — one
+  total per query, the earliest — so re-running a search to refresh citation
+  counts still cannot inflate the number, which is what the previous rule
+  existed to protect.
+- **`FlowCounts` gains `duplicates_across_searches` and `removed_other_reasons`**,
+  PRISMA 2020's two "records removed before screening" lines. Both are needed:
+  summing alone leaves equation 1 off by the entries `build_store` could not
+  load. `prismabib flow` renders them as their own block.
+- Equation 1 becomes `identified - duplicates_across_searches -
+  removed_other_reasons - excluded_automated == after_automated`.
+
+### Added
+
+- Layer 1 table `run_duplicates` (ADR 0013), counting papers a run re-found that
+  an earlier run **under a different query** had already loaded. Measured during
+  the load rather than derived: `records.run_id` keeps only the first run that
+  loaded a record, and deriving the figure as a remainder would make equation 1
+  close by construction — absorbing a manifest that disagrees with its own
+  corpus, which is the defect that equation exists to catch.
+
+### Note
+
+A single-search project's numbers are unchanged; verified against the reference
+fixture, whose golden gains one table checksum and no changed value.
+
 ### Changed
 
 - **A malformed Layer 0 entry no longer aborts the whole load.** `build_store` raised when
@@ -475,7 +508,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.0...v0.6.1

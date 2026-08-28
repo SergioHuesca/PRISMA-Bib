@@ -85,6 +85,8 @@ Every acquisition run writes exactly one `manifest.json`:
 
 **Critical invariant:** `manifest.total_results` is the **only** source of the PRISMA "records identified" count. It is read directly from the Scopus API's own `opensearch:totalResults` field on the first page, never derived from a row count or page count.
 
+Where a review ran more than one search string, the diagram's `identified` is the **sum** of `total_results` over the project's distinct searches — one term per distinct query, taken from that query's earliest run. A run that re-queries the same search string (a citation refresh) joins an existing term and adds nothing, so refreshing never moves the identification count. See [ADR 0013](adr/0013-identified-sums-across-searches.md).
+
 #### Layer 0 immutability
 
 Once `manifest.json` exists in a run directory, that run is **sealed**:
@@ -106,7 +108,7 @@ Given a count in a figure or table (e.g., "1,771 records"), here's how to verify
 1. **Locate the manifest:**
    - The project's `raw/` directory contains one or more run directories: `raw/<run_id>/`
    - Each has a `manifest.json`
-   - Choose the run corresponding to your publication date
+   - Choose the run corresponding to your publication date. If the review ran several search strings, there is one such run **per search**, and the published identification count is their `total_results` summed — check every manifest, not the first one
 
 2. **Check the query and view:**
    - `manifest.query` must match your review's search strategy
@@ -124,8 +126,8 @@ Given a count in a figure or table (e.g., "1,771 records"), here's how to verify
    - Every field in that JSON object traces back to the exact raw Scopus entry that produced the record
 
 5. **Read `total_results`:**
-   - This is the PRISMA "records identified" count
-   - No other derivation is permitted
+   - This is this search's contribution to the PRISMA "records identified" count; the published number is the sum over the project's distinct searches
+   - No other derivation is permitted — never a row count, never a page count, and never the same query's total counted twice
 
 ### Tracing a PRISMA count through the flow diagram
 

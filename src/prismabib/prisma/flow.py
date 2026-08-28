@@ -87,6 +87,8 @@ class FlowCounts:
     """
 
     identified: int
+    duplicates_across_searches: int
+    removed_other_reasons: int
     excluded_automated: int
     after_automated: int
     excluded_language: int
@@ -119,7 +121,8 @@ class FlowCounts:
         Then four equations, each checked independently so a failure names
         exactly which step of the diagram does not add up:
 
-        1. ``identified - excluded_automated == after_automated``
+        1. ``identified - duplicates_across_searches - removed_other_reasons
+           - excluded_automated == after_automated``
         2. ``after_automated - excluded_language == after_language``
         3. ``after_language == excluded_title_abstract +
            unsure_title_abstract + retrieved_fulltext``
@@ -145,6 +148,8 @@ class FlowCounts:
         # ADR, so it does not move often.
         counts: tuple[tuple[str, int], ...] = (
             ("identified", self.identified),
+            ("duplicates_across_searches", self.duplicates_across_searches),
+            ("removed_other_reasons", self.removed_other_reasons),
             ("excluded_automated", self.excluded_automated),
             ("after_automated", self.after_automated),
             ("excluded_language", self.excluded_language),
@@ -171,8 +176,14 @@ class FlowCounts:
 
         equations = (
             (
-                "identified - excluded_automated == after_automated",
-                self.identified - self.excluded_automated,
+                (
+                    "identified - duplicates_across_searches - removed_other_reasons "
+                    "- excluded_automated == after_automated"
+                ),
+                self.identified
+                - self.duplicates_across_searches
+                - self.removed_other_reasons
+                - self.excluded_automated,
                 self.after_automated,
             ),
             (
@@ -215,19 +226,111 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
             and :func:`compute_flow_counts` owns its lifetime.
 
     Returns:
-        The ``total_results`` of the *earliest* sealed run (by
-        ``run_id``, which sorts chronologically by construction), or ``0``
-        if no run has been loaded yet. Deliberately not the sum across
-        every run: a later run that re-queries the same search purely to
-        refresh citation counts (BUILD_PLAN's "Citation snapshots" scenario
-        in ``store/load.py``) is not a second, additional search, and
-        summing its ``total_results`` in would double-count "identified"
-        for a project that has ever refreshed itself. BUILD_PLAN's own
-        field comment ("manifest.total_results" -- singular) is read as
-        pointing at the one manifest that actually represents Phase 1's
-        search: the first.
+        The sum, over each **distinct query string** in ``runs``, of that
+        query's *earliest* run's ``total_results`` -- or ``0`` if no run has
+        been loaded yet (ADR 0013).
+
+        Neither a plain ``SUM`` nor the earliest single run. Both halves of
+        that rule carry weight:
+
+        *Summing across distinct queries* is what makes a review with more
+        than one search string report the number it actually identified. This
+        function previously answered with the earliest run alone, which was a
+        defensible reading while a project meant one search; a real corpus
+        with two different searches then reported 651 against a store of
+        1,864 records, drove ``excluded_automated`` negative, and made
+        equation 1 fail permanently.
+
+        *One total per query, the earliest* is what preserves the property
+        the old rule existed to protect. Re-running the same query to refresh
+        citation counts adds no record to the store, and summing its
+        ``total_results`` would inflate "identified" for a project that has
+        only ever refreshed itself. Taking the earliest keeps the number as
+        of the original search date rather than letting it drift with the
+        index between refreshes.
     """
-    row = connection.execute("SELECT total_results FROM runs ORDER BY run_id LIMIT 1").fetchone()
+    row = connection.execute(
+        # GROUP BY the query, then MIN(run_id) picks that search's first run;
+        # `run_id` sorts chronologically by construction (`%Y%m%dT%H%M%SZ-...`),
+        # so MIN is "earliest" without parsing a timestamp.
+        """
+        SELECT COALESCE(SUM(total_results), 0)
+        FROM runs
+        WHERE (query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)
+        """
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
+    """How many Layer 0 entries `build_store` could not turn into a record.
+
+    PRISMA 2020's "records removed before screening" box has a line for
+    reasons other than duplication; this is that line. The entries are
+    recorded in Layer 1's ``malformed_entries`` table by the loader (ADR
+    0012), so this reads what was persisted rather than recomputing it --
+    the loader is the only thing that can know, and it is immutable once
+    written.
+
+    Args:
+        connection: An open Layer 1 connection; not closed here.
+
+    Returns:
+        The row count, or ``0`` for a store built before the table existed.
+    """
+    row = connection.execute(
+        # Records genuinely lost, not rows. `malformed_entries` is keyed per
+        # Layer 0 *line*, so the same paper failing in two runs of one search
+        # is two rows -- subtracting both would double-count it. And an entry
+        # another run loaded successfully cost no record at all: it must not be
+        # subtracted, which is why the DISTINCT set is filtered against
+        # `records` (ADR 0012 predicts exactly this: "a row here does not imply
+        # a lost record").
+        #
+        # A `missing_eid` row carries no record_id -- nothing identifies the
+        # paper it was -- so each is counted individually as its own loss.
+        """
+        SELECT
+          (
+            SELECT count(*) FROM (
+              SELECT DISTINCT m.record_id
+              FROM malformed_entries m
+              WHERE m.record_id IS NOT NULL
+                AND m.record_id NOT IN (SELECT record_id FROM records)
+            )
+          )
+          + (SELECT count(*) FROM malformed_entries WHERE record_id IS NULL)
+        """
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _cross_run_duplicate_count(connection: duckdb.DuckDBPyConnection) -> int:
+    """Papers a later search returned that an earlier one had already captured.
+
+    PRISMA 2020's "duplicates removed before screening". Read from what the
+    loader recorded (``run_duplicates``), **not** derived as
+    ``identified - |S_raw| - removed_other_reasons``.
+
+    That distinction is the point. The remainder always closes equation 1 by
+    construction, so it would turn the diagram's first identity into one that
+    cannot fail -- silently absorbing a run manifest that disagrees with the
+    corpus it produced, which is the single defect BUILD_PLAN line 993 says
+    this guard exists to catch. Measured independently, the equation can
+    disagree, and a disagreement means something real.
+
+    It cannot be recomputed later either: ``records.run_id`` keeps only the
+    first run that loaded a record, so after the load Layer 1 no longer knows
+    how many runs a record appeared in.
+
+    Args:
+        connection: An open Layer 1 connection; not closed here.
+
+    Returns:
+        The total across runs, or ``0`` for a store built before the table
+        existed.
+    """
+    row = connection.execute("SELECT COALESCE(SUM(duplicates), 0) FROM run_duplicates").fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -309,9 +412,11 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         make those disagree. Note that ``records`` is **not** deduplicated:
         duplicates are *reported, not applied* (see
         :mod:`prismabib.store.load`), and only same-``record_id``
-        collisions collapse, via the primary key. A PRISMA "duplicate
-        records removed" count therefore has no source in Layer 1 today
-        and is deliberately not among these fields. This function does **not** call
+        collisions collapse, via the primary key. PRISMA's "duplicate
+        records removed" count is therefore *not* derived from ``records``:
+        it is measured during the load, when a run re-finds a paper an
+        earlier search already contributed, and read back from
+        ``run_duplicates`` (ADR 0013). This function does **not** call
         :meth:`FlowCounts.assert_consistent` itself, precisely so that
         disagreement is returned for a caller to inspect and act on,
         rather than raised from inside a function whose job is only to
@@ -325,6 +430,8 @@ def compute_flow_counts(project: Project) -> FlowCounts:
     connection = connect(project, read_only=True)
     try:
         identified = _identified_count(connection)
+        removed_other_reasons = _unloadable_count(connection)
+        duplicates_across_searches = _cross_run_duplicate_count(connection)
         snapshot = _capture_snapshot(project, connection=connection)
     finally:
         connection.close()
@@ -352,6 +459,8 @@ def compute_flow_counts(project: Project) -> FlowCounts:
 
     return FlowCounts(
         identified=identified,
+        duplicates_across_searches=duplicates_across_searches,
+        removed_other_reasons=removed_other_reasons,
         excluded_automated=excluded_automated,
         after_automated=after_automated,
         excluded_language=excluded_language,

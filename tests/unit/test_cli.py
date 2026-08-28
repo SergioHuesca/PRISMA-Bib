@@ -37,6 +37,8 @@ def _counts(**overrides: object) -> FlowCounts:
     """A consistent :class:`FlowCounts` for rendering tests."""
     fields: dict[str, object] = {
         "identified": 1771,
+        "duplicates_across_searches": 0,
+        "removed_other_reasons": 0,
         "excluded_automated": 412,
         "after_automated": 1359,
         "excluded_language": 27,
