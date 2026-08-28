@@ -354,11 +354,16 @@ class _Accumulator:
     subject_areas: set[tuple[str, str]] = field(default_factory=set)
     citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
     seen_record_ids: set[str] = field(default_factory=set)
-    #: record_id -> the query string of the run that first loaded it.
-    #: Needed to tell a *second search* finding the same paper (a PRISMA
-    #: duplicate) from a *refresh* of the same search re-finding it (not
-    #: a duplicate -- `identified` already counts that query once).
-    first_seen_query: dict[str, str] = field(default_factory=dict)
+    #: ``(query, record_id)`` pairs already counted toward `identified`.
+    #:
+    #: A *set of pairs*, not a record -> first-query mapping. The mapping was
+    #: wrong in a way that only shows up with three runs: a record first seen
+    #: under query A, re-found by B, then re-found again by a *refresh of B*
+    #: compares unequal to A both times and is counted as a duplicate twice.
+    #: `identified` adds each distinct query once, so each (query, record) may
+    #: be subtracted at most once. Asking "has this record already been counted
+    #: under *this* query" is the question that matches.
+    counted_query_records: set[tuple[str, str]] = field(default_factory=set)
     #: ``malformed_entries`` rows, in ``schema.sql`` column order, for every
     #: entry that could not be turned into a record. Rows, not a count,
     #: because the operator's next question is always *which one* -- and
@@ -1060,17 +1065,18 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                 # first equation an identity that cannot fail -- absorbing a
                 # manifest that disagrees with the corpus, which is the one
                 # defect BUILD_PLAN line 993 says the guard exists to catch.
-                # Only a *different* search finding the same paper is a PRISMA
-                # duplicate. A refresh of the same query re-finding it is not:
-                # `identified` counts each distinct query once, so counting
-                # this would subtract it a second time and break equation 1.
-                if acc.first_seen_query.get(record_id) != manifest.query:
+                # Only a search finding a paper it has not already contributed
+                # is a PRISMA duplicate. A refresh of the same query re-finding
+                # its own results is not: `identified` counts each distinct
+                # query once, so subtracting again would break equation 1.
+                if (manifest.query, record_id) not in acc.counted_query_records:
+                    acc.counted_query_records.add((manifest.query, record_id))
                     acc.cross_run_duplicates[manifest.run_id] = (
                         acc.cross_run_duplicates.get(manifest.run_id, 0) + 1
                     )
                 continue
             acc.seen_record_ids.add(record_id)
-            acc.first_seen_query[record_id] = manifest.query
+            acc.counted_query_records.add((manifest.query, record_id))
 
             venue_id = _venue_id_from_entry(entry, record.venue)
             acc.venues.setdefault(

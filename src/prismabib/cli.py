@@ -595,11 +595,12 @@ def _warn_if_inconsistent(counts: FlowCounts) -> None:
     function whose job is only to compute. This is that caller: it reports the
     disagreement in full and still prints the numbers, and it exits ``0``.
 
-    Exiting non-zero would be wrong here. The one identity this function can
-    realistically catch is ``identified - excluded_automated == after_automated``,
-    which compares Scopus's own ``total_results`` against rows actually in
-    Layer 1, and an *incomplete but perfectly valid* capture (a run interrupted,
-    a build not yet re-run) breaks it. That is a state a researcher needs to see
+    Exiting non-zero would be wrong here. The identity this function can
+    realistically catch is equation 1, which compares Scopus's own
+    ``total_results`` (summed over the project's distinct searches, less the
+    records removed before screening) against rows actually in Layer 1, and an
+    *incomplete but perfectly valid* capture (a run interrupted, a build not yet
+    re-run) breaks it. That is a state a researcher needs to see
     described, in the middle of a report they can still read -- not one that
     should make a reporting command look like it crashed.
 

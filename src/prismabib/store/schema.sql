@@ -60,7 +60,8 @@ CREATE TABLE malformed_entries (
 );
 
 -- Added by ADR 0013, not part of the frozen BUILD_PLAN schema. One row per
--- sealed run, counting the papers that run re-found which an *earlier run
+-- sealed run that re-found at least one paper an earlier search had already
+-- contributed (runs with none get no row), counting the papers that run re-found which an *earlier run
 -- under a different query* had already loaded -- PRISMA 2020's "duplicates
 -- removed before screening". The different-query condition is load-bearing: a
 -- refresh of the same search re-finding its own papers is not a duplicate,

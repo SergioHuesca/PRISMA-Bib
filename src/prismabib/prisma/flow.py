@@ -278,7 +278,30 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
     Returns:
         The row count, or ``0`` for a store built before the table existed.
     """
-    row = connection.execute("SELECT count(*) FROM malformed_entries").fetchone()
+    row = connection.execute(
+        # Records genuinely lost, not rows. `malformed_entries` is keyed per
+        # Layer 0 *line*, so the same paper failing in two runs of one search
+        # is two rows -- subtracting both would double-count it. And an entry
+        # another run loaded successfully cost no record at all: it must not be
+        # subtracted, which is why the DISTINCT set is filtered against
+        # `records` (ADR 0012 predicts exactly this: "a row here does not imply
+        # a lost record").
+        #
+        # A `missing_eid` row carries no record_id -- nothing identifies the
+        # paper it was -- so each is counted individually as its own loss.
+        """
+        SELECT
+          (
+            SELECT count(*) FROM (
+              SELECT DISTINCT m.record_id
+              FROM malformed_entries m
+              WHERE m.record_id IS NOT NULL
+                AND m.record_id NOT IN (SELECT record_id FROM records)
+            )
+          )
+          + (SELECT count(*) FROM malformed_entries WHERE record_id IS NULL)
+        """
+    ).fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -389,9 +412,11 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         make those disagree. Note that ``records`` is **not** deduplicated:
         duplicates are *reported, not applied* (see
         :mod:`prismabib.store.load`), and only same-``record_id``
-        collisions collapse, via the primary key. A PRISMA "duplicate
-        records removed" count therefore has no source in Layer 1 today
-        and is deliberately not among these fields. This function does **not** call
+        collisions collapse, via the primary key. PRISMA's "duplicate
+        records removed" count is therefore *not* derived from ``records``:
+        it is measured during the load, when a run re-finds a paper an
+        earlier search already contributed, and read back from
+        ``run_duplicates`` (ADR 0013). This function does **not** call
         :meth:`FlowCounts.assert_consistent` itself, precisely so that
         disagreement is returned for a caller to inspect and act on,
         rather than raised from inside a function whose job is only to
