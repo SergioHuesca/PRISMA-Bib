@@ -111,7 +111,7 @@ def test_flow_counts__injected_off_by_one__assert_consistent_raises(tmp_path: Pa
     counts = compute_flow_counts(project)
 
     assert counts.identified == 6
-    with pytest.raises(ValidationError, match=r"'identified - excluded_automated =="):
+    with pytest.raises(ValidationError, match=r"'identified - duplicates_across_searches"):
         counts.assert_consistent()
 
 
@@ -222,6 +222,8 @@ def test_flow_counts__project_with_no_runs__is_every_count_zero(tmp_path: Path) 
 
     assert counts == FlowCounts(
         identified=0,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
         excluded_automated=0,
         after_automated=0,
         excluded_language=0,

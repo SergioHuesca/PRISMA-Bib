@@ -7,9 +7,10 @@
 --
 -- Every table down to citation_snapshots is reproduced character-for-character
 -- from the BUILD_PLAN -- do not add, rename, or retype a column in one of them
--- without updating the frozen spec first. The one table below that line
--- (malformed_entries) is an addition, recorded in ADR 0012; adding a table there
--- is subject to the same rule, so a further one needs its own ADR.
+-- without updating the frozen spec first. The two tables below that line
+-- (malformed_entries, run_duplicates) are additions, recorded in ADR 0012 and
+-- ADR 0013; adding a table there is subject to the same rule, so a further one
+-- needs its own ADR.
 
 CREATE TABLE runs (
   run_id TEXT PRIMARY KEY, started_at TIMESTAMP, query TEXT, view TEXT,
@@ -56,4 +57,24 @@ CREATE TABLE citation_snapshots (
 CREATE TABLE malformed_entries (
   run_id TEXT, payload_file TEXT, payload_line INTEGER, record_id TEXT, reason TEXT,
   PRIMARY KEY (payload_file, payload_line)
+);
+
+-- Added by ADR 0013, not part of the frozen BUILD_PLAN schema. One row per
+-- sealed run, counting the papers that run re-found which an *earlier run
+-- under a different query* had already loaded -- PRISMA 2020's "duplicates
+-- removed before screening". The different-query condition is load-bearing: a
+-- refresh of the same search re-finding its own papers is not a duplicate,
+-- because `identified` already counts each distinct query exactly once.
+--
+-- Recorded during the load because that is the only moment it is observable:
+-- `records.run_id` keeps the first run that loaded a record, so afterwards
+-- Layer 1 cannot say how many runs saw it. Deriving it instead as
+-- `identified - |S_raw| - removed_other_reasons` would make the flow diagram's
+-- first equation close by construction, absorbing a manifest that disagrees
+-- with its own corpus -- the defect that equation exists to catch.
+--
+-- A table rather than a `runs` column, for the reason ADR 0012 gives: adding a
+-- table is a smaller deviation from the frozen schema than altering one.
+CREATE TABLE run_duplicates (
+  run_id TEXT PRIMARY KEY, duplicates INTEGER
 );

@@ -407,6 +407,7 @@ The 11 tables are:
   - `payload_line`: INTEGER 0-based line index into that file (Stage 3's correction to the old scheme that always stored 0 here)
 - **Role:** The central fact table. Every analysis begins here. `payload_file`/`payload_line` together form a provenance pointer back to the exact raw JSON line.
 - **Deduplication:** When the same Scopus paper is captured by more than one run, **only the first run's row is retained**. Later runs contribute citation snapshots (see below) but no new record rows. This is the "first-seen wins" principle, deterministic per the fixed traversal order of runs by `run_id`.
+- **That collapse is counted, not silent.** Two search strings over one register overlap, and every entry that resolves to an already-loaded `record_id` is a record identified twice and stored once. `FlowCounts.duplicates_across_searches` reports it on PRISMA's "duplicate records removed" line, which is what lets the flow diagram's first consistency equation close on a multi-search project ([ADR 0013](adr/0013-identified-sums-across-searches.md)). It is *not* the normalised-DOI report: two **distinct** records sharing a DOI are both kept and both screened.
 
 **`venues`** — one row per distinct publication outlet.
 - **Primary key:** `venue_id` (either `"scopus-source:<source-id>"` if Scopus provided one, or `"venue-hash:<sha1>"` for fallback matching)
@@ -475,6 +476,17 @@ The 11 tables are:
 - **Role:** Makes "which entries were skipped?" a query against Layer 1 rather than a value only the call that rebuilt the store ever saw. The default `prismabib build` path reuses an existing store and does no loading, so an in-memory tally there is empty — which reads as "nothing was skipped".
 - **Entries, not records:** A row here does not imply a lost record. A re-capture of a paper an earlier run already loaded can be skipped while the record stays in `records` (and its citation snapshot is kept, since the count does not depend on the field that failed).
 - **Why `reason` is a code, not the error message:** The message embeds an absolute path. A checksummed table containing one would make S03-AC1's byte-stable checksums depend on where the repository is checked out. The message is logged instead.
+
+**`run_duplicates`** — one row per sealed run, counting the entries in it that were papers a run under a *different* query had already loaded. **Not part of the frozen BUILD_PLAN schema**; added by [ADR 0013](adr/0013-identified-sums-across-searches.md).
+- **Primary key:** `run_id`
+- **Columns:**
+  - `run_id`: TEXT the sealed run whose entries were counted
+  - `duplicates`: INTEGER how many of that run's entries resolved to a `record_id` an earlier, *differently queried* run had already loaded
+- **Role:** PRISMA 2020's "duplicate records removed" line. `FlowCounts.duplicates_across_searches` is `SUM(duplicates)` over this table, which is what lets the flow diagram's first consistency equation close on a review that ran more than one search string.
+- **Why it must be written during the load:** it cannot be recomputed afterwards. `records.run_id` keeps only the *first* run that loaded a record, so once the load is over Layer 1 no longer knows how many runs a record appeared in. Only the loader is ever in a position to count this.
+- **Why not derive it as a remainder** (`identified - |S_raw| - removed_other_reasons`): that would make equation 1 an identity that cannot fail, silently absorbing a run manifest that disagrees with the corpus it produced — the one defect the consistency guard exists to catch. Measured independently, the equation can still disagree, and a disagreement then means something real.
+- **A refresh is not a duplicate.** An entry is counted only when the record was first loaded under a different `runs.query`. Re-running the *same* query to refresh citation counts contributes one `total_results` term to `identified` in total (see ADR 0013), so counting its re-found records would subtract them a second time and break equation 1 in the other direction.
+- **Rows are inserted in sorted `run_id` order**, so the table's checksum does not depend on which run happened to be walked first.
 
 **`citation_snapshots`** — point-in-time citation counts, one row per (record, retrieval timestamp) pair.
 - **Primary key:** `(record_id, retrieved_at)` composite key

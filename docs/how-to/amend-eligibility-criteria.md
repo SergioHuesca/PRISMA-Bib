@@ -213,10 +213,15 @@ diagram is derived, not typed. Any manuscript figure or table produced under the
 is now stale and must be regenerated, and the criteria version it was produced under must be
 cited alongside it.
 
-If `assert_consistent()` raises on equation 1
-(`identified - excluded_automated == after_automated`), do not adjust a number to make it
-close — see [PRISMA Mapping — the four consistency equations](../methodology/prisma-mapping.md#the-four-consistency-equations)
-for why that equation is a genuine cross-check against Layer 0 rather than an identity.
+If `assert_consistent()` raises on equation 1 (`identified - duplicates_across_searches -
+removed_other_reasons - excluded_automated == after_automated`), do not adjust a number to
+make it close — see [PRISMA Mapping — the four consistency
+equations](../methodology/prisma-mapping.md#the-four-consistency-equations) for why that
+equation is a genuine cross-check against Layer 0 rather than an identity, and [when equation
+1 does not close](../methodology/prisma-mapping.md#when-equation-1-does-not-close) for the
+causes to work through. Amending criteria is not one of them: `identified` and the two
+removal counts are read from Layer 1 and do not depend on `criteria.yaml` at all, so an
+amendment cannot break equation 1 and cannot fix it either.
 
 ## Common cases
 

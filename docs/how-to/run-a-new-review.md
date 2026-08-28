@@ -254,7 +254,10 @@ projects/my-review/
   and licensed; the manifest is what makes the run reproducible.
 - **`manifest.json` is the source of truth for "records identified"**: `total_results` is
   copied from Scopus's own `opensearch:totalResults`, never derived from a count of rows or
-  pages.
+  pages. One manifest is one *search*: a review that runs a second search string gets a second
+  run directory, and the diagram's identification count is the sum over the project's distinct
+  searches ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)). Re-running
+  the same query — to refresh citation counts — adds a run and no identification.
 - **`payload_sha256`** hashes every page file concatenated in fetch order. A re-run with the
   HTTP cache warm reproduces it byte for byte.
 - **The run is sealed.** Sealing is the presence of `manifest.json`, and every write path in
@@ -278,7 +281,8 @@ You should see:
 
 - `query` — the Boolean string built from your `project.toml`
 - `view` — `"COMPLETE"`
-- `total_results` — the PRISMA "records identified" count
+- `total_results` — this search's contribution to the PRISMA "records identified" count (the
+  sum over distinct searches, where there is more than one)
 - `pages_fetched` — how many pages Scopus returned
 - `payload_sha256` — the content hash for provenance verification
 - `client_version` — the prismabib version that made the capture, derived from the git tag
@@ -377,7 +381,15 @@ close, a warning on stderr — it still prints the numbers and still exits `0`, 
 incomplete-but-valid capture is a state you need described rather than one that should look
 like a crash. Do not publish a diagram whose warning you have not explained. See
 [PRISMA Mapping](../methodology/prisma-mapping.md) for the box-by-box audit table and the
-four consistency equations.
+four consistency equations, and [when equation 1 does not
+close](../methodology/prisma-mapping.md#when-equation-1-does-not-close) for the causes to work
+through when it does not.
+
+If this review ran more than one search string, "records identified" is the sum of
+`total_results` over the distinct searches, and two "removed before screening" counts sit
+between it and the automated filters: records both searches returned, and entries the loader
+could not read ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)).
+Report all three — the sum is not auditable from one manifest.
 
 ---
 

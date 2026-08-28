@@ -30,6 +30,8 @@ from prismabib.prisma.flow import FlowCounts
 #: the perturbation is unambiguously the cause of the failure.
 CONSISTENT = FlowCounts(
     identified=100,
+    duplicates_across_searches=0,
+    removed_other_reasons=0,
     excluded_automated=10,
     after_automated=90,
     excluded_language=5,
@@ -55,7 +57,7 @@ def test_flow_counts__consistent_counts__assert_consistent_returns_none() -> Non
         pytest.param(
             "after_automated",
             1,
-            "identified - excluded_automated == after_automated",
+            "identified - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated",
             90,
             91,
             id="equation-1-identification",
@@ -117,13 +119,15 @@ def test_flow_counts__equation_2_violated_by_a_later_field__equation_1_is_not_bl
 
     message = str(excinfo.value)
     assert "after_automated - excluded_language == after_language" in message
-    assert "identified - excluded_automated" not in message
+    assert "identified - duplicates_across_searches" not in message
 
 
 @pytest.mark.unit
 def test_flow_counts__empty_excluded_fulltext_breakdown__still_closes() -> None:
     all_included = FlowCounts(
         identified=3,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
         excluded_automated=0,
         after_automated=3,
         excluded_language=0,
@@ -261,6 +265,8 @@ def test_flow_counts__every_count_zero__is_not_treated_as_negative() -> None:
     # zeros, and zero is a perfectly ordinary cardinality.
     empty = FlowCounts(
         identified=0,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
         excluded_automated=0,
         after_automated=0,
         excluded_language=0,

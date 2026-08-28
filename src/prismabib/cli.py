@@ -549,6 +549,14 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     _echo("Identification")
     row("records identified (Scopus total_results)", f"{counts.identified:,}")
     _echo()
+    # PRISMA 2020 puts these before screening, not inside it: they are records
+    # that never reached a screening decision at all. Rendered even when zero,
+    # because a reader checking a published diagram needs to see that the line
+    # was considered and came to nothing, not guess whether it was omitted.
+    _echo("Removed before screening")
+    row("duplicates across searches", minus(counts.duplicates_across_searches))
+    row("other reasons (unreadable capture entries)", minus(counts.removed_other_reasons))
+    _echo()
     _echo("Screening -- automated, from criteria.yaml")
     row("excluded by year / subject area / doc type", minus(counts.excluded_automated))
     row("remaining", f"{counts.after_automated:,}")

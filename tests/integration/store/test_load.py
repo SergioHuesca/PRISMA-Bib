@@ -133,6 +133,10 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("record_id", "VARCHAR", False),
         ("reason", "VARCHAR", False),
     ),
+    "run_duplicates": (
+        ("run_id", "VARCHAR", True),
+        ("duplicates", "INTEGER", False),
+    ),
 }
 
 

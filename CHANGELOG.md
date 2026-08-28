@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`identified` now sums `total_results` across a project's distinct searches**
+  (ADR 0013), instead of taking the earliest run's alone. A real corpus with two
+  different search strings reported 651 against a store of 1,864 records, drove
+  `excluded_automated` negative, and made `assert_consistent()` fail permanently
+  with a remedy that could not work. The sum is over *distinct queries* — one
+  total per query, the earliest — so re-running a search to refresh citation
+  counts still cannot inflate the number, which is what the previous rule
+  existed to protect.
+- **`FlowCounts` gains `duplicates_across_searches` and `removed_other_reasons`**,
+  PRISMA 2020's two "records removed before screening" lines. Both are needed:
+  summing alone leaves equation 1 off by the entries `build_store` could not
+  load. `prismabib flow` renders them as their own block.
+- Equation 1 becomes `identified - duplicates_across_searches -
+  removed_other_reasons - excluded_automated == after_automated`.
+
+### Added
+
+- Layer 1 table `run_duplicates` (ADR 0013), counting papers a run re-found that
+  an earlier run **under a different query** had already loaded. Measured during
+  the load rather than derived: `records.run_id` keeps only the first run that
+  loaded a record, and deriving the figure as a remainder would make equation 1
+  close by construction — absorbing a manifest that disagrees with its own
+  corpus, which is the defect that equation exists to catch.
+
+### Note
+
+A single-search project's numbers are unchanged; verified against the reference
+fixture, whose golden gains one table checksum and no changed value.
+
+### Changed
+
 - **A malformed Layer 0 entry no longer aborts the whole load.** `build_store` raised when
   any entry lacked `dc:title` or `prism:coverDate` — fields Scopus always sends. A real
   capture returned 1,945 records with exactly one missing `dc:title`, and the other 1,944
