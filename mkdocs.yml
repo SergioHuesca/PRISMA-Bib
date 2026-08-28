@@ -96,6 +96,7 @@ nav:
           - "ADR 0009: Mutation scope is configured, not passed on the command line": architecture/adr/0009-mutmut-3x-cli-deviation.md
           - "ADR 0010: Cross-platform locking for the decision log": architecture/adr/0010-cross-platform-decision-log-locking.md
           - "ADR 0011: Subject areas come from a separate Abstract Retrieval run": architecture/adr/0011-abstract-retrieval-for-subject-areas.md
+          - "ADR 0012: A skipped Layer 0 entry is a row in Layer 1": architecture/adr/0012-persisting-skipped-layer0-entries.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

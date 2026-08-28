@@ -37,7 +37,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Final, NoReturn
 
 import structlog
 import typer
@@ -406,6 +406,11 @@ def _print_manifest(manifest: RunManifest, *, slug: str, raw_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: How many skipped-entry references ``prismabib build`` names before it says
+#: "and N more". The full list is in the store's ``malformed_entries`` table.
+_MAX_LISTED_MALFORMED_ENTRIES: Final = 5
+
+
 @app.command()
 def build(
     slug: Annotated[str, typer.Argument(help="Project slug whose store to build.")],
@@ -435,6 +440,12 @@ def build(
 def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
     """Print one :class:`StoreStats` as a readable summary.
 
+    Every field of ``stats`` that a reader could act on is rendered here.
+    ``malformed_entries_skipped`` in particular: it was reported only through
+    a structlog warning that scrolls past above this summary, while
+    ``unmapped_country_values`` -- which loses no record at all -- got a
+    rendered line. A skipped entry is the more consequential of the two.
+
     Args:
         stats: The stats :func:`build_store` returned.
         slug: The project slug, used for the next-step hint.
@@ -463,6 +474,22 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
         f"({stats.duplicate_records:,} records). Reported, never applied -- every one of "
         "those rows is still in the store; deduplication is a screening decision."
     )
+    if stats.malformed_entries_skipped:
+        skipped = stats.malformed_entries_skipped
+        # Capped, not truncated to a count: the operator's next question is
+        # always *which line*, and Layer 0 is immutable so they can go read
+        # it. But a capture with thousands of skips would otherwise print
+        # thousands of lines, so the rest are left in the `malformed_entries`
+        # table, which is queryable and does not scroll.
+        listed = ", ".join(skipped[:_MAX_LISTED_MALFORMED_ENTRIES])
+        if len(skipped) > _MAX_LISTED_MALFORMED_ENTRIES:
+            listed += f", ... and {len(skipped) - _MAX_LISTED_MALFORMED_ENTRIES:,} more"
+        _echo(
+            f"  {len(skipped):,} Layer 0 entry/entries could not be parsed into a record "
+            "and were skipped, not loaded. That is a count of *entries*, not of records: "
+            "one already loaded from an earlier run is still in the store. "
+            f"Full list in the store's malformed_entries table. At {listed}"
+        )
     if stats.unmapped_country_values:
         _echo(
             f"  {len(stats.unmapped_country_values):,} affiliation country value(s) did not "

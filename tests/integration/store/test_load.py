@@ -32,7 +32,12 @@ from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES, table_checksums
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus, build_store
-from tests.store_helpers import copy_reference_project, make_entry, write_sealed_run
+from tests.store_helpers import (
+    copy_reference_project,
+    make_entry,
+    read_reference_entry,
+    write_sealed_run,
+)
 
 _TRAILING_DIGITS_RE = re.compile(r"(\d+)$")
 
@@ -117,6 +122,16 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("record_id", "VARCHAR", True),
         ("retrieved_at", "TIMESTAMP", True),
         ("cited_by_count", "INTEGER", False),
+    ),
+    # Not from the BUILD_PLAN schema: added by ADR 0012. Transcribed from the
+    # ADR's stated shape for the same reason as the rest -- an independent
+    # expectation, so a drift in schema.sql is what this test catches.
+    "malformed_entries": (
+        ("run_id", "VARCHAR", False),
+        ("payload_file", "VARCHAR", True),
+        ("payload_line", "INTEGER", True),
+        ("record_id", "VARCHAR", False),
+        ("reason", "VARCHAR", False),
     ),
 }
 
@@ -766,3 +781,491 @@ def test_corpus__layer1_only_stage__does_not_create_a_decision_log(tmp_path: Pat
     Corpus.open(project).records(stage=PrismaStage.LANGUAGE)
 
     assert not project.decisions_path.exists()
+
+
+@pytest.mark.integration
+def test_build_store__one_malformed_entry__is_skipped_and_named_rather_than_aborting(
+    tmp_path: Path,
+) -> None:
+    """One bad entry must not make every other record unloadable.
+
+    This is not hypothetical. The first real capture run against this tool
+    returned 1,945 records, of which exactly one arrived without a
+    ``dc:title`` -- a field Scopus always sends. ``build_store`` raised, and
+    the other 1,944 records became unloadable with no way forward: Layer 0 is
+    immutable, and re-capturing means a drifted index, so the corpus that had
+    already cost a weekly quota could not be turned into a store at all.
+
+    Skipping silently would be the opposite error -- a smaller corpus that
+    looks complete is exactly BUILD_PLAN §1.4's failure mode. So the entry is
+    named by payload file and line in ``StoreStats``, logged individually, and
+    warned about at the end of the build. The operator's next question is
+    always *which record*, and Layer 0 being immutable means the answer has to
+    survive in the artefact.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = next(d for d in project.raw_dir.iterdir() if (d / "manifest.json").is_file())
+    page = run_dir / "page-0000.jsonl"
+    lines = page.read_text(encoding="utf-8").splitlines()
+    entry = json.loads(lines[2])
+    del entry["dc:title"]
+    lines[2] = json.dumps(entry, sort_keys=True, separators=(",", ":"))
+    page.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    stats = build_store(project, rebuild=True)
+
+    assert stats.records_loaded == 119
+    assert stats.malformed_entries_skipped == (f"{run_dir.name}/page-0000.jsonl:2",)
+
+
+def _drop_field_from_reference_entries(
+    project: Project, *, field: str, lines_to_break: tuple[int, ...]
+) -> Path:
+    """Delete ``field`` from some of the reference fixture's Layer 0 entries.
+
+    Helper, not a test. Rewrites the copied fixture's one page file in place,
+    which is the only way to produce a malformed Layer 0 entry: nothing in
+    prismabib writes one, and §3.7.3 forbids monkeypatching the loader to
+    pretend otherwise.
+
+    Args:
+        project: A :func:`copy_reference_project` result (its ``raw/`` is a
+            writable copy, never the checked-in fixture).
+        field: The entry key to delete, e.g. ``"dc:title"``.
+        lines_to_break: 0-based line indices of ``page-0000.jsonl`` to break.
+            The fixture has five pages; only the first is touched here, so a
+            caller wanting every entry broken must say so page by page.
+
+    Returns:
+        The run directory that was modified.
+    """
+    run_dir = next(d for d in project.raw_dir.iterdir() if (d / "manifest.json").is_file())
+    page = run_dir / "page-0000.jsonl"
+    lines = page.read_text(encoding="utf-8").splitlines()
+    for index in lines_to_break:
+        entry = json.loads(lines[index])
+        del entry[field]
+        lines[index] = json.dumps(entry, sort_keys=True, separators=(",", ":"))
+    page.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    return run_dir
+
+
+def _orphan_snapshot_count(project: Project) -> int:
+    """Count ``citation_snapshots`` rows whose ``record_id`` is in no ``records`` row.
+
+    Helper, not a test. ``schema.sql`` declares no foreign keys anywhere, so
+    an orphan snapshot is rejected by nothing: it does not fail an insert, it
+    does not fail a rebuild, and it disappears from every inner join while
+    still inflating ``citation_snapshots_loaded``. It has to be asked for
+    explicitly or it is not checked at all.
+
+    Args:
+        project: A project whose store has been built.
+
+    Returns:
+        The number of orphan rows.
+    """
+    connection = connect(project, read_only=True)
+    try:
+        (orphans,) = connection.execute(
+            "SELECT COUNT(*) FROM citation_snapshots s "
+            "LEFT JOIN records r ON r.record_id = s.record_id WHERE r.record_id IS NULL"
+        ).fetchone()
+    finally:
+        connection.close()
+    return int(orphans)
+
+
+@pytest.mark.integration
+def test_build_store__one_malformed_entry__is_persisted_and_survives_a_reuse_build(
+    tmp_path: Path,
+) -> None:
+    """The default ``prismabib build`` path must not claim a clean load.
+
+    ``malformed_entries_skipped`` used to be an in-memory tally with no column
+    behind it, populated only by the call that did the loading. A rebuild
+    reported the skip; every later ``build_store(project)`` -- which is what
+    ``prismabib build <slug>`` without ``--rebuild`` calls -- reported ``()``.
+    And ``()`` does not read as "unknown", it reads as "nothing was skipped",
+    on the path an operator takes by default.
+
+    The skip is a fact derived from Layer 0, so by BUILD_PLAN §2.2 it belongs
+    in Layer 1. ADR 0012 puts it in a ``malformed_entries`` table, which is
+    what restores :class:`StoreStats`'s own stated invariant: every field is
+    read back from the store, so a caller reading ``StoreStats`` and a caller
+    querying the store always agree.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = _drop_field_from_reference_entries(project, field="dc:title", lines_to_break=(2,))
+    expected = (f"{run_dir.name}/page-0000.jsonl:2",)
+
+    rebuilt = build_store(project, rebuild=True)
+    reused = build_store(project)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute(
+            "SELECT run_id, payload_file, payload_line, record_id, reason FROM malformed_entries"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    record_id = f"scopus:{read_reference_entry('page-0000.jsonl', 2)['eid']}"
+
+    assert reused.rebuilt is False
+    assert rebuilt.malformed_entries_skipped == expected
+    assert reused.malformed_entries_skipped == expected
+    assert (rebuilt.records_loaded, reused.records_loaded) == (119, 119)
+    assert rows == [
+        (run_dir.name, f"{run_dir.name}/page-0000.jsonl", 2, record_id, "invalid_field")
+    ]
+
+
+@pytest.mark.integration
+def test_build_store__malformed_entry__warns_per_entry_with_its_payload_reference(
+    tmp_path: Path,
+) -> None:
+    """ "Skipped, never silently" is the whole justification for skipping.
+
+    Deleting this warning from ``_load_run`` left the store suite green, which
+    means the per-entry half of that promise was unpinned -- while the
+    adjacent, less consequential ``entry_missing_eid`` warning has been
+    pinned field-by-field since Stage 3.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = _drop_field_from_reference_entries(project, field="dc:title", lines_to_break=(2,))
+    record_id = f"scopus:{read_reference_entry('page-0000.jsonl', 2)['eid']}"
+
+    with capture_logs() as logs:
+        build_store(project, rebuild=True)
+
+    warnings = [
+        entry for entry in logs if entry.get("event") == "store.load.malformed_entry_skipped"
+    ]
+
+    assert len(warnings) == 1
+    assert {key: warnings[0][key] for key in warnings[0] if key != "detail"} == {
+        "event": "store.load.malformed_entry_skipped",
+        "log_level": "warning",
+        "run_id": run_dir.name,
+        "payload_file": "page-0000.jsonl",
+        "line": 2,
+        "record_id": record_id,
+        "reason": "invalid_field",
+    }
+    # The human-readable message is the one place the failing field is named,
+    # and it is deliberately not persisted: it embeds an absolute path.
+    assert "dc:title" in warnings[0]["detail"]
+
+
+@pytest.mark.integration
+def test_build_store__malformed_entries__warns_once_at_the_end_with_a_capped_list(
+    tmp_path: Path,
+) -> None:
+    """The end-of-build summary is the line an operator actually reads.
+
+    Deleting it also left the suite green. It is pinned here together with
+    its cap: the summary used to log one line per skipped entry *plus* a
+    final line carrying the whole tuple, so the real 1,945-record capture's
+    successor -- a capture where thousands fail -- would produce thousands of
+    lines and one enormous one.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = _drop_field_from_reference_entries(
+        project, field="dc:title", lines_to_break=tuple(range(3))
+    )
+
+    with capture_logs() as logs:
+        build_store(project, rebuild=True)
+
+    summaries = [
+        entry for entry in logs if entry.get("event") == "store.load.malformed_entries_skipped"
+    ]
+
+    assert summaries == [
+        {
+            "event": "store.load.malformed_entries_skipped",
+            "log_level": "warning",
+            "count": 3,
+            "entries": tuple(f"{run_dir.name}/page-0000.jsonl:{line}" for line in range(3)),
+            "truncated": False,
+        }
+    ]
+
+
+@pytest.mark.integration
+def test_build_store__many_malformed_entries__caps_the_summary_warning(tmp_path: Path) -> None:
+    """A capture with thousands of skips must not log thousands of references.
+
+    The summary used to log the whole tuple; at the 1,945-entry scale that
+    motivated skipping, a capture going systematically wrong would produce
+    one enormous line. The cap is what makes the difference between a warning
+    an operator reads and one they scroll past, and ``truncated`` says the
+    list is partial rather than leaving that to be inferred from a length.
+    The full list is in ``malformed_entries``, which is queryable.
+
+    500 entries with 21 bad ones, deliberately: enough skips to exceed the
+    cap while staying under
+    :func:`~prismabib.store.load._guard_against_unloadable_capture`'s 5%.
+    """
+    project = Project.init("many-skips", title="Many skips", root=tmp_path)
+    run_id = "20250101T000000Z-44444444"
+    page = [make_entry(eid=f"2-s2.0-9200000{index:05d}") for index in range(500)]
+    for entry in page[:21]:
+        del entry["dc:title"]
+    write_sealed_run(project.raw_dir, run_id, page, started_at=datetime(2025, 1, 1, tzinfo=UTC))
+
+    with capture_logs() as logs:
+        stats = build_store(project, rebuild=True)
+
+    (summary,) = [
+        entry for entry in logs if entry.get("event") == "store.load.malformed_entries_skipped"
+    ]
+    (complete,) = [entry for entry in logs if entry.get("event") == "store.build_store.complete"]
+
+    assert summary["count"] == 21
+    assert summary["truncated"] is True
+    assert summary["entries"] == tuple(f"{run_id}/page-0000.jsonl:{line}" for line in range(20))
+    assert len(stats.malformed_entries_skipped) == 21
+    # The per-build completion event carries a length, never the 21 (or 1,945)
+    # references, so one structured log line cannot become enormous either.
+    assert complete["malformed_entries_skipped_count"] == 21
+    assert "malformed_entries_skipped" not in complete
+
+
+@pytest.mark.integration
+def test_build_store__entry_missing_eid__is_reported_as_a_skipped_entry(tmp_path: Path) -> None:
+    """A dropped record must never leave ``malformed_entries_skipped`` empty.
+
+    ``entry_missing_eid`` is the adjacent branch of the same loop and had the
+    same consequence for the corpus -- a Layer 0 line that produced no record
+    -- while sitting entirely outside the new reporting: deleting an ``eid``
+    gave ``records_loaded=119, malformed_entries_skipped=()``, which says no
+    record was lost.
+    """
+    project = copy_reference_project(tmp_path)
+    run_dir = _drop_field_from_reference_entries(project, field="eid", lines_to_break=(2,))
+
+    stats = build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute(
+            "SELECT payload_line, record_id, reason FROM malformed_entries"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert stats.records_loaded == 119
+    assert stats.malformed_entries_skipped == (f"{run_dir.name}/page-0000.jsonl:2",)
+    assert rows == [(2, None, "missing_eid")]
+
+
+@pytest.mark.integration
+def test_build_store__malformed_entries_table__stores_no_absolute_path(tmp_path: Path) -> None:
+    """Nothing machine-dependent may enter a checksummed table.
+
+    ``ValidationError``'s message names the entry as ``<absolute path>:<line>``.
+    Persisting it would make S03-AC1's byte-stable checksums depend on where
+    the repository happens to be checked out -- passing every local test and
+    failing the Stage 11 criterion that a clean clone on a different machine
+    reproduces the same numbers. ``reason`` is a closed-vocabulary code for
+    exactly that reason, and ``payload_file`` is the same run-relative form
+    ``records.payload_file`` already uses.
+    """
+    project = copy_reference_project(tmp_path)
+    _drop_field_from_reference_entries(project, field="dc:title", lines_to_break=(2,))
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute("SELECT * FROM malformed_entries").fetchall()
+    finally:
+        connection.close()
+
+    cells = [str(cell) for row in rows for cell in row]
+
+    assert rows
+    assert not [cell for cell in cells if str(tmp_path) in cell]
+    assert not [cell for cell in cells if cell.startswith(("/", "\\")) or ":\\" in cell]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("entries", "malformed"),
+    [
+        pytest.param(120, 120, id="every-entry-skipped"),
+        pytest.param(100, 11, id="eleven-percent-of-a-hundred"),
+    ],
+)
+def test_build_store__wholesale_skip__raises_and_leaves_no_store(
+    tmp_path: Path, entries: int, malformed: int
+) -> None:
+    """A broken capture must not be reported as a successful build.
+
+    Stripping ``dc:title`` from all 120 reference entries returned normally
+    with ``records_loaded=0``, and ``prismabib build --rebuild`` exited ``0``
+    printing ``records 0`` and a next-step hint. There was no line anywhere
+    between "one bad record" and "this capture is broken" -- and a corpus
+    that small, reported as complete, is BUILD_PLAN §1.4's plausible wrong
+    number.
+
+    No store is left behind, which matters more than it looks: ``connect``
+    creates the file before anything is loaded, and a store that exists is a
+    store the next ``prismabib build`` (without ``--rebuild``) reuses and
+    reports as clean.
+    """
+    project = Project.init("broken-capture", title="Broken capture", root=tmp_path)
+    page = [make_entry(eid=f"2-s2.0-9000000{index:05d}") for index in range(entries)]
+    for entry in page[:malformed]:
+        del entry["dc:title"]
+    write_sealed_run(
+        project.raw_dir,
+        "20250101T000000Z-eeeeeeee",
+        page,
+        started_at=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(StoreError) as excinfo:
+        build_store(project, rebuild=True)
+
+    assert f"{malformed:,} of the {entries:,} Layer 0 entries" in str(excinfo.value)
+    assert not project.db_path.exists()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("entries", "malformed"),
+    [
+        pytest.param(15, 1, id="one-bad-entry-in-a-small-pilot-capture"),
+        pytest.param(100, 5, id="five-percent-below-the-skip-floor"),
+        pytest.param(200, 10, id="exactly-five-percent"),
+    ],
+)
+def test_build_store__skips_below_the_threshold__still_build_a_store(
+    tmp_path: Path, entries: int, malformed: int
+) -> None:
+    """The guard must not re-break what skipping was introduced to fix.
+
+    A ratio with no floor under it would refuse a 15-entry pilot capture with
+    one bad record -- which is precisely the case that motivated skipping
+    rather than aborting. These three sit on the permissive side of both
+    rules and must load.
+    """
+    project = Project.init("tolerable", title="Tolerable", root=tmp_path)
+    page = [make_entry(eid=f"2-s2.0-9100000{index:05d}") for index in range(entries)]
+    for entry in page[:malformed]:
+        del entry["dc:title"]
+    write_sealed_run(
+        project.raw_dir,
+        "20250101T000000Z-ffffffff",
+        page,
+        started_at=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+
+    stats = build_store(project, rebuild=True)
+
+    assert stats.records_loaded == entries - malformed
+    assert len(stats.malformed_entries_skipped) == malformed
+
+
+#: The two runs of the citation-trend scenario below. `citation_snapshots`
+#: stores a naive UTC `TIMESTAMP` (see `_as_naive_utc`), so a comparison
+#: against what DuckDB returns drops the tzinfo -- the same shape
+#: `test_portability.py` already uses, rather than a bare naive literal.
+_JANUARY = datetime(2025, 1, 1, tzinfo=UTC)
+_FEBRUARY = datetime(2025, 2, 1, tzinfo=UTC)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("malformed_index", "expected_snapshots"),
+    [
+        pytest.param(
+            1,
+            [(_JANUARY.replace(tzinfo=None), 5), (_FEBRUARY.replace(tzinfo=None), 99)],
+            id="the-recapture-is-malformed",
+        ),
+        pytest.param(
+            0,
+            [(_JANUARY.replace(tzinfo=None), 99), (_FEBRUARY.replace(tzinfo=None), 5)],
+            id="the-first-capture-is-malformed",
+        ),
+    ],
+)
+def test_build_store__malformed_recapture__keeps_the_citation_snapshot(
+    tmp_path: Path,
+    malformed_index: int,
+    expected_snapshots: list[tuple[datetime, int]],
+) -> None:
+    """A citation count does not depend on the field that failed.
+
+    Two sealed runs, same record: one well-formed with ``citedby-count`` 5,
+    one missing ``dc:title`` with ``citedby-count`` 99. The record is in the
+    store either way -- from the other run -- so discarding the 99 with the
+    title leaves a citation-trend chart reading "5 as of January, nothing
+    since" for a count that was present, parseable, and independent of the
+    field that failed.
+
+    Parametrised over *which* run is malformed because the decision cannot be
+    made where the entry is skipped: runs are walked in sorted ``run_id``
+    order, so when the malformed one sorts first the record is not yet known
+    to have been loaded by anything.
+    """
+    project = Project.init("citation-trend", title="Citation trend", root=tmp_path)
+    eid = "2-s2.0-800000000900"
+    run_ids = ("20250101T000000Z-11111111", "20250201T000000Z-22222222")
+    started = (_JANUARY, _FEBRUARY)
+    entries = [make_entry(eid=eid, citedby_count=count) for _, count in expected_snapshots]
+    del entries[malformed_index]["dc:title"]
+    for run_id, moment, entry in zip(run_ids, started, entries, strict=True):
+        write_sealed_run(project.raw_dir, run_id, [entry], started_at=moment)
+
+    stats = build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        snapshots = connection.execute(
+            "SELECT retrieved_at, cited_by_count FROM citation_snapshots "
+            "WHERE record_id = ? ORDER BY retrieved_at",
+            [f"scopus:{eid}"],
+        ).fetchall()
+    finally:
+        connection.close()
+
+    # One entry named, zero records lost: the field counts entries, and the
+    # record is in the store from the other run.
+    assert stats.records_loaded == 1
+    assert len(stats.malformed_entries_skipped) == 1
+    assert snapshots == expected_snapshots
+    assert _orphan_snapshot_count(project) == 0
+
+
+@pytest.mark.integration
+def test_build_store__malformed_entry_for_an_unloaded_record__writes_no_orphan_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A snapshot for a record no run loaded would be an orphan nothing catches.
+
+    ``schema.sql`` declares no foreign keys, so DuckDB accepts such a row, no
+    rebuild notices it, and it vanishes from every inner join while still
+    counting towards ``citation_snapshots_loaded``. Keeping a malformed
+    entry's citation count is only correct when some run did load the record.
+    """
+    project = Project.init("no-orphans", title="No orphans", root=tmp_path)
+    good = [make_entry(eid=f"2-s2.0-80000000091{index}", citedby_count=7) for index in range(2)]
+    orphan = make_entry(eid="2-s2.0-800000000919", citedby_count=42)
+    del orphan["dc:title"]
+    write_sealed_run(
+        project.raw_dir,
+        "20250101T000000Z-33333333",
+        [*good, orphan],
+        started_at=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+
+    stats = build_store(project, rebuild=True)
+
+    assert stats.records_loaded == 2
+    assert stats.citation_snapshots_loaded == 2
+    assert len(stats.malformed_entries_skipped) == 1
+    assert _orphan_snapshot_count(project) == 0

@@ -465,6 +465,17 @@ The 11 tables are:
 - **Columns:** `record_id`, `area_code` (e.g. "COMP" for computer science, per `criteria.yaml`)
 - **Role:** Supports subject-based filtering. Always empty for Search API `view=COMPLETE` captures (Abstract Retrieval API required); schema-present for forward compatibility.
 
+**`malformed_entries`** — one row per Layer 0 entry that could not be turned into a record. **Not part of the frozen BUILD_PLAN schema**; added by [ADR 0012](adr/0012-persisting-skipped-layer0-entries.md).
+- **Primary key:** `(payload_file, payload_line)` composite key
+- **Columns:**
+  - `run_id`: TEXT the sealed run the entry came from
+  - `payload_file`, `payload_line`: TEXT / INTEGER the entry's location, in the same run-relative form as `records.payload_file`
+  - `record_id`: TEXT | NULL the record id, or NULL when the entry had no usable `eid`
+  - `reason`: TEXT a closed-vocabulary code — `"missing_eid"` or `"invalid_field"`
+- **Role:** Makes "which entries were skipped?" a query against Layer 1 rather than a value only the call that rebuilt the store ever saw. The default `prismabib build` path reuses an existing store and does no loading, so an in-memory tally there is empty — which reads as "nothing was skipped".
+- **Entries, not records:** A row here does not imply a lost record. A re-capture of a paper an earlier run already loaded can be skipped while the record stays in `records` (and its citation snapshot is kept, since the count does not depend on the field that failed).
+- **Why `reason` is a code, not the error message:** The message embeds an absolute path. A checksummed table containing one would make S03-AC1's byte-stable checksums depend on where the repository is checked out. The message is logged instead.
+
 **`citation_snapshots`** — point-in-time citation counts, one row per (record, retrieval timestamp) pair.
 - **Primary key:** `(record_id, retrieved_at)` composite key
 - **Columns:** `cited_by_count` INTEGER the Scopus citation count at that moment
@@ -492,14 +503,20 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         StoreStats with counts: runs_loaded, records_loaded, authors_loaded,
         affiliations_loaded, venues_loaded, keywords_loaded,
         record_keyword_links_loaded, subject_area_links_loaded,
-        citation_snapshots_loaded, and unmapped_country_values
-        (the country strings currently stored that did not map to ISO codes).
+        citation_snapshots_loaded, unmapped_country_values (the country
+        strings currently stored that did not map to ISO codes), and
+        malformed_entries_skipped (one reference per Layer 0 *entry* that
+        could not be turned into a record). Every field is read back from
+        the store, on the rebuild and the reuse path alike.
 
     Raises:
-        StoreError: If store exists, rebuild=False, and store is corrupted.
-        ValidationError: If a captured entry is missing dc:title or prism:coverDate.
+        StoreError: If store exists, rebuild=False, and store is corrupted;
+            or if so many Layer 0 entries could not be parsed that the
+            capture itself is unusable, in which case no store is written.
     """
 ```
+
+A Layer 0 entry that cannot be turned into a record no longer aborts the load. It is skipped, written to `malformed_entries`, and reported — see [ADR 0012](adr/0012-persisting-skipped-layer0-entries.md) for why one bad entry must not make the other 1,944 unloadable, and why the report is a table rather than a tally the rebuilding call keeps to itself.
 
 ```python
 def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnection:

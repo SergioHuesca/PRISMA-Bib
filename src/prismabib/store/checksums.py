@@ -40,7 +40,10 @@ import duckdb
 #: (``record_authors``, ``record_affiliations``, ``record_keywords``,
 #: ``subject_areas``) sort by their full column tuple instead, which is
 #: sufficient because :mod:`prismabib.store.load` never inserts a literal
-#: duplicate row into any of them.
+#: duplicate row into any of them. ``malformed_entries`` (ADR 0012) is
+#: checksummed like every other table: a rebuild that skips a different set of
+#: entries than the committed snapshot records is a change to what the corpus
+#: contains, and must show up as a moved checksum rather than only in a log.
 _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "runs": ("run_id",),
     "records": ("record_id",),
@@ -53,6 +56,7 @@ _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "record_keywords": ("record_id", "keyword_id", "kind"),
     "subject_areas": ("record_id", "area_code"),
     "citation_snapshots": ("record_id", "retrieved_at"),
+    "malformed_entries": ("payload_file", "payload_line"),
 }
 
 #: The full set of Layer 1 table names, in the order they appear in
