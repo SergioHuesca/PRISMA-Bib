@@ -176,8 +176,10 @@ class FlowCounts:
 
         equations = (
             (
-                "identified - duplicates_across_searches - removed_other_reasons "
-                "- excluded_automated == after_automated",
+                (
+                    "identified - duplicates_across_searches - removed_other_reasons "
+                    "- excluded_automated == after_automated"
+                ),
                 self.identified
                 - self.duplicates_across_searches
                 - self.removed_other_reasons
