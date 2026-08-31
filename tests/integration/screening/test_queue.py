@@ -316,6 +316,99 @@ def test_undo__unresolved_previous_record__steps_back_without_appending(
 
 
 @pytest.mark.integration
+def test_undo__after_stepping_back__reverses_the_record_on_screen(project: Project) -> None:
+    """``z`` withdraws the decision the reviewer is looking at, not the one before it.
+
+    The defect this pins took ``pending[position - 1]`` unconditionally, which
+    is right only while the cursor sits where a decision left it. Step back
+    with ``p`` to re-read something already decided -- the whole reason ``p``
+    exists -- and ``z`` reversed the record *before* it: the paper the
+    reviewer meant to reconsider silently kept its decision, and one they had
+    never looked at lost its own. Two wrong outcomes from one keystroke, under
+    a status line that said "undone" either way, in an append-only log where
+    the spurious reversal is indistinguishable from a real change of mind.
+
+    Three decisions rather than two so that the record reversed under the
+    defect (``order[1]``) is neither the one on screen nor the first record,
+    and the assertion cannot pass by coincidence of position.
+    """
+    queue = title_abstract_queue(project)
+    for _ in range(3):
+        queue.decide("include")
+    queue.step_back()
+    on_screen = queue.current
+    assert on_screen == queue.order[2]
+
+    reversal = queue.undo()
+
+    assert reversal is not None
+    assert reversal.record_id == on_screen
+    assert queue.current == on_screen, "the cursor must stay on the record it just reversed"
+    assert queue.decision_for(on_screen) == "unsure"
+    assert queue.decision_for(queue.order[1]) == "include", "an untouched record kept its decision"
+    assert queue.decided == 2
+
+
+@pytest.mark.integration
+def test_undo__twice_after_stepping_back__walks_backwards_one_record_at_a_time(
+    project: Project,
+) -> None:
+    """A second ``z`` reverses the record before, having already cleared this one.
+
+    The companion to the test above: once the record under the cursor is no
+    longer resolved, ``z`` falls back to stepping back, so holding it down
+    unwinds the session in order rather than reversing the same record twice
+    or standing still.
+    """
+    queue = title_abstract_queue(project)
+    for _ in range(3):
+        queue.decide("include")
+    queue.step_back()
+
+    first = queue.undo()
+    second = queue.undo()
+
+    assert first is not None
+    assert second is not None
+    assert [first.record_id, second.record_id] == [queue.order[2], queue.order[1]]
+    assert queue.current == queue.order[1]
+    assert queue.decided == 1
+
+
+@pytest.mark.integration
+def test_undo__on_an_unsure_record_under_the_cursor__falls_back_to_the_previous_one(
+    project: Project,
+) -> None:
+    """An ``unsure`` under the cursor is not a decision to withdraw, so ``z`` steps back.
+
+    ``unsure`` does not resolve a record -- that is why it stays queued -- so
+    reversing it would append a second, meaningless ``unsure`` and leave the
+    fold exactly where it was. ``z`` falls back to the ordinary
+    decide-then-``z`` path instead: step back one record and reverse that.
+    The cursor still ends on the record whose decision was withdrawn, so what
+    happened stays visible on screen; what it must never do is reverse a
+    record the cursor has moved *past*.
+    """
+    queue = title_abstract_queue(project)
+    queue.decide("include")
+    queue.decide("unsure")
+    queue.step_back()
+    assert queue.current == queue.order[1]
+
+    reversal = queue.undo()
+
+    assert reversal is not None
+    assert reversal.record_id == queue.order[0]
+    assert queue.current == queue.order[0], "the cursor lands on what it reversed"
+    assert queue.decision_for(queue.order[1]) == "unsure", "the unsure was not doubled"
+    assert [event.decision for event in DecisionLog(project).load()] == [
+        "include",
+        "unsure",
+        "unsure",
+    ]
+
+
+@pytest.mark.integration
 def test_undo__then_a_new_decision__the_latest_event_wins_the_fold(project: Project) -> None:
     queue = title_abstract_queue(project)
     record_id = queue.order[0]

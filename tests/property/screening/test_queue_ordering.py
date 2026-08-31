@@ -41,12 +41,24 @@ citation count, Spearman's rho has mean 0 and standard deviation
   about seven standard errors out -- while a ranked ordering would put it at
   1.0.
 
-Measured on the implementation as written: ``max|rho| = 0.1889``,
-``mean|rho| = 0.0611``. Both bands therefore have real headroom over the
-observed values *and* remain far from the values a ranking defect produces.
-A band of, say, 0.05 would sit below the null distribution's own spread and
-fail for a perfectly unbiased rule; a band of 0.9 would pass anything short
-of a perfect sort.
+Measured on the implementation as written: ``max|rho| = 0.1420``,
+``mean|rho| = 0.0445`` -- pinned below as :data:`MEASURED_MAX_ABSOLUTE` and
+:data:`MEASURED_MEAN_ABSOLUTE` and asserted, rather than left in prose. These
+are the numbers that justify the bands, so a docstring that cites them and a
+test that never checks them is a claim nobody can catch going stale: the
+figures here read 0.1889 and 0.0611 for a while, which were nothing the code
+had ever produced. Both bands have real headroom over the observed values
+*and* remain far from the values a ranking defect produces. A band of, say,
+0.05 would sit below the null distribution's own spread and fail for a
+perfectly unbiased rule; a band of 0.9 would pass anything short of a perfect
+sort.
+
+**What the band does not detect.** It is a test for a *global* ranking. A
+partial one -- the thirty most-cited records first, the rest arbitrary --
+measures about -0.295 and passes. A SHA-256 keyed sort cannot produce that
+shape, so this is a limit of the instrument rather than a gap in the
+implementation, but it is the limit: the band says "not ranked overall", not
+"unbiased at the head of the queue".
 
 **Why this is deterministic rather than Hypothesis-driven.** The ordering
 rule is a pure function of ``(slug, record_id)``, so these 3,600 numbers are
@@ -82,6 +94,15 @@ PER_CORPUS_BAND = 0.30
 #: The largest mean ``|rho|`` across all twelve corpora (about 7 null standard
 #: errors above the null expectation of 0.046).
 MEAN_ABSOLUTE_BAND = 0.12
+
+#: What the implementation actually measures today, to four decimal places.
+#: Not a band and not a gate on the ordering rule -- a change to that rule
+#: moves these legitimately, and the numbers are then updated *from the
+#: measurement*. They exist so that the justification in the module docstring
+#: is checked rather than asserted, because a stale figure there silently
+#: unmoors the bands from the evidence that sized them.
+MEASURED_MAX_ABSOLUTE = 0.1420
+MEASURED_MEAN_ABSOLUTE = 0.0445
 
 
 def spearman(first: list[int], second: list[int]) -> float:
@@ -158,6 +179,40 @@ def test_queue__ordering__is_uncorrelated_with_citation_count() -> None:
     assert mean_absolute <= MEAN_ABSOLUTE_BAND, (
         f"mean |rho| over {CORPORA} corpora is {mean_absolute:.4f}: {correlations}"
     )
+    assert abs(worst_rho) == pytest.approx(MEASURED_MAX_ABSOLUTE, abs=5e-5), (
+        "the module docstring's cited max |rho| no longer matches the measurement"
+    )
+    assert mean_absolute == pytest.approx(MEASURED_MEAN_ABSOLUTE, abs=5e-5), (
+        "the module docstring's cited mean |rho| no longer matches the measurement"
+    )
+
+
+@pytest.mark.property
+def test_queue__ordering__is_stable_when_the_corpus_grows() -> None:
+    """Adding or removing records must not reshuffle the ones already screened.
+
+    The property the module docstring calls the argument against
+    ``random.shuffle``, and the operator has now re-captured three times, so
+    it is not hypothetical: a re-capture that reordered the queue would send a
+    reviewer back through records in a different sequence, and the decisions
+    already made would no longer line up with where they were made. Nothing
+    would report it -- the log keys on record ids, not positions.
+
+    Asserted in both directions because they are two different failures:
+    growth must not disturb the existing order, and neither must shrinkage.
+    """
+    slug, citations = generated_corpus(0)
+    original = ordered_record_ids(slug, citations)
+
+    grown = ordered_record_ids(
+        slug,
+        list(citations) + [f"scopus:2-s2.0-8990{position:08d}" for position in range(120)],
+    )
+    shrunk = ordered_record_ids(slug, list(citations)[:-100])
+
+    assert [record_id for record_id in grown if record_id in citations] == list(original)
+    assert list(shrunk) == [record_id for record_id in original if record_id in set(shrunk)]
+    assert len(grown) == len(original) + 120
 
 
 @pytest.mark.property

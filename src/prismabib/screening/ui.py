@@ -296,6 +296,24 @@ def _display_name(surname: str | None, given_name: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+MIN_PACE_SECONDS: Final[float] = 30.0
+"""How long a session must have run before its pace is worth showing.
+
+A rate is ``decisions / elapsed``, and both halves have to be real. Measuring
+elapsed from the session's start rather than from its first decision removes
+the ``1 / 0.000004 s`` case, but it does not make ``1 / 0.4 s`` meaningful:
+early in a session the denominator is small enough that a single fast
+keystroke dominates it, and the reviewer sees a number in the thousands at the
+exact moment they are most inclined to believe it.
+
+Thirty seconds is roughly two records at the four-per-minute rate BUILD_PLAN
+line 1090 calls a practised pace, so the first pace shown rests on a sample
+rather than on one keystroke, and a reviewer who reads it at 5/min can check it
+against the clock on their own wall. Until then the line reads ``pace —``,
+which is the honest thing: not yet measured.
+"""
+
+
 def progress_view_model(
     *,
     decided: int,
@@ -323,20 +341,29 @@ def progress_view_model(
         total: Records eligible at this stage (``ScreeningQueue.total``).
         session_decisions: Resolving decisions made since this view was
             constructed.
-        session_seconds: Seconds elapsed since the first of them.
+        session_seconds: Seconds this session has been open. Measured from
+            the session's start rather than from its first decision: N
+            decisions span only N-1 gaps between the first and the last, so
+            that denominator overstates the rate by N/(N-1) forever -- 2x at
+            two decisions, 5% at twenty. The time spent reading the first
+            abstract is screening work, and counting it makes the rate an
+            unbiased estimate of the session as a whole. Below
+            :data:`MIN_PACE_SECONDS` no rate is reported at all.
 
     Returns:
         ``decided``/``total``/``remaining``/``per_minute``/``eta_minutes``.
         ``per_minute`` and ``eta_minutes`` are ``None`` until there is
-        something to measure -- a rate over zero decisions is not a slow rate,
+        something to measure: a rate over zero decisions is not a slow rate,
         and printing ``0.0/min`` beside an infinite ETA would tell a reviewer
-        starting a session that they will never finish.
+        starting a session that they will never finish. They stay ``None``
+        for the first :data:`MIN_PACE_SECONDS` as well, for the reason given
+        there.
     """
     remaining = total - decided
     per_minute: float | None = None
     eta_minutes: float | None = None
 
-    if session_decisions > 0 and session_seconds > 0:
+    if session_decisions > 0 and session_seconds >= MIN_PACE_SECONDS:
         per_minute = session_decisions / (session_seconds / 60.0)
         eta_minutes = remaining / per_minute
 
@@ -449,7 +476,7 @@ KEY_MAP: Final[tuple[KeyBinding, ...]] = (
     KeyBinding("u", "unsure", "unsure; the record stays in the queue"),
     KeyBinding("n", "next_record", "next record"),
     KeyBinding("p", "previous_record", "previous record"),
-    KeyBinding("z", "undo", "undo the last decision and step back"),
+    KeyBinding("z", "undo", "undo this record's decision, else the last one"),
     KeyBinding("?", "show_help", "show or hide this help"),
     *(
         KeyBinding(digit, f"reason_{digit}", f"exclusion reason {digit} (after e)")
@@ -592,6 +619,7 @@ class Screener:
         self._records = dict(records)
         self._blind = blind
         self._clock = clock
+        self._session_start = clock()
         self._palette = reason_palette(queue.project.criteria, queue.stage)
         self._session_marks: list[float] = []
         self._awaiting_reason = False
@@ -675,6 +703,17 @@ class Screener:
         """Resolving decisions made since this screener was constructed."""
         return len(self._session_marks)
 
+    @property
+    def status_pane_text(self) -> str:
+        """The rendered status line, as the reviewer sees it.
+
+        The status *message* plus the current record id and its existing
+        decision. Exposed separately from :attr:`status` because the record
+        id and the decision mark are the part a test about "what is on screen"
+        has to read.
+        """
+        return str(self._status_pane.object)
+
     # -- the view -----------------------------------------------------------
 
     def view(self) -> pn.viewable.Viewable:
@@ -709,7 +748,27 @@ class Screener:
             self._record_pane.object = record_markdown(record_view_model(record, blind=self._blind))
 
         self._progress_pane.object = progress_markdown(self.progress())
-        self._status_pane.object = f"{self._status}  \n`{current or '—'}`"
+        self._status_pane.object = f"{self._status}  \n`{current or '—'}`{self._decision_mark()}"
+
+    def _decision_mark(self) -> str:
+        """The current record's existing decision, for the status line.
+
+        Navigating backwards was otherwise blind: the reviewer stepped back
+        with ``p`` to re-read a paper and nothing on screen said what they had
+        already decided about it, which is exactly the state in which ``z``
+        needs to be verifiable. Showing it makes the undo self-evident: the
+        mark reads ``include`` before the keystroke and ``unsure`` after it,
+        on the same record id, which is the reversal the log actually holds.
+
+        Returns:
+            A markdown suffix naming the decision, or ``""`` when the record
+            under the cursor has none (or the queue is exhausted).
+        """
+        current = self._queue.current
+        if current is None:
+            return ""
+        decision = self._queue.decision_for(current)
+        return "" if decision is None else f" · **{decision}**"
 
     def progress(self) -> dict[str, Any]:
         """This session's progress and pace.
@@ -719,7 +778,7 @@ class Screener:
             decision count and elapsed seconds filled in from the injected
             clock.
         """
-        elapsed = self._clock() - self._session_marks[0] if self._session_marks else 0.0
+        elapsed = self._clock() - self._session_start
         return progress_view_model(
             decided=self._queue.decided,
             total=self._queue.total,
@@ -766,6 +825,25 @@ class Screener:
             raise ValidationError(
                 f"no handler named {action!r}; KEY_MAP and Screener.handlers disagree"
             )
+        self.guarded(handler)
+
+    def guarded(self, handler: Callable[[], None]) -> None:
+        """Run ``handler``, turning a refused action into a status line.
+
+        The one place a :class:`~prismabib.errors.PrismabibError` is caught, so
+        that every reviewer-facing entry point reports a refusal the same way.
+        :meth:`dispatch` covers the keyboard and the control buttons; the
+        reason buttons cannot go through it, because an armed digit is
+        deliberately not in the handler table (a bare digit must not exclude,
+        which S05-AC4 asserts in both directions), so they call this instead.
+        Calling the handler directly, as they used to, raised straight out of
+        the Panel click callback: under ``panel serve`` that traceback goes to
+        the server log and the reviewer sees an unchanged record and no
+        message at all.
+
+        Args:
+            handler: A no-argument handler that may raise.
+        """
         try:
             handler()
         except PrismabibError as exc:
@@ -799,7 +877,9 @@ class Screener:
         code is not a decision this project can report, and the log refuses
         it. Arming is deliberately not itself a decision -- nothing is
         appended until the digit arrives, so ``e`` pressed by accident costs
-        nothing.
+        nothing: every path that changes which record is current disarms
+        first, and so does a refused exclusion, which must be re-armed
+        deliberately rather than fired by the reviewer's next digit.
         """
         if not self._palette:
             self._set_status("no exclusion reason codes declared in criteria.yaml")
@@ -857,10 +937,16 @@ class Screener:
         self._awaiting_reason = False
 
     def undo(self) -> None:
-        """``z`` — supersede the previous record's decision and step back.
+        """``z`` — withdraw the decision on the record under the cursor.
 
-        Disarms any pending exclusion first: this moves the cursor, so an arm
-        held across it would file against the wrong record.
+        Disarms any pending exclusion first: this can move the cursor, so an
+        arm held across it would file against the wrong record.
+
+        Which record is reversed is
+        :meth:`~prismabib.screening.queue.ScreeningQueue.undo`'s to decide,
+        and it is always the one on screen; the status line and the decision
+        mark beside the record id both repaint from the queue afterwards, so
+        the reviewer can see it landed where they were looking.
 
         The queue appends a reversal rather than editing the log
         (:meth:`~prismabib.screening.queue.ScreeningQueue.undo`); this only
@@ -887,6 +973,14 @@ class Screener:
         (BUILD_PLAN line 1072, "autosave per decision"), so a kernel death
         costs at most the record on screen and never a decision already made.
 
+        Counts toward the session's pace only when it resolves a record that
+        was not already resolved. Changing your mind about a record you
+        stepped back to -- ``p``, then ``e`` and a digit -- is one record's
+        worth of progress however many times you revisit it, and counting the
+        correction as well would inflate the pace with exactly the work that
+        was spent *not* getting through the queue. This is the same principle
+        :meth:`undo` already applies by dropping its mark.
+
         Args:
             decision: ``"include"``, ``"exclude"`` or ``"unsure"``.
             reason_code: Required for ``"exclude"``; validated against
@@ -896,10 +990,12 @@ class Screener:
             ValidationError: If the queue is exhausted.
             LogError: Anything the decision log refuses.
         """
-        self._queue.decide(decision, reason_code=reason_code)
-        if decision != "unsure":
-            self._session_marks.append(self._clock())
         self._awaiting_reason = False
+        current = self._queue.current
+        already_resolved = current is not None and self._queue.is_resolved(current)
+        self._queue.decide(decision, reason_code=reason_code)
+        if decision != "unsure" and not already_resolved:
+            self._session_marks.append(self._clock())
         self._set_status(f"{decision}{f' ({reason_code})' if reason_code else ''}")
 
     def _set_status(self, message: str) -> None:
@@ -960,7 +1056,11 @@ def _reason_handler(screener_: Screener, digit: str, *, arm: bool = False) -> Ca
         digit: The palette digit this handler files under.
         arm: Whether to arm the exclusion first. ``True`` for the mouse (one
             click is the whole gesture), ``False`` for the keyboard (``e``
-            has already armed it, and a bare digit must not exclude).
+            has already armed it, and a bare digit must not exclude). The
+            armed handler is additionally wrapped in
+            :meth:`Screener.guarded`, because it is the mouse's edge and
+            nothing further out catches for it; the bare one is reached
+            through :meth:`Screener.dispatch`, which already guards.
 
     Returns:
         A no-argument handler.
@@ -971,6 +1071,8 @@ def _reason_handler(screener_: Screener, digit: str, *, arm: bool = False) -> Ca
             screener_.begin_exclude()
         screener_.select_reason(digit)
 
+    if arm:
+        return lambda: screener_.guarded(handler)
     return handler
 
 
@@ -1078,6 +1180,7 @@ def _resolve_stage(stage: str) -> PrismaStage:
 __all__ = [
     "KEYSTROKE_SEPARATOR",
     "KEY_MAP",
+    "MIN_PACE_SECONDS",
     "REASON_DIGITS",
     "UNBLINDED_FIELDS",
     "VISIBLE_FIELDS",

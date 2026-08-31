@@ -469,39 +469,70 @@ class ScreeningQueue:
         return event
 
     def undo(self) -> DecisionEvent | None:
-        """Step back one record and supersede its decision (``z``).
+        """Reverse the decision on the record under the cursor (``z``).
 
-        BUILD_PLAN line 1078. The previous record's decision is *reversed by
-        appending*, never by editing or deleting the original event: the
-        reversal is an ``unsure`` for the same
-        ``(stage, record_id, reviewer)`` fold key, which wins the fold (it is
-        later), takes the record back out of ``M_abs``/``M_full``, and leaves
-        it unresolved and therefore queued. Both events remain readable, so a
-        replay shows a reviewer who changed their mind rather than one who
-        never decided.
+        BUILD_PLAN line 1078. The decision is *reversed by appending*, never
+        by editing or deleting the original event: the reversal is an
+        ``unsure`` for the same ``(stage, record_id, reviewer)`` fold key,
+        which wins the fold (it is later), takes the record back out of
+        ``M_abs``/``M_full``, and leaves it unresolved and therefore queued.
+        Both events remain readable, so a replay shows a reviewer who changed
+        their mind rather than one who never decided.
+
+        *Which* record is reversed follows one rule: the one on screen. When
+        the record under the cursor already carries a resolving decision --
+        the case whenever the reviewer stepped back with ``p`` to re-read
+        something they had decided -- that is the decision withdrawn, and the
+        cursor does not move. Otherwise the cursor sits past the last
+        decision, which is the ordinary decide-then-``z`` case, so it steps
+        back one record and reverses what it lands on.
+
+        Either way the cursor ends on the record whose decision was just
+        withdrawn, so the reviewer is looking at what they changed. Taking
+        ``position - 1`` unconditionally did not: after a ``p`` it reversed
+        the record *before* the one on screen, so the paper the reviewer meant
+        to reconsider kept its decision while one they had never looked at
+        silently lost its own -- two wrong outcomes from one keystroke, under
+        a status line that said "undone" either way.
 
         Returns:
             The appended reversal, or ``None`` when there was nothing to
-            reverse: at the first record (:attr:`position` ``== 0``) this is
-            a complete no-op -- no event, no cursor movement -- and when the
-            previous record is merely unresolved (never decided, or last
-            decided ``unsure``) the cursor steps back without appending a
-            second, meaningless ``unsure``.
+            reverse: with an unresolved record under the cursor at
+            :attr:`position` ``== 0`` this is a complete no-op -- no event, no
+            cursor movement -- and when the record stepped back to is merely
+            unresolved (never decided, or last decided ``unsure``) the cursor
+            moves without appending a second, meaningless ``unsure``.
 
         Raises:
             LogError: Anything
                 :meth:`~prismabib.prisma.log.DecisionLog.append` raises.
         """
+        current = self.current
+        if current is not None and self.is_resolved(current):
+            return self._supersede(current)
+
         if self._position == 0:
             return None
 
         target = self._position - 1
         record_id = self._pending[target]
-        superseded = self._latest.get(record_id)
-        if superseded is None or superseded.decision not in RESOLVING_DECISIONS:
-            self._position = target
+        self._position = target
+        if not self.is_resolved(record_id):
             return None
+        return self._supersede(record_id)
 
+    def _supersede(self, record_id: str) -> DecisionEvent:
+        """Append the ``unsure`` that withdraws ``record_id``'s decision.
+
+        Args:
+            record_id: A record whose latest decision by this reviewer
+                resolves it -- callers check with :meth:`is_resolved`.
+
+        Returns:
+            The appended reversal, which becomes the record's current
+            decision.
+        """
+        superseded = self._latest[record_id]
         reversal = self._log.append(
             stage=self._stage,
             record_id=record_id,
@@ -510,7 +541,6 @@ class ScreeningQueue:
             note=f"undo: supersedes {superseded.event_id}",
         )
         self._latest[record_id] = reversal
-        self._position = target
         return reversal
 
 

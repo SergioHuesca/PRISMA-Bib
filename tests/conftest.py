@@ -24,7 +24,7 @@ from typing import Protocol
 
 import pytest
 import time_machine
-from pytest_socket import disable_socket, enable_socket
+from pytest_socket import disable_socket, enable_socket, socket_allow_hosts
 
 from tests import markers
 
@@ -82,10 +82,25 @@ def _socket_policy(request: pytest.FixtureRequest) -> Iterator[None]:
     than needing per-test boilerplate; ``tests/live/conftest.py`` also
     re-enables sockets directly, so that directory is self-sufficient even
     if collected on its own.
+
+    A test marked ``notebook`` gets loopback and nothing else. Executing a
+    notebook starts a real Jupyter kernel, and ``jupyter_client`` talks to it
+    over ZMQ on ``127.0.0.1``; a blanket ban makes the notebook untestable in
+    process, and lifting the ban outright would let the notebook reach Scopus.
+    Restricting to loopback keeps what the rule is actually for -- no
+    outbound call, no licensed payload, no test whose result depends on a
+    network -- while letting the kernel start.
     """
     if request.node.get_closest_marker("live") is not None:
         enable_socket()
         yield
+        return
+
+    if request.node.get_closest_marker("notebook") is not None:
+        enable_socket()
+        socket_allow_hosts(["127.0.0.1", "::1"], allow_unix_socket=True)
+        yield
+        disable_socket(allow_unix_socket=True)
         return
 
     disable_socket(allow_unix_socket=True)

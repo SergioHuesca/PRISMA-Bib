@@ -29,7 +29,7 @@ import panel as pn
 import pytest
 from bokeh.model import Model
 
-from prismabib.errors import ValidationError
+from prismabib.errors import LogError, ValidationError
 from prismabib.screening import ui
 from prismabib.screening.queue import screening_queue
 from prismabib.stage import PrismaStage
@@ -554,6 +554,86 @@ def test_screener__pace__counts_this_session_not_the_whole_log(project: Project)
 
 
 @pytest.mark.integration
+def test_screener__pace__is_not_reported_before_it_can_be_measured(project: Project) -> None:
+    """One decision a fraction of a second in is not a rate of thousands per minute.
+
+    The defect this pins divided the session's decisions by the time since the
+    *first* of them, which after exactly one decision is microseconds: a
+    reviewer opening a 1,110-record session read "304051.5/min · ~0 min left"
+    immediately after their very first keystroke -- the moment they have least
+    evidence of their own to contradict it. Measuring from the session's start
+    removes the microseconds but not the problem, because a fraction of a
+    second is still a denominator a single fast keystroke dominates. Nothing
+    is reported until :data:`~prismabib.screening.ui.MIN_PACE_SECONDS`.
+
+    The clock is advanced *after* the decision as well as before it, and that
+    is the whole test rather than a detail: read at the same instant the mark
+    was taken, the defect divides by exactly zero and declines to report a
+    pace, so a frozen clock would let it pass. Real time moves between the
+    keystroke and the repaint. Here twelve seconds of reading, then a
+    twentieth of a second, which the defect reports as 1,200 a minute.
+    """
+    clock = FakeClock()
+    screener = build_screener(project, clock=clock)
+
+    clock.now = 12.0
+    screener.handle_key("i")
+    clock.now = 12.05
+
+    progress = screener.progress()
+    assert progress["decided"] == 1
+    assert (progress["per_minute"], progress["eta_minutes"]) == (None, None)
+    assert "pace —" in ui.progress_markdown(progress)
+
+
+@pytest.mark.integration
+def test_screener__pace__is_measured_from_the_session_start(project: Project) -> None:
+    """The first record's reading time is screening work and counts against the rate.
+
+    Measured from the first *decision*, N decisions span only N-1 gaps, so the
+    rate is overstated by N/(N-1) forever -- 2x at two decisions. Here two
+    decisions one minute apart, in a session two minutes old, are 1.0/min and
+    not 2.0/min; the reviewer spent the first minute reading.
+    """
+    clock = FakeClock()
+    screener = build_screener(project, clock=clock)
+
+    clock.now = 60.0
+    screener.handle_key("i")
+    clock.now = 120.0
+    screener.handle_key("i")
+
+    assert screener.progress()["per_minute"] == pytest.approx(1.0)
+
+
+@pytest.mark.integration
+def test_screener__changing_a_decision__does_not_count_as_session_progress(
+    project: Project,
+) -> None:
+    """Revisiting a record is one record's progress, however many times you decide it.
+
+    Step back onto something already included and exclude it instead: the log
+    correctly holds two events and the queue still counts one record decided,
+    but the session's pace counted the correction as a second decision. That
+    inflates the rate with exactly the work spent *not* getting through the
+    queue -- and it is the same principle ``z`` already honours by dropping
+    its mark.
+    """
+    clock = FakeClock()
+    screener = build_screener(project, clock=clock)
+    screener.handle_key("i")
+    screener.handle_key("i")
+    screener.handle_key("p")
+
+    screener.handle_key("e")
+    screener.handle_key("1")
+
+    assert len(logged_events(project)) == 3
+    assert screener.queue.decided == 2
+    assert screener.session_decisions == 2
+
+
+@pytest.mark.integration
 def test_screener__undo__does_not_count_as_session_progress(project: Project) -> None:
     """A correction is not a decision; counting it would inflate the pace it corrects."""
     clock = FakeClock()
@@ -615,3 +695,151 @@ def test_screener__exclusion_armed_then_digit__files_against_the_armed_record(
     assert [(e.record_id, e.decision, e.reason_code) for e in events] == [
         (armed_on, "exclude", "OFF_TOPIC")
     ]
+
+
+@pytest.mark.integration
+def test_screener__z_after_p__reverses_the_record_on_screen(project: Project) -> None:
+    """End to end at the keyboard: ``p`` then ``z`` must not misfile the reversal.
+
+    The queue-level test pins the rule; this pins the keystrokes a reviewer
+    actually presses, and that the status line does not claim otherwise. Under
+    the defect this read "undone" while the record on screen kept its decision
+    and a record two places back silently lost one.
+    """
+    screener = build_screener(project)
+    for _ in range(3):
+        screener.handle_key("i")
+    screener.handle_key("p")
+    on_screen = screener.queue.current
+
+    screener.handle_key("z")
+
+    reversals = [event for event in logged_events(project) if event["decision"] == "unsure"]
+    assert [event["record_id"] for event in reversals] == [on_screen]
+    assert screener.queue.decision_for(on_screen) == "unsure"
+    assert screener.status == "undone"
+
+
+@pytest.mark.integration
+def test_screener__stepping_back_onto_a_decided_record__shows_its_decision(
+    project: Project,
+) -> None:
+    """Navigating backwards must not be blind.
+
+    A reviewer who steps back to re-read a paper has to be able to see what
+    they already decided about it -- otherwise ``z`` is a keystroke whose
+    effect they cannot check, which is the condition the misfiling defect
+    hid behind. The mark is asserted through the rendered status pane rather
+    than the ``status`` string, because it is the pane the reviewer reads.
+    """
+    screener = build_screener(project)
+    screener.handle_key("i")
+    screener.handle_key("i")
+    screener.handle_key("p")
+    on_screen = screener.queue.current
+
+    pane_text = str(screener.status_pane_text)
+
+    assert on_screen is not None
+    assert on_screen in pane_text
+    assert "include" in pane_text
+
+    screener.handle_key("z")
+
+    assert "unsure" in str(screener.status_pane_text)
+
+
+@pytest.mark.integration
+def test_screener__a_refused_exclusion__disarms_instead_of_staying_armed(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal must not leave a loaded exclusion waiting for the next digit.
+
+    ``select_reason`` used to clear the arm only *after* the append returned,
+    so a transient refusal -- a lock the log could not take, a stale checksum
+    sidecar -- left the screener armed with nothing on screen to say so. The
+    reviewer's next digit, pressed to retry or by reflex, was then a live
+    exclusion they had not re-armed. Re-arming has to be deliberate.
+
+    The refusal is injected at the log's own boundary rather than by
+    corrupting a file, so the test is about what happens *after* a refusal
+    rather than about which refusals exist.
+    """
+    screener = build_screener(project)
+
+    def refuse(*_args: Any, **_kwargs: Any) -> None:
+        raise LogError("injected refusal")
+
+    monkeypatch.setattr(screener.queue.log, "append", refuse)
+    screener.handle_key("e")
+    assert screener.awaiting_reason
+
+    screener.handle_key("1")
+
+    assert screener.status.startswith("⚠")
+    assert not screener.awaiting_reason, "a refused exclusion must not stay armed"
+    assert logged_events(project) == []
+
+
+@pytest.mark.integration
+def test_reason_button__a_refused_exclusion__reports_it_instead_of_raising(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mouse path must surface a refusal the same way the keyboard does.
+
+    The reason buttons called ``begin_exclude`` and ``select_reason`` directly
+    rather than through :meth:`~prismabib.screening.ui.Screener.dispatch`, so
+    a ``LogError`` raised straight out of the Panel click callback: under
+    ``panel serve`` the traceback goes to a server log, and the reviewer sees
+    an unchanged record and no message at all -- a decision they believe they
+    made and did not.
+
+    Driven through the real button the view builds, because the defect was
+    precisely that the button's wiring differed from the handler table, and a
+    test that called the handler directly would have passed throughout.
+    """
+    screener = build_screener(project)
+    screener.view()
+    button = next(
+        widget
+        for widget in screener.view().select(pn.widgets.Button)
+        if widget.name.startswith("1: ")
+    )
+
+    def refuse(*_args: Any, **_kwargs: Any) -> None:
+        raise LogError("injected refusal")
+
+    monkeypatch.setattr(screener.queue.log, "append", refuse)
+
+    button.clicks += 1
+
+    assert screener.status.startswith("⚠")
+    assert not screener.awaiting_reason
+    assert logged_events(project) == []
+
+
+@pytest.mark.integration
+def test_reason_button__an_accepted_exclusion__files_it_under_that_code(
+    project: Project,
+) -> None:
+    """The positive control for the button path: one click is the whole gesture.
+
+    Without this, the test above is satisfied by a button that does nothing at
+    all -- and a mouse-only reviewer would record no decisions while every
+    other test stayed green.
+    """
+    screener = build_screener(project)
+    on_screen = screener.queue.current
+    button = next(
+        widget
+        for widget in screener.view().select(pn.widgets.Button)
+        if widget.name.startswith("2: ")
+    )
+
+    button.clicks += 1
+
+    events = logged_events(project)
+    assert [(event["record_id"], event["decision"], event["reason_code"]) for event in events] == [
+        (on_screen, "exclude", REASON_CODES[1])
+    ]
+    assert not screener.awaiting_reason

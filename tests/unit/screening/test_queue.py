@@ -53,6 +53,15 @@ PINNED_ORDER = (
     "scopus:2-s2.0-85101234564",
 )
 
+#: The order the non-ASCII corpus takes under the slug ``"révision-2026"``.
+#: :data:`PINNED_ORDER`'s counterpart for text outside ASCII, where the
+#: machine-dependence this project keeps finding actually lives.
+UNICODE_PINNED_ORDER = (
+    "scopus:ré-01",
+    "scopus:naïve-03",
+    "scopus:日本-02",
+)
+
 #: A corpus big enough that two slugs producing the same order by chance is
 #: not a thing that happens (200! orders).
 WIDE_IDS = tuple(f"scopus:2-s2.0-9{index:011d}" for index in range(200))
@@ -103,11 +112,18 @@ def test_ordered_record_ids__empty_corpus__is_empty() -> None:
 
 
 @pytest.mark.unit
-def test_ordered_record_ids__unicode_slug_and_ids__is_stable() -> None:
+def test_ordered_record_ids__unicode_slug_and_ids__matches_the_recorded_order() -> None:
+    """Non-ASCII slugs and ids order the same way on every machine.
+
+    Asserted against a checked-in constant, like :data:`PINNED_ORDER`, and for
+    the same reason: the risk with non-ASCII text is not that one process
+    disagrees with itself, it is that two *machines* disagree -- a differing
+    filesystem encoding, or a rule that encoded with ``str.encode()`` under a
+    locale-dependent default rather than the explicit UTF-8 the hash key uses.
+    Calling the same pure function twice in one process and comparing the
+    results, which is what this test used to do, cannot fail for any reason
+    the module claims: it passes under every one of those defects.
+    """
     ids = ("scopus:ré-01", "scopus:日本-02", "scopus:naïve-03")
 
-    first = ordered_record_ids("révision-2026", ids)
-    second = ordered_record_ids("révision-2026", ids)
-
-    assert first == second
-    assert sorted(first) == sorted(ids)
+    assert ordered_record_ids("révision-2026", ids) == UNICODE_PINNED_ORDER

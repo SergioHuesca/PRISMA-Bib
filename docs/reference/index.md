@@ -10,12 +10,12 @@ still exited 0. CI cannot catch that, which is why the modules are listed one by
 a module added in a later stage without a section here is a visible omission.
 
 Sections follow the layer order of the pipeline: core vocabulary first, then Layer 0
-(`sources/`, `capture/`), Layer 1 (`store/`), and Layer 2 (`prisma/`), and finally `cli.py`,
-which sits across all of them. Each package's own section renders the package docstring
+(`sources/`, `capture/`), Layer 1 (`store/`), Layer 2 (`prisma/`, `screening/`), and finally
+`cli.py`, which sits across all of them. Each package's own section renders the package docstring
 only; its modules follow individually.
 
 **Not yet built** (each arrives with the stage that owns it, and gets a section here then):
-`sources/sciencedirect.py`, `screening/`, `fulltext/`, `taxonomy/`, `bibliometrics/`,
+`sources/sciencedirect.py`, `fulltext/`, `taxonomy/`, `bibliometrics/`,
 `viz/`, `report/`. `store/schema.sql` never appears here — it is SQL, not a module, and is
 executed verbatim by `build_store`.
 
@@ -268,6 +268,34 @@ set definitions and the flow-diagram audit table.
 ### prisma.flow
 
 ::: prismabib.prisma.flow
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## screening
+
+The reviewer's side of Layer 2: which records are offered, in what order, and the Panel
+view that turns a keystroke into an event in `decisions.jsonl`. Nothing here computes a
+PRISMA number — it appends to the log, and `prisma/` folds it.
+
+::: prismabib.screening
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### screening.queue
+
+::: prismabib.screening.queue
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### screening.ui
+
+::: prismabib.screening.ui
     options:
       show_root_heading: true
       show_source: true
