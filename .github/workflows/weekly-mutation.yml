@@ -124,7 +124,12 @@ jobs:
         # the gate measures, and should be reviewed like one.
         run: |
           set -euo pipefail
-          count=$(grep -rc "pragma: no mutate start" src/prismabib/prisma/ \
+          # `|| true` on both greps: `grep` exits 1 when nothing matches, and under
+          # `set -e -o pipefail` that would fail the whole job -- skipping the kill-rate
+          # gate, the artifact upload and the backlog issue, with a misleading cause.
+          # It would fire on exactly the outcome this step exists to celebrate: the
+          # exemptions having been removed.
+          count=$( { grep -rc "pragma: no mutate start" src/prismabib/prisma/ || true; } \
                     | awk -F: '{total += $2} END {print total + 0}')
           {
             echo "## Mutation exemptions (ADR 0014)"
@@ -134,7 +139,7 @@ jobs:
             echo "text, where case is not significant -- cannot change behaviour. A rise here"
             echo "narrows what the kill rate below is measured over."
             echo
-            grep -rn "pragma: no mutate start" src/prismabib/prisma/ \
+            { grep -rn "pragma: no mutate start" src/prismabib/prisma/ || true; } \
               | sed -E 's#^([^:]+):([0-9]+):.*no mutate start *-- *#    \1:\2  #'
           } >> "$GITHUB_STEP_SUMMARY"
 

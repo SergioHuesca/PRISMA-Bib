@@ -198,16 +198,12 @@ def _fetch_record_attributes(
         rather than several that a concurrent ``build_store`` could have
         moved between.
     """
-    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     rows = connection.execute(
         "SELECT r.record_id, r.year, r.doc_type, r.language, "
         "COALESCE(v.venue_type, ''), COALESCE(v.name, '') "
         "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id"
     ).fetchall()
-    # pragma: no mutate end
-    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     area_rows = connection.execute("SELECT record_id, area_code FROM subject_areas").fetchall()
-    # pragma: no mutate end
 
     areas_by_record: dict[str, set[str]] = defaultdict(set)
     for record_id, area_code in area_rows:
@@ -570,9 +566,7 @@ def raw_set(project: Project) -> frozenset[str]:
     """
     connection = connect(project, read_only=True)
     try:
-        # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
         rows = connection.execute("SELECT record_id FROM records").fetchall()
-        # pragma: no mutate end
     finally:
         connection.close()
     return frozenset(record_id for (record_id,) in rows)

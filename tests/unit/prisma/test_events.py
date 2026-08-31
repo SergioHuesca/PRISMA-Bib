@@ -256,7 +256,11 @@ def test_ulid_factory__randomness_exactly_at_the_mask__does_not_bump() -> None:
     ahead of the wall clock one call early, which is the kind of drift that
     is invisible until two logs are compared.
     """
-    randbits = ScriptedRandbits(RANDOMNESS_MASK - 1)
+    # A spare value is queued deliberately. With the comparison written `>=` the
+    # boundary triggers a redraw, and an exhausted source would raise IndexError
+    # from inside the helper before any assertion ran -- a red test whose message
+    # is about a test double rather than about the millisecond not advancing.
+    randbits = ScriptedRandbits(RANDOMNESS_MASK - 1, 777)
     factory = MonotonicUlidFactory(randbits=randbits)
 
     with time_machine.travel(BUILD_PLAN_INSTANT, tick=False):

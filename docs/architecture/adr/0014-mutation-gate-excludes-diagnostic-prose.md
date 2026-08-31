@@ -24,9 +24,12 @@ Triaging all 188 survivors against the generated `mutants/` tree gave a clear sp
 
 | Mutant population | Generated | Survived | Kill rate |
 |---|---:|---:|---:|
-| Can change behaviour ("semantic") | 805 | 57 | **92.92%** |
+| Can change behaviour ("semantic") | 805 | 57 | 92.92% |
 | String-literal only | 211 | 131 | 37.91% |
-| **Total as measured** | **1016** | **188** | **81.50%** |
+| **Total as measured** | **1016** | **188** | **81.40%** |
+
+(827 caught of 1016 considered — 826 killed plus one timeout, which the gate counts
+as caught, against 188 survivors and one segfault.)
 
 mutmut generates three mutants per string segment: an `XX…XX` sentinel wrap, a lowercased
 copy, and an uppercased copy. A carefully written multi-paragraph error message therefore
@@ -39,24 +42,54 @@ change-detector test: it breaks on every rewording and catches no defect. It is 
 ("tests that assert the wrong thing") reached from the opposite direction — assertions
 written to move a number rather than to state a requirement.
 
-The arithmetic settles it. Killing **every** structural survivor, including the ones that
-are provably equivalent, would have reached 862/1016 = **84.8%** — still under the gate. The
-85% threshold was unreachable while prose was counted, however good the tests became. The
-project was being penalised for writing good diagnostics, which is a discipline BUILD_PLAN
-§1.4 and the `EntitlementError` rewrite of Phase 0a both explicitly ask for.
+**This is a judgement about equivalent mutants, not an arithmetic certainty, and an earlier
+draft of this ADR got that wrong.** It claimed that killing every structural survivor would
+still reach only 862/1016 = 84.8%, "still under the gate". That figure is a category error:
+862 is the semantic *population* (805) plus the semantic *survivor count* (57), which is not
+a kill total. Killing all 57 gives 827 + 57 = 884/1016 = **87.01%** — over the gate. The
+error survived into the CHANGELOG and the pull request, and it happened to land just below
+the threshold, in the direction that supported the decision. It is recorded here rather than
+quietly corrected, because a wrong number that flatters its author is exactly what this
+project's review discipline exists to catch.
+
+The honest statement of the problem is this. 85% of 1016 is 863.6, so the gate needed 864
+caught, which is **37 of the 57 structural survivors**. Triage of those 57 found roughly 20
+to 26 killable and the remainder genuinely equivalent — unreachable `else` branches on a
+`fetchone()` DuckDB always answers, `_O_BINARY` on POSIX, `check=False` versus `check=None`,
+init sentinels never read before being written. So the gate was *probably* unreachable, by a
+margin of a handful of mutants, resting on a triage judgement rather than on a calculation.
+
+That is a weaker claim than the one this ADR originally made, and it is the one the decision
+actually rests on. What is not in doubt is the shape of the incentive: 211 of 1016 mutants
+rewrote a string literal and 131 of them survived, so the measured rate was dominated by how
+verbatim the suite asserts prose. The project was being penalised for writing good
+diagnostics, which is a discipline BUILD_PLAN §1.4 and the `EntitlementError` rewrite of
+Phase 0a both explicitly ask for.
 
 ## Decision
 
-**Exempt diagnostic message text and SQL text from mutation, per statement, with
+**Exempt the message body of a multi-line `raise` from mutation, per statement, with
 `# pragma: no mutate start` / `# pragma: no mutate end`. Keep the 85% gate.**
 
-The exemption is deliberately narrow and covers exactly two things:
+That is the whole exemption: 20 statements. The condition deciding whether to raise is
+*not* exempted and stays mutated — that is the behaviour; the prose is the explanation.
 
-1. **The message body of a multi-line `raise`.** The condition deciding whether to raise is
-   *not* exempted and stays mutated — that is the behaviour; the prose is the explanation.
-2. **SQL passed to `connection.execute`.** SQL keywords and unquoted identifiers are
-   case-insensitive, so `SELECT` → `select` and `run_duplicates` → `RUN_DUPLICATES` are
-   inert by definition of the language. These are equivalent mutants in the textbook sense.
+**SQL was in an earlier draft of this decision and has been removed.** The reasoning was
+sound in the abstract — SQL keywords and unquoted identifiers are case-insensitive, so
+`SELECT` → `select` is inert by definition of the language — but the implementation could
+not express it. A pragma suppresses mutations by *line*, and the SQL in this codebase sits
+inside the statement that runs it:
+
+```python
+row = connection.execute("""SELECT COALESCE(SUM(total_results), 0) ...""").fetchone()
+```
+
+Exempting the SQL therefore exempted `row = connection.execute(...)` → `row = None`, which
+makes `_identified_count` return `0` — the "records identified" number in the published
+PRISMA diagram silently becoming zero. The suite kills that mutant today; with the pragma
+in place the gate would never again report if it stopped. Six such statements were
+affected. Losing the ~18 inert SQL-case mutants to the survivor list costs about two
+percentage points and is the correct trade.
 
 Everything else stays mutated. In particular these short semantic strings, each of which
 changes behaviour when its case is flipped, are **not** covered:
@@ -64,6 +97,16 @@ changes behaviour when its case is flipped, are **not** covered:
 - `"shared"` / `"exclusive"` — the decision log's lock modes
 - `"--format=%H"` — a git argument
 - stage names, decision values, reason codes, `record_id` prefixes
+
+**Being in scope is not the same as being covered, and the first of those is currently
+both.** `_locked("shared")` → `_locked("SHARED")` survives: `log.py`'s POSIX backend reads
+`LOCK_SH if kind == "shared" else LOCK_EX`, so the mutant silently makes every *read* take
+an exclusive lock, and no test notices. Six survivors of that shape remain, along with a
+`_capture_layer1(project, None)` group that opens a second connection and breaks the
+single-read guarantee `engine.py` documents three lines above. They are real gaps, they are
+filed as issue #23 rather than fixed here, and they are named in this ADR rather than left
+in a list because citing these strings as evidence of narrowness while they go untested
+would be having it both ways.
 
 ## Alternatives rejected
 
@@ -129,7 +172,19 @@ were fixed in the same change rather than exempted:
 ## Constraints
 
 - A pragma may only enclose text. Any condition, comparison, or call that decides control
-  flow stays outside it.
+  flow stays outside it. **This constraint was violated by the first implementation of
+  this ADR** — the SQL spans enclosed the `connection.execute(...)` call that retrieves
+  the data — which is why SQL is no longer exempt at all. A reviewer should read every
+  span against this line, not against the intent stated above it.
+- Exempting a message body also exempts any expression interpolated into it: a mutation of
+  `list(criteria.subject_areas)` inside an f-string is suppressed along with the prose
+  around it. That is an accepted residual cost, bounded by the fact that such a mutation
+  can only alter the message or turn one exception into another on a path already
+  raising. It is not a licence to move computation into a message.
+- mutmut does not mutate a function carrying more than one decorator, so every pydantic
+  validator in `events.py` is already outside the gate's population. A pragma on one of
+  them is a claim with no effect; one was written and removed. The 91.73% is measured over
+  a population that excludes the `DecisionEvent` validation surface.
 - Short strings that are compared, dispatched on, or passed as arguments to another program
   are never exempt, whatever they look like.
 - `weekly-mutation.yml` keeps `KILL_RATE_THRESHOLD: 85` and keeps treating anything not

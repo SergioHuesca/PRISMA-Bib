@@ -13,16 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutation workflow fired for the first time on 2026-08-31 and failed at 81.40% against an
   85% gate — the project's first real measurement, not a regression. Triage split it
   cleanly: **92.92% on the 805 mutants that can change behaviour, 37.91% on 211 that only
-  rewrite string literals.** mutmut generates three mutants per string segment (an `XX…XX`
+  rewrite string literals.** After this change the gate reads **91.73%** (798 killed plus
+  one timeout of 871 considered, nothing unchecked). mutmut generates three mutants per string segment (an `XX…XX`
   wrap, a lowercased copy, an uppercased copy), so one carefully written error message
   produced 54 mutants and 44 survivors — a quarter of every survivor in the project.
   Killing those means asserting messages verbatim, character and case, which breaks on
-  every rewording and catches no defect. Killing every *structural* survivor would still
-  have reached only 84.8%, so the gate was unreachable while prose was counted. Diagnostic
-  message bodies and SQL text are now exempt per statement; the condition that decides
+  every rewording and catches no defect. Reaching 85% needed 37 of the 57 structural
+  survivors killed, and triage found only 20–26 of them killable — so the gate was
+  *probably* unreachable, by a handful of mutants, on a triage judgement. **An earlier
+  draft of this entry said "killing every structural survivor still reaches only 84.8%,
+  so the gate was unreachable"; that arithmetic was wrong** — the correct figure is 87.0%,
+  and the error flattered the conclusion. ADR 0014 records it rather than quietly dropping
+  it. Only diagnostic message bodies are exempt, per statement; the condition that decides
   whether to raise, and every short semantic string (`"shared"`/`"exclusive"` lock modes,
-  `"--format=%H"`, stage names, decision values, reason codes) stay mutated. The 85%
-  threshold is unchanged. See [ADR 0014](docs/architecture/adr/0014-mutation-gate-excludes-diagnostic-prose.md).
+  `"--format=%H"`, stage names, decision values, reason codes) stay mutated. SQL was in an
+  earlier draft and was removed: a pragma suppresses by line, and the SQL sits inside the
+  statement that runs it, so exempting it also exempted `row = connection.execute(...)` →
+  `row = None` — which makes `identified` in the published PRISMA diagram silently zero.
+  The 85% threshold is unchanged. See [ADR 0014](docs/architecture/adr/0014-mutation-gate-excludes-diagnostic-prose.md).
 - **`MonotonicUlidFactory`'s randomness-overflow branch was untested and wrong-proof.**
   Reaching it takes roughly 2**80 calls, so no test could, and it silently accepted a
   mutation setting `timestamp_ms = 1` — stamping every later event one millisecond after
@@ -31,9 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned from both sides: landing exactly on the mask must *not* bump the millisecond.
   The id's timestamp is also asserted to be the real Unix millisecond, which a merely
   monotonic conversion would not be.
-- **An ambient `GIT_DIR` could resolve a superseded `criteria.yaml` from another
-  repository** and report it as this project's protocol history — a plausible wrong number
-  in a published diagram. `_git_environment` had always dropped `GIT_DIR`/`GIT_WORK_TREE`;
+- **An ambient `GIT_WORK_TREE` resolved a superseded `criteria.yaml` from another
+  repository** and returned it as this project's protocol history — verified by injection:
+  the decoy's `year_start` comes back, silently. `GIT_DIR` fails loudly instead. Both are
+  wrong; only one is quiet. `_git_environment` had always dropped `GIT_DIR`/`GIT_WORK_TREE`;
   nothing asserted it, and removing the `env=` argument entirely left the suite green.
 - **The checksum sidecar's covered prefix is accumulated across lines**, and the only test
   covering it left a one-line prefix, where accumulating and replacing are

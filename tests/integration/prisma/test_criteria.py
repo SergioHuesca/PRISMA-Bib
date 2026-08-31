@@ -138,8 +138,19 @@ def test_resolve_criteria__ambient_git_env_pointing_elsewhere__is_ignored(
     symbol is patched.
 
     The decoy repository holds a ``criteria.yaml`` at the same version but a
-    different ``year_start``, so a hijacked lookup succeeds and returns the
-    wrong answer rather than merely failing -- silent, which is the point.
+    different ``year_start``, so the two variables can be told apart by what
+    they produce with the guard removed -- verified by injecting that:
+
+    - ``GIT_WORK_TREE`` resolves **1800**, the decoy's value, and returns it
+      as this project's protocol history. Silent, and the reason this test
+      exists.
+    - ``GIT_DIR`` raises ``ConfigError`` instead, because the project's
+      ``criteria.yaml`` is not under the decoy's toplevel and
+      ``relative_to`` fails. Loud, and still wrong: a review that cannot
+      resolve its own amended criteria cannot be replayed.
+
+    Both are covered because the guard drops both, and because which one a
+    stray environment happens to carry is not something this code chooses.
     """
     commit_criteria(project, CriteriaSpec(version="1.0.0", year_start=1990), "v1.0.0")
     commit_criteria(project, CriteriaSpec(version="2.0.0", year_start=2020), "v2.0.0")

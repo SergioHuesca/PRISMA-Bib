@@ -334,12 +334,10 @@ class DecisionEvent(BaseModel):
         """
         if value not in _LOGGABLE_STAGES:
             allowed = sorted(stage.value for stage in _LOGGABLE_STAGES)
-            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise ValueError(
                 f"stage {value.value!r} is not a screening stage decisions are logged "
                 f"against; expected one of {allowed}"
             )
-            # pragma: no mutate end
         return value
 
     @field_validator("ts")

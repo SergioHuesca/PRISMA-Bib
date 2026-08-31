@@ -325,20 +325,27 @@ fail_under = 90
 #
 # Measured on the first real run (2026-08-31): of 1016 mutants, 211 were
 # string-literal-only and 131 of those survived. The kill rate over mutants
-# that can change behaviour was 92.92%; the reported rate was 81.50%. Killing
-# every remaining structural survivor would still have landed at 84.8%, so
-# the 85% gate was unreachable while prose was counted -- the project was
-# being penalised for writing good diagnostics.
+# that can change behaviour was 92.92%; the reported rate was 81.40%. Reaching
+# 85% required killing 37 of the 57 structural survivors, and triage found only
+# ~20-26 of them killable -- so the gate was probably unreachable, by a handful
+# of mutants, on a triage judgement rather than on arithmetic. (An earlier
+# comment here asserted 84.8% and "unreachable" as a calculation; that was a
+# category error, corrected in ADR 0014.) The project was being penalised for
+# writing good diagnostics.
 #
-# The exemption is per-statement and deliberately narrow. It covers the
-# message body of a multi-line `raise`, and the SQL passed to
-# `connection.execute` (SQL keywords and unquoted identifiers are
-# case-insensitive, so a case mutation there is inert by definition). It does
-# NOT cover the condition that decides whether to raise, and it does NOT
-# cover short semantic strings -- `"shared"`/`"exclusive"` lock modes,
-# `"--format=%H"`, stage names, decision values, reason codes -- all of which
-# stay mutated, because flipping their case genuinely changes behaviour and a
-# test that fails to notice is a real gap.
+# The exemption is per-statement and deliberately narrow: the message body of
+# a multi-line `raise`, and nothing else. It does NOT cover the condition that
+# decides whether to raise, and it does NOT cover short semantic strings --
+# `"shared"`/`"exclusive"` lock modes, `"--format=%H"`, stage names, decision
+# values, reason codes -- all of which stay mutated, because flipping their
+# case genuinely changes behaviour and a test that fails to notice is a real
+# gap. Six of those are in fact surviving today; see issue #23.
+#
+# SQL was exempted in an earlier draft and is not any more. A pragma suppresses
+# by line and the SQL sits inside the statement that runs it, so exempting it
+# also exempted `row = connection.execute(...)` -> `row = None`, which makes
+# `_identified_count` return 0 -- the PRISMA diagram's "records identified"
+# silently becoming zero, with the gate no longer able to report it.
 source_paths = ["src/prismabib"]
 # Add "src/prismabib/taxonomy/*" here at Stage 8, when that package exists — BUILD_PLAN
 # line 580 names it as in scope. Naming it before it exists only makes the run fail.
