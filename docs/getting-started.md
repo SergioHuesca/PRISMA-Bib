@@ -56,12 +56,12 @@ Layers 0, 1 and 2 are built and tested. Concretely:
 | Capture Scopus into Layer 0 | `prismabib search <slug>` |
 | Build the Layer 1 store | `prismabib build <slug>` |
 | Print PRISMA 2020 flow counts | `prismabib flow <slug>` |
+| Screen title/abstracts | `screener(project, stage=..., reviewer=...)` in a notebook |
 | Record a screening decision | `DecisionLog.append(...)` in Python |
 | Replay under amended criteria | `engine.replay(project, criteria_version=...)` |
 
-There is **no screening UI yet** (Stage 5), so step 8 below records decisions through the
-Python API. `prismabib code` and `prismabib export` do not exist — deliberately, rather
-than as stubs that accept arguments and do nothing.
+`prismabib code` and `prismabib export` do not exist — deliberately, rather than as stubs
+that accept arguments and do nothing.
 
 ## 1. Clone and install
 
@@ -308,8 +308,35 @@ rebuilding loses nothing — Layer 0 is the archive of record.
 
 ## 8. Record your first screening decision
 
-There is no screening UI yet, so decisions go through `DecisionLog.append`. Run this from
-the repository root:
+Open `notebooks/01_screen_title_abstract.ipynb`, set the slug, and run it. The same object
+serves outside a notebook with no code change:
+
+```bash
+uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
+```
+
+![The screening view: progress and pace, one record, the reason palette, and the mouse
+controls](assets/screening-ui.png)
+
+`i` includes · `e` then a digit excludes under that reason code · `u` is unsure · `n`/`p`
+move without deciding · `z` withdraws the decision on the record you are looking at · `?`
+shows the map. Every resolving keystroke is appended and `fsync`ed before the view moves,
+so closing the tab costs at most the record on screen.
+
+Three things on that screen are deliberate and worth knowing before you rely on them:
+
+- **Author names and citation counts are absent**, not hidden. Both move human judgement
+  and neither is an eligibility criterion. Pass `blind=False` if your protocol says
+  otherwise.
+- **The order is seeded from your project slug** and is uncorrelated with citation count,
+  so you are not calibrating on the most-cited papers first. It is stable as your corpus
+  grows, so re-capturing does not send you back through a reshuffled queue.
+- **The record id under the status line carries its current decision**, which is what makes
+  `z` checkable: step back with `p`, see `· include`, press `z`, see `· unsure`.
+
+Decisions are events in `decisions.jsonl`, and the same append is available directly —
+useful for scripting, and for understanding what the view is doing. Run this from the
+repository root:
 
 ```python
 from prismabib.prisma.log import DecisionLog

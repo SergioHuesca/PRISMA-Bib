@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banned for it except on loopback, which a Jupyter kernel needs and Scopus is not.
 - **`docs/reference/` gained its `screening/` section**, which that page's own header
   calls a visible omission that `mkdocs build --strict` cannot catch.
+- **The view actually renders under `panel serve`.** Panel derives the Bokeh model's type
+  name from the component class's `__name__`, and a leading underscore produces a type the
+  browser cannot resolve — at which point Bokeh fails the *whole document* and the reviewer
+  gets a blank page, with the reason only in a console they have no reason to open.
+  `_KeyboardBridge` was the entire defect. Nothing caught it because nothing in the suite
+  loads the page in a browser; driving a real one also verified the keyboard end to end for
+  the first time.
+- **`docs/getting-started.md` documents the screening step**, with a screenshot. It said
+  "there is no screening UI yet" in three places.
 
 ## [0.9.0] — 2026-08-28
 
