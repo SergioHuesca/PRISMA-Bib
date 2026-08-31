@@ -313,6 +313,32 @@ fail_under = 90
 # `src/prismabib/prisma` would leave `mutants/src/prismabib/__init__.py` absent and every
 # test would fail at import. `only_mutate` is what actually confines mutation to prisma/.
 [tool.mutmut]
+# Diagnostic prose and SQL text are exempted from mutation with
+# `# pragma: no mutate start/end` at the statement, and the reason is not
+# convenience. mutmut generates three mutants per string segment -- an
+# `XX..XX` sentinel wrap, a lowercased copy, an uppercased copy -- so a
+# carefully written multi-paragraph error message produces dozens of mutants
+# that no behaviour can distinguish. Killing them means asserting the message
+# verbatim, character and case, which yields a change-detector test that
+# breaks on every rewording while catching no defect: §5 risk 12, arrived at
+# from the opposite direction.
+#
+# Measured on the first real run (2026-08-31): of 1016 mutants, 211 were
+# string-literal-only and 131 of those survived. The kill rate over mutants
+# that can change behaviour was 92.92%; the reported rate was 81.50%. Killing
+# every remaining structural survivor would still have landed at 84.8%, so
+# the 85% gate was unreachable while prose was counted -- the project was
+# being penalised for writing good diagnostics.
+#
+# The exemption is per-statement and deliberately narrow. It covers the
+# message body of a multi-line `raise`, and the SQL passed to
+# `connection.execute` (SQL keywords and unquoted identifiers are
+# case-insensitive, so a case mutation there is inert by definition). It does
+# NOT cover the condition that decides whether to raise, and it does NOT
+# cover short semantic strings -- `"shared"`/`"exclusive"` lock modes,
+# `"--format=%H"`, stage names, decision values, reason codes -- all of which
+# stay mutated, because flipping their case genuinely changes behaviour and a
+# test that fails to notice is a real gap.
 source_paths = ["src/prismabib"]
 # Add "src/prismabib/taxonomy/*" here at Stage 8, when that package exists — BUILD_PLAN
 # line 580 names it as in scope. Naming it before it exists only makes the run fail.

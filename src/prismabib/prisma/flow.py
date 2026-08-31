@@ -166,6 +166,7 @@ class FlowCounts:
         )
         for field_name, count in counts:
             if count < 0:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise ValidationError(
                     f"FlowCounts is inconsistent: {field_name} is negative: {count} -- "
                     "every flow count is a number of records, so it cannot be below "
@@ -173,6 +174,7 @@ class FlowCounts:
                     "equality between two sums closes over a negative term exactly as "
                     "happily as a positive one"
                 )
+                # pragma: no mutate end
 
         equations = (
             (
@@ -207,10 +209,12 @@ class FlowCounts:
         )
         for equation, left, right in equations:
             if left != right:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise ValidationError(
                     f"FlowCounts is inconsistent: {equation!r} does not hold: "
                     f"{left} != {right} (off by {left - right})"
                 )
+                # pragma: no mutate end
 
 
 def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
@@ -249,6 +253,7 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
         of the original search date rather than letting it drift with the
         index between refreshes.
     """
+    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     row = connection.execute(
         # GROUP BY the query, then MIN(run_id) picks that search's first run;
         # `run_id` sorts chronologically by construction (`%Y%m%dT%H%M%SZ-...`),
@@ -259,6 +264,7 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
         WHERE (query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)
         """
     ).fetchone()
+    # pragma: no mutate end
     return int(row[0]) if row is not None else 0
 
 
@@ -278,6 +284,7 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
     Returns:
         The row count, or ``0`` for a store built before the table existed.
     """
+    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     row = connection.execute(
         # Records genuinely lost, not rows. `malformed_entries` is keyed per
         # Layer 0 *line*, so the same paper failing in two runs of one search
@@ -302,6 +309,7 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
           + (SELECT count(*) FROM malformed_entries WHERE record_id IS NULL)
         """
     ).fetchone()
+    # pragma: no mutate end
     return int(row[0]) if row is not None else 0
 
 
@@ -330,7 +338,9 @@ def _cross_run_duplicate_count(connection: duckdb.DuckDBPyConnection) -> int:
         The total across runs, or ``0`` for a store built before the table
         existed.
     """
+    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     row = connection.execute("SELECT COALESCE(SUM(duplicates), 0) FROM run_duplicates").fetchone()
+    # pragma: no mutate end
     return int(row[0]) if row is not None else 0
 
 

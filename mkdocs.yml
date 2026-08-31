@@ -98,6 +98,7 @@ nav:
           - "ADR 0011: Subject areas come from a separate Abstract Retrieval run": architecture/adr/0011-abstract-retrieval-for-subject-areas.md
           - "ADR 0012: A skipped Layer 0 entry is a row in Layer 1": architecture/adr/0012-persisting-skipped-layer0-entries.md
           - "ADR 0013: identified sums total_results across distinct searches": architecture/adr/0013-identified-sums-across-searches.md
+          - "ADR 0014: the mutation gate excludes diagnostic prose and SQL text": architecture/adr/0014-mutation-gate-excludes-diagnostic-prose.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

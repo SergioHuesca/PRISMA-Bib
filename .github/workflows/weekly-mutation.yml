@@ -115,6 +115,29 @@ jobs:
             echo >> mutation-report/survivor-diffs.txt
           done < <(head -n "$MAX_DIFFS_IN_ISSUE" mutation-report/survivors.txt)
 
+      - name: Report the mutation exemptions
+        # ADR 0014 exempts diagnostic message bodies and SQL text from mutation, because
+        # mutmut emits three mutants per string segment and killing them means asserting
+        # prose verbatim. Each pragma is a *claim* that the enclosed text cannot change
+        # behaviour, and a wrong claim removes coverage with nothing failing. Counting them
+        # here puts that number in front of a reader every week: a jump is a change to what
+        # the gate measures, and should be reviewed like one.
+        run: |
+          set -euo pipefail
+          count=$(grep -rc "pragma: no mutate start" src/prismabib/prisma/ \
+                    | awk -F: '{total += $2} END {print total + 0}')
+          {
+            echo "## Mutation exemptions (ADR 0014)"
+            echo
+            echo "\`$count\` statement(s) in \`src/prismabib/prisma/\` are exempt from mutation."
+            echo "Each is a claim that the enclosed text -- a diagnostic message body, or SQL"
+            echo "text, where case is not significant -- cannot change behaviour. A rise here"
+            echo "narrows what the kill rate below is measured over."
+            echo
+            grep -rn "pragma: no mutate start" src/prismabib/prisma/ \
+              | sed -E 's#^([^:]+):([0-9]+):.*no mutate start *-- *#    \1:\2  #'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compute kill rate
         id: score
         # Deliberately does not fail the job: the artifact and the backlog issue below

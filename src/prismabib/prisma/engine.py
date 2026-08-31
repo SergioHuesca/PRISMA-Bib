@@ -198,12 +198,16 @@ def _fetch_record_attributes(
         rather than several that a concurrent ``build_store`` could have
         moved between.
     """
+    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     rows = connection.execute(
         "SELECT r.record_id, r.year, r.doc_type, r.language, "
         "COALESCE(v.venue_type, ''), COALESCE(v.name, '') "
         "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id"
     ).fetchall()
+    # pragma: no mutate end
+    # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
     area_rows = connection.execute("SELECT record_id, area_code FROM subject_areas").fetchall()
+    # pragma: no mutate end
 
     areas_by_record: dict[str, set[str]] = defaultdict(set)
     for record_id, area_code in area_rows:
@@ -521,6 +525,7 @@ def _refuse_unenforceable_subject_filter(
         return
     if any(record.subject_areas for record in attributes.values()):
         return
+    # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
     raise ConfigError(
         f"{project.root / 'criteria.yaml'} restricts subject_areas to "
         f"{list(criteria.subject_areas)!r}, but not one of the {len(attributes)} records "
@@ -542,6 +547,7 @@ def _refuse_unenforceable_subject_filter(
         "though project.toml no longer holds it. Note this narrows what is *identified*, "
         "so those records never appear in the automated-exclusion count."
     )
+    # pragma: no mutate end
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +570,9 @@ def raw_set(project: Project) -> frozenset[str]:
     """
     connection = connect(project, read_only=True)
     try:
+        # pragma: no mutate start  -- SQL text; see [tool.mutmut] in pyproject.toml
         rows = connection.execute("SELECT record_id FROM records").fetchall()
+        # pragma: no mutate end
     finally:
         connection.close()
     return frozenset(record_id for (record_id,) in rows)

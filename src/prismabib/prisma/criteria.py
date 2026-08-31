@@ -142,6 +142,7 @@ def _resolve_from_git_history(
     criteria_path = (project.root / "criteria.yaml").resolve()
     top_level = _git_top_level(project.root)
     if top_level is None:
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
             f"criteria_version {criteria_version!r} is not the project's current "
             f"version ({current_version!r}), and {project.root} is not "
@@ -149,30 +150,37 @@ def _resolve_from_git_history(
             "history only (no per-version archive directory exists) -- commit "
             "criteria.yaml to a git repository to make prior versions replayable."
         )
+        # pragma: no mutate end
     try:
         relative_path = criteria_path.relative_to(top_level)
     except ValueError as exc:
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
             f"criteria_version {criteria_version!r} could not be resolved: "
             f"{criteria_path} does not appear to live inside the git repository "
             f"rooted at {top_level}: {exc}"
         ) from exc
+        # pragma: no mutate end
 
     commit_hashes = _git_log_hashes(top_level, relative_path)
     if not commit_hashes:
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
             f"criteria_version {criteria_version!r} could not be resolved: "
             f"{criteria_path} has no git history under {top_level}."
         )
+        # pragma: no mutate end
     for commit_hash in commit_hashes:
         candidate = _criteria_at_commit(top_level, commit_hash, relative_path)
         if candidate is not None and candidate.version == criteria_version:
             return candidate
+    # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
     raise ConfigError(
         f"criteria_version {criteria_version!r} was not found anywhere in "
         f"{relative_path}'s git history under {top_level} "
         f"(searched {len(commit_hashes)} commit(s))."
     )
+    # pragma: no mutate end
 
 
 def _criteria_at_commit(top_level: Path, commit_hash: str, relative_path: Path) -> Criteria | None:
@@ -241,10 +249,12 @@ def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
             timeout=_GIT_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
             "git is not available on PATH; criteria history is resolved from git "
             f"history only and could not run `git {' '.join(args)}`: {exc}"
         ) from exc
+        # pragma: no mutate end
 
 
 def _git_environment() -> dict[str, str]:

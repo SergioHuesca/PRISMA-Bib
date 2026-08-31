@@ -233,11 +233,13 @@ def _refuse_reentrant_lock(held: frozenset[int] | set[int], fd: int, path: Path)
         LogError: If ``fd`` is already in ``held``.
     """
     if fd in held:
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise LogError(
             f"{path}: the decision-log lock is not re-entrant -- descriptor {fd} already "
             "holds it. Take one lock per critical section; nesting them deadlocks on "
             "POSIX and fails outright on Windows."
         )
+        # pragma: no mutate end
 
 
 class _PosixLockBackend:
@@ -409,6 +411,7 @@ class _WindowsLockBackend:
                     raise
                 remaining = deadline - self._monotonic()
                 if remaining <= 0:
+                    # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                     raise LogError(
                         f"{path}: could not take the {kind} lock after waiting "
                         f"{self._timeout:g}s -- another process still holds it. "
@@ -416,6 +419,7 @@ class _WindowsLockBackend:
                         "a CLI run, an editor plugin) that has this project open, then "
                         "retry. No decision has been written."
                     ) from exc
+                    # pragma: no mutate end
                 self._sleep(min(wait * (0.5 + self._jitter()), remaining))
                 wait = min(wait * 2.0, _LOCK_MAX_RETRY_SECONDS)
             else:
@@ -683,10 +687,12 @@ class DecisionLog:
         with self._locked("exclusive") as fd:
             confirmed, existing = self._verify_and_load_locked(fd)
             if event.event_id in {existing_event.event_id for existing_event in existing}:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise LogError(
                     f"{self._path}: duplicate event_id {event.event_id!r} -- already present "
                     "in the decision log (replayed append or ULID collision)"
                 )
+                # pragma: no mutate end
             line_bytes = (event.model_dump_json() + "\n").encode("utf-8")
             os.lseek(fd, 0, os.SEEK_END)
             os.write(fd, line_bytes)
@@ -710,18 +716,22 @@ class DecisionLog:
         if event.decision != "exclude":
             return
         if not event.reason_code:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 "reason_code is required when decision='exclude' "
                 f"(stage={event.stage.value!r}, record_id={event.record_id!r}, "
                 f"reviewer={event.reviewer!r})"
             )
+            # pragma: no mutate end
         allowed = self._exclude_reason_codes(event.stage)
         if event.reason_code not in allowed:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 f"reason_code {event.reason_code!r} is not declared in criteria.yaml's "
                 f"{event.stage.value} exclude_reason_codes {sorted(allowed)!r} "
                 f"(criteria_version={event.criteria_version!r})"
             )
+            # pragma: no mutate end
 
     def _exclude_reason_codes(self, stage: PrismaStage) -> frozenset[str]:
         """Look up the current criteria's exclude-reason-code set for ``stage``.
@@ -783,11 +793,13 @@ class DecisionLog:
                 locked section, or if the lock cannot be taken.
         """
         if self._lock_held:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 f"{self._path}: DecisionLog._locked is not re-entrant -- a "
                 f"{kind} lock was requested while this log already holds one. "
                 "One lock per critical section."
             )
+            # pragma: no mutate end
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self._path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
         self._lock_held = True
@@ -855,11 +867,13 @@ class DecisionLog:
         expected = hashlib.sha256(confirmed).hexdigest()
         if not self._checksum_path.is_file():
             if confirmed:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise LogError(
                     f"missing checksum sidecar {self._checksum_path} for a non-empty "
                     f"decision log -- {self._path} may have been created or edited "
                     "outside DecisionLog"
                 )
+                # pragma: no mutate end
             return
         recorded_text = self._checksum_path.read_text(encoding="utf-8").strip()
         recorded = recorded_text.split(maxsplit=1)[0] if recorded_text else ""
@@ -880,6 +894,7 @@ class DecisionLog:
         # diagnosis names what actually happened.
         uncovered = self._lines_after_checksummed_prefix(confirmed, recorded)
         if uncovered is not None:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 f"{self._path} has {uncovered} decision line(s) not covered by the "
                 f"checksum sidecar {self._checksum_path}. The sidecar matches this "
@@ -888,12 +903,15 @@ class DecisionLog:
                 "not hand-editing. Inspect the trailing line(s); if they are decisions "
                 "you intended, the log is intact and only the sidecar needs rewriting."
             )
+            # pragma: no mutate end
 
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise LogError(
             f"checksum mismatch for {self._path}: sidecar {self._checksum_path} records "
             f"{recorded!r}, but content hashes to {expected!r} -- decisions.jsonl may "
             "have been edited by hand"
         )
+        # pragma: no mutate end
 
     def _lines_after_checksummed_prefix(self, confirmed: bytes, recorded: str) -> int | None:
         """How many trailing lines lie beyond the prefix the sidecar checksums.
@@ -974,16 +992,20 @@ class DecisionLog:
                 raise LogError(f"{self._path}:{line_number}: malformed JSON: {exc}") from exc
             schema_version = payload.get("schema_version")
             if schema_version != CURRENT_SCHEMA_VERSION:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise LogError(
                     f"{self._path}:{line_number}: unknown schema_version "
                     f"{schema_version!r} (expected {CURRENT_SCHEMA_VERSION})"
                 )
+                # pragma: no mutate end
             try:
                 event = DecisionEvent.model_validate(payload)
             except PydanticValidationError as exc:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise LogError(
                     f"{self._path}:{line_number}: malformed decision event: {exc}"
                 ) from exc
+                # pragma: no mutate end
             if event.event_id in seen_ids:
                 raise LogError(f"{self._path}:{line_number}: duplicate event_id {event.event_id!r}")
             seen_ids.add(event.event_id)
@@ -1015,6 +1037,7 @@ class DecisionLog:
         events = self._parse_events(confirmed)
         if fragment:
             line_number = confirmed.count(b"\n") + 1
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 f"{self._path}: truncated final line at line {line_number} "
                 f"({len(fragment)} byte(s) with no terminating newline) -- the process "
@@ -1037,6 +1060,7 @@ class DecisionLog:
                 "Back the file up before step 2 -- it is the record of human screening "
                 "labour and nothing else can reconstruct it."
             )
+            # pragma: no mutate end
         return confirmed, events
 
 

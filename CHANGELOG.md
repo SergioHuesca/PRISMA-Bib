@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The mutation gate is measured over mutants that can change behaviour.** The weekly
+  mutation workflow fired for the first time on 2026-08-31 and failed at 81.40% against an
+  85% gate — the project's first real measurement, not a regression. Triage split it
+  cleanly: **92.92% on the 805 mutants that can change behaviour, 37.91% on 211 that only
+  rewrite string literals.** mutmut generates three mutants per string segment (an `XX…XX`
+  wrap, a lowercased copy, an uppercased copy), so one carefully written error message
+  produced 54 mutants and 44 survivors — a quarter of every survivor in the project.
+  Killing those means asserting messages verbatim, character and case, which breaks on
+  every rewording and catches no defect. Killing every *structural* survivor would still
+  have reached only 84.8%, so the gate was unreachable while prose was counted. Diagnostic
+  message bodies and SQL text are now exempt per statement; the condition that decides
+  whether to raise, and every short semantic string (`"shared"`/`"exclusive"` lock modes,
+  `"--format=%H"`, stage names, decision values, reason codes) stay mutated. The 85%
+  threshold is unchanged. See [ADR 0014](docs/architecture/adr/0014-mutation-gate-excludes-diagnostic-prose.md).
+- **`MonotonicUlidFactory`'s randomness-overflow branch was untested and wrong-proof.**
+  Reaching it takes roughly 2**80 calls, so no test could, and it silently accepted a
+  mutation setting `timestamp_ms = 1` — stamping every later event one millisecond after
+  the Unix epoch and destroying the ordering the decision log's fold depends on. The
+  randomness source is now injectable so the branch is reachable, and the boundary is
+  pinned from both sides: landing exactly on the mask must *not* bump the millisecond.
+  The id's timestamp is also asserted to be the real Unix millisecond, which a merely
+  monotonic conversion would not be.
+- **An ambient `GIT_DIR` could resolve a superseded `criteria.yaml` from another
+  repository** and report it as this project's protocol history — a plausible wrong number
+  in a published diagram. `_git_environment` had always dropped `GIT_DIR`/`GIT_WORK_TREE`;
+  nothing asserted it, and removing the `env=` argument entirely left the suite green.
+- **The checksum sidecar's covered prefix is accumulated across lines**, and the only test
+  covering it left a one-line prefix, where accumulating and replacing are
+  indistinguishable. Replacing it turns an interrupted append into a tampering report —
+  opposite recovery instructions, delivered to a reviewer who has just lost power partway
+  through screening.
+
 ## [0.10.0] — 2026-08-31
 
 ### Added
