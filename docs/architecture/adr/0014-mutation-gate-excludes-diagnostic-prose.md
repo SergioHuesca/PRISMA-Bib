@@ -200,8 +200,16 @@ were fixed in the same change rather than exempted:
   `engine._layer1_connection` and `log._locked`, both `@contextmanager`. Those last two
   hold the connection and locking logic that issue #23's first two findings are about, so
   the blind spot overlaps precisely the code least covered. A pragma on such a function is
-  a claim with no effect; one was written and removed. The 91.04% is measured over a
-  population that excludes all eight.
+  a claim with no effect; one was written and removed.
+- **The same rule prunes the entire body of a decorated *class*,** which excludes two more
+  functions and matters more than the eight. `flow.FlowCounts` and `log._ByteRangeLocking`
+  are `@dataclass(frozen=True)`, so `FlowCounts.assert_consistent` and
+  `_ByteRangeLocking.from_module` generate no mutants at all. Removing just those two class
+  decorators raises generation from 882 to 939: the dataclass blind spot hides ~57 mutants,
+  ~51 of them in `assert_consistent` — **the function that enforces the PRISMA count
+  identities**, called from `cli.py:611`. So the 91.04% is measured over a population that
+  excludes ten functions, and the largest hole in it is the equation check this project
+  exists to get right. Pre-existing, not introduced here, and filed as part of #23.
 - Short strings that are compared, dispatched on, or passed as arguments to another program
   are never exempt, whatever they look like.
 - `weekly-mutation.yml` keeps `KILL_RATE_THRESHOLD: 85` and keeps treating anything not
