@@ -25,12 +25,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model cannot be restored by a later change to the markup.
 - **Progress, pace and ETA**, measured over the *current session* rather than the whole
   log: re-opening a half-finished review must not report months of screening as though it
-  had happened since the notebook was opened. BUILD_PLAN calls this display "what sustains
-  a multi-hour task", which only holds while the numbers are true.
+  had happened since the notebook was opened. Elapsed runs from the session's start, not
+  from its first decision, and no rate is shown at all for the first thirty seconds —
+  early on, the denominator is small enough that one fast keystroke dominates it, and a
+  reviewer reading "hundreds per minute" a moment after their first decision has no
+  evidence of their own to contradict it. Changing a decision you already made is not a
+  second decision. BUILD_PLAN calls this display "what sustains a multi-hour task", which
+  only holds while the numbers are true.
 - **`ScreeningQueue`** — the pure-logic half: an order seeded from the project slug and
-  uncorrelated with citation count, resumable per reviewer from the log, with `unsure`
-  deliberately not resolving and `undo` appending a superseding reversal rather than
-  editing an append-only file.
+  uncorrelated with citation count, stable as the corpus grows between captures, resumable
+  per reviewer from the log, with `unsure` deliberately not resolving and `undo` appending
+  a superseding reversal rather than editing an append-only file.
+- **`z` reverses the record on screen**, including after `p`. The status line names the
+  current record's existing decision, so stepping back to re-read something already
+  decided is no longer blind and the reversal is visible where it landed.
+- **`test_notebook__01_screen_title_abstract__executes`** — BUILD_PLAN names this test and
+  the `notebook` marker was registered for it, but nothing in the suite ran the notebook:
+  it was executed only by the non-required `notebooks` job, so renaming a keyword could
+  break a researcher's first five minutes with every required check green. Sockets stay
+  banned for it except on loopback, which a Jupyter kernel needs and Scopus is not.
+- **`docs/reference/` gained its `screening/` section**, which that page's own header
+  calls a visible omission that `mkdocs build --strict` cannot catch.
 
 ## [0.9.0] — 2026-08-28
 

@@ -510,7 +510,7 @@ def keymap_javascript(bindings: Sequence[KeyBinding]) -> str:
 
     Returns:
         JavaScript, evaluated by Panel in the ``render`` lifecycle of
-        :class:`_KeyboardBridge`, where ``data`` is the component's synced
+        :class:`KeyboardBridge`, where ``data`` is the component's synced
         parameter object.
     """
     table = json.dumps({binding.key: binding.action for binding in bindings}, sort_keys=True)
@@ -558,7 +558,7 @@ def help_markdown(bindings: Sequence[KeyBinding]) -> str:
     return "\n".join(lines)
 
 
-class _KeyboardBridge(ReactiveHTML):
+class KeyboardBridge(ReactiveHTML):
     """The one DOM node whose only job is to carry keystrokes to the kernel.
 
     A :class:`~panel.reactive.ReactiveHTML` component because that is Panel's
@@ -566,6 +566,18 @@ class _KeyboardBridge(ReactiveHTML):
     inserts markup with ``innerHTML``, which never executes a ``<script>``, so
     the obvious implementation would have shipped a keyboard that silently did
     nothing in the browser while every Python test passed.
+
+    **The name must not start with an underscore, and that is not a style
+    choice.** Panel derives the Bokeh model's type name from this class's
+    ``__name__`` (plus a counter, so this one is ``KeyboardBridge1``), and a
+    leading underscore produces a type the browser cannot resolve. Bokeh then
+    fails the *whole document*, not just this component: ``Failed to load
+    Bokeh session ... could not resolve type '_KeyboardBridge1'``, and the
+    reviewer gets a blank page under ``panel serve`` with the traceback only
+    in the browser console. Named ``_KeyboardBridge`` -- the obvious spelling
+    for something private -- that is exactly what happened, while every Python
+    test passed, because nothing in the suite loads the page in a browser.
+    ``test_keyboard_bridge__class_name__is_resolvable_by_bokeh`` pins it.
     """
 
     #: Set by the browser listener to ``"<key><KEYSTROKE_SEPARATOR><counter>"``.
@@ -639,7 +651,7 @@ class Screener:
         self._progress_pane = pn.pane.Markdown(sizing_mode="stretch_width")
         self._status_pane = pn.pane.Markdown(sizing_mode="stretch_width")
         self._help_pane = pn.pane.Markdown(help_markdown(KEY_MAP), visible=False)
-        self._bridge = _KeyboardBridge(height=0, width=0, margin=0)
+        self._bridge = KeyboardBridge(height=0, width=0, margin=0)
         self._bridge.param.watch(self._on_keystroke, "keystroke")
         self.refresh()
 
@@ -677,13 +689,13 @@ class Screener:
         return self._record_pane
 
     @property
-    def bridge(self) -> _KeyboardBridge:
+    def bridge(self) -> KeyboardBridge:
         """The component the browser's keydown listener writes into.
 
         Exposed because it is the one seam of the keyboard path that is both
         testable in Python and invisible to :meth:`handle_key`: whether the
         watcher is registered, on the right parameter, and parses the payload.
-        Setting :attr:`_KeyboardBridge.keystroke` on it is what the browser
+        Setting :attr:`KeyboardBridge.keystroke` on it is what the browser
         does, and is as close to a keypress as a headless test can get.
         """
         return self._bridge
@@ -1185,6 +1197,7 @@ __all__ = [
     "UNBLINDED_FIELDS",
     "VISIBLE_FIELDS",
     "KeyBinding",
+    "KeyboardBridge",
     "Screener",
     "ScreeningRecord",
     "digit_action",

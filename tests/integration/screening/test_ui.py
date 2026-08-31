@@ -419,6 +419,35 @@ def test_screener__deciding_past_the_end__warns_instead_of_raising(project: Proj
 
 
 @pytest.mark.integration
+@pytest.mark.acceptance("S05-AC1")
+def test_keyboard_bridge__class_name__is_resolvable_by_bokeh() -> None:
+    """A leading underscore here blanks the entire page under ``panel serve``.
+
+    Panel derives the Bokeh model's type name from the component class's
+    ``__name__`` (plus a counter, so this one is ``KeyboardBridge1``). A name
+    beginning with an underscore produces a type the browser cannot resolve,
+    and Bokeh then fails the *whole document* rather than this one component:
+
+        Failed to load Bokeh session ...
+        could not resolve type '_KeyboardBridge1'
+
+    The reviewer gets a blank page and the reason only in a browser console
+    they have no reason to open. Verified directly: two `ReactiveHTML`
+    subclasses identical but for the leading underscore, served the same way,
+    render and do not.
+
+    This is asserted as a name because the suite has no browser -- and the
+    defect shipped precisely because nothing here loads the page. A name check
+    is a poor substitute for rendering it, and it is the exact condition that
+    breaks, so it is worth more than the nothing that preceded it.
+    """
+    assert not ui.KeyboardBridge.__name__.startswith("_"), (
+        "a leading underscore makes the Bokeh model type unresolvable, "
+        "which blanks the whole screener under `panel serve`"
+    )
+
+
+@pytest.mark.integration
 def test_dispatch__an_action_no_handler_implements__raises(project: Project) -> None:
     """A key map that has outrun its handlers is a bug, and must be loud.
 
