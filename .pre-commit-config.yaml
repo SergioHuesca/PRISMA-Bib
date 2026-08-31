@@ -12,8 +12,15 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
+  # 0.9.1, not the 0.7.0 originally pinned: that release is YANKED from PyPI --
+  # "Major regression: input file is truncated before reading"
+  # (kynan/nbstripout#190). It does exactly that: it empties the notebook, then
+  # reports "No valid notebook detected" about the file it just destroyed. The
+  # hazard sat here unnoticed because this repository had no notebook until
+  # Stage 5; the first one committed would have been silently zeroed on the
+  # next `pre-commit run`.
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.7.0
+    rev: 0.9.1
     hooks:
       - id: nbstripout
         files: \.ipynb$

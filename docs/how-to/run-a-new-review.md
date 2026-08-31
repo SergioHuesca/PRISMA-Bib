@@ -321,7 +321,60 @@ per-table checksums.
 
 ## Step 4: screen
 
-There is no screening UI yet (Stage 5). Decisions are recorded through `DecisionLog.append`:
+Open the screening view in a notebook cell:
+
+```python
+from prismabib.project import Project
+from prismabib.screening.ui import screener
+
+project = Project.open("my-review")
+screener(project, stage="title_abstract", reviewer="sh")
+```
+
+The same object serves outside the notebook with no code change —
+`panel serve screen.py` on a file whose last line is that call.
+
+**Keyboard map.** The mouse is optional; the bindings work without the pointer entering
+the widget, because the listener is on the document rather than on a widget that would
+need focus.
+
+| Key | Does |
+| --- | --- |
+| `i` | include this record |
+| `e` then `1`–`9` | exclude, under that numbered reason code |
+| `u` | unsure — logged, but the record stays in the queue |
+| `n` / `p` | next / previous record, without deciding |
+| `z` | undo: appends a reversal for the previous record and steps back |
+| `?` | show or hide the keyboard map |
+
+A bare digit does nothing: `e` first is what makes an exclusion two deliberate
+keystrokes, so a hand resting on the number row cannot file exclusions under codes
+nobody chose.
+
+**The numbers beside the digits come from `criteria.yaml`.** The palette is
+`manual_abstract.exclude_reason_codes` for `stage="title_abstract"` and
+`manual_fulltext.exclude_reason_codes` for `stage="fulltext"`, numbered `1..9` in
+declaration order. Add a code to the file and it appears the next time the view is
+built — no code change, and no way for the palette to offer a code the log would refuse.
+
+**What the view shows, and what it hides.** Title, abstract, venue, year, document type
+and author keywords. Nothing else — and, by default, *not* author names or citation
+counts. Both are known to move human judgement and neither is an eligibility criterion,
+so they are left out of the view model entirely rather than styled away. Pass
+`blind=False` if your protocol calls for them.
+
+**Every decision is on disk before the view moves on**, `fsync`ed, so a kernel death
+costs at most the record on screen. Re-opening the view folds the log and resumes at the
+first record you have not resolved; a decision another reviewer made does not resolve it
+for you.
+
+**Progress and pace** are shown throughout: `n / N` decided, decisions per minute for
+*this* session, and an estimate of the time left. The pace is measured from your first
+decision of the session, not from the whole log, so re-opening a half-finished review
+does not report the whole review's work as if it had happened in the last minute.
+
+Decisions can also be recorded directly, which is what the view does underneath and what
+a scripted backfill should use:
 
 ```python
 from prismabib.prisma.log import DecisionLog
@@ -397,8 +450,9 @@ Report all three — the sum is not auditable from one manifest.
 
 - **Full-text retrieval and extraction** — no ScienceDirect client, no PDF/XML pipeline.
   "Reports not retrieved" cannot be expressed in `FlowCounts` and must be reported in prose.
-- **A screening UI** — Stage 5, with the keyboard-first queue and inter-reviewer agreement
-  statistics.
+- **Inter-reviewer agreement statistics** — the decision log already folds per reviewer,
+  so a second coder can screen the same corpus independently, but nothing computes a
+  kappa from the two sets yet.
 - **Taxonomy coding** (`prismabib code`), **bibliometrics**, **the Panel dashboard**, and
   **export/reporting** (`prismabib export`). The two commands are deliberately absent
   rather than stubbed: an absent command fails with "No such command", which is honest.

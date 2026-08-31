@@ -5,7 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] — 2026-08-31
+
+### Added
+
+- **Screening (Stage 5): a keyboard-first Panel view over a deterministic, resumable
+  queue.** `screener(project, stage=..., reviewer=...)` renders in a notebook cell and
+  serves under `panel serve` from the same construction. `i` includes, `e` then a digit
+  excludes under a numbered reason code, `u` marks unsure, `n`/`p` navigate, `z` undoes,
+  `?` shows the map — all delivered by a document-level listener, so the bindings work
+  without the mouse entering the widget. Every resolving keystroke is appended and
+  `fsync`ed before the view moves on.
+- **The reason palette is rendered from `criteria.yaml`**, numbered `1..9` in declaration
+  order. Adding a code to the protocol surfaces it with no code change, which is what
+  keeps the UI from offering an exclusion the decision log would refuse.
+- **Author names and citation counts are omitted by default** (`blind=True`). Both move
+  human judgement and neither is an eligibility criterion, so they are left out of the
+  view model rather than hidden in the rendering — a field that was never put in the
+  model cannot be restored by a later change to the markup.
+- **Progress, pace and ETA**, measured over the *current session* rather than the whole
+  log: re-opening a half-finished review must not report months of screening as though it
+  had happened since the notebook was opened. Elapsed runs from the session's start, not
+  from its first decision, and no rate is shown at all for the first thirty seconds —
+  early on, the denominator is small enough that one fast keystroke dominates it, and a
+  reviewer reading "hundreds per minute" a moment after their first decision has no
+  evidence of their own to contradict it. Changing a decision you already made is not a
+  second decision. BUILD_PLAN calls this display "what sustains a multi-hour task", which
+  only holds while the numbers are true.
+- **`ScreeningQueue`** — the pure-logic half: an order seeded from the project slug and
+  uncorrelated with citation count, stable as the corpus grows between captures, resumable
+  per reviewer from the log, with `unsure` deliberately not resolving and `undo` appending
+  a superseding reversal rather than editing an append-only file.
+- **`z` reverses the record on screen**, including after `p`. The status line names the
+  current record's existing decision, so stepping back to re-read something already
+  decided is no longer blind and the reversal is visible where it landed.
+- **`test_notebook__01_screen_title_abstract__executes`** — BUILD_PLAN names this test and
+  the `notebook` marker was registered for it, but nothing in the suite ran the notebook:
+  it was executed only by the non-required `notebooks` job, so renaming a keyword could
+  break a researcher's first five minutes with every required check green. Sockets stay
+  banned for it except on loopback, which a Jupyter kernel needs and Scopus is not.
+- **`docs/reference/` gained its `screening/` section**, which that page's own header
+  calls a visible omission that `mkdocs build --strict` cannot catch.
+- **The view actually renders under `panel serve`.** Panel derives the Bokeh model's type
+  name from the component class's `__name__`, and a leading underscore produces a type the
+  browser cannot resolve — at which point Bokeh fails the *whole document* and the reviewer
+  gets a blank page, with the reason only in a console they have no reason to open.
+  `_KeyboardBridge` was the entire defect. Nothing caught it because nothing in the suite
+  loads the page in a browser; driving a real one also verified the keyboard end to end for
+  the first time.
+- **`docs/getting-started.md` documents the screening step**, with a screenshot. It said
+  "there is no screening UI yet" in three places.
 
 ## [0.9.0] — 2026-08-28
 
@@ -508,7 +557,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.6.1...v0.7.0
