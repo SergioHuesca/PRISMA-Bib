@@ -249,10 +249,14 @@ def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
             timeout=_GIT_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:
+        # Computed above the pragma, not interpolated inside it: a pragma suppresses
+        # by line, so an expression left in the message body is exempted along with
+        # the prose around it.
+        attempted = " ".join(args)
         # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
             "git is not available on PATH; criteria history is resolved from git "
-            f"history only and could not run `git {' '.join(args)}`: {exc}"
+            f"history only and could not run `git {attempted}`: {exc}"
         ) from exc
         # pragma: no mutate end
 

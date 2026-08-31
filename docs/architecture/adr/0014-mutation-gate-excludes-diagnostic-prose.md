@@ -1,4 +1,4 @@
-# ADR 0014: The Mutation Gate Excludes Diagnostic Prose and SQL Text
+# ADR 0014: The Mutation Gate Excludes Diagnostic Message Bodies
 
 ## Status
 
@@ -125,8 +125,14 @@ compare each message against a checked-in expected string.
 rewording of a message — and the messages in this project *are* rewritten, deliberately and
 often, because their quality is the deliverable (the `subject_areas` refusal was rewritten
 once already, after an earlier version advised a remedy that quietly fails). A gate that
-punishes improving a diagnostic is worse than no gate. It also would not have worked:
-84.8%.
+punishes improving a diagnostic is worse than no gate.
+
+This alternative is rejected on that argument alone. An earlier draft added "it also would
+not have worked: 84.8%", which is both the discredited figure and false: killing the 131
+prose survivors gives 827 + 131 = 958/1016 = **94.29%**, comfortably over the gate. It
+would have worked numerically and it is still the wrong thing to do — and propping a sound
+argument up with a wrong number is the exact pattern this ADR was corrected for once
+already.
 
 **Stop mutating string literals altogether**, via `do_not_mutate_patterns` or by dropping
 the string mutation operator.
@@ -176,15 +182,26 @@ were fixed in the same change rather than exempted:
   this ADR** — the SQL spans enclosed the `connection.execute(...)` call that retrieves
   the data — which is why SQL is no longer exempt at all. A reviewer should read every
   span against this line, not against the intent stated above it.
-- Exempting a message body also exempts any expression interpolated into it: a mutation of
-  `list(criteria.subject_areas)` inside an f-string is suppressed along with the prose
-  around it. That is an accepted residual cost, bounded by the fact that such a mutation
-  can only alter the message or turn one exception into another on a path already
-  raising. It is not a licence to move computation into a message.
-- mutmut does not mutate a function carrying more than one decorator, so every pydantic
-  validator in `events.py` is already outside the gate's population. A pragma on one of
-  them is a claim with no effect; one was written and removed. The 91.73% is measured over
-  a population that excludes the `DecisionEvent` validation surface.
+- A pragma suppresses by *line*, so anything left inside a message body is exempted with
+  it. **Compute above the pragma, never inside it.** Four expressions were originally left
+  interpolated -- `' '.join(args)`, `list(criteria.subject_areas)`,
+  `project.root / 'criteria.yaml'`, `sorted(allowed)` -- and each was suppressed along with
+  the prose, turning a killed mutant into an exempt one. They are now assigned to locals
+  above their `raise`. Measured after that change, the 20 spans suppress **122 string
+  literals and 17 `Error(...)` → `Error(None)` message replacements, and nothing else**:
+  no expression, no comparison, no call that computes anything. `Error(None)` leaves the
+  exception type unchanged, which is the line this exemption draws.
+- **mutmut does not mutate a decorated function** unless its only decorator is literally
+  `staticmethod` or `classmethod`. In `src/prismabib/prisma/` that excludes **eight**
+  functions from the gate's population entirely, not just the pydantic validators: the
+  four `events.py` hooks (`_must_be_nonempty`, `_stage_must_be_loggable`,
+  `_ts_must_be_timezone_aware`, `_serialize_ts`), `log.DecisionLog.path` and
+  `.checksum_path` (`@property`), and -- most consequentially --
+  `engine._layer1_connection` and `log._locked`, both `@contextmanager`. Those last two
+  hold the connection and locking logic that issue #23's first two findings are about, so
+  the blind spot overlaps precisely the code least covered. A pragma on such a function is
+  a claim with no effect; one was written and removed. The 91.04% is measured over a
+  population that excludes all eight.
 - Short strings that are compared, dispatched on, or passed as arguments to another program
   are never exempt, whatever they look like.
 - `weekly-mutation.yml` keeps `KILL_RATE_THRESHOLD: 85` and keeps treating anything not

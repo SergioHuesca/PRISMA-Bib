@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutation workflow fired for the first time on 2026-08-31 and failed at 81.40% against an
   85% gate — the project's first real measurement, not a regression. Triage split it
   cleanly: **92.92% on the 805 mutants that can change behaviour, 37.91% on 211 that only
-  rewrite string literals.** After this change the gate reads **91.73%** (798 killed plus
-  one timeout of 871 considered, nothing unchecked). mutmut generates three mutants per string segment (an `XX…XX`
+  rewrite string literals.** After this change the gate reads **91.04%** (802 killed plus
+  one timeout of 882 considered, nothing unchecked). mutmut generates three mutants per string segment (an `XX…XX`
   wrap, a lowercased copy, an uppercased copy), so one carefully written error message
   produced 54 mutants and 44 survivors — a quarter of every survivor in the project.
   Killing those means asserting messages verbatim, character and case, which breaks on
@@ -39,10 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned from both sides: landing exactly on the mask must *not* bump the millisecond.
   The id's timestamp is also asserted to be the real Unix millisecond, which a merely
   monotonic conversion would not be.
-- **An ambient `GIT_WORK_TREE` resolved a superseded `criteria.yaml` from another
-  repository** and returned it as this project's protocol history — verified by injection:
-  the decoy's `year_start` comes back, silently. `GIT_DIR` fails loudly instead. Both are
-  wrong; only one is quiet. `_git_environment` had always dropped `GIT_DIR`/`GIT_WORK_TREE`;
+- **An ambient `GIT_DIR` resolved a superseded `criteria.yaml` from another repository**
+  and returned it as this project's protocol history — verified per parameter by
+  injection: the decoy's `year_start` comes back, silently, because
+  `rev-parse --show-toplevel` still answers with the project while `git log` reads the
+  decoy's objects. `GIT_WORK_TREE` fails loudly instead. Both are wrong; only one is
+  quiet. `_git_environment` had always dropped `GIT_DIR`/`GIT_WORK_TREE`;
   nothing asserted it, and removing the `env=` argument entirely left the suite green.
 - **The checksum sidecar's covered prefix is accumulated across lines**, and the only test
   covering it left a one-line prefix, where accumulating and replacing are

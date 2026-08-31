@@ -725,10 +725,13 @@ class DecisionLog:
             # pragma: no mutate end
         allowed = self._exclude_reason_codes(event.stage)
         if event.reason_code not in allowed:
+            # Computed above the pragma, not interpolated inside it -- see the note in
+            # `criteria._run_git`.
+            declared = sorted(allowed)
             # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
             raise LogError(
                 f"reason_code {event.reason_code!r} is not declared in criteria.yaml's "
-                f"{event.stage.value} exclude_reason_codes {sorted(allowed)!r} "
+                f"{event.stage.value} exclude_reason_codes {declared!r} "
                 f"(criteria_version={event.criteria_version!r})"
             )
             # pragma: no mutate end

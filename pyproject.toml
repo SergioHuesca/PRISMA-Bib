@@ -313,9 +313,12 @@ fail_under = 90
 # `src/prismabib/prisma` would leave `mutants/src/prismabib/__init__.py` absent and every
 # test would fail at import. `only_mutate` is what actually confines mutation to prisma/.
 [tool.mutmut]
-# Diagnostic prose and SQL text are exempted from mutation with
+# Diagnostic message bodies are exempted from mutation with
 # `# pragma: no mutate start/end` at the statement, and the reason is not
-# convenience. mutmut generates three mutants per string segment -- an
+# convenience. Measured: the 20 spans suppress 122 string literals and 17
+# `Error(...)` -> `Error(None)` message replacements, and nothing else.
+# Compute above a pragma, never inside it -- a pragma suppresses by line, so
+# an expression left in a message body is exempted along with the prose. mutmut generates three mutants per string segment -- an
 # `XX..XX` sentinel wrap, a lowercased copy, an uppercased copy -- so a
 # carefully written multi-paragraph error message produces dozens of mutants
 # that no behaviour can distinguish. Killing them means asserting the message

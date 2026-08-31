@@ -116,7 +116,7 @@ jobs:
           done < <(head -n "$MAX_DIFFS_IN_ISSUE" mutation-report/survivors.txt)
 
       - name: Report the mutation exemptions
-        # ADR 0014 exempts diagnostic message bodies and SQL text from mutation, because
+        # ADR 0014 exempts diagnostic message bodies from mutation, because
         # mutmut emits three mutants per string segment and killing them means asserting
         # prose verbatim. Each pragma is a *claim* that the enclosed text cannot change
         # behaviour, and a wrong claim removes coverage with nothing failing. Counting them
@@ -135,8 +135,8 @@ jobs:
             echo "## Mutation exemptions (ADR 0014)"
             echo
             echo "\`$count\` statement(s) in \`src/prismabib/prisma/\` are exempt from mutation."
-            echo "Each is a claim that the enclosed text -- a diagnostic message body, or SQL"
-            echo "text, where case is not significant -- cannot change behaviour. A rise here"
+            echo "Each is a claim that the enclosed text -- a diagnostic message body --"
+            echo "cannot change behaviour. A rise here"
             echo "narrows what the kill rate below is measured over."
             echo
             { grep -rn "pragma: no mutate start" src/prismabib/prisma/ || true; } \
