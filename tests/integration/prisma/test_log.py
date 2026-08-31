@@ -222,6 +222,48 @@ def test_log__appended_lines_with_stale_sidecar__are_diagnosed_as_an_interrupted
 
 
 @pytest.mark.integration
+def test_log__interrupted_append_after_several_events__still_diagnoses_the_crash(
+    project: Project,
+) -> None:
+    """The covered prefix is *accumulated*, so it must span every line the sidecar covers.
+
+    The companion test above leaves the sidecar covering exactly one line,
+    where accumulating the prefix and merely replacing it with the current
+    line are indistinguishable. Beyond one line they diverge: replacing it
+    compares the digest of a *single* line against a digest of several, no
+    line-aligned prefix ever matches, and the crash is reported as
+    tampering instead.
+
+    That misdiagnosis is not cosmetic. The two errors carry different
+    recovery instructions -- one says delete the trailing partial line and
+    regenerate the sidecar, the other says the file has been edited by hand
+    and its provenance is in question -- and this one arrives after a kernel
+    death mid-append, when the reviewer needs to be told their work is
+    intact.
+    """
+    log = open_log(project)
+    for index in range(3):
+        log.append(
+            stage=PrismaStage.TITLE_ABSTRACT,
+            record_id=RECORDS[index].record_id,
+            reviewer="kp",
+            decision="include",
+        )
+    covered = read_log_bytes(project)
+    assert covered.count(b"\n") == 3, "the sidecar must cover more than one line"
+
+    append_raw_bytes(project, covered.splitlines(keepends=True)[0])
+
+    with pytest.raises(LogError) as excinfo:
+        log.load()
+
+    message = str(excinfo.value)
+    assert "1 decision line(s) not covered by the checksum sidecar" in message
+    assert "interrupted append" in message
+    assert "edited by hand" not in message
+
+
+@pytest.mark.integration
 @pytest.mark.acceptance("S04-AC2")
 def test_log__reversal_event__flips_membership_and_preserves_original(project: Project) -> None:
     log = open_log(project)

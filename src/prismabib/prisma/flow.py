@@ -166,6 +166,7 @@ class FlowCounts:
         )
         for field_name, count in counts:
             if count < 0:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise ValidationError(
                     f"FlowCounts is inconsistent: {field_name} is negative: {count} -- "
                     "every flow count is a number of records, so it cannot be below "
@@ -173,6 +174,7 @@ class FlowCounts:
                     "equality between two sums closes over a negative term exactly as "
                     "happily as a positive one"
                 )
+                # pragma: no mutate end
 
         equations = (
             (
@@ -207,10 +209,12 @@ class FlowCounts:
         )
         for equation, left, right in equations:
             if left != right:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
                 raise ValidationError(
                     f"FlowCounts is inconsistent: {equation!r} does not hold: "
                     f"{left} != {right} (off by {left - right})"
                 )
+                # pragma: no mutate end
 
 
 def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:

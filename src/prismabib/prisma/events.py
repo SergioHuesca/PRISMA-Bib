@@ -74,11 +74,14 @@ import secrets
 import threading
 import time
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol
+from typing import TYPE_CHECKING, Final, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_serializer, field_validator
 
 from prismabib.stage import PrismaStage
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 #: The only ``schema_version`` this codebase currently knows how to read or
 #: write. ``log.py`` raises ``LogError`` on any other value it finds in a
@@ -187,9 +190,29 @@ class MonotonicUlidFactory:
     append site).
     """
 
-    def __init__(self) -> None:
-        """Initialise a generator with no prior calls."""
+    def __init__(self, *, randbits: Callable[[int], int] = secrets.randbits) -> None:
+        """Initialise a generator with no prior calls.
+
+        Args:
+            randbits: Source of the 80-bit random component, taking a bit
+                width. Defaults to :func:`secrets.randbits`, which is what
+                production uses and what the monotonicity argument assumes.
+
+                Injected solely so the **overflow branch is reachable at
+                all**: it fires only when the random component saturates
+                within one millisecond, which takes roughly 2**80 calls and
+                cannot be provoked by calling this object. Left untestable,
+                that branch silently accepted a mutation setting
+                ``timestamp_ms = 1`` -- resetting every subsequent event to
+                one millisecond after the Unix epoch and destroying the
+                ordering the decision log's fold depends on -- and no test
+                in the suite noticed. §3.7.3 rule 1 permits injecting a
+                double at a boundary like this; reaching into
+                ``_last_randomness`` from a test would couple the test to
+                internals instead.
+        """
         self._lock = threading.Lock()
+        self._randbits = randbits
         self._last_timestamp_ms = -1
         self._last_randomness = -1
 
@@ -205,13 +228,13 @@ class MonotonicUlidFactory:
         with self._lock:
             timestamp_ms = time.time_ns() // 1_000_000
             if timestamp_ms > self._last_timestamp_ms:
-                randomness = secrets.randbits(_RANDOMNESS_BITS)
+                randomness = self._randbits(_RANDOMNESS_BITS)
             else:
                 timestamp_ms = self._last_timestamp_ms
                 randomness = self._last_randomness + 1
                 if randomness > _RANDOMNESS_MASK:
                     timestamp_ms += 1
-                    randomness = secrets.randbits(_RANDOMNESS_BITS)
+                    randomness = self._randbits(_RANDOMNESS_BITS)
             self._last_timestamp_ms = timestamp_ms
             self._last_randomness = randomness
             value = (timestamp_ms & _TIMESTAMP_MASK) << _RANDOMNESS_BITS | randomness

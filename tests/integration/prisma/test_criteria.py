@@ -112,6 +112,64 @@ def test_resolve_criteria__non_ascii_criteria_under_an_ascii_locale__round_trips
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "variable",
+    [
+        pytest.param("GIT_DIR", id="git-dir"),
+        pytest.param("GIT_WORK_TREE", id="git-work-tree"),
+    ],
+)
+def test_resolve_criteria__ambient_git_env_pointing_elsewhere__is_ignored(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    """A stray ``GIT_DIR`` must not resolve this project's protocol from another repo.
+
+    ``git`` obeys ``GIT_DIR``/``GIT_WORK_TREE`` over ``cwd``, so with the
+    ambient environment inherited, ``resolve_criteria`` reads a *different*
+    repository's ``criteria.yaml`` and reports it as this project's history.
+    The published ``excluded_automated`` would then be computed under a
+    protocol the project never had -- plausible, and wrong, which is the
+    §1.4 failure mode. ``_git_environment`` drops those variables; nothing
+    asserted it, and dropping the ``env=`` argument entirely left the suite
+    green.
+
+    Set through ``monkeypatch.setenv`` on the *ambient* environment, which is
+    the OS boundary the guard exists for (§3.7.3 rule 1) -- no ``prismabib``
+    symbol is patched.
+
+    The decoy repository holds a ``criteria.yaml`` at the same version but a
+    different ``year_start``, so the two variables can be told apart by what
+    they produce with the guard removed -- verified by injecting that:
+
+    - ``GIT_DIR`` resolves **1800**, the decoy's value, and returns it as
+      this project's protocol history. ``rev-parse --show-toplevel`` still
+      answers with the project (so the containment check passes) while
+      ``git log`` reads the decoy's objects. Silent, and the reason this
+      test exists.
+    - ``GIT_WORK_TREE`` raises ``ConfigError`` instead: ``--show-toplevel``
+      answers with the *decoy*, so the project's ``criteria.yaml`` is not
+      under it and ``relative_to`` fails. Loud, and still wrong -- a review
+      that cannot resolve its own amended criteria cannot be replayed.
+
+    Both are covered because the guard drops both, and because which one a
+    stray environment happens to carry is not something this code chooses.
+    """
+    commit_criteria(project, CriteriaSpec(version="1.0.0", year_start=1990), "v1.0.0")
+    commit_criteria(project, CriteriaSpec(version="2.0.0", year_start=2020), "v2.0.0")
+
+    decoy = Project.init("decoy", title="Decoy", root=tmp_path / "elsewhere")
+    commit_criteria(decoy, CriteriaSpec(version="1.0.0", year_start=1800), "decoy v1.0.0")
+    commit_criteria(decoy, CriteriaSpec(version="2.0.0", year_start=1801), "decoy v2.0.0")
+
+    target = decoy.root / ".git" if variable == "GIT_DIR" else decoy.root
+    monkeypatch.setenv(variable, str(target))
+
+    resolved = resolve_criteria(project, "1.0.0")
+
+    assert resolved.temporal.year_start == 1990, "resolved from the decoy repository"
+
+
+@pytest.mark.integration
 def test_resolve_criteria__superseded_version_outside_a_git_repository__raises(
     project: Project,
 ) -> None:

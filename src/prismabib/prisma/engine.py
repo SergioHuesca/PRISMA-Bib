@@ -521,9 +521,14 @@ def _refuse_unenforceable_subject_filter(
         return
     if any(record.subject_areas for record in attributes.values()):
         return
+    # Computed above the pragma, not interpolated inside it -- see the note in
+    # `criteria._run_git`.
+    criteria_path = project.root / "criteria.yaml"
+    restricted_to = list(criteria.subject_areas)
+    # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
     raise ConfigError(
-        f"{project.root / 'criteria.yaml'} restricts subject_areas to "
-        f"{list(criteria.subject_areas)!r}, but not one of the {len(attributes)} records "
+        f"{criteria_path} restricts subject_areas to "
+        f"{restricted_to!r}, but not one of the {len(attributes)} records "
         "in this corpus carries subject-area data, so the restriction would match every "
         "record and exclude nothing.\n"
         "\nThe Scopus Search API (view=COMPLETE) does not return subject-area codes, so "
@@ -542,6 +547,7 @@ def _refuse_unenforceable_subject_filter(
         "though project.toml no longer holds it. Note this narrows what is *identified*, "
         "so those records never appear in the automated-exclusion count."
     )
+    # pragma: no mutate end
 
 
 # ---------------------------------------------------------------------------

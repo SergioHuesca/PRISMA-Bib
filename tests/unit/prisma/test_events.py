@@ -17,6 +17,12 @@ import time_machine
 from pydantic import ValidationError as PydanticValidationError
 
 from prismabib.prisma.events import (
+    _RANDOMNESS_BITS as RANDOMNESS_BITS,
+)
+from prismabib.prisma.events import (
+    _RANDOMNESS_MASK as RANDOMNESS_MASK,
+)
+from prismabib.prisma.events import (
     CURRENT_SCHEMA_VERSION,
     DecisionEvent,
     MonotonicUlidFactory,
@@ -126,6 +132,42 @@ def test_event__mutating_a_field__is_rejected() -> None:
         event.decision = "include"  # type: ignore[misc]
 
 
+#: Crockford base32, for decoding an id back to the parts it was built from.
+#:
+#: Written out here rather than imported from
+#: :mod:`prismabib.prisma.events`: a test that decoded with the same table it
+#: encoded with would pass just as happily if the table were wrong in both
+#: directions. ``detect-secrets`` reads 32 high-entropy characters as a base64
+#: secret; it is the published Crockford alphabet, and there is nothing to
+#: rotate.
+_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # pragma: allowlist secret
+
+
+def decode_ulid(value: str) -> tuple[int, int]:
+    """Decode a ULID back into ``(timestamp_ms, randomness)`` (helper, not a test).
+
+    The factory's own encoder is not reused: a test that decodes with the
+    same table it encoded with would pass just as happily if the table were
+    wrong in both directions.
+    """
+    number = 0
+    for character in value:
+        number = number * 32 + _ALPHABET.index(character)
+    return number >> RANDOMNESS_BITS, number & RANDOMNESS_MASK
+
+
+class ScriptedRandbits:
+    """A randomness source returning queued values (helper, not a test)."""
+
+    def __init__(self, *values: int) -> None:
+        self._values = list(values)
+        self.widths: list[int] = []
+
+    def __call__(self, width: int) -> int:
+        self.widths.append(width)
+        return self._values.pop(0)
+
+
 @pytest.mark.unit
 def test_ulid_factory__ids__are_26_crockford_base32_characters() -> None:
     factory = MonotonicUlidFactory()
@@ -171,3 +213,84 @@ def test_ulid_factory__clock_advanced__id_reflects_the_new_millisecond() -> None
 
     assert earlier < later
     assert earlier[:10] != later[:10]
+
+
+@pytest.mark.unit
+def test_ulid_factory__randomness_overflow__bumps_the_millisecond_and_redraws() -> None:
+    """The saturation branch, which no amount of calling this object can reach.
+
+    It fires when the 80-bit random component would wrap within a single
+    millisecond -- roughly 2**80 calls. Wrapping silently would produce a
+    *smaller* id than the previous one and break the ordering the decision
+    log's fold depends on, so the timestamp is bumped a millisecond forward
+    and a fresh component drawn.
+
+    Untested, this branch accepted a mutation setting ``timestamp_ms = 1``
+    outright -- every later event stamped one millisecond after the Unix
+    epoch -- and the whole suite stayed green.
+    """
+    randbits = ScriptedRandbits(RANDOMNESS_MASK, 12345)
+    factory = MonotonicUlidFactory(randbits=randbits)
+
+    with time_machine.travel(BUILD_PLAN_INSTANT, tick=False):
+        saturated = factory()
+        overflowed = factory()
+
+    first_ms, first_randomness = decode_ulid(saturated)
+    second_ms, second_randomness = decode_ulid(overflowed)
+
+    assert first_randomness == RANDOMNESS_MASK
+    assert second_ms == first_ms + 1, "the millisecond must advance by exactly one"
+    assert second_randomness == 12345, "a fresh component must be drawn, not wrapped"
+    assert overflowed > saturated
+    assert randbits.widths == [RANDOMNESS_BITS, RANDOMNESS_BITS]
+
+
+@pytest.mark.unit
+def test_ulid_factory__randomness_exactly_at_the_mask__does_not_bump() -> None:
+    """The other side of the boundary: reaching the mask is not overflowing it.
+
+    Landing exactly on ``_RANDOMNESS_MASK`` is the largest component that
+    still fits, so it must be used as-is with the millisecond untouched.
+    With the comparison written ``>=`` instead of ``>`` the timestamp runs
+    ahead of the wall clock one call early, which is the kind of drift that
+    is invisible until two logs are compared.
+    """
+    # A spare value is queued deliberately. With the comparison written `>=` the
+    # boundary triggers a redraw, and an exhausted source would raise IndexError
+    # from inside the helper before any assertion ran -- a red test whose message
+    # is about a test double rather than about the millisecond not advancing.
+    randbits = ScriptedRandbits(RANDOMNESS_MASK - 1, 777)
+    factory = MonotonicUlidFactory(randbits=randbits)
+
+    with time_machine.travel(BUILD_PLAN_INSTANT, tick=False):
+        first = factory()
+        second = factory()
+
+    first_ms, first_randomness = decode_ulid(first)
+    second_ms, second_randomness = decode_ulid(second)
+
+    assert first_randomness == RANDOMNESS_MASK - 1
+    assert second_randomness == RANDOMNESS_MASK, "increment by exactly one"
+    assert second_ms == first_ms, "no bump: the mask is a usable value, not an overflow"
+    assert randbits.widths == [RANDOMNESS_BITS], "no redraw at the boundary"
+
+
+@pytest.mark.unit
+def test_ulid_factory__timestamp__is_the_real_unix_millisecond() -> None:
+    """The id's leading 48 bits are provenance, not an opaque counter.
+
+    A ULID is sortable *and* readable: the timestamp is what lets a reviewer
+    line an ``event_id`` up against a wall clock. A conversion that is merely
+    monotonic -- dividing by 1000001 rather than 1000000, say -- keeps every
+    ordering property this class documents while making the recorded instant
+    wrong, drifting further the later the event.
+    """
+    factory = MonotonicUlidFactory(randbits=ScriptedRandbits(0))
+
+    with time_machine.travel(BUILD_PLAN_INSTANT, tick=False):
+        value = factory()
+
+    timestamp_ms, _randomness = decode_ulid(value)
+
+    assert timestamp_ms == int(BUILD_PLAN_INSTANT.timestamp() * 1000)

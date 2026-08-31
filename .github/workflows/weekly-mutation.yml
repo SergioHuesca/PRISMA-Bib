@@ -115,6 +115,34 @@ jobs:
             echo >> mutation-report/survivor-diffs.txt
           done < <(head -n "$MAX_DIFFS_IN_ISSUE" mutation-report/survivors.txt)
 
+      - name: Report the mutation exemptions
+        # ADR 0014 exempts diagnostic message bodies from mutation, because
+        # mutmut emits three mutants per string segment and killing them means asserting
+        # prose verbatim. Each pragma is a *claim* that the enclosed text cannot change
+        # behaviour, and a wrong claim removes coverage with nothing failing. Counting them
+        # here puts that number in front of a reader every week: a jump is a change to what
+        # the gate measures, and should be reviewed like one.
+        run: |
+          set -euo pipefail
+          # `|| true` on both greps: `grep` exits 1 when nothing matches, and under
+          # `set -e -o pipefail` that would fail the whole job -- skipping the kill-rate
+          # gate, the artifact upload and the backlog issue, with a misleading cause.
+          # It would fire on exactly the outcome this step exists to celebrate: the
+          # exemptions having been removed.
+          count=$( { grep -rc "pragma: no mutate start" src/prismabib/prisma/ || true; } \
+                    | awk -F: '{total += $2} END {print total + 0}')
+          {
+            echo "## Mutation exemptions (ADR 0014)"
+            echo
+            echo "\`$count\` statement(s) in \`src/prismabib/prisma/\` are exempt from mutation."
+            echo "Each is a claim that the enclosed text -- a diagnostic message body --"
+            echo "cannot change behaviour. A rise here"
+            echo "narrows what the kill rate below is measured over."
+            echo
+            { grep -rn "pragma: no mutate start" src/prismabib/prisma/ || true; } \
+              | sed -E 's#^([^:]+):([0-9]+):.*no mutate start *-- *#    \1:\2  #'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compute kill rate
         id: score
         # Deliberately does not fail the job: the artifact and the backlog issue below
