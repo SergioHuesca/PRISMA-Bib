@@ -133,7 +133,14 @@ def test_event__mutating_a_field__is_rejected() -> None:
 
 
 #: Crockford base32, for decoding an id back to the parts it was built from.
-_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+#:
+#: Written out here rather than imported from
+#: :mod:`prismabib.prisma.events`: a test that decoded with the same table it
+#: encoded with would pass just as happily if the table were wrong in both
+#: directions. ``detect-secrets`` reads 32 high-entropy characters as a base64
+#: secret; it is the published Crockford alphabet, and there is nothing to
+#: rotate.
+_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # pragma: allowlist secret
 
 
 def decode_ulid(value: str) -> tuple[int, int]:
