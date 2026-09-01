@@ -23,8 +23,10 @@ from typing import Any
 import duckdb
 
 import prismabib
-from prismabib.capture.manifest import RunManifest
+from prismabib.capture.layout import ABSTRACTS_DIRNAME
+from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable, RunManifest
 from prismabib.project import Project
+from prismabib.sources.scopus import ScopusClient
 
 #: The frozen reference fixture project (BUILD_PLAN §3.7.5, line 536).
 #: Read-only: callers that need to run ``build_store`` against it must go
@@ -241,13 +243,143 @@ def make_entry(
     return entry
 
 
+def make_abstract_entry(
+    *,
+    eid: str,
+    dc_identifier: str | None = None,
+    subject_areas: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Build one minimal, hand-authored Abstract Retrieval payload line (ADR 0018).
+
+    Args:
+        eid: The Scopus EID, e.g. ``"2-s2.0-800000000001"`` -- read out via
+            ``store/load.py``'s ``coredata.eid`` -> ``scopus:<eid>``
+            convention, the same one :func:`make_entry` uses for a search
+            entry's top-level ``eid``.
+        dc_identifier: ``coredata["dc:identifier"]``; defaults to
+            ``f"SCOPUS_ID:{eid.rsplit('-', 1)[-1]}"``, matching
+            :func:`make_entry`'s own convention.
+        subject_areas: Each dict one Scopus subject-area entry, e.g.
+            ``{"@code": "2202", "@abbrev": "ENGI", "$": "Aerospace Engineering"}``.
+            ``None`` or ``[]`` omits the ``subject-areas`` key entirely,
+            matching real Scopus behaviour for a record with none (see
+            ``tests/fixtures/cassettes/abstract-full-no-subject-areas.json``).
+            A single-item list is written as a lone mapping, not a one-item
+            list -- Scopus's own scalar-vs-list inconsistency
+            (``abstract-full-single-subject-area.json`` vs.
+            ``abstract-full-multi-subject-area.json``), which
+            ``store/load.py``'s loader must (and does) normalise.
+
+    Returns:
+        One verbatim ``{"abstracts-retrieval-response": {...}}`` payload
+        line.
+    """
+    coredata: dict[str, Any] = {
+        "eid": eid,
+        "dc:identifier": dc_identifier or f"SCOPUS_ID:{eid.rsplit('-', 1)[-1]}",
+    }
+    retrieval: dict[str, Any] = {"coredata": coredata}
+    if subject_areas:
+        entries: Any = subject_areas[0] if len(subject_areas) == 1 else subject_areas
+        retrieval["subject-areas"] = {"subject-area": entries}
+    return {"abstracts-retrieval-response": retrieval}
+
+
+def write_sealed_abstract_run(
+    raw_dir: Path,
+    run_id: str,
+    entries: list[dict[str, Any]],
+    *,
+    started_at: datetime,
+    finished_at: datetime | None = None,
+    source_run_ids: list[str] | None = None,
+    unavailable: list[AbstractUnavailable] | None = None,
+    records_requested: int | None = None,
+    client_version: str = "0.1.0",
+    criteria_version: str = "1.0.0",
+) -> Path:
+    """Write one sealed Layer 0 abstract-retrieval run directory by hand (ADR 0018).
+
+    A minimal, from-scratch stand-in for
+    :func:`prismabib.capture.enrich.capture_abstracts` -- everything the
+    Layer 1 abstract-run loader needs (one ``abstracts-0000.jsonl`` of
+    verbatim, canonically-encoded Abstract Retrieval responses plus
+    ``manifest.json``), nothing it does not (no ``progress.json``: the
+    loader never reads it, and a real run deletes it on seal anyway).
+
+    Args:
+        raw_dir: The project's ``raw/`` directory (``project.raw_dir``).
+        run_id: The run's directory name under ``raw/abstracts/``. Must sort
+            correctly relative to any other abstract run written into the
+            same ``raw_dir`` if traversal order matters to the calling test
+            (ADR 0018's "the later run wins" rule for ``subject_areas``).
+        entries: The verbatim ``{"abstracts-retrieval-response": {...}}``
+            payload objects (see :func:`make_abstract_entry`), one per line,
+            in the order written. All go into a single
+            ``abstracts-0000.jsonl`` -- multi-file batching is
+            ``capture_abstracts``'s own concern (``BATCH_SIZE``), not the
+            loader's, which reads ``manifest.payload_files`` in order
+            regardless of how many there are.
+        started_at: The run's ``AbstractRunManifest.started_at``.
+        finished_at: ``AbstractRunManifest.finished_at``; defaults to
+            ``started_at``.
+        source_run_ids: ``AbstractRunManifest.source_run_ids``; defaults to
+            ``[]``.
+        unavailable: ``AbstractRunManifest.unavailable`` -- records this run
+            could not fetch (``"not_found"``/``"not_entitled"``) or fetched
+            with no subject areas (``"no_subject_areas"``, redundant with a
+            payload line the loader already reads as ``"none_assigned"``);
+            defaults to ``[]``.
+        records_requested: ``AbstractRunManifest.records_requested``;
+            defaults to ``len(entries) + len(unavailable)``.
+        client_version: ``AbstractRunManifest.client_version``.
+        criteria_version: ``AbstractRunManifest.criteria_version``.
+
+    Returns:
+        The written run directory (``raw/abstracts/<run_id>/``).
+    """
+    run_dir = raw_dir / ABSTRACTS_DIRNAME / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    payload_file = "abstracts-0000.jsonl"
+    lines = [json.dumps(entry, sort_keys=True, separators=(",", ":")) for entry in entries]
+    text = "".join(f"{line}\n" for line in lines)
+    (run_dir / payload_file).write_text(text, encoding="utf-8")
+
+    resolved_unavailable = unavailable if unavailable is not None else []
+    payload_sha256 = hashlib.sha256((run_dir / payload_file).read_bytes()).hexdigest()
+    manifest = AbstractRunManifest(
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at if finished_at is not None else started_at,
+        endpoint=ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE,
+        view="FULL",
+        source_run_ids=sorted(source_run_ids) if source_run_ids is not None else [],
+        records_requested=(
+            records_requested
+            if records_requested is not None
+            else len(entries) + len(resolved_unavailable)
+        ),
+        records_fetched=len(entries),
+        unavailable=resolved_unavailable,
+        payload_files=[payload_file],
+        payload_sha256=payload_sha256,
+        client_version=client_version,
+        criteria_version=criteria_version,
+    )
+    (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    return run_dir
+
+
 __all__ = [
     "REFERENCE_PROJECT_DIR",
     "SCHEMA_SQL_PATH",
     "copy_reference_project",
     "create_schema",
+    "make_abstract_entry",
     "make_entry",
     "read_reference_entry",
     "reference_run_dir",
+    "write_sealed_abstract_run",
     "write_sealed_run",
 ]

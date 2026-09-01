@@ -501,6 +501,26 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
             "map to an ISO 3166-1 alpha-3 code and are stored as the original text: "
             + ", ".join(repr(value) for value in stats.unmapped_country_values)
         )
+    if stats.abstract_runs_loaded:
+        _echo(
+            f"  {stats.abstract_runs_loaded:,} abstract-retrieval run(s) loaded "
+            f"(prismabib enrich), covering {stats.record_subject_area_coverage_loaded:,} "
+            "record/run pair(s) in record_subject_area_coverage."
+        )
+    if stats.unmatched_abstract_record_ids:
+        unmatched = stats.unmatched_abstract_record_ids
+        # Same "capped, not truncated to a count" discipline as the
+        # malformed-entries block above: the full set is not persisted
+        # anywhere (see `StoreStats.unmatched_abstract_record_ids`), so this
+        # line is the only place to find them at all, but a corpus enriched
+        # against a stale record set could still list thousands.
+        listed = ", ".join(unmatched[:_MAX_LISTED_MALFORMED_ENTRIES])
+        if len(unmatched) > _MAX_LISTED_MALFORMED_ENTRIES:
+            listed += f", ... and {len(unmatched) - _MAX_LISTED_MALFORMED_ENTRIES:,} more"
+        _echo(
+            f"  {len(unmatched):,} abstract-run record(s) are not in this store's records "
+            f"table and were skipped, not loaded: {listed}"
+        )
     if not stats.rebuilt:
         _echo()
         _echo(

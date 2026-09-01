@@ -21,14 +21,41 @@ scans ``project.raw_dir`` for *sealed* run directories only
 directory under ``raw/`` that is not a search run
 (:data:`~prismabib.capture.layout.NON_RUN_DIRNAMES`: the HTTP cache
 ``raw/_cache/``, and ``raw/abstracts/``, whose nested Abstract Retrieval
-runs carry a different manifest schema and payloads this loader does not
-read), and walks each run's ``manifest.payload_files`` in fetch
-order, each page's lines in file order (:func:`_iter_page_entries`). That
-traversal order -- sorted ``run_id`` (sortable by construction, oldest
-first), then ``payload_files`` order, then line order -- is fixed and is
-what makes two runs of :func:`build_store` over identical Layer 0 input
-produce byte-identical table checksums (S03-AC1): nothing here depends on
-filesystem directory-listing order or dict iteration order.
+runs carry a different manifest schema -- see below), and walks each run's
+``manifest.payload_files`` in fetch order, each page's lines in file order
+(:func:`_iter_page_entries`). That traversal order -- sorted ``run_id``
+(sortable by construction, oldest first), then ``payload_files`` order,
+then line order -- is fixed and is what makes two runs of
+:func:`build_store` over identical Layer 0 input produce byte-identical
+table checksums (S03-AC1): nothing here depends on filesystem
+directory-listing order or dict iteration order.
+
+**Abstract Retrieval runs (ADR 0018).** ``raw/abstracts/<run_id>/`` is a
+second, nested tree of sealed runs -- :mod:`prismabib.capture.enrich`'s
+output, one :class:`~prismabib.capture.manifest.AbstractRunManifest` and one
+``manifest.json`` seal per run, exactly as :func:`is_sealed` expects, but a
+different payload shape entirely: verbatim Abstract Retrieval responses, not
+search entries. :func:`_sealed_abstract_run_dirs` walks these separately from
+:func:`_sealed_run_dirs`, sorted by ``run_id`` the same way, and folds them
+in only *after* every search run has been loaded -- an abstract run
+identifies no record (it re-describes one a search run already found) and
+therefore writes no ``runs`` row, but it does write one ``abstract_runs`` row
+per run and, per record it covers that is also in ``records``, one
+``record_subject_area_coverage`` row recording whether Scopus assigned
+areas, assigned none, or could not be reached (``not_found``/
+``not_entitled``) -- the three states :class:`~prismabib.capture.manifest.AbstractUnavailableReason`
+already names, plus the successful case. A record with no coverage row for a
+given run was never asked, in that run; that is the fourth state, and
+absence is how it is represented (adding a row for it would multiply the
+table by the corpus size to record that nothing happened). Where two sealed
+abstract runs both observe one record, the later ``run_id``'s codes replace
+the earlier's in ``subject_areas`` -- a re-enrichment reports Scopus as it is
+now -- while both runs' coverage rows are kept, since
+``record_subject_area_coverage``'s primary key is ``(record_id, run_id)``. A
+record an abstract run describes that is not in ``records`` at all (no
+search run ever loaded it) is skipped, not written, and counted in
+``StoreStats.unmatched_abstract_record_ids`` rather than silently dropped.
+See ADR 0018 for the full design and the alternatives it rejects.
 
 **Provenance (``payload_file``/``payload_line``).** Because each
 ``page-NNNN.jsonl`` line *is* one record, ``records.payload_line`` is that
@@ -42,16 +69,18 @@ changed to this from an earlier one-line-per-page encoding).
 
 **Deliberate scope: what this loader parses from the Scopus wire format.**
 The Search API's ``view=COMPLETE`` response (the only view prismabib ever
-requests, BUILD_PLAN §5 risk 1) does not carry Scopus subject-area codes or
-indexed (non-author) keyword terms -- those live in the separate Abstract
-Retrieval API, which Stage 2 does not call. ``index_keywords`` is therefore
-always ``[]`` for every record this loader produces, and ``subject_areas``
-is populated only in the (currently unobserved, but schema-supported)
-case where a captured entry does carry a ``subject-area`` array; both
-``keywords``/``record_keywords`` (kind ``"index"``) and ``subject_areas``
-remain real, always-present tables that simply have no rows to insert
-today. This is a data-source limitation, not a modelling gap: nothing here
-silently drops a field that Layer 0 did capture.
+requests for a search, BUILD_PLAN §5 risk 1) does not carry Scopus
+subject-area codes or indexed (non-author) keyword terms -- those live in
+the separate Abstract Retrieval API. ``index_keywords`` is therefore always
+``[]`` for every record this loader produces (Stage 2 never calls that API),
+and a captured *search* entry carrying its own ``subject-area`` array is
+schema-supported but currently unobserved in practice (see the module
+docstring's "Abstract Retrieval runs" section above for the API that
+actually supplies this data, now that :mod:`prismabib.capture.enrich` and
+this loader both exist). ``keywords``/``record_keywords`` (kind
+``"index"``) has no rows to insert from either source today. This is a
+data-source limitation, not a modelling gap: nothing here silently drops a
+field that Layer 0 did capture.
 
 **Re-captured records.** The same Scopus paper can legitimately appear in
 more than one sealed run (e.g. the same query re-run later to refresh
@@ -141,11 +170,12 @@ import structlog
 from pydantic import BaseModel, ConfigDict
 
 from prismabib.capture.layout import (
+    ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
     RUN_MANIFEST_FILENAME,
     is_sealed,
 )
-from prismabib.capture.manifest import RunManifest
+from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.countries import normalise_country
 from prismabib.errors import StoreError, ValidationError
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
@@ -219,12 +249,12 @@ _MAX_LOGGED_MALFORMED_ENTRIES: Final = 20
 class StoreStats(BaseModel):
     """Summary counts from one :func:`build_store` call.
 
-    Every field below is read back out of the Layer 1 store *after*
-    loading -- a ``SELECT COUNT(*)``, an equivalent grouped query, or (for
-    the two tuple-valued fields) a ``SELECT`` over the rows themselves --
-    never an in-memory tally kept alongside the load, so a caller reading
-    ``StoreStats`` and a caller running the same query against
-    :func:`prismabib.store.db.connect` always agree.
+    Every field below except ``unmatched_abstract_record_ids`` is read back
+    out of the Layer 1 store *after* loading -- a ``SELECT COUNT(*)``, an
+    equivalent grouped query, or (for the tuple-valued fields) a ``SELECT``
+    over the rows themselves -- never an in-memory tally kept alongside the
+    load, so a caller reading ``StoreStats`` and a caller running the same
+    query against :func:`prismabib.store.db.connect` always agree.
 
     That is why ``malformed_entries_skipped`` has a table behind it
     (``malformed_entries``, ADR 0012) rather than being a list the loader
@@ -232,7 +262,9 @@ class StoreStats(BaseModel):
     ``rebuild=False`` reuse path -- which is the path ``prismabib build``
     takes by default -- and an empty tuple there would read as "nothing was
     skipped" rather than "this call did not load anything".
-    """
+    ``unmatched_abstract_record_ids`` is the one deliberate exception to that
+    rule -- see its own docstring for why ADR 0018 does not add a table for
+    it too."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -280,9 +312,11 @@ class StoreStats(BaseModel):
     occurrence."""
 
     subject_area_links_loaded: int
-    """Rows in ``subject_areas``. Always ``0`` for a store built purely
-    from Scopus Search API ``view=COMPLETE`` captures; see the module
-    docstring."""
+    """Rows in ``subject_areas``. ``0`` for a store built purely from Scopus
+    Search API ``view=COMPLETE`` captures (see the module docstring); once a
+    project has sealed Abstract Retrieval runs (``prismabib enrich``) and
+    those runs have been folded in, this is one row per (record, area code)
+    the *latest* covering run reported (ADR 0018's "the later run wins")."""
 
     citation_snapshots_loaded: int
     """Rows in ``citation_snapshots`` -- one per (record, run) pair whose
@@ -327,6 +361,39 @@ class StoreStats(BaseModel):
     field itself stays as the original free text, which
     :mod:`prismabib.countries` already logs a warning for at construction
     time."""
+
+    abstract_runs_loaded: int
+    """Rows in ``abstract_runs`` (ADR 0018) -- the number of sealed
+    ``raw/abstracts/<run_id>/`` directories folded into this store. ``0``
+    for a project that has never run ``prismabib enrich``."""
+
+    record_subject_area_coverage_loaded: int
+    """Rows in ``record_subject_area_coverage`` (ADR 0018) -- one per
+    (record, abstract run) pair this store can say something about:
+    ``"assigned"``, ``"none_assigned"``, ``"not_found"`` or
+    ``"not_entitled"``. A record covered by more than one abstract run
+    contributes one row per run, so this can exceed ``records_loaded``. A
+    record with **no** row for a given run was never asked about in that
+    run -- the fourth state, and the reason absence rather than a fourth
+    status value represents it (see the module docstring)."""
+
+    unmatched_abstract_record_ids: tuple[str, ...]
+    """Sorted, deduplicated record ids that at least one loaded abstract run
+    described but that are not in ``records`` -- e.g. an abstract run
+    enriching a record a search run later stopped identifying, or run
+    against a ``record_ids`` list that included one Layer 0 never captured.
+    Per ADR 0018 / BUILD_PLAN §5 risk 8, such a record contributes **no**
+    ``subject_areas`` or ``record_subject_area_coverage`` row -- there is
+    nothing in ``records`` to attach one to -- so this tuple is the only
+    place it is visible at all; skipped, never silently dropped.
+
+    Unlike ``malformed_entries_skipped``/``unmapped_country_values``, this is
+    **not** backed by a Layer 1 table (no table records what was skipped for
+    this specific reason, and ADR 0018 adds exactly two): it is accumulated
+    only during a real load and is therefore always ``()`` on the
+    ``rebuild=False`` reuse path, even if a prior rebuild reported some. A
+    caller that needs this number after the fact must call
+    ``build_store(project, rebuild=True)`` again."""
 
 
 @dataclass
@@ -388,6 +455,35 @@ class _Accumulator:
     #: and Scopus's empty-result-set placeholder, neither of which is an
     #: entry anyone claimed was a record.
     entries_seen: int = 0
+    #: ``abstract_runs`` rows, in ``schema.sql`` column order, one per sealed
+    #: ``raw/abstracts/<run_id>/`` directory (ADR 0018). Never a ``runs`` row --
+    #: see :func:`_load_abstract_run`.
+    abstract_runs: list[tuple[Any, ...]] = field(default_factory=list)
+    #: ``record_subject_area_coverage`` rows, in ``schema.sql`` column order,
+    #: one per (record, abstract run) pair whose record is also in ``records``
+    #: (ADR 0018). Populated by :func:`_load_abstract_run`; sorted before
+    #: insertion since it is built from dict iteration, per §3.7.3's rule
+    #: against depending on that order.
+    record_subject_area_coverage: list[tuple[Any, ...]] = field(default_factory=list)
+    #: record_id -> the winning subject-area codes contributed by Abstract
+    #: Retrieval runs (ADR 0018), resolved to the *latest* covering run by
+    #: the time every abstract run has been folded in -- abstract runs are
+    #: walked in ascending `run_id` order (:func:`_sealed_abstract_run_dirs`),
+    #: and each successful (`assigned`/`none_assigned`) observation of a
+    #: record simply replaces this dict's previous entry for it, so no
+    #: explicit run-id comparison is needed; the value present at the end is
+    #: always the last one written. Applied over `subject_areas` by
+    #: :func:`_finalise_subject_areas`, which also lets an abstract
+    #: observation replace a subject-area row a rare search-entry
+    #: contribution had already added for the same record (see the module
+    #: docstring).
+    abstract_subject_areas: dict[str, frozenset[str]] = field(default_factory=dict)
+    #: record_ids at least one loaded abstract run described that are not in
+    #: `records` (ADR 0018 / BUILD_PLAN §5 risk 8: skipped, never silently
+    #: dropped). See `StoreStats.unmatched_abstract_record_ids` for why this
+    #: is reported as a set accumulated during the load rather than read back
+    #: from a table.
+    unmatched_abstract_record_ids: set[str] = field(default_factory=set)
 
 
 def _optional_str(value: object) -> str | None:
@@ -432,6 +528,33 @@ def _sealed_run_dirs(raw_dir: Path) -> list[Path]:
         for entry in raw_dir.iterdir()
         if entry.is_dir() and entry.name not in NON_RUN_DIRNAMES and is_sealed(entry)
     ]
+    return sorted(candidates, key=lambda path: path.name)
+
+
+def _sealed_abstract_run_dirs(raw_dir: Path) -> list[Path]:
+    """List every sealed Layer 0 abstract-retrieval run directory, oldest first (ADR 0018).
+
+    Args:
+        raw_dir: A project's ``raw/`` directory (``project.raw_dir``).
+
+    Returns:
+        Sealed run directories under ``raw/abstracts/`` -- those carrying
+        ``manifest.json``, exactly as :func:`_sealed_run_dirs` requires of a
+        search run (:func:`~prismabib.capture.layout.is_sealed` answers the
+        question for either without knowing which kind it is looking at) --
+        sorted by directory name, which sorts chronologically by construction
+        (:func:`prismabib.capture.layout.new_run_id`). This is the traversal
+        order ADR 0018's "the later run wins" rule for ``subject_areas``
+        depends on, and it is the reason abstract runs must be folded in only
+        *after* this ordering has been established. An unsealed
+        (in-progress or interrupted) abstract run is skipped entirely -- a
+        partial load is worse than none. Returns ``[]`` if
+        ``raw_dir / "abstracts"`` does not exist.
+    """
+    abstracts_dir = raw_dir / ABSTRACTS_DIRNAME
+    if not abstracts_dir.is_dir():
+        return []
+    candidates = [entry for entry in abstracts_dir.iterdir() if entry.is_dir() and is_sealed(entry)]
     return sorted(candidates, key=lambda path: path.name)
 
 
@@ -794,6 +917,80 @@ def _subject_areas_from_entry(entry: dict[str, Any]) -> list[str]:
     return codes
 
 
+def _coredata_from_abstract_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Read one Abstract Retrieval payload line's ``coredata`` object (ADR 0018).
+
+    Args:
+        payload: One parsed, verbatim
+            ``raw/abstracts/<run_id>/abstracts-NNNN.jsonl`` line -- the whole
+            ``{"abstracts-retrieval-response": {...}}`` response, exactly as
+            Scopus sent it (:mod:`prismabib.capture.enrich`'s module
+            docstring: no envelope of prismabib's own).
+
+    Returns:
+        ``payload["abstracts-retrieval-response"]["coredata"]``, or ``None``
+        if either key is absent or not a mapping -- a payload this loader
+        cannot recover a record id or subject-area data from at all, and
+        which :func:`_load_abstract_run` therefore skips with a warning
+        rather than crashing the whole build on.
+    """
+    retrieval = payload.get("abstracts-retrieval-response")
+    if not isinstance(retrieval, dict):
+        return None
+    coredata = retrieval.get("coredata")
+    return coredata if isinstance(coredata, dict) else None
+
+
+def _subject_area_entries_from_abstract_payload(payload: dict[str, Any]) -> list[Any]:
+    """Read the raw ``subject-area`` entries out of one Abstract Retrieval payload line.
+
+    Args:
+        payload: One parsed, verbatim Abstract Retrieval response; see
+            :func:`_coredata_from_abstract_payload`.
+
+    Returns:
+        ``payload["abstracts-retrieval-response"]["subject-areas"]["subject-area"]``,
+        normalised to a list. Scopus writes this as a lone mapping, not a
+        one-item list, when a record has exactly one subject area (the same
+        scalar-vs-list inconsistency
+        :func:`prismabib.capture.enrich._subject_area_entries` already
+        normalises on the write side, for the same reason -- see that
+        function's docstring); ``[]`` if the payload carries no
+        recognisable subject-area data at all.
+    """
+    retrieval = payload.get("abstracts-retrieval-response")
+    if not isinstance(retrieval, dict):
+        return []
+    areas = retrieval.get("subject-areas")
+    if not isinstance(areas, dict):
+        return []
+    entries = areas.get("subject-area")
+    if isinstance(entries, dict):
+        return [entries]
+    if isinstance(entries, list):
+        return entries
+    return []
+
+
+def _subject_areas_from_abstract_payload(payload: dict[str, Any]) -> list[str]:
+    """Extract subject-area codes from one Abstract Retrieval payload line (ADR 0018).
+
+    Args:
+        payload: One parsed, verbatim Abstract Retrieval response.
+
+    Returns:
+        Area codes read via :func:`_subject_areas_from_entry` -- the same
+        ``@code``-preferring extraction the search-entry path already uses,
+        reused rather than reimplemented -- once
+        :func:`_subject_area_entries_from_abstract_payload` has normalised
+        Scopus's scalar-vs-list inconsistency for a lone subject area into a
+        plain list, the shape :func:`_subject_areas_from_entry` expects at
+        its own (flat) ``"subject-area"`` key.
+    """
+    entries = _subject_area_entries_from_abstract_payload(payload)
+    return _subject_areas_from_entry({"subject-area": entries})
+
+
 def _record_from_entry(entry: dict[str, Any], *, record_id: str, payload_ref: PayloadRef) -> Record:
     """Build the full :class:`~prismabib.models.Record` for one Scopus entry.
 
@@ -1137,15 +1334,160 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
             # excluded from coverage. `_record_from_entry` hardcodes `index_keywords=[]`
             # because the Search API's COMPLETE view does not carry indexed terms (see
             # the module docstring); they arrive only via the Abstract Retrieval API,
-            # which no stage calls yet. The `keywords.kind` column already models
-            # `"index"`, so this loop is the correct code waiting on its data source --
-            # a `# pragma: no cover` would hide that it is dormant, and deleting it
-            # would leave a future stage to rediscover the requirement.
+            # which `prismabib.capture.enrich` now calls (ADR 0011/0018) but only ever
+            # to read subject areas out of, not indexed keywords, so this stays
+            # unreachable. The `keywords.kind` column already models `"index"`, so
+            # this loop is the correct code waiting on its data source -- a
+            # `# pragma: no cover` would hide that it is dormant, and deleting it would
+            # leave a future stage to rediscover the requirement.
             for term in record.index_keywords:
                 _accumulate_keyword(acc, record_id=record_id, raw_term=term, kind="index")
 
+            # A rare, currently-unobserved search entry carrying its own
+            # `subject-area` array (see the module docstring). Superseded outright by
+            # any Abstract Retrieval observation of the same record --
+            # `_finalise_subject_areas` applies `acc.abstract_subject_areas` over
+            # this set once every run has been folded in.
             for area_code in record.subject_areas:
                 acc.subject_areas.add((record_id, area_code))
+
+
+def _load_abstract_run(acc: _Accumulator, run_dir: Path) -> None:
+    """Fold one sealed Layer 0 abstract-retrieval run directory into ``acc`` (ADR 0018).
+
+    Args:
+        acc: The in-progress load accumulator, mutated in place. Must
+            already reflect every search run -- ``acc.seen_record_ids`` is
+            how a record this run covers is checked against ``records``.
+        run_dir: The sealed abstract run directory to load (a member of
+            :func:`_sealed_abstract_run_dirs`'s return value). Unlike
+            :func:`_load_run`, no project-relative ``raw_dir`` is needed:
+            neither ``abstract_runs`` nor ``record_subject_area_coverage``
+            carries a payload provenance column (see ``schema.sql``), so
+            there is no ``PayloadRef`` to build here.
+
+    Writes no ``runs`` row: an abstract run identifies no record (ADR 0011 /
+    ADR 0018's "``runs`` gains no row"). For every record this run describes
+    that *is* in ``acc.seen_record_ids``, appends one
+    ``record_subject_area_coverage`` row and, for the two statuses that
+    reflect a successful fetch (``"assigned"``/``"none_assigned"``), records
+    this run's codes as the current winner in ``acc.abstract_subject_areas``
+    -- later calls (for a later-sorted run) simply overwrite that entry, so
+    "the later run wins" falls out of traversal order
+    (:func:`_sealed_abstract_run_dirs`) with no explicit comparison. A
+    record this run describes that is *not* in ``acc.seen_record_ids`` is
+    added to ``acc.unmatched_abstract_record_ids`` instead and contributes
+    no row at all.
+    """
+    manifest = AbstractRunManifest.model_validate_json(
+        (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    )
+    acc.abstract_runs.append(
+        (
+            manifest.run_id,
+            _as_naive_utc(manifest.started_at),
+            _as_naive_utc(manifest.finished_at),
+            manifest.endpoint,
+            manifest.view,
+            manifest.records_requested,
+            manifest.records_fetched,
+            manifest.payload_sha256,
+            manifest.client_version,
+            manifest.criteria_version,
+        )
+    )
+
+    # record_id -> (status, area codes) this run's payload lines observed.
+    # A record id repeated across this run's own payload lines is not
+    # expected in a real capture (each record is requested once) but is not
+    # assumed; a repeat simply resolves to whichever line this run's own
+    # file/line iteration visits last, deterministically.
+    observed: dict[str, tuple[str, frozenset[str]]] = {}
+    for payload_file in manifest.payload_files:
+        for _, entry in _iter_page_entries(run_dir / payload_file):
+            coredata = _coredata_from_abstract_payload(entry)
+            if coredata is None:
+                logger.warning(
+                    "store.load.abstract_entry_missing_coredata",
+                    run_id=manifest.run_id,
+                    payload_file=payload_file,
+                )
+                continue
+            record_id = _record_id_from_entry(coredata)
+            if record_id is None:
+                logger.warning(
+                    "store.load.abstract_entry_missing_eid",
+                    run_id=manifest.run_id,
+                    payload_file=payload_file,
+                )
+                continue
+            codes = frozenset(_subject_areas_from_abstract_payload(entry))
+            observed[record_id] = ("assigned" if codes else "none_assigned", codes)
+
+    # `AbstractUnavailable` entries with reason "not_found"/"not_entitled" have no
+    # payload line at all -- there was nothing to fetch, so `observed` above never
+    # sees them. "no_subject_areas" is deliberately skipped here: its payload line
+    # *is* written (`AbstractUnavailableReason`'s docstring), so it is already
+    # `observed` above with status "none_assigned"; consulting `unavailable` for it
+    # too would be redundant confirmation, not additional information. The two
+    # reasons handled here are exactly `record_subject_area_coverage.status`'s two
+    # non-"assigned"/"none_assigned" values (ADR 0018's closed vocabulary), so no
+    # translation is needed.
+    for unavailable in manifest.unavailable:
+        if unavailable.reason == "no_subject_areas":
+            continue
+        observed[unavailable.record_id] = (unavailable.reason, frozenset())
+
+    for record_id, (status, codes) in observed.items():
+        if record_id not in acc.seen_record_ids:
+            # Described by this abstract run, but no search run ever loaded it
+            # into `records` -- nothing to attach a coverage or subject-area row
+            # to. Counted, not silently dropped (BUILD_PLAN §5 risk 8).
+            acc.unmatched_abstract_record_ids.add(record_id)
+            continue
+        acc.record_subject_area_coverage.append((record_id, manifest.run_id, status))
+        if status in ("assigned", "none_assigned"):
+            # A "not_found"/"not_entitled" run observed no new data about this
+            # record's subject areas and must not erase an earlier run's real
+            # observation, so only the two successful statuses reach here.
+            acc.abstract_subject_areas[record_id] = codes
+
+
+def _finalise_subject_areas(acc: _Accumulator) -> None:
+    """Apply Abstract Retrieval subject-area data over ``subject_areas`` (ADR 0018).
+
+    Args:
+        acc: The accumulator, after every sealed run -- search and abstract
+            alike -- has been folded in. ``acc.subject_areas`` is replaced
+            in place; ``acc.abstract_subject_areas`` is left untouched (it
+            is not written anywhere else, but mutating it here would make
+            this function's idempotency dependent on call order).
+
+    A record with a winning entry in ``acc.abstract_subject_areas`` (already
+    resolved to the latest covering run's codes by :func:`_load_abstract_run`)
+    has *every* existing ``subject_areas`` row for it -- whether contributed
+    by a rare search entry that happened to carry its own ``subject-area``
+    array, or by an earlier abstract run -- replaced by that winning set,
+    which may be empty (``"none_assigned"``: Scopus was asked and assigned
+    none, which is not the same as no data at all; that distinction survives
+    only in ``record_subject_area_coverage`` for such a record, never in
+    ``subject_areas`` itself, which has no way to represent "asked, got
+    nothing" as opposed to "never asked").
+    """
+    if not acc.abstract_subject_areas:
+        return
+    overridden = acc.abstract_subject_areas.keys()
+    kept = {
+        (record_id, area_code)
+        for record_id, area_code in acc.subject_areas
+        if record_id not in overridden
+    }
+    replaced = {
+        (record_id, area_code)
+        for record_id, codes in acc.abstract_subject_areas.items()
+        for area_code in codes
+    }
+    acc.subject_areas = kept | replaced
 
 
 def _resolve_pending_snapshots(acc: _Accumulator) -> None:
@@ -1330,6 +1672,15 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
         # must not depend on which run happened to be walked first.
         [(run_id, count) for run_id, count in sorted(acc.cross_run_duplicates.items())],
     )
+    _insert_rows(connection, "abstract_runs", acc.abstract_runs)
+    _insert_rows(
+        connection,
+        "record_subject_area_coverage",
+        # sorted for the same reason as `run_duplicates` above: `observed`
+        # inside `_load_abstract_run` is a dict, and a checksummed table must
+        # not depend on that iteration order.
+        sorted(acc.record_subject_area_coverage),
+    )
 
 
 def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:
@@ -1362,19 +1713,30 @@ def _count(connection: duckdb.DuckDBPyConnection, table: str) -> int:
     return int(row[0]) if row is not None else 0
 
 
-def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bool) -> StoreStats:
+def _stats_from_connection(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    rebuilt: bool,
+    unmatched_abstract_record_ids: tuple[str, ...] = (),
+) -> StoreStats:
     """Compute a :class:`StoreStats` snapshot from a store's current content.
 
-    Every field, ``malformed_entries_skipped`` included, comes from a query
-    against ``connection`` and from nothing else. That is what makes the
-    ``rebuild=False`` reuse path -- the path ``prismabib build`` takes by
-    default -- report the same skips as the rebuild that created the store,
-    instead of an empty tuple that reads as "nothing was skipped" (ADR 0012).
+    Every field except ``unmatched_abstract_record_ids``, ``malformed_entries_skipped``
+    included, comes from a query against ``connection`` and from nothing else. That is
+    what makes the ``rebuild=False`` reuse path -- the path ``prismabib build`` takes by
+    default -- report the same skips as the rebuild that created the store, instead of
+    an empty tuple that reads as "nothing was skipped" (ADR 0012).
 
     Args:
         connection: An open DuckDB connection onto a Layer 1 store whose
             schema has already been created.
         rebuilt: The value to report as ``StoreStats.rebuilt``.
+        unmatched_abstract_record_ids: Forwarded straight through to the
+            returned :class:`StoreStats` (see that field's own docstring for
+            why it cannot be read back from ``connection`` the way every
+            other field here is). Defaults to ``()``, which is what the
+            ``rebuild=False`` reuse path in :func:`build_store` passes --
+            deliberately, not by omission.
 
     Returns:
         Fresh counts read directly from ``connection`` -- see
@@ -1418,6 +1780,9 @@ def _stats_from_connection(connection: duckdb.DuckDBPyConnection, *, rebuilt: bo
             f"{payload_file}:{payload_line}" for payload_file, payload_line in malformed_rows
         ),
         unmapped_country_values=tuple(unmapped),
+        abstract_runs_loaded=_count(connection, "abstract_runs"),
+        record_subject_area_coverage_loaded=_count(connection, "record_subject_area_coverage"),
+        unmatched_abstract_record_ids=unmatched_abstract_record_ids,
     )
 
 
@@ -1528,8 +1893,25 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 _load_run(accumulator, project.raw_dir, run_dir)
             _resolve_pending_snapshots(accumulator)
             _guard_against_unloadable_capture(accumulator)
+            # Abstract runs are folded in only after every search run: their
+            # records must already be in `accumulator.seen_record_ids` for
+            # `_load_abstract_run` to tell "in this corpus" from "unmatched"
+            # apart, and their subject-area data must be able to supersede
+            # anything `_load_run` accumulated (ADR 0018). Never subject to
+            # the malformed-entry ratio guard above -- that guard exists for
+            # a broken *search* capture, and an abstract run identifies no
+            # record for it to have an opinion about.
+            for abstract_run_dir in _sealed_abstract_run_dirs(project.raw_dir):
+                _load_abstract_run(accumulator, abstract_run_dir)
+            _finalise_subject_areas(accumulator)
             _write_accumulator(connection, accumulator)
-            stats = _stats_from_connection(connection, rebuilt=True)
+            stats = _stats_from_connection(
+                connection,
+                rebuilt=True,
+                unmatched_abstract_record_ids=tuple(
+                    sorted(accumulator.unmatched_abstract_record_ids)
+                ),
+            )
         finally:
             connection.close()
     except StoreError:
@@ -1554,15 +1936,24 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         )
     if stats.unmapped_country_values:
         logger.warning("store.load.unmapped_countries", values=stats.unmapped_country_values)
-    # `malformed_entries_skipped` is replaced by its length here on purpose:
-    # the real capture that motivated this had 1 skip, but a bad one has
-    # thousands, and a single log event carrying every reference is unreadable
-    # and expensive. The references are in `malformed_entries`, which is
-    # queryable, plus the warning above.
+    if stats.unmatched_abstract_record_ids:
+        unmatched = stats.unmatched_abstract_record_ids
+        logger.warning(
+            "store.load.unmatched_abstract_records",
+            count=len(unmatched),
+            record_ids=unmatched[:_MAX_LOGGED_MALFORMED_ENTRIES],
+            truncated=len(unmatched) > _MAX_LOGGED_MALFORMED_ENTRIES,
+        )
+    # `malformed_entries_skipped`/`unmatched_abstract_record_ids` are replaced by
+    # their lengths here on purpose: the real capture that motivated the former had
+    # 1 skip, but a bad one has thousands, and a single log event carrying every
+    # reference is unreadable and expensive. The references are in
+    # `malformed_entries` (queryable) or the warning above, respectively.
     logger.info(
         "store.build_store.complete",
-        **stats.model_dump(exclude={"malformed_entries_skipped"}),
+        **stats.model_dump(exclude={"malformed_entries_skipped", "unmatched_abstract_record_ids"}),
         malformed_entries_skipped_count=len(stats.malformed_entries_skipped),
+        unmatched_abstract_record_ids_count=len(stats.unmatched_abstract_record_ids),
     )
     return stats
 

@@ -137,6 +137,25 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("run_id", "VARCHAR", True),
         ("duplicates", "INTEGER", False),
     ),
+    # Not from the BUILD_PLAN schema: added by ADR 0018. Transcribed from
+    # that ADR's stated shape for the same reason as the two tables above.
+    "abstract_runs": (
+        ("run_id", "VARCHAR", True),
+        ("started_at", "TIMESTAMP", False),
+        ("finished_at", "TIMESTAMP", False),
+        ("endpoint", "VARCHAR", False),
+        ("view", "VARCHAR", False),
+        ("records_requested", "INTEGER", False),
+        ("records_fetched", "INTEGER", False),
+        ("payload_sha256", "VARCHAR", False),
+        ("client_version", "VARCHAR", False),
+        ("criteria_version", "VARCHAR", False),
+    ),
+    "record_subject_area_coverage": (
+        ("record_id", "VARCHAR", True),
+        ("run_id", "VARCHAR", True),
+        ("status", "VARCHAR", False),
+    ),
 }
 
 

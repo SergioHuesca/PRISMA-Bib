@@ -44,6 +44,8 @@ import duckdb
 #: checksummed like every other table: a rebuild that skips a different set of
 #: entries than the committed snapshot records is a change to what the corpus
 #: contains, and must show up as a moved checksum rather than only in a log.
+#: ``abstract_runs``/``record_subject_area_coverage`` (ADR 0018) follow the
+#: same rule as every table above them: sort by the declared primary key.
 _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "runs": ("run_id",),
     "records": ("record_id",),
@@ -58,6 +60,8 @@ _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "citation_snapshots": ("record_id", "retrieved_at"),
     "malformed_entries": ("payload_file", "payload_line"),
     "run_duplicates": ("run_id",),
+    "abstract_runs": ("run_id",),
+    "record_subject_area_coverage": ("record_id", "run_id"),
 }
 
 #: The full set of Layer 1 table names, in the order they appear in
