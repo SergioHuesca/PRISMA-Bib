@@ -79,3 +79,25 @@ CREATE TABLE malformed_entries (
 CREATE TABLE run_duplicates (
   run_id TEXT PRIMARY KEY, duplicates INTEGER
 );
+
+-- Added by ADR 0018, not part of the frozen BUILD_PLAN schema. `subject_areas`
+-- alone cannot distinguish "Scopus assigned no subject areas" from "this record
+-- was never enriched" -- both are zero rows there -- and a filter that *removes*
+-- records on subject-area data must be able to tell the two apart. `abstract_runs`
+-- mirrors `runs` for provenance (never a row for identification, per ADR 0011:
+-- an abstract run identifies no record); `record_subject_area_coverage` records,
+-- per record per run, which of Layer 0's three unavailability reasons applied, or
+-- that Scopus assigned areas -- a record with no row at all is the fourth state,
+-- "never asked". See ADR 0018 for the full rationale.
+CREATE TABLE abstract_runs (
+  run_id TEXT PRIMARY KEY,
+  started_at TIMESTAMP, finished_at TIMESTAMP,
+  endpoint TEXT, view TEXT,
+  records_requested INTEGER, records_fetched INTEGER,
+  payload_sha256 TEXT, client_version TEXT, criteria_version TEXT
+);
+
+CREATE TABLE record_subject_area_coverage (
+  record_id TEXT, run_id TEXT, status TEXT,
+  PRIMARY KEY (record_id, run_id)
+);

@@ -102,6 +102,7 @@ nav:
           - "ADR 0015: stage order and Stage 10 scope": architecture/adr/0015-stage-order-and-stage-10-scope.md
           - "ADR 0016: automated exclusions are attributed by precedence": architecture/adr/0016-automated-exclusion-reasons.md
           - "ADR 0017: subject areas match by ASJC grouping": architecture/adr/0017-subject-areas-match-by-asjc-grouping.md
+          - "ADR 0018: abstract runs load into Layer 1": architecture/adr/0018-abstract-runs-in-layer-1.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

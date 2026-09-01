@@ -156,7 +156,7 @@ temporal:                 # inclusive both ends, from the record's cover date
   year_start: 2015
   year_end: 2026
 
-subject_areas: []         # must stay empty for a Scopus Search API corpus — see below
+subject_areas: []         # needs `prismabib enrich` first — see below
 
 doc_types:
   include: [ar, cp]       # Scopus subtype codes; empty = no restriction

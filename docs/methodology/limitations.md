@@ -64,19 +64,31 @@ A richer `(normalised_title, first_author_surname, year)` key exists as
 `prismabib.models.dedup_key` and is unit-tested, but the loader does not apply it; only the
 DOI collision is reported.
 
-## `subject_areas` is declared but not enforceable
+## `subject_areas` requires enrichment, and enrichment must be complete
 
-**Current state, forced by the data source.** `criteria.yaml` has a `subject_areas` block,
-and the screening engine implements the filter — but the Scopus Search API's
-`view=COMPLETE` response, which is the only response prismabib ever captures, does not
-carry subject-area codes. No record in a corpus captured this way has any subject-area data
-to filter on.
+**The Search API cannot supply this data.** The Scopus Search API's `view=COMPLETE`
+response does not carry subject-area codes, so a corpus captured by `prismabib search`
+alone has none. `prismabib enrich` fetches them from the **Abstract Retrieval API** — a
+separate entitlement and a separate weekly quota, one call per record — and those sealed
+runs load into Layer 1 ([ADR 0018](../architecture/adr/0018-abstract-runs-in-layer-1.md)).
+
+**Enrichment must be complete, and it must precede screening.** A record that was never
+looked up carries no subject areas, so it passes the filter for exactly the same reason a
+record Scopus genuinely classified as nothing does. If enrichment covered only part of the
+corpus — an exhausted quota, an interrupted run, a `--budget` cap — the diagram would report
+one "excluded by subject area" figure computed over an unknown fraction of the review.
+prismabib refuses that state rather than reporting it: `record_subject_area_coverage` records
+what was asked, and the engine raises, naming how many records remain. Enrichment is
+resumable and does not re-spend quota on records already fetched. Records Scopus cannot
+resolve (404) or refuses (403) do not block screening — they were asked, and the answer is
+recorded.
 
 The engine's general convention is that a record with no data on a dimension is never
 excluded on that dimension. Applied to a corpus where *no* record has the data, that would
 silently turn the whole filter into a no-op: every record passes, the automated-exclusion
 count omits a restriction you believe you applied, and the published diagram claims a filter
-that never ran. The numbers look entirely plausible, which is what makes it dangerous.
+that never ran. The numbers look entirely plausible, which is what makes it dangerous — so
+a project that declares `subject_areas` without the data to evaluate it is refused.
 
 So a non-empty `subject_areas` against a corpus with no subject-area data **raises
 `ConfigError`** rather than quietly doing nothing. Your options:

@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] — 2026-09-01
+
+### Added
+
+- **`subject_areas` works.** Sealed `raw/abstracts/` runs now load into Layer 1, so a project
+  that has run `prismabib enrich` can filter on ASJC subject areas and report the exclusion
+  in its PRISMA diagram as `by subject area: N`. This is the Layer 1 half of
+  [ADR 0011](docs/architecture/adr/0011-abstract-retrieval-for-subject-areas.md), which was
+  split into two PRs in v0.8.0 and of which only the Layer 0 half shipped — enrichment has
+  been writing payloads nothing read for four releases. See
+  [ADR 0018](docs/architecture/adr/0018-abstract-runs-in-layer-1.md) and #31.
+
+- **Two new Layer 1 tables** (third addition to the frozen schema, after ADRs 0012 and 0013):
+  `abstract_runs` carries each enrichment run's provenance including its `payload_sha256`, and
+  `record_subject_area_coverage` records per record whether Scopus assigned areas, assigned
+  none, returned 404, or refused with 403. **A record with no coverage row was never asked** —
+  that third state is why the table exists. "We restricted to computer science and this paper
+  carries no classification" and "we restricted to computer science and never looked this
+  paper up" are different methodological claims, and `subject_areas` alone could not tell them
+  apart.
+
+  `runs` gains no row from an abstract run, so `identified` is unaffected — an abstract run
+  identifies nothing (S02-AC5), and a test asserts it.
+
+- **A half-enriched corpus is refused rather than filtered blind.** Once enrichment has been
+  run at all, a record that was never looked up makes `subject_areas` unenforceable and the
+  engine raises, naming how many records remain and that enrichment is resumable. Without
+  this, such a record passes the filter for the same reason a genuinely unclassified one
+  does, and the diagram reports one "excluded by subject area" figure computed over an
+  unknown fraction of the review — an exhausted quota, an interrupted run or a `--budget`
+  cap all produce that state. A corpus that was never enriched is *not* refused on these
+  grounds: sparse data is what the "no data, so passes" branch deliberately tolerates.
+
+### Changed
+
+- `prismabib build` reports the new counts, and `StoreStats` gains `abstract_runs_loaded`,
+  `record_subject_area_coverage_loaded` and `unmatched_abstract_record_ids` — a record present
+  in an abstract run but absent from `records` is skipped and counted, never silently dropped. On the `rebuild=False` reuse path that field has no table to be read back from, so
+  `prismabib build` says so explicitly instead of printing nothing — a line that appears only
+  when non-empty cannot be told apart from "nothing was skipped".
+
+- **Subject-area extraction from an abstract payload takes `@code` only**, never the
+  `@code or $` fallback the search-entry path uses. `capture.enrich` already treats an entry
+  without a code as *no* evidence of codes and seals such a record `no_subject_areas`; the
+  lenient reader made the layers contradict each other, storing `"Artificial Intelligence"`
+  as an area code, marking the record `assigned`, and then **excluding** a record Layer 0 had
+  said to keep.
+
+**No published number moves.** The reference fixture declares `subject_areas: []` and has no
+abstract runs, so every golden value is byte-identical; `reference_table_checksums.json` gained
+two empty-table digests and altered nothing.
+
 ## [0.14.0] — 2026-09-01
 
 ### Fixed
