@@ -15,6 +15,7 @@ shape ``capture/writer.py`` actually logs.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -24,7 +25,12 @@ from typer.testing import CliRunner
 
 import prismabib
 from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable
-from prismabib.cli import _CaptureProgress, _print_flow, _reporting_errors, app
+from prismabib.cli import (
+    _CaptureProgress,
+    _print_flow,
+    _reporting_errors,
+    app,
+)
 from prismabib.errors import ConfigError
 from prismabib.prisma.flow import FlowCounts
 
@@ -43,6 +49,14 @@ def _counts(**overrides: object) -> FlowCounts:
         "duplicates_across_searches": 0,
         "removed_other_reasons": 0,
         "excluded_automated": 412,
+        # Sums to excluded_automated, which equation 5 checks -- so this fixture
+        # cannot drift into an inconsistent shape without failing.
+        "excluded_automated_by_reason": {
+            "year": 300,
+            "subject_area": 60,
+            "doc_type": 40,
+            "venue": 12,
+        },
         "after_automated": 1359,
         "excluded_language": 27,
         "after_language": 1332,
@@ -348,3 +362,54 @@ def test_print_abstract_manifest__budget_stopped_run__is_called_unsealed() -> No
         _print_abstract_manifest(manifest, slug="demo")
 
     assert "UNSEALED" in buffer.getvalue()
+
+
+#: The automated-exclusion lines ``_print_flow`` must produce for ``_counts()``,
+#: written out as literals.
+#:
+#: Deriving them from ``_AUTOMATED_REASON_LABELS`` or from
+#: ``AUTOMATED_EXCLUSION_PRECEDENCE`` is what the first version of this test did,
+#: and swapping two entries in that table still passed: the expectation was
+#: restating the thing under test, so it agreed with itself. A restated constant
+#: cannot catch a change in what it restates. These strings and numbers are
+#: therefore transcribed by hand from ``_counts()`` and from what the label
+#: should say, and a label change must be made here too -- deliberately.
+_EXPECTED_AUTOMATED_LINES = [
+    ("by publication year", 300),
+    ("by subject area", 60),
+    ("by document type", 40),
+    ("by conference whitelist", 12),
+]
+
+
+@pytest.mark.unit
+def test_print_flow__automated_exclusions__each_count_under_its_own_label(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each automated-exclusion count is printed under its own reason label, in order.
+
+    ``_counts()``'s reason values are pairwise distinct (300/60/40/12), so this
+    pins *identity*, not just presence: swapping two entries in
+    ``_AUTOMATED_REASON_LABELS`` left all 813 tests green before this existed,
+    and ``prismabib flow`` then reported the 300 records excluded by the year
+    window under the subject-area label -- the precise claim ADR 0016 was
+    written to make checkable, inverted.
+
+    Order is asserted because under precedence "by subject area" means *passed
+    the year test and failed this one*; the order is what makes the number mean
+    that.
+    """
+    _print_flow(_counts(), slug="demo")
+
+    out = capsys.readouterr().out
+    printed = [
+        (label, count)
+        for label, count in _EXPECTED_AUTOMATED_LINES
+        if re.search(rf"{re.escape(label)}\s+{count:,}(?!\d)", out)
+    ]
+
+    assert printed == _EXPECTED_AUTOMATED_LINES, (
+        "an automated-exclusion count is missing, or printed under the wrong label; "
+        f"output was:\n{out}"
+    )
+    assert sum(count for _, count in _EXPECTED_AUTOMATED_LINES) == _counts().excluded_automated

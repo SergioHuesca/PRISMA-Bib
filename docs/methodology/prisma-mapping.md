@@ -16,7 +16,7 @@ Layer 3 renders the diagram; it invents no numbers of its own.
 3. Compare the returned `FlowCounts` field by field against the diagram, using the
    [box-by-box table](#the-prisma-2020-flow-diagram-box-by-box) below.
 4. Call `FlowCounts.assert_consistent()`. It raises `ValidationError` naming the first
-   equation that does not close — see [the four equations](#the-four-consistency-equations).
+   equation that does not close — see [the five equations](#the-five-consistency-equations).
 
 Every count is recomputed on every call. Nothing in `flow.py` or `engine.py` caches,
 memoises, or persists a count, so step 2 is a re-derivation and not a lookup of a stored
@@ -164,6 +164,7 @@ Every number in the diagram is one field of the frozen dataclass
 | Records removed before screening — duplicate records removed | `duplicates_across_searches` | `flow._cross_run_duplicate_count` | `SUM(duplicates)` over Layer 1's `run_duplicates` table, which `build_store` writes during the load: captured entries that resolved to a `record_id` an earlier run **under a different query** had already loaded — identified by two searches, stored once, because `records.record_id` is a primary key. **Not** the normalised-DOI report — see [below](#reading-the-two-removed-before-screening-counts) |
 | Records removed before screening — records removed for other reasons | `removed_other_reasons` | `flow._unloadable_count` | `COUNT(*)` over Layer 1's `malformed_entries` table — the Layer 0 entries `build_store` could not turn into a record ([ADR 0012](../architecture/adr/0012-persisting-skipped-layer0-entries.md)). Counted as *entries*, not records |
 | Records removed before screening — marked ineligible by automation tools (year / subject / document type) | `excluded_automated` | `engine.raw_set`, `engine.automated_set` | `|S_raw| - |A|` |
+| — the same box, broken down by reason | `excluded_automated_by_reason` | `engine._AUTOMATED_PREDICATES`, `engine._compute_a_and_l` | One count per reason (`year`, `subject_area`, `doc_type`, `venue`), each record attributed to **the first criterion it fails** so the four sum to `excluded_automated` rather than exceeding it. Every key is always present; a reason that excluded nothing reports `0`, so "not filtered" and "filtered, excluded nothing" stay distinguishable. See [ADR 0016](../architecture/adr/0016-automated-exclusion-reasons.md) |
 | — intermediate, not a diagram box | `after_automated` | `engine.automated_set` | `|A|` |
 | Records removed before screening — marked ineligible by automation tools (language) | `excluded_language` | `engine.automated_set`, `engine.language_set` | `|A| - |L|` |
 | Records screened | `after_language` | `engine.language_set` | `|L|` — the unique records reaching title/abstract screening |
@@ -265,9 +266,9 @@ assume it is covered:
 - **"Registers."** This system searches Scopus and ScienceDirect only. The register column
   of the PRISMA diagram is empty.
 
-## The four consistency equations
+## The five consistency equations
 
-`FlowCounts.assert_consistent()` checks four accounting identities in order and raises
+`FlowCounts.assert_consistent()` checks five accounting identities in order and raises
 `prismabib.errors.ValidationError` on the first that fails, naming the equation verbatim,
 both sides, and the signed difference:
 
@@ -277,13 +278,21 @@ both sides, and the signed difference:
 2.  after_automated   - excluded_language   == after_language
 3.  after_language    == excluded_title_abstract + unsure_title_abstract + retrieved_fulltext
 4.  retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included
+5.  sum(excluded_automated_by_reason.values()) == excluded_automated
 ```
 
-Equations 2, 3, and 4 hold by construction for anything `compute_flow_counts` returns:
+Equation 5 is what makes the automated-exclusion breakdown a *partition*: a record that fails
+several criteria at once is counted once, under the first it fails, so the reasons printed in
+the diagram add up to the total printed above them
+([ADR 0016](../architecture/adr/0016-automated-exclusion-reasons.md)).
+
+Equations 2, 3 and 4 hold by construction for anything `compute_flow_counts` returns:
 `unsure_title_abstract` and `unsure_fulltext` are each computed as the remainder of their
 partition rather than measured independently. They are not therefore pointless — they are
 what catches a hand-assembled, mutated, or deserialised `FlowCounts` whose fields have
-drifted.
+drifted. Equation 5 holds by construction for a different reason: the breakdown is
+accumulated in the same single pass that builds `A`, so a record cannot be excluded without
+being charged to exactly one reason.
 
 **Equation 1 is a genuine cross-check and can legitimately fail.** `identified` is the sum of
 the servers' own reported totals across the project's distinct searches; `after_automated`

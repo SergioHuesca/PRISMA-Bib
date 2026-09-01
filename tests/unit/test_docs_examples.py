@@ -124,17 +124,47 @@ def test_docs__sample_prisma_diagrams__add_up(page: Path) -> None:
     """
     text = page.read_text(encoding="utf-8")
     for block in re.findall(r"```\n(PRISMA 2020 flow.*?)```", text, re.DOTALL):
+        # Exactly two leading spaces: the top-level rows. The automated-exclusion
+        # reasons are indented four further (ADR 0016) and are read separately
+        # below -- folding them into this positional list would silently shift
+        # every field after `excluded_automated` onto the wrong count.
         values = [
             int(match.replace(",", ""))
-            for match in re.findall(r"^\s{2,}\S.*?\s{2,}-?([0-9][0-9,]*)\s*$", block, re.MULTILINE)
+            for match in re.findall(r"^\s{2}\S.*?\s{2,}-?([0-9][0-9,]*)\s*$", block, re.MULTILINE)
         ]
+        reasons = {
+            label.strip(): int(count.replace(",", ""))
+            for label, count in re.findall(
+                r"^\s{6}(by [a-z ]+?)\s{2,}(-?[0-9][0-9,]*)\s*$", block, re.MULTILINE
+            )
+        }
         assert len(values) == len(_FLOW_FIELDS), (
             f"{page.name}: expected {len(_FLOW_FIELDS)} counts in the printed diagram, "
             f"found {len(values)}. If `cli._print_flow` changed shape, update _FLOW_FIELDS."
         )
         fields = dict(zip(_FLOW_FIELDS, values, strict=True))
         total = fields.pop("excluded_fulltext_total")
-        counts = FlowCounts(**fields, excluded_fulltext={"REASON": total} if total else {})
+        # The breakdown is read from the page rather than synthesised, so a
+        # documented example whose reasons do not add up to its own automated
+        # total fails here -- which is the whole point of this module. Labels
+        # are transcribed by hand; deriving them from `cli._AUTOMATED_REASON_LABELS`
+        # would let a relabelling change both sides at once.
+        assert set(reasons) == {
+            "by publication year",
+            "by subject area",
+            "by document type",
+            "by conference whitelist",
+        }, f"{page.name}: printed diagram is missing an automated-exclusion reason: {reasons}"
+        counts = FlowCounts(
+            **fields,
+            excluded_fulltext={"REASON": total} if total else {},
+            excluded_automated_by_reason={
+                "year": reasons["by publication year"],
+                "subject_area": reasons["by subject area"],
+                "doc_type": reasons["by document type"],
+                "venue": reasons["by conference whitelist"],
+            },
+        )
         try:
             counts.assert_consistent()
         except ValidationError as exc:  # pragma: no cover - failure path

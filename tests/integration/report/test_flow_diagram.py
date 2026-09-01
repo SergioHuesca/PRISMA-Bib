@@ -65,6 +65,11 @@ DISTINCT_COUNTS = FlowCounts(
     duplicates_across_searches=5,
     removed_other_reasons=8,
     excluded_automated=21,
+    # Pairwise distinct, and distinct from every other value in this fixture,
+    # for the same reason the integer counts are: a renderer that showed the
+    # doc-type count under the subject-area label is an identity error, and
+    # only distinct values can catch one. 1 + 2 + 6 + 12 == 21.
+    excluded_automated_by_reason={"year": 12, "subject_area": 1, "doc_type": 6, "venue": 2},
     after_automated=107,
     excluded_language=13,
     after_language=94,
@@ -89,7 +94,7 @@ FIELD_TO_LABEL = {
         r"duplicates across searches: {value}(?!\d)",
     ),
     "removed_other_reasons": ("removed-before-screening", r"other reasons: {value}(?!\d)"),
-    "excluded_automated": ("after-automated", r"year/subject/doc-type: {value}(?!\d)"),
+    "excluded_automated": ("after-automated", r"by automated filters: {value}(?!\d)"),
     "after_automated": ("after-automated", r"after automated filters \(n = {value}\)"),
     "excluded_language": ("after-language", r"excluded by language: {value}(?!\d)"),
     "after_language": ("after-language", r"Records screened \(n = {value}\)"),
@@ -101,6 +106,18 @@ FIELD_TO_LABEL = {
     "retrieved_fulltext": ("title-abstract", r"sought for retrieval \(n = {value}\)"),
     "unsure_fulltext": ("fulltext", r"unsure at full text: {value}(?!\d)"),
     "included": ("fulltext", r"included in review \(n = {value}\)"),
+}
+
+
+#: Reason key -> the label that introduces its count in the ``after-automated``
+#: box. Kept separate from :data:`FIELD_TO_LABEL` because these come from a
+#: mapping field rather than an integer one, so the ``dataclasses.fields`` sweep
+#: cannot reach them -- and an unreached line is an unchecked line.
+REASON_TO_LABEL = {
+    "year": r"by publication year: {value}(?!\d)",
+    "subject_area": r"by subject area: {value}(?!\d)",
+    "doc_type": r"by document type: {value}(?!\d)",
+    "venue": r"by conference whitelist: {value}(?!\d)",
 }
 
 
@@ -136,6 +153,17 @@ def test_flow_diagram__generated_numbers__equal_flowcounts() -> None:
         assert re.search(template.format(value=value), text), (
             f"{field_name}={value} is not shown under its label in the {box_id!r} box; "
             f"it reads {text!r}"
+        )
+
+    automated_text = box_text(svg, "after-automated")
+    assert set(REASON_TO_LABEL) == set(DISTINCT_COUNTS.excluded_automated_by_reason), (
+        "an automated-exclusion reason has no label on the diagram"
+    )
+    for reason, template in REASON_TO_LABEL.items():
+        count = DISTINCT_COUNTS.excluded_automated_by_reason[reason]
+        assert re.search(template.format(value=count), automated_text), (
+            f"{reason}={count} is not shown under its label in the 'after-automated' "
+            f"box; it reads {automated_text!r}"
         )
 
 
@@ -228,3 +256,38 @@ def test_flow_diagram__fulltext_reasons__are_rendered_in_sorted_order(tmp_path: 
     svg = flow_diagram_svg(with_reasons, title="A Review")
 
     assert svg.index("NO_FULL_TEXT") < svg.index("WRONG_POPULATION")
+
+
+@pytest.mark.integration
+def test_flow_diagram__every_text_line__is_drawn_inside_its_own_box() -> None:
+    """No box's text escapes its rect, however many lines the box has.
+
+    The box height was a fixed constant, sized by eye for the two- and
+    three-line boxes that existed when the renderer was written. ADR 0016 gave
+    the ``after-automated`` box six lines, and the centring arithmetic put the
+    first baseline above the rect and the last below it -- the heading and the
+    only non-zero exclusion count were drawn *outside* the box, struck through
+    by the arrows, in the figure shipped in the docs and produced by
+    ``prismabib export``.
+
+    Nothing caught it: every other assertion in this module reads the
+    ``<text>`` elements' *content*, and the docs-asset golden compares bytes
+    against a file regenerated from the same broken renderer. Both are blind
+    to where the text is drawn. This test is not.
+    """
+    svg = flow_diagram_svg(DISTINCT_COUNTS, title="A Review")
+
+    groups = re.findall(r'<g id="([^"]+)">(.*?)</g>', svg, re.DOTALL)
+    assert groups, "no boxes found in the rendered SVG"
+
+    for box_id, group in groups:
+        rect = re.search(r'<rect[^>]*\by="(-?\d+)"[^>]*\bheight="(\d+)"', group)
+        assert rect, f"box {box_id!r} has no rect"
+        top, height = int(rect.group(1)), int(rect.group(2))
+        baselines = [int(y) for y in re.findall(r'<text[^>]*\by="(-?\d+)"', group)]
+        assert baselines, f"box {box_id!r} has no text"
+        outside = [y for y in baselines if not top <= y <= top + height]
+        assert not outside, (
+            f"box {box_id!r} spans y={top}..{top + height} but has text baselines at "
+            f"{outside} -- that text is drawn outside its box, over the arrows"
+        )

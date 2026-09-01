@@ -393,7 +393,11 @@ Removed before screening
   other reasons (unreadable capture entries)            0
 
 Screening -- automated, from criteria.yaml
-  excluded by year / subject area / doc type         -412
+  excluded by automated criteria                     -412
+      by publication year                             355
+      by subject area                                   0
+      by document type                                 57
+      by conference whitelist                           0
   remaining                                         1,359
   excluded by language                                -37
   remaining, to title/abstract screening            1,322
@@ -436,7 +440,7 @@ If the counts do not close into a consistent diagram, the command prints a warni
 stderr, still prints the numbers, and still exits `0`. That is not a crash: the usual cause
 is a capture that is incomplete or a store built before the last `search` finished. Do not
 publish a diagram whose warning you have not explained. See
-[PRISMA Mapping — the four consistency equations](methodology/prisma-mapping.md#the-four-consistency-equations)
+[PRISMA Mapping — the five consistency equations](methodology/prisma-mapping.md#the-five-consistency-equations)
 and [when equation 1 does not close](methodology/prisma-mapping.md#when-equation-1-does-not-close),
 which lists every cause observed so far and what to do about each.
 

@@ -16,7 +16,7 @@ criterion.
 The renderers are module-level functions rather than methods on :class:`Table`.
 That is deliberate: mutmut does not mutate the body of a decorated class, so a
 method on a ``@dataclass`` generates no mutants at all -- the trap that hid
-``FlowCounts.assert_consistent``'s ~51 mutants until Stage 10 went looking.
+``FlowCounts.assert_consistent``'s mutants until Stage 10 went looking.
 """
 
 from __future__ import annotations

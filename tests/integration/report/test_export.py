@@ -54,6 +54,18 @@ def test_export__every_figure__has_a_sibling_source_csv(project: Project) -> Non
         assert figure.with_suffix(".csv").is_file(), f"{figure.name} has no sibling source CSV"
 
 
+#: Reason key -> the label the figure introduces its count with. Transcribed
+#: by hand rather than imported from `flow_diagram._AUTOMATED_REASON_LABELS`:
+#: an expectation that restates the thing under test agrees with itself, and
+#: a swapped label would still pass.
+REASON_TO_LABEL_TEXT = {
+    "year": "by publication year",
+    "subject_area": "by subject area",
+    "doc_type": "by document type",
+    "venue": "by conference whitelist",
+}
+
+
 @pytest.mark.integration
 def test_export__source_csv__reproduces_the_figure_values(project: Project) -> None:
     """A CSV that has drifted from its figure is worse than no CSV.
@@ -278,3 +290,38 @@ def test_export__cli_summary__prints_none_placeholder_not_the_word_None(
     assert result.exit_code == 0
     assert "(none)" in result.output
     assert "git commit              None" not in result.output
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S10-AC1")
+def test_export__source_csv__carries_every_automated_reason_the_figure_shows(
+    project: Project,
+) -> None:
+    """The reason breakdown reaches the CSV, not just the figure.
+
+    ``test_export__source_csv__reproduces_the_figure_values`` walks CSV -> SVG,
+    so a number the figure shows and the CSV omits is invisible to it -- and
+    that is exactly what happened when ADR 0016 added a mapping field: the
+    ``isinstance(..., int)`` sweep that builds the rows skipped it, and the
+    CSV shipped four numbers short of the figure it exists to reproduce.
+
+    This walks the other direction.
+    """
+    result = export_project(project)
+    counts = compute_flow_counts(project)
+
+    rows = list(csv.reader(io.StringIO((result.root / "figures" / "prisma_flow.csv").read_text())))
+    body = dict(rows[1:])
+    in_csv = {stage: n for stage, n in body.items() if stage.startswith("excluded_automated.")}
+
+    assert in_csv == {
+        f"excluded_automated.{reason}": str(count)
+        for reason, count in counts.excluded_automated_by_reason.items()
+    }
+
+    svg = (result.root / "figures" / "prisma_flow.svg").read_text(encoding="utf-8")
+    automated_text = box_text(svg, "after-automated")
+    for reason, count in counts.excluded_automated_by_reason.items():
+        assert re.search(rf"{REASON_TO_LABEL_TEXT[reason]}: {count}(?!\d)", automated_text), (
+            f"{reason}={count} is in the CSV but not under its label on the diagram"
+        )

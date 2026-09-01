@@ -22,7 +22,8 @@ citable artefact needs.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Final
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
@@ -34,12 +35,69 @@ if TYPE_CHECKING:
 #: layout that depended on the rendered width of a label would depend on the
 #: font, and this file exists partly to have no font dependency.
 _BOX_WIDTH = 300
-_BOX_HEIGHT = 64
 _GAP_Y = 42
 _LEFT_X = 40
 _TOP_Y = 40
 _LINE_HEIGHT = 17
+_BOX_PADDING_Y = 12
 _CANVAS_WIDTH = 760
+
+
+def _box_height(line_count: int) -> int:
+    """The height a box needs to hold ``line_count`` lines of text.
+
+    Args:
+        line_count: How many text lines the box will contain.
+
+    Returns:
+        The rect height, in user units.
+
+    A box was a fixed 64 units tall, sized by eye for the two- and three-line
+    boxes that existed when this file was written. ADR 0016 gave the
+    ``after-automated`` box six lines, and the centring arithmetic then put the
+    first baseline *above* the rect and the last *below* it: the heading and
+    the only non-zero exclusion count were drawn outside the box, struck
+    through by the arrows. Every test still passed, because they assert on the
+    ``<text>`` elements' content and a byte comparison against a file
+    regenerated from the same renderer -- both blind to geometry.
+
+    Deriving the height from the line count means a box cannot overflow no
+    matter how many lines a future reason adds.
+    """
+    return _LINE_HEIGHT * (line_count - 1) + 2 * _BOX_PADDING_Y + _LINE_HEIGHT
+
+
+#: Reason-key -> figure label. Duplicated deliberately from ``cli.py``'s own
+#: table: ``report/`` is importable without the CLI, and the figure's wording
+#: is a publication surface that should not change because a terminal string
+#: was reworded.
+_AUTOMATED_REASON_LABELS: Final[Mapping[str, str]] = {
+    "year": "by publication year",
+    "subject_area": "by subject area",
+    "doc_type": "by document type",
+    "venue": "by conference whitelist",
+}
+
+
+def _automated_reason_lines(counts: FlowCounts) -> list[str]:
+    """One line per automated-exclusion reason, in precedence order.
+
+    Args:
+        counts: The flow counts being drawn.
+
+    Returns:
+        A line per reason, including reasons that excluded nothing. A reason
+        omitted at zero would make "we did not filter on subject area" and "we
+        filtered and it excluded nothing" look identical in the published
+        figure, and those are different methodological claims. Order is the
+        attribution order (ADR 0016), not alphabetical: a record is charged to
+        the first criterion it fails, so "by subject area" means *passed the
+        year test and failed this one*, which only the order conveys.
+    """
+    return [
+        f"  {_AUTOMATED_REASON_LABELS[reason]}: {count}"
+        for reason, count in counts.excluded_automated_by_reason.items()
+    ]
 
 
 def _identification_note(counts: FlowCounts) -> str:
@@ -92,14 +150,15 @@ def _box(x: int, y: int, lines: Sequence[str], *, box_id: str) -> str:
     Returns:
         SVG markup for the box and its text.
     """
+    height = _box_height(len(lines))
     parts = [
         f'<g id="{escape(box_id)}">',
         (
-            f'<rect x="{x}" y="{y}" width="{_BOX_WIDTH}" height="{_BOX_HEIGHT}" '
+            f'<rect x="{x}" y="{y}" width="{_BOX_WIDTH}" height="{height}" '
             'fill="#ffffff" stroke="#333333" stroke-width="1.5"/>'
         ),
     ]
-    first_baseline = y + (_BOX_HEIGHT - _LINE_HEIGHT * (len(lines) - 1)) // 2 + 4
+    first_baseline = y + (height - _LINE_HEIGHT * (len(lines) - 1)) // 2 + 4
     for index, line in enumerate(lines):
         parts.append(
             f'<text x="{x + _BOX_WIDTH // 2}" y="{first_baseline + index * _LINE_HEIGHT}" '
@@ -161,7 +220,8 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             "after-automated",
             [
                 f"Records after automated filters (n = {counts.after_automated})",
-                f"excluded by year/subject/doc-type: {counts.excluded_automated}",
+                f"excluded by automated filters: {counts.excluded_automated}",
+                *_automated_reason_lines(counts),
             ],
         ),
         (
@@ -194,17 +254,18 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
     body: list[str] = []
     y = _TOP_Y
     for index, (box_id, lines) in enumerate(stages):
+        box_height = _box_height(len(lines))
         body.append(_box(_LEFT_X, y, lines, box_id=box_id))
         if index < len(stages) - 1:
             body.append(
                 _arrow(
                     _LEFT_X + _BOX_WIDTH // 2,
-                    y + _BOX_HEIGHT,
+                    y + box_height,
                     _LEFT_X + _BOX_WIDTH // 2,
-                    y + _BOX_HEIGHT + _GAP_Y,
+                    y + box_height + _GAP_Y,
                 )
             )
-        y += _BOX_HEIGHT + _GAP_Y
+        y += box_height + _GAP_Y
 
     height = y + 20
     return (
