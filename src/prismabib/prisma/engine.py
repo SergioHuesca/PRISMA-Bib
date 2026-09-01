@@ -104,6 +104,7 @@ from typing import Final
 
 import duckdb
 
+from prismabib.asjc import area_abbrev
 from prismabib.errors import ConfigError
 from prismabib.prisma.criteria import resolve_criteria
 from prismabib.prisma.events import Decision, DecisionEvent
@@ -312,15 +313,24 @@ def _passes_subject_areas(attrs: _RecordAttributes, subject_areas: Sequence[str]
         ``True`` if ``subject_areas`` is empty (no restriction), or if
         ``attrs.subject_areas`` is empty (no Layer 1 data to evaluate the
         filter against -- see the module docstring's "no Layer 1 data"
-        latitude note). Otherwise, ``True`` only if the two
-        (case-insensitively compared) code sets intersect.
+        latitude note). Otherwise, ``True`` only if the two sets intersect
+        once both are normalised to ASJC's four-letter groupings.
+
+    Both sides are normalised through :func:`prismabib.asjc.area_abbrev`
+    because they arrive in different forms: Layer 1 stores Scopus's
+    four-digit ``@code`` (``"2202"``), while ``criteria.yaml`` declares the
+    four-letter grouping (``"ENGI"``) that the code's first two digits name.
+    Compared raw, those never intersect -- and the failure inverts the
+    filter rather than weakening it, because a record with *no* subject-area
+    data is kept by the branch above. Every enriched record would be
+    excluded and every un-enriched one kept. See ADR 0017.
     """
     if not subject_areas:
         return True
     if not attrs.subject_areas:
         return True
-    allowed = {code.casefold() for code in subject_areas}
-    return bool({code.casefold() for code in attrs.subject_areas} & allowed)
+    allowed = {area_abbrev(code)[0] for code in subject_areas}
+    return bool({area_abbrev(code)[0] for code in attrs.subject_areas} & allowed)
 
 
 def _passes_language(attrs: _RecordAttributes, languages: Sequence[str]) -> bool:

@@ -733,3 +733,50 @@ def test_automated_set__subject_filter_with_data_present__still_filters(
     automated = engine.automated_set(project)
 
     assert len(automated) == 1
+
+
+#: Records whose stored subject areas are Scopus's four-digit ASJC codes --
+#: what `prismabib enrich` actually writes -- against criteria that declare the
+#: four-letter groupings, which is what `criteria.yaml`'s template teaches.
+#:
+#: The un-enriched record is the important one. `_passes_subject_areas` keeps a
+#: record with no subject-area data, so a broken comparison does not merely
+#: under-match: it *inverts* the filter, excluding everything Scopus classified
+#: and keeping only what it did not. Without record 4 here, a test could not
+#: tell "the mapping works" from "nothing matches and nothing is enriched".
+_ASJC_RECORDS = (
+    RecordSpec(number=1, subject_areas=("2202", "1702")),  # ENGI + COMP -> keep
+    RecordSpec(number=2, subject_areas=("2611",)),  # MATH -> keep
+    RecordSpec(number=3, subject_areas=("2746",)),  # MEDI -> excluded
+    RecordSpec(number=4, subject_areas=()),  # never enriched -> keep
+)
+
+
+@pytest.mark.integration
+def test_automated_set__asjc_codes_against_abbreviation_criteria__matches_by_grouping(
+    tmp_path: Path,
+) -> None:
+    """A stored ASJC code satisfies criteria written as its four-letter grouping.
+
+    Layer 1 holds Scopus's ``@code`` (``"2202"``); ``criteria.yaml`` declares
+    ``ENGI``. Compared without normalising, those never intersect and the
+    filter inverts (ADR 0017). Membership is written out as a literal set
+    rather than recomputed from the specs -- a second implementation of the
+    rules is not an expectation.
+    """
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=list(_ASJC_RECORDS),
+            criteria=CriteriaSpec(subject_areas=("COMP", "ENGI", "MATH", "MULT")),
+        ),
+        slug="asjc",
+    )
+
+    automated = engine.automated_set(project)
+
+    assert automated == {
+        _ASJC_RECORDS[0].record_id,
+        _ASJC_RECORDS[1].record_id,
+        _ASJC_RECORDS[3].record_id,
+    }

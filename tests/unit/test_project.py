@@ -45,3 +45,64 @@ def test_criteria__valid_semantic_version__is_accepted(version: str) -> None:
     validated = Criteria.model_validate(criteria)
 
     assert validated.version == version
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "codes",
+    [
+        pytest.param(["COMPUTER"], id="a-plausible-misspelling"),
+        pytest.param(["COMP", "XXXX"], id="one-good-one-unknown"),
+        pytest.param([" XXXX "], id="unknown-even-after-stripping"),
+    ],
+)
+def test_criteria__an_unknown_subject_area_code__is_refused(codes: list[str]) -> None:
+    """An unknown code is refused rather than matching nothing.
+
+    A code ASJC does not define cannot intersect any record's subject areas,
+    so it would narrow the review to nothing while reading, in the protocol,
+    as a deliberate restriction -- and the flow diagram would report the
+    whole corpus excluded "by subject area" with no error anywhere. §1.4.
+    """
+    criteria = {**_CRITERIA_WITHOUT_VERSION, "version": "1.0.0", "subject_areas": codes}
+
+    with pytest.raises(PydanticValidationError, match="unknown subject-area code"):
+        Criteria.model_validate(criteria)
+
+
+@pytest.mark.unit
+def test_criteria__a_four_digit_asjc_number__is_refused_as_a_silent_widening() -> None:
+    """``1702`` names one category but can only be matched at its grouping.
+
+    Accepting it would silently widen "Artificial Intelligence" to the whole
+    of ``COMP`` -- the opposite error from an unknown code, and equally
+    invisible in the resulting diagram.
+    """
+    criteria = {**_CRITERIA_WITHOUT_VERSION, "version": "1.0.0", "subject_areas": ["1702"]}
+
+    with pytest.raises(PydanticValidationError, match="unknown subject-area code"):
+        Criteria.model_validate(criteria)
+
+
+@pytest.mark.unit
+def test_criteria__the_asjc_groupings__are_accepted() -> None:
+    criteria = {
+        **_CRITERIA_WITHOUT_VERSION,
+        "version": "1.0.0",
+        "subject_areas": ["COMP", "ENGI", "MATH", "MULT"],
+    }
+
+    assert Criteria.model_validate(criteria).subject_areas == ["COMP", "ENGI", "MATH", "MULT"]
+
+
+@pytest.mark.unit
+def test_criteria__surrounding_whitespace_on_a_known_code__is_tolerated() -> None:
+    """``"comp "`` is a known grouping, not an unknown code.
+
+    The value is kept verbatim; only the *check* strips and upper-cases, the
+    same normalisation :func:`prismabib.asjc.area_abbrev` applies when the
+    filter runs, so what validates is exactly what matches.
+    """
+    criteria = {**_CRITERIA_WITHOUT_VERSION, "version": "1.0.0", "subject_areas": ["comp "]}
+
+    assert Criteria.model_validate(criteria).subject_areas == ["comp "]

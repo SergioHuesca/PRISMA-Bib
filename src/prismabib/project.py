@@ -37,6 +37,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
+from prismabib.asjc import KNOWN_ABBREVS
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import ConfigError
 
@@ -118,6 +119,39 @@ class Criteria(BaseModel):
     manual_abstract: ManualScreeningCriteria
     manual_fulltext: ManualScreeningCriteria
 
+    @field_validator("subject_areas")
+    @classmethod
+    def _require_known_subject_areas(cls, value: list[str]) -> list[str]:
+        """Reject a subject-area code ASJC does not define.
+
+        Args:
+            value: The raw ``subject_areas`` list from ``criteria.yaml``.
+
+        Returns:
+            ``value`` unchanged, once every entry is a known grouping.
+
+        Raises:
+            ValueError: If any entry is not one of ASJC's 27 four-letter
+                groupings. An unknown code cannot match any record, so it
+                would silently narrow a review to nothing while looking like
+                a deliberate restriction -- the reviewer would see
+                "by subject area: <everything>" and no error. Pydantic wraps
+                this into a ``ValidationError``.
+        """
+        unknown = sorted({code for code in value if code.strip().upper() not in KNOWN_ABBREVS})
+        if unknown:
+            raise ValueError(
+                f"unknown subject-area code(s): {', '.join(unknown)}. Use ASJC's "
+                f"four-letter groupings: {', '.join(sorted(KNOWN_ABBREVS))}. A code "
+                "this list does not contain matches no record, so it would narrow "
+                "the review to nothing while looking like a deliberate restriction. "
+                "A four-digit ASJC number such as 1702 is refused for the opposite "
+                "reason: it names one category ('Artificial Intelligence') but can "
+                "only be matched at its grouping, so it would silently widen to all "
+                "of COMP -- write the grouping you mean."
+            )
+        return value
+
     @field_validator("version")
     @classmethod
     def _require_semantic_version(cls, value: str) -> str:
@@ -162,13 +196,21 @@ temporal:
   year_start: 1900
   year_end: {year}
 
-# Scopus subject-area codes, e.g. MEDI, COMP, ENGI.
+# Scopus ASJC subject-area groupings, as four-letter codes: COMP, ENGI, MATH,
+# MEDI, MULT, ... An unknown code is refused rather than silently matching
+# nothing.
 #
-# NOT YET ENFORCEABLE: the Scopus Search API view=COMPLETE does not return
-# subject-area codes, so prismabib currently has no data to filter on. Leave this
-# empty and put SUBJAREA(...) in your project.toml query instead, which applies
-# the restriction server-side at search time. Setting it here is refused rather
-# than silently ignored, so that no diagram can claim a filter that never ran.
+# REQUIRES ENRICHMENT. The Search API's view=COMPLETE does not return
+# subject-area codes, so a project that has not run `prismabib enrich` has no
+# data here and this filter cannot exclude anything -- your PRISMA diagram will
+# report "by subject area: 0" whatever you list. Run `prismabib enrich <slug>`
+# (one Abstract Retrieval call per record, against a separate weekly quota)
+# BEFORE screening begins, since it changes which records reach the queue.
+#
+# Filtering here rather than with SUBJAREA(...) in your project.toml query is
+# what makes the exclusion *reportable*: records excluded here are identified,
+# counted, and shown in the flow diagram with their reason. Records excluded by
+# a server-side SUBJAREA never reach you, so they can never be reported.
 subject_areas: []
 
 doc_types:

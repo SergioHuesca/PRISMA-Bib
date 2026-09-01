@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`subject_areas` matched nothing, and would have inverted the filter the moment anyone
+  enriched a corpus.** Scopus returns each subject area as `@code: "2202"` *and*
+  `@abbrev: "ENGI"`; Layer 1 stores `@code`, while `criteria.yaml` teaches — and researchers
+  write — the four-letter form. `{"2202"} & {"engi"}` is empty, so the comparison could never
+  succeed. Because a record with *no* subject-area data passes by design, the result was
+  precisely backwards: every **enriched** record excluded, only records that failed to enrich
+  kept. On a four-record corpus with `[COMP, ENGI, MATH, MULT]`, three were excluded where one
+  should have been.
+
+  Both sides are now normalised to ASJC's four-letter grouping through a new checked-in table,
+  `src/prismabib/asjc.py` (the file [ADR 0011](docs/architecture/adr/0011-abstract-retrieval-for-subject-areas.md)'s
+  design pass called for and that was never written). See
+  [ADR 0017](docs/architecture/adr/0017-subject-areas-match-by-asjc-grouping.md).
+
+  The defect was unreachable until the first enrichment run — `_refuse_unenforceable_subject_filter`
+  raised first — so it would have surfaced the moment the filter was first relied on, not before.
+
+### Added
+
+- **`criteria.yaml` refuses a subject-area code ASJC does not define.** `COMPUTER` matches no
+  record and would narrow a review to nothing while reading as a deliberate restriction;
+  `1702` names one category but can only be matched at its grouping, so it would silently
+  widen to all of `COMP`. Both are refused at load, with the reason, rather than producing a
+  plausible wrong number later.
+
+### Changed
+
+- The `criteria.yaml` template no longer says `subject_areas` is "NOT YET ENFORCEABLE" and no
+  longer recommends server-side `SUBJAREA(...)` instead. It explains that the filter requires
+  `prismabib enrich`, that enrichment must precede screening, and that filtering here rather
+  than in the query is what makes the exclusion **reportable** — a record excluded by a
+  server-side `SUBJAREA` is never identified, so it can never appear in the flow diagram.
+
 ## [0.13.0] — 2026-09-01
 
 ### Added
