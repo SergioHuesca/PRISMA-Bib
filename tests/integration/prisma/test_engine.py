@@ -733,3 +733,108 @@ def test_automated_set__subject_filter_with_data_present__still_filters(
     automated = engine.automated_set(project)
 
     assert len(automated) == 1
+
+
+#: Records whose stored subject areas are Scopus's four-digit ASJC codes --
+#: what `prismabib enrich` actually writes -- against criteria that declare the
+#: four-letter groupings, which is what `criteria.yaml`'s template teaches.
+#:
+#: The un-enriched record is the important one. `_passes_subject_areas` keeps a
+#: record with no subject-area data, so a broken comparison does not merely
+#: under-match: it *inverts* the filter, excluding everything Scopus classified
+#: and keeping only what it did not. Without record 4 here, a test could not
+#: tell "the mapping works" from "nothing matches and nothing is enriched".
+_ASJC_RECORDS = (
+    RecordSpec(number=1, subject_areas=("2202", "1702")),  # ENGI + COMP -> keep
+    RecordSpec(number=2, subject_areas=("2611",)),  # MATH -> keep
+    RecordSpec(number=3, subject_areas=("2746",)),  # MEDI -> excluded
+    RecordSpec(number=4, subject_areas=()),  # never enriched -> keep
+)
+
+
+@pytest.mark.integration
+def test_automated_set__asjc_codes_against_abbreviation_criteria__matches_by_grouping(
+    tmp_path: Path,
+) -> None:
+    """A stored ASJC code satisfies criteria written as its four-letter grouping.
+
+    Layer 1 holds Scopus's ``@code`` (``"2202"``); ``criteria.yaml`` declares
+    ``ENGI``. Compared without normalising, those never intersect and the
+    filter inverts (ADR 0017). Membership is written out as a literal set
+    rather than recomputed from the specs -- a second implementation of the
+    rules is not an expectation.
+    """
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=list(_ASJC_RECORDS),
+            criteria=CriteriaSpec(subject_areas=("COMP", "ENGI", "MATH", "MULT")),
+        ),
+        slug="asjc",
+    )
+
+    automated = engine.automated_set(project)
+
+    assert automated == {
+        _ASJC_RECORDS[0].record_id,
+        _ASJC_RECORDS[1].record_id,
+        _ASJC_RECORDS[3].record_id,
+    }
+
+
+@pytest.mark.integration
+def test_automated_set__every_subject_area_unmappable__is_refused_not_silently_excluded(
+    tmp_path: Path,
+) -> None:
+    """A corpus whose subject-area rows are all unmappable is refused, not emptied.
+
+    The guard used to ask only "does any record carry a row?". A store whose
+    rows are all values :func:`prismabib.asjc.area_abbrev` cannot map satisfies
+    that and then fails every comparison, so the whole corpus is excluded and
+    reported as "by subject area: N" with no error -- the same inversion ADR
+    0017 exists to fix, reached by a different route.
+
+    Both values here are reachable, not hypothetical: ``store/load.py`` falls
+    back to ``item["$"]`` when an entry carries no ``@code``, storing the
+    human-readable name, and ``3701`` is what a 28th ASJC grouping would look
+    like to a table written before it existed.
+    """
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=[
+                RecordSpec(number=1, subject_areas=("Artificial Intelligence",)),
+                RecordSpec(number=2, subject_areas=("3701",)),
+            ],
+            criteria=CriteriaSpec(subject_areas=("COMP", "ENGI")),
+        ),
+        slug="unmappable",
+    )
+
+    with pytest.raises(ConfigError, match="recognises"):
+        engine.automated_set(project)
+
+
+@pytest.mark.integration
+def test_automated_set__some_subject_areas_unmappable__still_filters_on_the_rest(
+    tmp_path: Path,
+) -> None:
+    """One unrecognised code among mappable ones is tolerated, not fatal.
+
+    Refusing here would block a legitimate review over a single unknown code,
+    and sparse subject-area data is exactly what the "no data, so passes"
+    branch is designed to tolerate. The unmapped value is logged rather than
+    raised (``prisma.subject_areas.unmapped``).
+    """
+    mappable = RecordSpec(number=1, subject_areas=("1702",))  # COMP
+    unmappable = RecordSpec(number=2, subject_areas=("3701",))
+    project = build_project(
+        tmp_path,
+        CorpusSpec(
+            records=[mappable, unmappable],
+            criteria=CriteriaSpec(subject_areas=("COMP",)),
+        ),
+        slug="partly-unmappable",
+    )
+
+    assert engine.automated_set(project) == {mappable.record_id}

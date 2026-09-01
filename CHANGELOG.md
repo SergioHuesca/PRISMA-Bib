@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-09-01
+
+### Fixed
+
+- **`subject_areas` matched nothing, and would have inverted the filter the moment anyone
+  enriched a corpus.** Scopus returns each subject area as `@code: "2202"` *and*
+  `@abbrev: "ENGI"`; Layer 1 stores `@code`, while `criteria.yaml` teaches — and researchers
+  write — the four-letter form. `{"2202"} & {"engi"}` is empty, so the comparison could never
+  succeed. Because a record with *no* subject-area data passes by design, the result was
+  precisely backwards: every **enriched** record excluded, only records that failed to enrich
+  kept. On a four-record corpus with `[COMP, ENGI, MATH, MULT]`, three were excluded where one
+  should have been.
+
+  Both sides are now normalised to ASJC's four-letter grouping through a new checked-in table,
+  `src/prismabib/asjc.py`. See
+  [ADR 0017](docs/architecture/adr/0017-subject-areas-match-by-asjc-grouping.md).
+
+  **This does not make `subject_areas` usable.** `prismabib enrich` writes Abstract Retrieval
+  payloads into `raw/abstracts/`, but `store/load.py` excludes that directory by name and reads
+  no abstract payloads, so the filter still has no data and is still refused — ADR 0011 split
+  its work into a Layer 0 PR and a Layer 1 PR, and only the first shipped. This fixes the
+  comparison, which was independently wrong; the Layer 1 loader is separate outstanding work.
+  Running `prismabib enrich` today spends about one quota call per record and changes nothing
+  observable.
+
+- **An unmappable subject-area code no longer excludes a whole corpus in silence.** A store
+  whose rows are all values the ASJC table cannot map — an entry that arrived without `@code`,
+  so the loader stored the human-readable name, or a grouping ASJC adds later — passed the
+  "does any record carry a row?" guard and then failed every comparison: whole corpus excluded,
+  `by subject area: N` on the diagram, no error. The guard now demands a row it can actually
+  use, and unmapped values are logged as `prisma.subject_areas.unmapped`.
+
+- **`replay()` could resolve criteria that were never in force.** `_criteria_at_commit`
+  swallowed a validation failure and walked to an older commit, so if two commits declared the
+  same `version` and the newer one no longer validated, replay silently recomputed the review
+  under the older one. It now raises when the failing commit declares the version being
+  searched for — that tolerance was meant for commits declaring *other* versions.
+
+### Added
+
+- **`criteria.yaml` refuses a subject-area code ASJC does not define.** `COMPUTER` matches no
+  record and would narrow a review to nothing while reading as a deliberate restriction;
+  `1702` names one category but can only be matched at its grouping, so it would silently
+  widen to all of `COMP`. Both are refused at load, with the reason, rather than producing a
+  plausible wrong number later.
+
+### Changed
+
+- The `criteria.yaml` template no longer says `subject_areas` is "NOT YET ENFORCEABLE" and no
+  longer recommends server-side `SUBJAREA(...)` instead. It explains that the filter requires
+  `prismabib enrich`, that enrichment must precede screening, and that filtering here rather
+  than in the query is what makes the exclusion **reportable** — a record excluded by a
+  server-side `SUBJAREA` is never identified, so it can never appear in the flow diagram.
+
 ## [0.13.0] — 2026-09-01
 
 ### Added
