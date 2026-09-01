@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A store built before v0.15.0 crashed with a raw DuckDB `CatalogException`.** v0.15.0
+  added two tables, and `schema.sql` is applied once at creation rather than migrated, so
+  every existing store was missing them — `prismabib flow` on any pre-v0.15.0 project died
+  with `Table with name record_subject_area_coverage does not exist! Did you mean
+  "record_authors"?`, an internal error shown to a researcher who did nothing wrong and had
+  no way to read it as "rebuild your store".
+
+  A read-only `connect()` now names the missing tables and says exactly what to run, and that
+  rebuilding re-fetches nothing and spends no API quota. A database missing *every* table was
+  never a Layer 1 store at all and still gets the existing, better "does not look like a
+  Layer 1 store" message. Regression introduced in v0.15.0 and found by running the released
+  build against a real project.
+
 ## [0.15.0] — 2026-09-01
 
 ### Added
