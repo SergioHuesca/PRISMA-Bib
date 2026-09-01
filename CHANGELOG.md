@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`prismabib enrich <slug>`** — the CLI command for Scopus Abstract Retrieval. The
+  enrichment has shipped since v0.8.0 (ADR 0011) and was reachable only from Python, so a
+  researcher whose `criteria.yaml` restricts `subject_areas` met a documented feature they
+  could not invoke. `--budget` spends a known slice of a weekly quota; the run is resumable.
+
+### Fixed
+
+- **An unentitled key is refused with HTTP 404 on Abstract Retrieval, not 403 — and the
+  entitlement probe only watched for 403.** Measured against a real key on 2026-09-01:
+  Scopus answered a Search `view=COMPLETE` query with 1,662 results and then returned 404
+  for a record that same response had just supplied. Every request 404s, so the probe never
+  fired and each one was recorded as a withdrawn record.
+
+  On the corpus this was found with, `prismabib enrich` would have spent all 1,864 calls of
+  the weekly quota, sealed the run successfully, loaded zero subject areas, and left a
+  manifest asserting that every record in a live corpus had been withdrawn from Scopus.
+  Recording a falsehood about the corpus is worse than failing.
+
+  A run that has never once succeeded now stops after
+  `CONSECUTIVE_NOT_FOUND_LIMIT` consecutive 404s, writes nothing, seals nothing, and raises
+  an error naming both possible causes — a 404 alone cannot distinguish them — with the
+  one-step way to tell them apart: request a record id straight out of a fresh
+  `prismabib search` result. A handful of genuinely withdrawn records still completes the
+  run, which the control test pins.
+
 ## [0.11.0] — 2026-09-01
 
 ### Added

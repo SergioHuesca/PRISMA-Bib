@@ -46,7 +46,8 @@ import typer
 from structlog.typing import EventDict, WrappedLogger
 
 from prismabib import __version__
-from prismabib.capture.manifest import RunManifest
+from prismabib.capture.enrich import capture_abstracts
+from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import PrismabibError
@@ -531,6 +532,66 @@ def flow(
         counts = compute_flow_counts(project)
         _print_flow(counts, slug=slug)
         _warn_if_inconsistent(counts)
+
+
+@app.command()
+def enrich(
+    slug: Annotated[str, typer.Argument(help="Project slug to enrich.")],
+    budget: Annotated[
+        int | None,
+        typer.Option(
+            "--budget",
+            help="Stop after this many records (a multiple of 100; see below).",
+        ),
+    ] = None,
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Fetch subject areas from Scopus Abstract Retrieval into Layer 0.
+
+    Only needed when ``criteria.yaml`` restricts ``subject_areas``. The Search
+    API's ``view=COMPLETE`` -- the only call ``prismabib search`` makes -- does
+    not return subject-area codes, so that restriction cannot be applied to a
+    corpus captured by search alone. The engine refuses to run rather than
+    silently pass every record (ADR 0011); this command is what makes it
+    enforceable.
+
+    **This is a different Scopus entitlement from Search ``view=COMPLETE``, and
+    a key entitled for one is commonly not entitled for the other.** The first
+    record is fetched as a probe, so an unentitled key costs one call rather
+    than one per record.
+
+    Costs one call per record against your weekly quota. ``--budget`` spends a
+    known slice; pass a multiple of 100, because only completed batches are
+    durable and a remainder below a batch boundary is fetched, discarded, and
+    requested again next time.
+
+    Resumable: a run interrupted part-way is continued by re-running this
+    command, and already-fetched records are not re-paid for.
+    """
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        manifest = capture_abstracts(project, budget=budget)
+        _print_abstract_manifest(manifest, slug=slug)
+
+
+def _print_abstract_manifest(manifest: AbstractRunManifest, *, slug: str) -> None:
+    """Render an Abstract Retrieval run.
+
+    Args:
+        manifest: The run's manifest.
+        slug: The project slug, for the heading.
+    """
+    _echo(f"\nEnriched {slug}")
+    _echo(f"  run id                  {manifest.run_id:>26}")
+    _echo(f"  records requested       {manifest.records_requested:>26,}")
+    _echo(f"  records fetched         {manifest.records_fetched:>26,}")
+    if manifest.records_fetched < manifest.records_requested:
+        _echo(
+            "\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib "
+            "enrich`\n  to continue; fetched records are not re-paid for."
+        )
+    else:
+        _echo("\n  Run sealed. Re-run `prismabib build` to load the subject areas.")
 
 
 @app.command()

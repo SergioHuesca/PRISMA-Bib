@@ -37,7 +37,12 @@ import respx
 
 from prismabib import __version__ as CLIENT_VERSION
 from prismabib.capture import enrich
-from prismabib.capture.enrich import BATCH_SIZE, PROGRESS_FILENAME, capture_abstracts
+from prismabib.capture.enrich import (
+    BATCH_SIZE,
+    CONSECUTIVE_NOT_FOUND_LIMIT,
+    PROGRESS_FILENAME,
+    capture_abstracts,
+)
 from prismabib.capture.layout import ABSTRACTS_DIRNAME, CACHE_DIRNAME, SealedRunError
 from prismabib.capture.manifest import AbstractUnavailable
 from prismabib.capture.writer import _find_resumable_run, capture_search
@@ -854,3 +859,78 @@ def test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothin
     assert second_route.call_count == _CORPUS_SIZE - BATCH_SIZE
     assert manifest.records_fetched == _CORPUS_SIZE
     assert (_sole_run_dir(project) / "manifest.json").is_file()
+
+
+@pytest.mark.integration
+def test_capture_abstracts__every_request_404s__stops_instead_of_spending_the_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unentitled key is refused with 404 here, not 403 -- measured, not assumed.
+
+    Found on 2026-09-01 by probing a real key: Scopus answered a Search
+    ``view=COMPLETE`` query with 1,662 results and then returned **404** for a
+    record that same response had just supplied. Elsevier signals "not entitled
+    to this endpoint" that way, so the 403 probe never fires.
+
+    Before this breaker the run treated each 404 as a withdrawn record and
+    carried on: it would have spent the whole weekly quota, sealed
+    successfully, loaded zero subject areas, and left a manifest asserting that
+    every record in a live corpus had been withdrawn from Scopus. Recording a
+    falsehood about the corpus is worse than failing.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+
+    def always_404(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"})
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=always_404)
+        with pytest.raises(EntitlementError) as excinfo:
+            capture_abstracts(project, record_ids=records)
+
+    message = str(excinfo.value)
+    assert "Abstract Retrieval entitlement" in message
+    assert "SCOPUS_INSTTOKEN" in message
+    assert "no manifest now claims your" in message
+    # Stopped early: the breaker's limit, not the corpus size.
+    assert route.call_count == CONSECUTIVE_NOT_FOUND_LIMIT
+    assert route.call_count < _CORPUS_SIZE
+    # Nothing sealed, so no run asserts the corpus was withdrawn.
+    root = project.raw_dir / ABSTRACTS_DIRNAME
+    assert not root.exists() or not any(
+        (entry / "manifest.json").exists() for entry in root.iterdir() if entry.is_dir()
+    )
+
+
+@pytest.mark.integration
+def test_capture_abstracts__a_few_withdrawn_records__still_completes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: genuinely withdrawn records must not trip the breaker.
+
+    Scopus really does withdraw and merge records -- the first attempt of the
+    investigation above hit one -- so a handful of 404s is ordinary and the run
+    has to finish, recording them as unavailable. Without this test the breaker
+    could be tightened to 1 and everything above would still pass, turning a
+    normal corpus into an unrunnable one.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+    withdrawn = set(records[:3])
+
+    def mostly_ok(request: httpx.Request) -> httpx.Response:
+        scopus_id = _scopus_id_of(request)
+        if any(scopus_id in record for record in withdrawn):
+            return httpx.Response(404, json={"error": "not found"})
+        return httpx.Response(200, json=_abstract_body(scopus_id))
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=mostly_ok)
+        manifest = capture_abstracts(project, record_ids=records)
+
+    assert route.call_count == _CORPUS_SIZE
+    assert manifest.records_fetched == _CORPUS_SIZE - len(withdrawn)
+    assert sorted(u.reason for u in manifest.unavailable) == ["not_found"] * len(withdrawn)
