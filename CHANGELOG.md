@@ -5,7 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] — 2026-09-01
+
+### Added
+
+- **Stage 10: export and reporting — a researcher can now complete a review.** Capture,
+  build, screen, `prismabib export`, `prismabib fill`. This is the release the amended
+  plan moved ahead of Stages 6–9 to reach ([ADR 0015](docs/architecture/adr/0015-stage-order-and-stage-10-scope.md)),
+  because a PRISMA review is complete without full-text resolution, bibliometrics or a
+  taxonomy, and is not complete without something citable to show for the screening.
+- **`prismabib export <slug>`** writes `exports/`: the PRISMA 2020 diagram with its source
+  CSV beside it, four tables as CSV/Markdown/LaTeX `booktabs`, `numbers.json` and
+  `manifest.json`.
+- **`numbers.json`, the anti-drift mechanism.** A manuscript never contains a literal
+  count; it contains `{{flow.included}}`, substituted at build time. Every value is a JSON
+  scalar — a list has no sensible rendering inside a sentence — and the key set is
+  snapshotted, so adding or removing a key is a reviewable diff rather than a surprise.
+- **`prismabib fill`** substitutes those placeholders and **exits non-zero in both
+  directions**: on a key the manuscript cites and `numbers.json` does not define, *and* on
+  a key `numbers.json` defines that the manuscript never cites. The second is the drift
+  nobody notices — a number that stopped being cited, whose claim may have been edited away
+  with it. Placeholders inside fenced code blocks are left alone.
+- **`manifest.json` records the git commit of prismabib itself**, not the project
+  directory, because that is what makes a number traceable to a published state of the
+  code (BUILD_PLAN line 450). A dirty tree sets `dirty: true` and warns; a commit on no
+  remote branch sets `commit_is_pushed: false` and warns separately, since `dirty` does not
+  cover it and an unfetchable SHA is just as untraceable.
+- **The PRISMA diagram is hand-written SVG, not a plotting library.** Rasterised output
+  embeds font metrics and library versions, so the same counts render to different bytes on
+  a different machine — which Stage 11's "clean clone on a different machine" criterion
+  would then have to exclude. Text SVG with explicit geometry has no such dependency.
+- **`Project.title`**, read from `project.toml`. Written since Stage 1 and never read: a
+  PRISMA diagram captioned with a slug is not something a manuscript can carry.
+- **The `gates` CI job**, enforcing the per-module coverage floors of BUILD_PLAN §3.7.6.
+  `[tool.prismabib.coverage_gates]` has declared them since Stage 2 while nothing enforced
+  them — only the global `fail_under = 85` ran, so a module could sit far below its own
+  stated floor with CI green. Every declared gate passes today; the job is non-required
+  initially, on the `e2e` precedent.
+
+### Fixed
+
+- **`venues.total` counted venue *rows*, not venues.** The store writes one `venues` row
+  per record, so the reference corpus reported **120 venues** for a corpus published across
+  **22** — a plausible wrong number, sitting beside a `venues.top1.count` of 96, and frozen
+  into a golden as ground truth. It counts `DISTINCT name` now.
+- **`numbers.json` and the top-venues table used two different definitions of "a venue"** —
+  `name` versus `(name, venue_type)` — so a venue Scopus indexes under two aggregation
+  types appeared as one venue in the prose and two rows in the table beside it. Both group
+  on `name`; the table reports `mixed` when Scopus disagrees with itself, and
+  `tests/integration/report/test_bundle_consistency.py` now compares the two paths.
+- **`prismabib fill` escapes LaTeX specials in string values for a `.tex` manuscript.**
+  `numbers.json` carries venue names, and "Robotics & Automation" substituted raw aborts
+  `pdflatex` at the citing sentence. `tables.py` had escaped its generated tables from the
+  start, so one export could produce a table that compiled beside a sentence that did not.
+  The escaping is imported from `tables.py` rather than reimplemented.
+- **`numbers.json` that is not a JSON object is rejected readably.** A bare number raised
+  `TypeError: argument of type 'int' is not iterable`; a bare *string* was worse, since
+  iterating it yields characters and `fill` reported single letters as unused keys while
+  appearing to work.
+- **The CLI export summary printed `None` instead of `(none)`** for a missing commit:
+  `str(None)` is truthy, so the fallback was dead in exactly the case it existed for.
+
+### Changed
+
+- **`FlowCounts.assert_consistent` is now visible to mutation testing.** Its equations moved
+  to a module-level function, because mutmut does not mutate the body of a decorated class
+  and `FlowCounts` is a `@dataclass(frozen=True)` — so the check that decides whether a
+  published diagram adds up generated **zero** mutants while showing 100% line and branch
+  coverage. It now generates 51, of which 33 die; the 18 survivors are all string labels in
+  the error message. Done before the export contract froze around `FlowCounts`, which is
+  when it stops being a one-class change (raised as part of #23).
+
 
 ### Fixed
 
@@ -604,7 +674,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.7.0...v0.8.0

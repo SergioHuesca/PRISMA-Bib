@@ -103,118 +103,136 @@ class FlowCounts:
     def assert_consistent(self) -> None:
         """Verify every PRISMA-flow count is a cardinality and every identity closes.
 
-        First, every count must be non-negative -- every integer field and
-        every value of ``excluded_fulltext``. This precondition is checked
-        **before** the equations, and it is not redundant with them: each
-        equation is an equality between two sums, and a *pair* of errors
-        that cancel satisfies it. Concretely, ``unsure_title_abstract`` and
-        ``unsure_fulltext`` are computed by
-        :func:`compute_flow_counts` as the remainders of their partitions
-        (ADR 0007), so an over-count anywhere else in the partition drives
-        the remainder below zero and equation 3 or 4 still closes exactly.
-        A negative count is not a diagram that adds up; it is a diagram
-        whose error has been absorbed. That is also the state a
-        ``FlowCounts`` assembled by hand, mutated, or deserialised can
-        arrive in, which ADR 0007 names as the population these checks stay
-        load-bearing for.
-
-        Then four equations, each checked independently so a failure names
-        exactly which step of the diagram does not add up:
-
-        1. ``identified - duplicates_across_searches - removed_other_reasons
-           - excluded_automated == after_automated``
-        2. ``after_automated - excluded_language == after_language``
-        3. ``after_language == excluded_title_abstract +
-           unsure_title_abstract + retrieved_fulltext``
-        4. ``retrieved_fulltext == sum(excluded_fulltext.values()) +
-           unsure_fulltext + included``
+        Delegates to :func:`_assert_flow_counts_consistent`, which holds every
+        equation. That indirection exists for one reason: mutmut does not
+        mutate the body of a decorated class, and ``FlowCounts`` is a
+        ``@dataclass(frozen=True)``. Written inline, the ~51 mutants of the
+        four PRISMA identities were never generated -- the check that decides
+        whether a published diagram adds up had 100% line and branch coverage
+        and no mutation testing at all, which is precisely the combination
+        BUILD_PLAN §3.7.6 warns proves nothing.
 
         Raises:
-            ValidationError: On the *first* negative count (in field
-                order, ``excluded_fulltext``'s entries last and in sorted
-                reason-code order), naming the field and its value; or,
-                failing that, on the first equation (in the order above)
-                that does not hold, naming that equation verbatim, both
-                sides' actual values, and the signed difference between
-                them ("off by ...") -- "inconsistent" alone tells a reader
-                nothing actionable; this is meant to point them straight
-                at which stage's bookkeeping is wrong.
+            ValidationError: Naming the first count or identity that fails.
         """
-        # Every integer field, in declaration order, then every
-        # `excluded_fulltext` entry. Written out rather than reflected over
-        # `dataclasses.fields` so the check reads as a checklist a reviewer
-        # can compare against the class above; a field added there without a
-        # line here is a gap, and the class is frozen by BUILD_PLAN plus one
-        # ADR, so it does not move often.
-        counts: tuple[tuple[str, int], ...] = (
-            ("identified", self.identified),
-            ("duplicates_across_searches", self.duplicates_across_searches),
-            ("removed_other_reasons", self.removed_other_reasons),
-            ("excluded_automated", self.excluded_automated),
-            ("after_automated", self.after_automated),
-            ("excluded_language", self.excluded_language),
-            ("after_language", self.after_language),
-            ("excluded_title_abstract", self.excluded_title_abstract),
-            ("unsure_title_abstract", self.unsure_title_abstract),
-            ("retrieved_fulltext", self.retrieved_fulltext),
-            ("unsure_fulltext", self.unsure_fulltext),
-            ("included", self.included),
-            *(
-                (f"excluded_fulltext[{reason!r}]", count)
-                for reason, count in sorted(self.excluded_fulltext.items())
-            ),
-        )
-        for field_name, count in counts:
-            if count < 0:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise ValidationError(
-                    f"FlowCounts is inconsistent: {field_name} is negative: {count} -- "
-                    "every flow count is a number of records, so it cannot be below "
-                    "zero. The equations below cannot catch this on their own: an "
-                    "equality between two sums closes over a negative term exactly as "
-                    "happily as a positive one"
-                )
-                # pragma: no mutate end
+        _assert_flow_counts_consistent(self)
 
-        equations = (
+
+def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
+    """Verify every PRISMA-flow count is a cardinality and every identity closes.
+
+    First, every count must be non-negative -- every integer field and
+    every value of ``excluded_fulltext``. This precondition is checked
+    **before** the equations, and it is not redundant with them: each
+    equation is an equality between two sums, and a *pair* of errors
+    that cancel satisfies it. Concretely, ``unsure_title_abstract`` and
+    ``unsure_fulltext`` are computed by
+    :func:`compute_flow_counts` as the remainders of their partitions
+    (ADR 0007), so an over-count anywhere else in the partition drives
+    the remainder below zero and equation 3 or 4 still closes exactly.
+    A negative count is not a diagram that adds up; it is a diagram
+    whose error has been absorbed. That is also the state a
+    ``FlowCounts`` assembled by hand, mutated, or deserialised can
+    arrive in, which ADR 0007 names as the population these checks stay
+    load-bearing for.
+
+    Then four equations, each checked independently so a failure names
+    exactly which step of the diagram does not add up:
+
+    1. ``identified - duplicates_across_searches - removed_other_reasons
+       - excluded_automated == after_automated``
+    2. ``after_automated - excluded_language == after_language``
+    3. ``after_language == excluded_title_abstract +
+       unsure_title_abstract + retrieved_fulltext``
+    4. ``retrieved_fulltext == sum(excluded_fulltext.values()) +
+       unsure_fulltext + included``
+
+    Raises:
+        ValidationError: On the *first* negative count (in field
+            order, ``excluded_fulltext``'s entries last and in sorted
+            reason-code order), naming the field and its value; or,
+            failing that, on the first equation (in the order above)
+            that does not hold, naming that equation verbatim, both
+            sides' actual values, and the signed difference between
+            them ("off by ...") -- "inconsistent" alone tells a reader
+            nothing actionable; this is meant to point them straight
+            at which stage's bookkeeping is wrong.
+    """
+    # Every integer field, in declaration order, then every
+    # `excluded_fulltext` entry. Written out rather than reflected over
+    # `dataclasses.fields` so the check reads as a checklist a reviewer
+    # can compare against the class above; a field added there without a
+    # line here is a gap, and the class is frozen by BUILD_PLAN plus one
+    # ADR, so it does not move often.
+    counts: tuple[tuple[str, int], ...] = (
+        ("identified", flow.identified),
+        ("duplicates_across_searches", flow.duplicates_across_searches),
+        ("removed_other_reasons", flow.removed_other_reasons),
+        ("excluded_automated", flow.excluded_automated),
+        ("after_automated", flow.after_automated),
+        ("excluded_language", flow.excluded_language),
+        ("after_language", flow.after_language),
+        ("excluded_title_abstract", flow.excluded_title_abstract),
+        ("unsure_title_abstract", flow.unsure_title_abstract),
+        ("retrieved_fulltext", flow.retrieved_fulltext),
+        ("unsure_fulltext", flow.unsure_fulltext),
+        ("included", flow.included),
+        *(
+            (f"excluded_fulltext[{reason!r}]", count)
+            for reason, count in sorted(flow.excluded_fulltext.items())
+        ),
+    )
+    for field_name, count in counts:
+        if count < 0:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+            raise ValidationError(
+                f"FlowCounts is inconsistent: {field_name} is negative: {count} -- "
+                "every flow count is a number of records, so it cannot be below "
+                "zero. The equations below cannot catch this on their own: an "
+                "equality between two sums closes over a negative term exactly as "
+                "happily as a positive one"
+            )
+            # pragma: no mutate end
+
+    equations = (
+        (
             (
-                (
-                    "identified - duplicates_across_searches - removed_other_reasons "
-                    "- excluded_automated == after_automated"
-                ),
-                self.identified
-                - self.duplicates_across_searches
-                - self.removed_other_reasons
-                - self.excluded_automated,
-                self.after_automated,
+                "identified - duplicates_across_searches - removed_other_reasons "
+                "- excluded_automated == after_automated"
             ),
+            flow.identified
+            - flow.duplicates_across_searches
+            - flow.removed_other_reasons
+            - flow.excluded_automated,
+            flow.after_automated,
+        ),
+        (
+            "after_automated - excluded_language == after_language",
+            flow.after_automated - flow.excluded_language,
+            flow.after_language,
+        ),
+        (
             (
-                "after_automated - excluded_language == after_language",
-                self.after_automated - self.excluded_language,
-                self.after_language,
+                "after_language == excluded_title_abstract + unsure_title_abstract "
+                "+ retrieved_fulltext"
             ),
-            (
-                (
-                    "after_language == excluded_title_abstract + unsure_title_abstract "
-                    "+ retrieved_fulltext"
-                ),
-                self.after_language,
-                self.excluded_title_abstract + self.unsure_title_abstract + self.retrieved_fulltext,
-            ),
-            (
-                "retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included",
-                self.retrieved_fulltext,
-                sum(self.excluded_fulltext.values()) + self.unsure_fulltext + self.included,
-            ),
-        )
-        for equation, left, right in equations:
-            if left != right:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise ValidationError(
-                    f"FlowCounts is inconsistent: {equation!r} does not hold: "
-                    f"{left} != {right} (off by {left - right})"
-                )
-                # pragma: no mutate end
+            flow.after_language,
+            flow.excluded_title_abstract + flow.unsure_title_abstract + flow.retrieved_fulltext,
+        ),
+        (
+            "retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included",
+            flow.retrieved_fulltext,
+            sum(flow.excluded_fulltext.values()) + flow.unsure_fulltext + flow.included,
+        ),
+    )
+    for equation, left, right in equations:
+        if left != right:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+            raise ValidationError(
+                f"FlowCounts is inconsistent: {equation!r} does not hold: "
+                f"{left} != {right} (off by {left - right})"
+            )
+            # pragma: no mutate end
 
 
 def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:

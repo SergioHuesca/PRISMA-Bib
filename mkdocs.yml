@@ -99,6 +99,7 @@ nav:
           - "ADR 0012: A skipped Layer 0 entry is a row in Layer 1": architecture/adr/0012-persisting-skipped-layer0-entries.md
           - "ADR 0013: identified sums total_results across distinct searches": architecture/adr/0013-identified-sums-across-searches.md
           - "ADR 0014: the mutation gate excludes diagnostic message bodies": architecture/adr/0014-mutation-gate-excludes-diagnostic-prose.md
+          - "ADR 0015: stage order and Stage 10 scope": architecture/adr/0015-stage-order-and-stage-10-scope.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

@@ -28,9 +28,9 @@ from prismabib.prisma.flow import FlowCounts
 runner = CliRunner()
 
 #: The four subcommands Stage 11 line 1455 names *and* that have a tested
-#: library function behind them today. `code` and `export` are named there too
+#: library function behind them today. `code` are named there too
 #: and are deliberately not implemented (see the cli.py module docstring).
-_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow"}
+_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "export", "fill"}
 
 
 def _counts(**overrides: object) -> FlowCounts:
@@ -68,8 +68,16 @@ def test_cli__help__lists_every_implemented_command() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("unbuilt", ["code", "export"])
+@pytest.mark.parametrize("unbuilt", ["code"])
 def test_cli__unbuilt_stage_command__is_absent_rather_than_a_stub(unbuilt: str) -> None:
+    """A command whose backing stage does not exist must not exist either.
+
+    ``export`` left this list at Stage 10, which is the point of the test:
+    a command graduates by being implemented, never by being stubbed. ``code``
+    waits for the taxonomy engine (Stage 8) -- "No such command" is honest,
+    while a stub that accepts arguments and does nothing is indistinguishable
+    from a working one until a researcher trusts its output.
+    """
     result = runner.invoke(app, [unbuilt, "demo"])
 
     assert result.exit_code != 0

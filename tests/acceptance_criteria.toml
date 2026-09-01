@@ -67,3 +67,16 @@ S05-AC1 = "Rendering `screener(...)` in a notebook cell produces a working inter
 S05-AC2 = "Deciding 20 records, restarting the kernel, and re-opening resumes at record 21."
 S05-AC3 = "Every decision appears in `decisions.jsonl` within 100 ms."
 S05-AC4 = "Keyboard bindings work without the mouse entering the widget."
+
+# --- Stage 10 -- Reporting and export (BUILD_PLAN.md lines 1400-1430) ------
+#
+# Scoped by ADR 0015: BUILD_PLAN's Stage 10 also lists a taxonomy distribution,
+# a dataset/benchmark usage table and a research-gap table, which read Stage 8
+# and Stage 9 output that does not exist -- the amended plan moved this stage
+# ahead of 6-9 deliberately. All four acceptance criteria below are reachable
+# without them, which is what made the move safe.
+
+S10-AC1 = "Every exported figure has its source CSV beside it."
+S10-AC2 = "`manifest.json` includes the git commit SHA; exporting from a dirty working tree emits a loud warning and marks `dirty: true`."
+S10-AC3 = "`prismabib fill` on a manuscript containing an undefined key exits non-zero."
+S10-AC4 = "The generated PRISMA diagram's numbers equal `FlowCounts` by test assertion."
