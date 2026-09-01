@@ -15,7 +15,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from prismabib.prisma.flow import compute_flow_counts
+from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.report.flow_diagram import flow_diagram_svg
 from tests.prisma_helpers import CorpusSpec, CriteriaSpec, RecordSpec, build_project
 
@@ -46,64 +46,133 @@ def box_text(svg: str, box_id: str) -> str:
     raise AssertionError(f"no box with id {box_id!r} on the diagram")
 
 
-#: For each ``FlowCounts`` field: the box it belongs in, and the label that
-#: introduces it there. Both halves are needed, and the label is the half a
-#: first draft lacked.
+#: Counts in which **no value can stand in for any other**: all fourteen are
+#: pairwise distinct, and all four PRISMA identities close (asserted below, so
+#: this is a fixture and not a fiction).
 #:
-#: Asserting only "the value appears in the right box" is not enough when a box
-#: carries two counts. Verified by injection: with ``included`` rendered as
-#: ``included + 1``, a bare search still passed, because the same box shows
-#: ``unsure at full text: 0`` and the expected ``0`` was found there. Anchoring
-#: to the label is what makes the assertion about *this* number.
+#: This constant is the whole repair. The previous fixture was nine unscreened
+#: records, which produces nine counts of ``0`` and four of ``9`` -- so every
+#: count was interchangeable with several others, and a renderer that showed
+#: ``unsure_fulltext`` under the ``included`` label passed the entire suite of
+#: 741 tests. The published diagram then reads "Studies included in review
+#: (n = 2)" for a review that included 5, which is BUILD_PLAN §1.4 exactly.
+#:
+#: Magnitude errors (a count rendered off by one) were already caught; what a
+#: degenerate fixture cannot catch is an *identity* error, and identity is what
+#: S10-AC4 is actually about.
+DISTINCT_COUNTS = FlowCounts(
+    identified=141,
+    duplicates_across_searches=5,
+    removed_other_reasons=8,
+    excluded_automated=21,
+    after_automated=107,
+    excluded_language=13,
+    after_language=94,
+    excluded_title_abstract=11,
+    unsure_title_abstract=60,
+    retrieved_fulltext=23,
+    excluded_fulltext={"INACCESSIBLE": 3, "NOT_PRIMARY_RESEARCH": 7},
+    unsure_fulltext=4,
+    included=9,
+)
+
+#: For each ``FlowCounts`` field: the box it belongs in, and the label that
+#: introduces it there.
+#:
+#: Every pattern terminates the number -- with ``\)`` or an explicit ``(?!\d)``.
+#: Without that, ``r"unsure: 9"`` matches the rendered text ``unsure: 90``, so a
+#: ten-fold error passed this test; verified by injection.
 FIELD_TO_LABEL = {
     "identified": ("identification", r"identified from Scopus \(n = {value}\)"),
     "duplicates_across_searches": (
         "removed-before-screening",
-        r"duplicates across searches: {value}",
+        r"duplicates across searches: {value}(?!\d)",
     ),
-    "removed_other_reasons": ("removed-before-screening", r"other reasons: {value}"),
-    "excluded_automated": ("after-automated", r"year/subject/doc-type: {value}"),
+    "removed_other_reasons": ("removed-before-screening", r"other reasons: {value}(?!\d)"),
+    "excluded_automated": ("after-automated", r"year/subject/doc-type: {value}(?!\d)"),
     "after_automated": ("after-automated", r"after automated filters \(n = {value}\)"),
-    "excluded_language": ("after-language", r"excluded by language: {value}"),
+    "excluded_language": ("after-language", r"excluded by language: {value}(?!\d)"),
     "after_language": ("after-language", r"Records screened \(n = {value}\)"),
-    "excluded_title_abstract": ("title-abstract", r"excluded at title/abstract: {value}"),
-    "unsure_title_abstract": ("title-abstract", r"unsure: {value}"),
+    "excluded_title_abstract": (
+        "title-abstract",
+        r"excluded at title/abstract: {value}(?!\d)",
+    ),
+    "unsure_title_abstract": ("title-abstract", r"unsure: {value}(?!\d)"),
     "retrieved_fulltext": ("title-abstract", r"sought for retrieval \(n = {value}\)"),
-    "unsure_fulltext": ("fulltext", r"unsure at full text: {value}"),
+    "unsure_fulltext": ("fulltext", r"unsure at full text: {value}(?!\d)"),
     "included": ("fulltext", r"included in review \(n = {value}\)"),
 }
 
 
 @pytest.mark.integration
 @pytest.mark.acceptance("S10-AC4")
-def test_flow_diagram__generated_numbers__equal_flowcounts(tmp_path: Path) -> None:
-    """Every integer field is rendered, under its own label, with its exact value.
+def test_flow_diagram__generated_numbers__equal_flowcounts() -> None:
+    """Every count is rendered, in its own box, under its own label, exactly.
 
     Driven from ``dataclasses.fields`` so a count added to ``FlowCounts`` is
     automatically required to reach the diagram, and cross-checked against
-    :data:`FIELD_TO_LABEL` so a field that is added and *not* placed fails
-    here rather than being silently omitted.
+    :data:`FIELD_TO_LABEL` so a field added and *not* placed fails here.
+
+    Uses :data:`DISTINCT_COUNTS` rather than a built project: with pairwise
+    distinct values, a renderer that puts the right *kind* of number in the
+    wrong box fails, which a fixture full of zeros cannot detect. The
+    integration path -- that these counts come from a real store and log -- is
+    covered by ``test_flow_diagram__real_project__renders_its_own_counts``.
+    """
+    DISTINCT_COUNTS.assert_consistent()
+
+    svg = flow_diagram_svg(DISTINCT_COUNTS, title="A Review")
+
+    integer_fields = {
+        field.name
+        for field in dataclasses.fields(DISTINCT_COUNTS)
+        if isinstance(getattr(DISTINCT_COUNTS, field.name), int)
+    }
+    assert integer_fields == set(FIELD_TO_LABEL), "a FlowCounts field has no label on the diagram"
+
+    for field_name, (box_id, template) in FIELD_TO_LABEL.items():
+        value = getattr(DISTINCT_COUNTS, field_name)
+        text = box_text(svg, box_id)
+        assert re.search(template.format(value=value), text), (
+            f"{field_name}={value} is not shown under its label in the {box_id!r} box; "
+            f"it reads {text!r}"
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S10-AC4")
+def test_flow_diagram__fulltext_exclusion_reasons__are_rendered_with_their_counts() -> None:
+    """PRISMA 2020 requires full-text exclusions reported *with reasons*.
+
+    ``excluded_fulltext`` is a mapping, so the ``isinstance(..., int)`` filter
+    above skips it -- and it was skipped everywhere else too: the ordering test
+    checks only ordering, and the export CSV check skips these rows outright.
+    A renderer emitting ``n + 1`` for every reason therefore published wrong
+    exclusion counts with the whole suite green.
+    """
+    svg = flow_diagram_svg(DISTINCT_COUNTS, title="A Review")
+
+    text = box_text(svg, "fulltext")
+    for code, count in DISTINCT_COUNTS.excluded_fulltext.items():
+        assert re.search(rf"{re.escape(code)}: {count}(?!\d)", text), (
+            f"{code}={count} is not shown with its count; the box reads {text!r}"
+        )
+
+
+@pytest.mark.integration
+def test_flow_diagram__real_project__renders_its_own_counts(tmp_path: Path) -> None:
+    """The wiring: counts drawn on the diagram come from a real store and log.
+
+    :data:`DISTINCT_COUNTS` proves the renderer places numbers correctly; this
+    proves the numbers it is handed are the project's own.
     """
     project = build_project(tmp_path, CORPUS, slug="diagram")
     counts = compute_flow_counts(project)
 
     svg = flow_diagram_svg(counts, title="A Review")
 
-    integer_fields = {
-        field.name
-        for field in dataclasses.fields(counts)
-        if isinstance(getattr(counts, field.name), int)
-    }
-    assert integer_fields == set(FIELD_TO_LABEL), "a FlowCounts field has no label on the diagram"
-
-    for field_name, (box_id, template) in FIELD_TO_LABEL.items():
-        value = getattr(counts, field_name)
-        text = box_text(svg, box_id)
-        pattern = template.format(value=value)
-        assert re.search(pattern, text), (
-            f"{field_name}={value} is not shown under its label in the {box_id!r} box; "
-            f"it reads {text!r}"
-        )
+    assert re.search(rf"identified from Scopus \(n = {counts.identified}\)", svg)
+    assert re.search(rf"Records screened \(n = {counts.after_language}\)", svg)
 
 
 @pytest.mark.integration

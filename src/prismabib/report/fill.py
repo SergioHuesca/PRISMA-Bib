@@ -13,10 +13,17 @@ matter, and the second is the one people are tempted to drop:
   once load-bearing has been edited out of the prose, and nobody noticed that
   the claim it supported went with it.
 
-Placeholders inside fenced or indented code blocks are left alone. A methods
-paper documents its own substitution syntax -- ``Cite a count as
+Placeholders inside **fenced** code blocks (``` or ~~~) are left alone. A
+methods paper documents its own substitution syntax -- ``Cite a count as
 {{flow.included}}`` inside a fence is documentation, not a citation -- and
 substituting there would corrupt the example while satisfying every check.
+
+**Indented code blocks are not detected**, and a placeholder in one *is*
+substituted. Four-space indentation is ambiguous in a manuscript -- it is also
+a list continuation, a quotation, and in LaTeX nothing at all -- so treating it
+as code would silently skip substitutions an author intended. Fence your
+examples. This paragraph exists because an earlier version of it claimed
+indented blocks were skipped, which was never implemented.
 """
 
 from __future__ import annotations
@@ -24,7 +31,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from prismabib.errors import PrismabibError
+from prismabib.errors import PrismabibError, ValidationError
+from prismabib.report.tables import latex_escape
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -73,12 +81,63 @@ def _code_block_lines(text: str) -> frozenset[int]:
     return frozenset(inside)
 
 
-def fill_manuscript(text: str, numbers: Mapping[str, Any]) -> str:
+def _require_mapping(numbers: object) -> Mapping[str, Any]:
+    """Check that ``numbers.json`` parsed into something usable.
+
+    Args:
+        numbers: Whatever ``json.load`` returned.
+
+    Returns:
+        The same object, once it is known to be a mapping of scalars.
+
+    Raises:
+        ValidationError: If it is not. JSON's top level can legally be a list,
+            a string or a number, and each fails differently and unhelpfully
+            further in: a bare scalar raises ``TypeError: argument of type
+            'int' is not iterable``, and a *string* is worse -- iterating it
+            yields characters, so ``fill`` reports single letters as unused
+            keys and looks like it is working.
+    """
+    if not isinstance(numbers, dict):
+        raise ValidationError(
+            f"numbers.json must contain a JSON object mapping keys to scalars, not "
+            f"{type(numbers).__name__}. Regenerate it with `prismabib export`."
+        )
+    bad = sorted(
+        key for key, value in numbers.items() if not isinstance(value, (bool, int, float, str))
+    )
+    if bad:
+        raise ValidationError(
+            f"numbers.json holds non-scalar value(s) for {', '.join(bad)}; a list or a "
+            "mapping has no sensible rendering inside a sentence."
+        )
+    return numbers
+
+
+def fill_manuscript(text: str, numbers: Mapping[str, Any], *, escape_latex: bool = False) -> str:
     """Substitute every placeholder in ``text`` from ``numbers``.
 
     Args:
         text: The manuscript, Markdown or LaTeX.
         numbers: A flat scalar mapping, as written to ``numbers.json``.
+        escape_latex: Escape LaTeX-special characters in **string** values
+            before substituting. Off by default, and set by the CLI for a
+            ``.tex`` manuscript.
+
+            This is not hypothetical politeness. ``numbers.json`` carries
+            ``venues.top*.name``, and real venue names contain ``&`` --
+            "Robotics & Automation" is an IEEE venue. Substituted raw, that
+            aborts ``pdflatex`` at exactly the sentence citing it.
+            :mod:`~prismabib.report.tables` has escaped its generated tables
+            from the start; the same venue name reaching a manuscript through
+            *this* path was not escaped, so one export could produce a table
+            that compiles beside a sentence that does not. The escaping is
+            imported from there rather than reimplemented, so the two cannot
+            drift.
+
+            Numbers are never escaped: they contain nothing LaTeX reads, and
+            passing them through the escaper would only create a way to
+            corrupt them.
 
     Returns:
         ``text`` with every placeholder outside a code block replaced by its
@@ -88,7 +147,9 @@ def fill_manuscript(text: str, numbers: Mapping[str, Any]) -> str:
         FillError: If the manuscript cites a key ``numbers`` does not define,
             or if ``numbers`` defines a key the manuscript never cites. The
             message lists both sets in sorted order.
+        ValidationError: If ``numbers`` is not a mapping of scalars.
     """
+    numbers = _require_mapping(numbers)
     skip = _code_block_lines(text)
     cited: set[str] = set()
     unknown: set[str] = set()
@@ -105,7 +166,10 @@ def fill_manuscript(text: str, numbers: Mapping[str, Any]) -> str:
             if key not in numbers:
                 unknown.add(key)
                 return match.group(0)
-            return str(numbers[key])
+            value = numbers[key]
+            if escape_latex and isinstance(value, str):
+                return latex_escape(value)
+            return str(value)
 
         out_lines.append(_PLACEHOLDER.sub(replace, line))
 

@@ -109,7 +109,7 @@ def to_markdown(table: Table) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _latex_escape(text: str) -> str:
+def latex_escape(text: str) -> str:
     """Escape the characters LaTeX would otherwise interpret.
 
     Args:
@@ -151,15 +151,15 @@ def to_latex(table: Table) -> str:
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
-        f"\\caption{{{_latex_escape(table.caption)}}}",
+        f"\\caption{{{latex_escape(table.caption)}}}",
         f"\\label{{tab:{table.slug.replace('_', '-')}}}",
         f"\\begin{{tabular}}{{{column_spec}}}",
         r"\toprule",
-        " & ".join(_latex_escape(column) for column in table.columns) + r" \\",
+        " & ".join(latex_escape(column) for column in table.columns) + r" \\",
         r"\midrule",
     ]
     lines.extend(
-        " & ".join(_latex_escape(_cell(value)) for value in row) + r" \\" for row in table.rows
+        " & ".join(latex_escape(_cell(value)) for value in row) + r" \\" for row in table.rows
     )
     lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
     return "\n".join(lines) + "\n"
@@ -209,11 +209,29 @@ def top_venues_table(connection: duckdb.DuckDBPyConnection) -> Table:
         Venue, type and record count, ordered by count then name so the
         ordering is total and does not depend on the engine's tie-breaking.
     """
+    # Grouped by name alone, matching `numbers._venue_numbers`. Grouping by
+    # `(name, venue_type)` splits one venue into several rows whenever Scopus
+    # indexes it under more than one `prism:aggregationType` -- so this table
+    # would show "Robotics & Automation, journal, 56" and "..., conference, 40"
+    # beside a `{{venues.top1.count}}` of 96 in the prose. Two definitions of
+    # "a venue" inside one export bundle is the drift this stage exists to
+    # prevent, and `citation_statistics_table` already avoids it by reading
+    # `numbers` rather than re-querying.
+    #
+    # `venue_type` is then reported per name: the single type when there is
+    # one, "mixed" when Scopus disagrees with itself. Naming the disagreement
+    # is more useful to a reader than silently picking one of the two.
     rows = connection.execute(
         """
-        SELECT v.name, COALESCE(v.venue_type, ''), count(*) AS n
+        SELECT
+          v.name,
+          CASE
+            WHEN count(DISTINCT COALESCE(v.venue_type, '')) > 1 THEN 'mixed'
+            ELSE COALESCE(min(v.venue_type), '')
+          END AS venue_type,
+          count(*) AS n
         FROM records r JOIN venues v ON r.venue_id = v.venue_id
-        GROUP BY v.name, v.venue_type
+        GROUP BY v.name
         ORDER BY n DESC, v.name ASC
         LIMIT ?
         """,
@@ -315,6 +333,7 @@ __all__ = [
     "build_tables",
     "citation_statistics_table",
     "eligibility_criteria_table",
+    "latex_escape",
     "to_csv",
     "to_latex",
     "to_markdown",

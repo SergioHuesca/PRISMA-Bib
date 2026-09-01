@@ -150,7 +150,14 @@ def _venue_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
         """,
         [TOP_N],
     ).fetchall()
-    total = connection.execute("SELECT count(*) FROM venues").fetchone()
+    # DISTINCT name, not `count(*)`. The loader writes one `venues` row per
+    # record, so `count(*)` is a row count that on the reference corpus reads
+    # 120 -- exactly the number of *records* -- while the corpus is published
+    # across 22 venues. A sentence citing `{{venues.total}}` would then claim
+    # "across 120 venues" beside a `venues.top1.count` of 96, which cannot both
+    # be true. `name` is also the unit `tables.top_venues_table` groups on, so
+    # the two agree by construction rather than by coincidence.
+    total = connection.execute("SELECT count(DISTINCT name) FROM venues").fetchone()
     numbers: dict[str, Any] = {"venues.total": int(total[0]) if total else 0}
     for index in range(TOP_N):
         name, count = (rows[index][0], int(rows[index][1])) if index < len(rows) else ("", 0)

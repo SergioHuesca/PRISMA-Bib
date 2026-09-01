@@ -10,10 +10,18 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 
 import pytest
 
-from prismabib.report.tables import Table, to_csv, to_latex, to_markdown
+from prismabib.report.tables import (
+    Table,
+    _cell,
+    latex_escape,
+    to_csv,
+    to_latex,
+    to_markdown,
+)
 
 #: A table whose values exercise every rendering rule at once: a float (fixed
 #: precision), a bool, an int, and a venue name carrying the characters LaTeX
@@ -30,28 +38,71 @@ SAMPLE = Table(
 )
 
 
+def markdown_rows(rendered: str) -> list[list[str]]:
+    """Parse a Markdown pipe table back into rows (helper, not a test)."""
+    body = [
+        line
+        for line in rendered.splitlines()
+        if line.startswith("|") and not set(line) <= set("| -")
+    ]
+    rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in body]
+    return rows[1:]
+
+
+def latex_rows(rendered: str) -> list[list[str]]:
+    """Parse a LaTeX tabular body back into rows (helper, not a test).
+
+    Split on *unescaped* ``&`` only. A cell legitimately contains ``\\&`` --
+    "Robotics \\& Automation" is the escaping this table has to get right --
+    and splitting on it too would tear one cell into two and make the parser
+    disagree with the renderer for the wrong reason.
+    """
+    body = rendered.split(r"\midrule")[1].split(r"\bottomrule")[0]
+    return [
+        [cell.strip() for cell in re.split(r"(?<!\\)&", line.replace(r"\\", ""))]
+        for line in body.strip().splitlines()
+        if line.strip()
+    ]
+
+
 @pytest.mark.unit
 def test_tables__markdown_csv_and_latex__contain_identical_values() -> None:
-    """Three renderings, one truth.
+    """Three renderings, one truth -- compared row by row, cell by cell.
 
-    Compared cell-by-cell after parsing the CSV, rather than by substring
-    search: a test that only checked "96 appears in all three" would pass on a
-    LaTeX file that had lost a row entirely.
+    All three are parsed back and compared positionally. An earlier version
+    asserted ``cell in markdown`` and ``escaped in latex`` -- substring
+    presence -- which is the "appears somewhere" form this project's own
+    diagram test warns against, and it is just as inert here: reversing the
+    row order in ``to_markdown`` left it green, so a venue's record count
+    could land beside the wrong venue name with the suite passing.
     """
-    parsed = list(csv.reader(io.StringIO(to_csv(SAMPLE))))
-    header, *body = parsed
+    expected = [[_cell(value) for value in row] for row in SAMPLE.rows]
+
+    parsed_csv = list(csv.reader(io.StringIO(to_csv(SAMPLE))))
+    header, *csv_body = parsed_csv
 
     assert header == list(SAMPLE.columns)
-    assert len(body) == len(SAMPLE.rows)
+    assert csv_body == expected
+    assert markdown_rows(to_markdown(SAMPLE)) == expected
+    assert latex_rows(to_latex(SAMPLE)) == [
+        [latex_escape(cell) for cell in row] for row in expected
+    ]
 
-    markdown = to_markdown(SAMPLE)
-    latex = to_latex(SAMPLE)
-    for row in body:
-        for cell in row:
-            assert cell in markdown, f"{cell!r} missing from the Markdown rendering"
-            # LaTeX escapes, so compare against the escaped form.
-            escaped = cell.replace("&", r"\&").replace("%", r"\%").replace("_", r"\_")
-            assert escaped in latex, f"{escaped!r} missing from the LaTeX rendering"
+
+@pytest.mark.unit
+def test_tables__row_order__is_identical_across_the_three_renderings() -> None:
+    """The orderings must agree, not merely the multisets of values.
+
+    Asserted separately because it is the specific failure a substring
+    comparison cannot see: every value present in all three files, in three
+    different orders, is three different tables.
+    """
+    assert [row[0] for row in markdown_rows(to_markdown(SAMPLE))] == [
+        _cell(row[0]) for row in SAMPLE.rows
+    ]
+    assert [row[0] for row in latex_rows(to_latex(SAMPLE))] == [
+        latex_escape(_cell(row[0])) for row in SAMPLE.rows
+    ]
 
 
 @pytest.mark.unit

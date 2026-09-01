@@ -59,3 +59,36 @@ def test_tables__latex__compiles_under_pdflatex_booktabs(tmp_path: Path) -> None
 
     assert result.returncode == 0, result.stdout[-2000:]
     assert (tmp_path / "doc.pdf").is_file()
+
+
+@pytest.mark.integration
+def test_fill__latex_escaped_manuscript__compiles_under_pdflatex(tmp_path: Path) -> None:
+    """The end of the workflow this stage exists to serve, actually built.
+
+    A venue name with ``&`` substituted into a manuscript is the failure
+    Copilot's review found: the string assertions elsewhere confirm the
+    escaping, and only ``pdflatex`` confirms the document builds.
+    """
+    from prismabib.report.fill import fill_manuscript
+
+    body = fill_manuscript(
+        r"The dominant venue was {{v}}, with {{n}} records (100\% of the corpus).",
+        {"v": "Robotics & Automation_Systems", "n": 96},
+        escape_latex=True,
+    )
+    source = tmp_path / "paper.tex"
+    source.write_text(
+        "\\documentclass{article}\n\\begin{document}\n" + body + "\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", source.name],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stdout[-2000:]

@@ -118,7 +118,7 @@ class FlowCounts:
         _assert_flow_counts_consistent(self)
 
 
-def _assert_flow_counts_consistent(self: FlowCounts) -> None:
+def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     """Verify every PRISMA-flow count is a cardinality and every identity closes.
 
     First, every count must be non-negative -- every integer field and
@@ -165,21 +165,21 @@ def _assert_flow_counts_consistent(self: FlowCounts) -> None:
     # line here is a gap, and the class is frozen by BUILD_PLAN plus one
     # ADR, so it does not move often.
     counts: tuple[tuple[str, int], ...] = (
-        ("identified", self.identified),
-        ("duplicates_across_searches", self.duplicates_across_searches),
-        ("removed_other_reasons", self.removed_other_reasons),
-        ("excluded_automated", self.excluded_automated),
-        ("after_automated", self.after_automated),
-        ("excluded_language", self.excluded_language),
-        ("after_language", self.after_language),
-        ("excluded_title_abstract", self.excluded_title_abstract),
-        ("unsure_title_abstract", self.unsure_title_abstract),
-        ("retrieved_fulltext", self.retrieved_fulltext),
-        ("unsure_fulltext", self.unsure_fulltext),
-        ("included", self.included),
+        ("identified", flow.identified),
+        ("duplicates_across_searches", flow.duplicates_across_searches),
+        ("removed_other_reasons", flow.removed_other_reasons),
+        ("excluded_automated", flow.excluded_automated),
+        ("after_automated", flow.after_automated),
+        ("excluded_language", flow.excluded_language),
+        ("after_language", flow.after_language),
+        ("excluded_title_abstract", flow.excluded_title_abstract),
+        ("unsure_title_abstract", flow.unsure_title_abstract),
+        ("retrieved_fulltext", flow.retrieved_fulltext),
+        ("unsure_fulltext", flow.unsure_fulltext),
+        ("included", flow.included),
         *(
             (f"excluded_fulltext[{reason!r}]", count)
-            for reason, count in sorted(self.excluded_fulltext.items())
+            for reason, count in sorted(flow.excluded_fulltext.items())
         ),
     )
     for field_name, count in counts:
@@ -200,29 +200,29 @@ def _assert_flow_counts_consistent(self: FlowCounts) -> None:
                 "identified - duplicates_across_searches - removed_other_reasons "
                 "- excluded_automated == after_automated"
             ),
-            self.identified
-            - self.duplicates_across_searches
-            - self.removed_other_reasons
-            - self.excluded_automated,
-            self.after_automated,
+            flow.identified
+            - flow.duplicates_across_searches
+            - flow.removed_other_reasons
+            - flow.excluded_automated,
+            flow.after_automated,
         ),
         (
             "after_automated - excluded_language == after_language",
-            self.after_automated - self.excluded_language,
-            self.after_language,
+            flow.after_automated - flow.excluded_language,
+            flow.after_language,
         ),
         (
             (
                 "after_language == excluded_title_abstract + unsure_title_abstract "
                 "+ retrieved_fulltext"
             ),
-            self.after_language,
-            self.excluded_title_abstract + self.unsure_title_abstract + self.retrieved_fulltext,
+            flow.after_language,
+            flow.excluded_title_abstract + flow.unsure_title_abstract + flow.retrieved_fulltext,
         ),
         (
             "retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included",
-            self.retrieved_fulltext,
-            sum(self.excluded_fulltext.values()) + self.unsure_fulltext + self.included,
+            flow.retrieved_fulltext,
+            sum(flow.excluded_fulltext.values()) + flow.unsure_fulltext + flow.included,
         ),
     )
     for equation, left, right in equations:

@@ -43,6 +43,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stated floor with CI green. Every declared gate passes today; the job is non-required
   initially, on the `e2e` precedent.
 
+### Fixed
+
+- **`venues.total` counted venue *rows*, not venues.** The store writes one `venues` row
+  per record, so the reference corpus reported **120 venues** for a corpus published across
+  **22** — a plausible wrong number, sitting beside a `venues.top1.count` of 96, and frozen
+  into a golden as ground truth. It counts `DISTINCT name` now.
+- **`numbers.json` and the top-venues table used two different definitions of "a venue"** —
+  `name` versus `(name, venue_type)` — so a venue Scopus indexes under two aggregation
+  types appeared as one venue in the prose and two rows in the table beside it. Both group
+  on `name`; the table reports `mixed` when Scopus disagrees with itself, and
+  `tests/integration/report/test_bundle_consistency.py` now compares the two paths.
+- **`prismabib fill` escapes LaTeX specials in string values for a `.tex` manuscript.**
+  `numbers.json` carries venue names, and "Robotics & Automation" substituted raw aborts
+  `pdflatex` at the citing sentence. `tables.py` had escaped its generated tables from the
+  start, so one export could produce a table that compiled beside a sentence that did not.
+  The escaping is imported from `tables.py` rather than reimplemented.
+- **`numbers.json` that is not a JSON object is rejected readably.** A bare number raised
+  `TypeError: argument of type 'int' is not iterable`; a bare *string* was worse, since
+  iterating it yields characters and `fill` reported single letters as unused keys while
+  appearing to work.
+- **The CLI export summary printed `None` instead of `(none)`** for a missing commit:
+  `str(None)` is truthy, so the fallback was dead in exactly the case it existed for.
+
 ### Changed
 
 - **`FlowCounts.assert_consistent` is now visible to mutation testing.** Its equations moved

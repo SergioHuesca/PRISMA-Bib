@@ -19,6 +19,7 @@ import pytest
 
 from prismabib.prisma.flow import compute_flow_counts
 from prismabib.report.export import export_project
+from tests.integration.report.test_flow_diagram import FIELD_TO_LABEL, box_text
 from tests.prisma_helpers import CorpusSpec, CriteriaSpec, RecordSpec, build_project
 
 if TYPE_CHECKING:
@@ -73,7 +74,14 @@ def test_export__source_csv__reproduces_the_figure_values(project: Project) -> N
         if "." in stage:  # excluded_fulltext.<CODE>
             continue
         assert int(value) == getattr(counts, stage), f"{stage} differs from FlowCounts"
-        assert value in svg, f"{stage}={value} is in the CSV but not on the diagram"
+        # Anchored to the field's own label, not searched for across the whole
+        # document: `value in svg` matches any integer anywhere, including the
+        # x/y geometry, which is the inert form this project's diagram test
+        # already had to be rewritten away from twice.
+        box_id, template = FIELD_TO_LABEL[stage]
+        assert re.search(template.format(value=int(value)), box_text(svg, box_id)), (
+            f"{stage}={value} is in the CSV but not under its label on the diagram"
+        )
 
 
 @pytest.mark.integration
@@ -247,3 +255,26 @@ def test_export__inconsistent_counts__refuses_to_write(
 
     with pytest.raises(ValidationError, match="inconsistent"):
         export_project(project)
+
+
+@pytest.mark.integration
+def test_export__cli_summary__prints_none_placeholder_not_the_word_None(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outside a repository the summary must say ``(none)``, not ``None``.
+
+    ``str(commit)[:12] or "(none)"`` looks like a fallback and is not one:
+    ``str(None)`` is ``"None"``, which is truthy, so the CLI printed the word
+    "None" in exactly the case the fallback existed to explain.
+    """
+    from typer.testing import CliRunner
+
+    from prismabib.cli import app
+    from prismabib.report import export as export_module
+
+    monkeypatch.setattr(export_module, "_code_root", lambda: tmp_path)
+    result = CliRunner().invoke(app, ["export", project.slug, "--root", str(project.root.parent)])
+
+    assert result.exit_code == 0
+    assert "(none)" in result.output
+    assert "git commit              None" not in result.output

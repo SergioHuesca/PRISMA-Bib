@@ -566,7 +566,11 @@ def _print_export(result: ExportResult, *, slug: str) -> None:
     _echo(f"  figures                 {len(result.figures):>9}")
     _echo(f"  table renderings        {len(result.tables):>9}")
     _echo(f"  numbers.json keys       {len(result.numbers):>9}")
-    _echo(f"  git commit              {str(result.manifest['git_commit'])[:12] or '(none)':>9}")
+    # `str(commit)[:12] or "(none)"` does not work: `str(None)` is `"None"`,
+    # which is truthy, so the fallback was dead and the summary printed the
+    # word "None" in exactly the case it exists to explain.
+    commit = result.manifest["git_commit"]
+    _echo(f"  git commit              {(commit[:12] if commit else '(none)'):>9}")
     if result.manifest["dirty"]:
         _echo(
             "\n  WARNING: exported from a dirty working tree. manifest.json records "
@@ -588,6 +592,13 @@ def fill(
         Path | None,
         typer.Option("--output", "-o", help="Write here instead of stdout."),
     ] = None,
+    latex: Annotated[
+        bool | None,
+        typer.Option(
+            "--latex/--no-latex",
+            help="Escape LaTeX specials in string values (default: on for .tex).",
+        ),
+    ] = None,
 ) -> None:
     """Substitute ``{{key}}`` placeholders in a manuscript from ``numbers.json``.
 
@@ -602,7 +613,14 @@ def fill(
     """
     with _reporting_errors():
         mapping = json.loads(numbers.read_text(encoding="utf-8"))
-        filled = fill_manuscript(manuscript.read_text(encoding="utf-8"), mapping)
+        # A `.tex` manuscript gets LaTeX escaping on string values: venue names
+        # carry `&`, which aborts pdflatex at the sentence citing them. Chosen
+        # by suffix rather than sniffed from the content, so the behaviour is
+        # predictable and `--latex/--no-latex` can override it.
+        escape = manuscript.suffix.lower() == ".tex" if latex is None else latex
+        filled = fill_manuscript(
+            manuscript.read_text(encoding="utf-8"), mapping, escape_latex=escape
+        )
         if output is None:
             # `typer.echo` would add a trailing newline the manuscript did not
             # have; `fill` is meant to be redirectable into a build pipeline, so

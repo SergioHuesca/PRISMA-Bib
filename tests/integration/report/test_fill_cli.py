@@ -97,3 +97,51 @@ def test_fill__to_stdout__writes_the_document_byte_for_byte(tmp_path: Path) -> N
 
     assert result.exit_code == 0
     assert result.stdout == "Exactly 7"
+
+
+@pytest.mark.integration
+def test_fill__tex_manuscript__escapes_by_default(tmp_path: Path) -> None:
+    """The suffix chooses the escaping, so an author does not have to.
+
+    Predictable by construction rather than sniffed from content: `.tex` gets
+    escaping, everything else does not, and `--latex/--no-latex` overrides.
+    """
+    doc = tmp_path / "paper.tex"
+    doc.write_text(r"Venue: {{v}}.", encoding="utf-8")
+    nums = tmp_path / "numbers.json"
+    nums.write_text(json.dumps({"v": "Robotics & Automation"}), encoding="utf-8")
+    out = tmp_path / "filled.tex"
+
+    result = runner.invoke(app, ["fill", str(doc), str(nums), "-o", str(out)])
+
+    assert result.exit_code == 0
+    assert r"Robotics \& Automation" in out.read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_fill__markdown_manuscript__does_not_escape_by_default(tmp_path: Path) -> None:
+    """The control: a `.md` manuscript keeps its ampersand."""
+    doc, nums = write_pair(tmp_path, "Venue: {{v}}.", {"v": "Robotics & Automation"})
+    out = tmp_path / "filled.md"
+
+    result = runner.invoke(app, ["fill", str(doc), str(nums), "-o", str(out)])
+
+    assert result.exit_code == 0
+    assert "Robotics & Automation" in out.read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_fill__numbers_json_that_is_not_an_object__exits_nonzero_readably(
+    tmp_path: Path,
+) -> None:
+    """A malformed numbers.json must not reach the user as a raw TypeError."""
+    doc = tmp_path / "paper.md"
+    doc.write_text("{{k}}", encoding="utf-8")
+    nums = tmp_path / "numbers.json"
+    nums.write_text("42", encoding="utf-8")
+
+    result = runner.invoke(app, ["fill", str(doc), str(nums)])
+
+    assert result.exit_code != 0
+    assert "JSON object" in result.output
+    assert "Traceback" not in result.output
