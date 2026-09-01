@@ -25,6 +25,75 @@ env:
   UV_VERSION: "0.11.26"
 
 jobs:
+  # S05-AC3's wall-clock budget ("every decision appears in decisions.jsonl within
+  # 100 ms") lives here rather than in PR CI, because a shared runner cannot measure
+  # one: it produced 290 ms, 184 ms and 160 ms on three commits containing no source
+  # change, against a real cost of ~13 ms. Here the machine is quiet and the number
+  # means something. A failure opens an issue, so a genuine regression surfaces within
+  # a day and cannot be silently re-run away.
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # Not `-n auto`: xdist runs tests in parallel workers that contend with each
+      # other, which is the very thing this job exists to avoid.
+      - name: Performance budgets
+        run: uv run pytest -m benchmark -p no:randomly
+
+      - name: Check for an open benchmark issue
+        if: failure()
+        id: check-issue
+        run: |
+          existing=$(gh issue list --label performance --state open \
+            --json number --jq '.[0].number // empty' 2>/dev/null)
+          if [ -z "$existing" ]; then
+            echo "issue_found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue_found=true" >> "$GITHUB_OUTPUT"
+            echo "issue_number=$existing" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on the open issue
+        if: failure() && steps.check-issue.outputs.issue_found == 'true'
+        run: |
+          gh issue comment "${{ steps.check-issue.outputs.issue_number }}" --body \
+            "Nightly benchmark failed again on \`main\`: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Open a benchmark issue
+        if: failure() && steps.check-issue.outputs.issue_found == 'false'
+        run: |
+          gh label create performance \
+            --description "A performance budget was breached" --color "fbca04" || true
+          gh issue create \
+            --title "Nightly benchmark: a performance budget was breached" \
+            --label performance \
+            --body "The nightly benchmark job failed on \`main\`.
+
+          This runs on a quiet runner precisely so the number means something -- unlike PR
+          CI, where contention produced 290/184/160 ms readings against a ~13 ms real cost.
+          A failure here is therefore worth reading rather than re-running.
+
+          S05-AC3 is \"every decision appears in \\\`decisions.jsonl\\\` within 100 ms\",
+          and this job is the only place it is measured.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   live:
     name: live
     runs-on: ubuntu-latest

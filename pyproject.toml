@@ -398,4 +398,11 @@ markers = [
     # Named as a test kind in the Stage 3/5/9 Tests tables. Registered so that
     # --strict-markers does not reject the plan's own named tests.
     "notebook: nbmake execution of a notebook against the fixture project",
+    # Registered explicitly rather than relying on pytest-benchmark to provide it,
+    # so the marker survives that plugin being dropped and so its meaning is stated
+    # here: a wall-clock budget, which a shared CI runner cannot measure. Deselected
+    # from every PR-CI job and run by `nightly.yml` on a quiet machine;
+    # `test_ci__benchmark_tests__run_in_some_workflow` stops that becoming "run
+    # nowhere".
+    "benchmark: wall-clock performance budget; runs nightly, not in PR CI",
 ]
