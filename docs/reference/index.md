@@ -10,13 +10,12 @@ still exited 0. CI cannot catch that, which is why the modules are listed one by
 a module added in a later stage without a section here is a visible omission.
 
 Sections follow the layer order of the pipeline: core vocabulary first, then Layer 0
-(`sources/`, `capture/`), Layer 1 (`store/`), Layer 2 (`prisma/`, `screening/`), and finally
-`cli.py`, which sits across all of them. Each package's own section renders the package docstring
+(`sources/`, `capture/`), Layer 1 (`store/`), Layer 2 (`prisma/`, `screening/`), Layer 3 (`report/`), and
+finally `cli.py`, which sits across all of them. Each package's own section renders the package docstring
 only; its modules follow individually.
 
 **Not yet built** (each arrives with the stage that owns it, and gets a section here then):
-`sources/sciencedirect.py`, `fulltext/`, `taxonomy/`, `bibliometrics/`,
-`viz/`, `report/`. `store/schema.sql` never appears here — it is SQL, not a module, and is
+`sources/sciencedirect.py`, `fulltext/`, `taxonomy/`, `bibliometrics/`, `viz/`. `store/schema.sql` never appears here — it is SQL, not a module, and is
 executed verbatim by `build_store`.
 
 ## prismabib
@@ -296,6 +295,62 @@ PRISMA number — it appends to the log, and `prisma/` folds it.
 ### screening.ui
 
 ::: prismabib.screening.ui
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## report
+
+Layer 3: the manuscript-ready artefacts. Nothing here computes a PRISMA number — the
+diagram places counts it is handed, and `numbers.json` flattens them — so that
+`flow_diagram`'s output can be asserted equal to `FlowCounts` field by field.
+
+Per [ADR 0015](../architecture/adr/0015-stage-order-and-stage-10-scope.md), the taxonomy
+distribution, dataset/benchmark usage and research-gap tables are deferred to the stages
+that own their data; the four tables here are what Layer 1 and the decision log support.
+
+::: prismabib.report
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### report.flow_diagram
+
+::: prismabib.report.flow_diagram
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### report.numbers
+
+::: prismabib.report.numbers
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### report.tables
+
+::: prismabib.report.tables
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### report.export
+
+::: prismabib.report.export
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### report.fill
+
+::: prismabib.report.fill
     options:
       show_root_heading: true
       show_source: true

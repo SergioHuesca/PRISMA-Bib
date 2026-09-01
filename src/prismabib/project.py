@@ -429,6 +429,38 @@ class Project:
             raise _criteria_config_error(path, exc) from exc
 
     @property
+    def title(self) -> str:
+        """This project's human-readable title, from ``project.toml``.
+
+        Written by :meth:`init` and never read until Stage 10 needed it: a
+        PRISMA diagram captioned with a slug (``baseball-cv-2026``) is not
+        something a manuscript can carry.
+
+        Re-read on every access, for the same reason :attr:`criteria` is --
+        an edited ``project.toml`` should be reflected immediately rather
+        than at ``Project.open`` time.
+
+        Returns:
+            The ``[project] title`` value, or the slug when ``project.toml``
+            is missing, unreadable, or has no title. Falling back rather
+            than raising is deliberate: a missing title is a cosmetic
+            problem, and an export that refused to run over one would fail
+            a whole review for a caption.
+        """
+        path = self.root / "project.toml"
+        if not path.is_file():
+            return self.slug
+        try:
+            parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, OSError):
+            return self.slug
+        section = parsed.get("project")
+        if not isinstance(section, dict):
+            return self.slug
+        title = section.get("title")
+        return title if isinstance(title, str) and title.strip() else self.slug
+
+    @property
     def raw_dir(self) -> Path:
         """The Layer 0 raw-capture directory, ``<root>/raw``.
 

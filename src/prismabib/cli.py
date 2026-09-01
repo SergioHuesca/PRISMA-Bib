@@ -34,6 +34,8 @@ bug, and a bug that prints one polite line is a bug nobody can report.
 
 from __future__ import annotations
 
+import json
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -50,6 +52,8 @@ from prismabib.config import ProjectsRootSettings
 from prismabib.errors import PrismabibError
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
+from prismabib.report.export import ExportResult, export_project
+from prismabib.report.fill import fill_manuscript
 from prismabib.store.load import StoreStats, build_store
 
 #: Exit status for a *known* failure -- any :class:`PrismabibError`. One code
@@ -527,6 +531,86 @@ def flow(
         counts = compute_flow_counts(project)
         _print_flow(counts, slug=slug)
         _warn_if_inconsistent(counts)
+
+
+@app.command()
+def export(
+    slug: Annotated[str, typer.Argument(help="Project slug to export.")],
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Write every citable artefact to ``projects/<slug>/exports/``.
+
+    The PRISMA diagram and its source CSV, every table as CSV/Markdown/LaTeX,
+    ``numbers.json`` (the scalars a manuscript may cite) and ``manifest.json``
+    (criteria version, run ids, package version, git SHA).
+
+    Exporting from a dirty working tree, or from a commit no remote branch
+    contains, is allowed but flagged -- in the manifest and on stderr. Both
+    make a number untraceable: the first because the recorded SHA does not
+    describe the code that ran, the second because a reader cannot fetch it.
+    """
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        result = export_project(project)
+        _print_export(result, slug=slug)
+
+
+def _print_export(result: ExportResult, *, slug: str) -> None:
+    """Render an export result.
+
+    Args:
+        result: What :func:`~prismabib.report.export.export_project` wrote.
+        slug: The project slug, for the heading.
+    """
+    _echo(f"\nExported {slug} to {result.root}")
+    _echo(f"  figures                 {len(result.figures):>9}")
+    _echo(f"  table renderings        {len(result.tables):>9}")
+    _echo(f"  numbers.json keys       {len(result.numbers):>9}")
+    _echo(f"  git commit              {str(result.manifest['git_commit'])[:12] or '(none)':>9}")
+    if result.manifest["dirty"]:
+        _echo(
+            "\n  WARNING: exported from a dirty working tree. manifest.json records "
+            "dirty=true;\n  the recorded commit does not describe the code that produced "
+            "these numbers."
+        )
+    elif not result.manifest["commit_is_pushed"]:
+        _echo(
+            "\n  WARNING: the recorded commit is on no remote branch. A reader cannot "
+            "fetch\n  the code these numbers came from; push before citing them."
+        )
+
+
+@app.command()
+def fill(
+    manuscript: Annotated[Path, typer.Argument(help="Markdown or LaTeX file to fill.")],
+    numbers: Annotated[Path, typer.Argument(help="numbers.json from `prismabib export`.")],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write here instead of stdout."),
+    ] = None,
+) -> None:
+    """Substitute ``{{key}}`` placeholders in a manuscript from ``numbers.json``.
+
+    Exits non-zero if the manuscript cites a key ``numbers.json`` does not
+    define, **or** if ``numbers.json`` defines a key the manuscript never
+    cites. Both are drift: the first loses a number from a sentence, the
+    second means a number stopped being cited and the claim it supported may
+    have gone with it.
+
+    Placeholders inside fenced code blocks are left alone, so a methods paper
+    can document its own substitution syntax.
+    """
+    with _reporting_errors():
+        mapping = json.loads(numbers.read_text(encoding="utf-8"))
+        filled = fill_manuscript(manuscript.read_text(encoding="utf-8"), mapping)
+        if output is None:
+            # `typer.echo` would add a trailing newline the manuscript did not
+            # have; `fill` is meant to be redirectable into a build pipeline, so
+            # its stdout must be the document byte-for-byte.
+            sys.stdout.write(filled)
+        else:
+            output.write_text(filled, encoding="utf-8", newline="\n")
+            _echo(f"filled {manuscript} -> {output}")
 
 
 def _print_flow(counts: FlowCounts, *, slug: str) -> None:

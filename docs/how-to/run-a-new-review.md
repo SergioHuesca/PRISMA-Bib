@@ -446,6 +446,85 @@ Report all three — the sum is not auditable from one manifest.
 
 ---
 
+## Step 6: export the citable bundle
+
+```bash
+uv run prismabib export my-review
+```
+
+This writes `projects/my-review/exports/`, and nothing in it was typed by a human:
+
+```
+exports/
+  figures/
+    prisma_flow.svg     the PRISMA 2020 diagram
+    prisma_flow.csv     its source numbers, so a reader can check the figure
+  tables/
+    eligibility_criteria.{csv,md,tex}
+    top_venues.{csv,md,tex}
+    citation_statistics.{csv,md,tex}
+    top_cited.{csv,md,tex}
+  numbers.json          every scalar your manuscript may cite
+  manifest.json         criteria version, run ids, package version, git SHA
+```
+
+Every figure ships its source CSV beside it. That is not decoration: a figure a reader
+cannot check the numbers of is a picture, not evidence.
+
+### Two warnings worth understanding
+
+`manifest.json` records the git commit of **prismabib itself** — not your project
+directory — because that is what makes a number traceable to a published state of the
+code. Two states break that traceability, and the export tells you about both:
+
+- **`dirty: true`** — you exported with uncommitted changes, so the recorded SHA does not
+  describe the code that ran.
+- **`commit_is_pushed: false`** — the commit is real but on no remote branch, so a reader
+  cannot fetch it. `dirty` does not cover this, which is why it is reported separately.
+
+Neither stops the export. Both mean the numbers are not yet citable.
+
+## Step 7: write the manuscript against `numbers.json`
+
+Never type a count into your paper. Cite the key:
+
+```markdown
+We screened {{flow.after_language}} records, excluded {{flow.excluded_title_abstract}}
+at title and abstract, and included {{flow.included}} studies.
+```
+
+Then fill it:
+
+```bash
+uv run prismabib fill paper.md projects/my-review/exports/numbers.json -o paper.filled.md
+```
+
+`fill` exits non-zero in **both** directions, and the second is the one that matters:
+
+- The manuscript cites a key `numbers.json` does not define → a sentence would lose its
+  number silently.
+- `numbers.json` defines a key the manuscript never cites → a number that was once
+  load-bearing is no longer cited, so the claim it supported may have been edited away
+  with it.
+
+Placeholders inside fenced code blocks are left alone, so a methods section can document
+this syntax without corrupting its own example.
+
+### Adding a number to `numbers.json`
+
+The key set is a contract with every manuscript that cites it, and it is snapshotted in
+`tests/golden/report/__snapshots__/numbers_keys.json`. Adding a key is meant to be a
+reviewable diff:
+
+1. Add it in `prismabib/report/numbers.py`, as a scalar — `int`, `float`, `str` or `bool`.
+   A list or a mapping has no sensible rendering inside a sentence and is rejected.
+2. Run the golden tests. They fail, showing exactly which key appeared.
+3. Update both snapshots **from the measurement**, and say in the PR which deliberate
+   change moved them. Never regenerate a golden to make a test pass (§5 risk 11).
+
+Removing a key is the same process in reverse, and it breaks `fill` for any manuscript
+still citing it — which is the intended behaviour, not an inconvenience.
+
 ## What is not here yet
 
 - **Full-text retrieval and extraction** — no ScienceDirect client, no PDF/XML pipeline.
@@ -453,9 +532,13 @@ Report all three — the sum is not auditable from one manifest.
 - **Inter-reviewer agreement statistics** — the decision log already folds per reviewer,
   so a second coder can screen the same corpus independently, but nothing computes a
   kappa from the two sets yet.
-- **Taxonomy coding** (`prismabib code`), **bibliometrics**, **the Panel dashboard**, and
-  **export/reporting** (`prismabib export`). The two commands are deliberately absent
-  rather than stubbed: an absent command fails with "No such command", which is honest.
+- **Three of Stage 10's tables** — the taxonomy distribution, dataset/benchmark usage and
+  research-gap tables read analysis output that does not exist yet. They arrive with the
+  stages that own their data ([ADR 0015](../architecture/adr/0015-stage-order-and-stage-10-scope.md)).
+- **Taxonomy coding** (`prismabib code`), **bibliometrics** and **the Panel dashboard**.
+  `code` is deliberately absent rather than stubbed: an absent command fails with "No such
+  command", which is honest, while a stub that accepts arguments and does nothing is
+  indistinguishable from a working one.
 
 See [Limitations](../methodology/limitations.md) for the consolidated list.
 
