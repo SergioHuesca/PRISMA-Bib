@@ -105,6 +105,8 @@ nav:
       - Metric Definitions: methodology/metric-definitions.md
       - Limitations: methodology/limitations.md
   - How To:
+      - Run the Demo: how-to/run-the-demo.md
+      - Build a Scopus Query: how-to/build-a-query.md
       - Run a New Review: how-to/run-a-new-review.md
       - Amend Eligibility Criteria: how-to/amend-eligibility-criteria.md
       - Write Taxonomy Rules: how-to/write-taxonomy-rules.md
