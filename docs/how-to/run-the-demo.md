@@ -66,8 +66,7 @@ Two ways to handle it, and the second is better theatre:
 **Either** write a manuscript that cites all of them. Generate the key list from your own export first — the count and the venue names differ per corpus:
 
 ```bash
-python -c "import json; print('
-'.join(sorted(json.load(open('projects/demo-talk/exports/numbers.json')))))"
+python -c "import json,sys; sys.stdout.write(chr(10).join(sorted(json.load(open('projects/demo-talk/exports/numbers.json')))))"
 ```
 
 Then save something like this as `paper-draft.md` (this version cites exactly the 33 keys a Stage 10 export produces):
@@ -407,7 +406,7 @@ Exported demo-talk to ./projects/demo-talk/exports
 
   figures                             2
   table renderings                    3
-  numbers.json keys                  15
+  numbers.json keys                  33
   git commit          3f9a2c11
 ```
 
@@ -600,7 +599,7 @@ Run through this before the day:
 Point out at the end:
 
 - **Full-text retrieval:** prismabib does not download or extract full text yet. [See Limitations](../methodology/limitations.md).
-- **Taxonomy coding and dashboard:** Stages 8–10 are not implemented. The tool covers PRISMA Phases 1–2 (identification and screening).
+- **Full-text retrieval, bibliometrics, taxonomy coding and the dashboard:** Stages 6–9 are not implemented. Stage 10 — export and `fill`, which this demo just used — is. The tool covers PRISMA identification through inclusion, plus a citable export.
 - **Bibliometrics at scale:** Citation counts and geography are loaded into Layer 1, but the analytics are not wired into the export yet.
 - **Multi-reviewer agreement:** The decision log tracks reviewer, so inter-rater reliability statistics are *possible* to compute, but nothing computes them automatically yet.
 

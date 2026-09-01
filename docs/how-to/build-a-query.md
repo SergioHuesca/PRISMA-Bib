@@ -101,7 +101,7 @@ compound_terms = [
 ]
 ```
 
-prismabib refuses all three wrong shapes with an error naming exactly what you wrote, rather than guessing what you meant. If you omit the `s` in `compound_terms`, that typo is refused too—not silently dropped, leaving your search narrower than the file describes.
+prismabib refuses all three wrong shapes rather than guessing what you meant, and the message usually names what you wrote. One case does not: writing a single table instead of a list of tables reports a *bare string* that you never wrote — see the [troubleshooting table](#troubleshooting-common-errors) for why, and [#27](https://github.com/SergioHuesca/PRISMA-Bib/issues/27). If you omit the `s` in `compound_terms`, that typo is refused too—not silently dropped, leaving your search narrower than the file describes.
 
 ### Multiple Fields
 
@@ -235,13 +235,13 @@ This filter is applied *after* Scopus returns results. Any record whose year fal
 - **Use the query restriction** if you want to be honest about what Scopus found. If your search was limited to 2010–2026, say so in the query, and the "records identified" number reflects that limitation.
 - **Use `criteria.yaml` if** you want to explore the sensitivity of your results to the time window. You can re-run the screening under different temporal restrictions without re-capturing from Scopus. This is rare but legitimate in a protocol that specifically asks "how do results change if we include papers from before 2010?"
 
-For most reviews, use the query (by passing an explicit query to `capture_search`) and leave `temporal.year_start` and `year_end` at their defaults (1900 and the current year, so no restriction in criteria).
+**For most systematic reviews, restrict in `criteria.yaml` and leave the query unrestricted.** A PRISMA diagram is supposed to show the reader how many records each criterion removed, and a restriction applied in the query removes them before they are ever counted — the number cannot be reported because it was never retrieved. Restrict in the query only when the corpus would otherwise be unmanageably large, and say so in your protocol, because you are choosing not to report that exclusion.
 
 ---
 
 ## Subject Areas—A Sharp Edge
 
-**Status: This feature is not yet on `main`.** Subject-area filtering requires data from Scopus's Abstract Retrieval API, which prismabib can enrich into Layer 1. That enrichment code is in PR #26 but not yet merged, because a bug was discovered in the endpoint being used. Read this section to understand the limitation and the workaround.
+**Status: available since v0.12.0.** Subject-area filtering needs data the Search API does not return, so it requires a separate enrichment pass — `prismabib enrich` — against Scopus's Abstract Retrieval API. That endpoint had been addressed wrongly since v0.8.0 and never worked; it was fixed in v0.12.0. Abstract Retrieval is also a **different Scopus entitlement** from Search `view=COMPLETE`, so a key that captures your corpus may still be refused here. Read on for the workaround if it is.
 
 Subject-area codes are Scopus's classification of papers into fields: `COMP` (Computer Science), `ENGI` (Engineering), `LIFE` (Life Sciences), etc. They are useful for narrowing to your discipline.
 
