@@ -701,10 +701,14 @@ def capture_abstracts(
         **When ``budget`` stops the run short, this value is returned but not
         written to disk**, and no ``manifest.json`` appears: the run stays
         unsealed and a later call resumes it. The absence of the file, not the
-        return value, is what says "unfinished" -- so a caller that wants to
-        know should test ``payload_files``/``records_fetched`` against
-        ``records_requested`` rather than assume a returned manifest was
-        sealed.
+        return value, is what says "unfinished".
+
+        A caller testing the returned value instead must compare
+        ``records_fetched + len(unavailable)`` against ``records_requested``.
+        ``records_fetched`` alone is not enough: a *sealed* run legitimately
+        fetches fewer records than it requested whenever one is withdrawn
+        (404) or unentitled (403), so that comparison reports a finished run
+        as unfinished and sends the caller to pay for it again.
 
     Raises:
         ConfigError: If ``project.criteria`` cannot be read.
@@ -858,6 +862,11 @@ def capture_abstracts(
                         record_id=record_id,
                         reason="not_entitled",
                     )
+                    # A 403 breaks the run of 404s. The breaker counts
+                    # *consecutive* 404s, and without this a 404/403/404/403
+                    # alternation accumulates toward it while no two 404s are
+                    # ever adjacent.
+                    consecutive_not_found.clear()
                     continue
                 except RecordNotFoundError as not_found_exc:
                     # A withdrawn or merged record. Recording it keeps the

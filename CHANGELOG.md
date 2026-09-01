@@ -37,11 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subject areas and a manifest asserting that every record in a live corpus had been
   withdrawn from Scopus. Recording a falsehood about the corpus is worse than failing.
 
-  On the corpus this was found with, `prismabib enrich` would have spent all 1,864 calls of
-  the weekly quota, sealed the run successfully, loaded zero subject areas, and left a
-  manifest asserting that every record in a live corpus had been withdrawn from Scopus.
-  Recording a falsehood about the corpus is worse than failing.
-
   A run that has never once succeeded now stops after
   `CONSECUTIVE_NOT_FOUND_LIMIT` consecutive 404s, writes nothing, seals nothing, and raises
   an error naming both possible causes — a 404 alone cannot distinguish them — with the

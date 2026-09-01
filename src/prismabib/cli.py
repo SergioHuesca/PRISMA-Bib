@@ -585,12 +585,21 @@ def _print_abstract_manifest(manifest: AbstractRunManifest, *, slug: str) -> Non
     _echo(f"  run id                  {manifest.run_id:>26}")
     _echo(f"  records requested       {manifest.records_requested:>26,}")
     _echo(f"  records fetched         {manifest.records_fetched:>26,}")
-    if manifest.records_fetched < manifest.records_requested:
+    # A record is *accounted for* whether it was fetched or recorded as
+    # unavailable. Comparing `records_fetched` against `records_requested`
+    # alone reports a completed run as UNSEALED as soon as one record is
+    # withdrawn (404) or unentitled (403) -- which is ordinary -- and sends
+    # the reader to re-run a finished job, paying quota for nothing.
+    accounted = manifest.records_fetched + len(manifest.unavailable)
+    if accounted < manifest.records_requested:
         _echo(
-            "\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib "
+            f"  unavailable             {len(manifest.unavailable):>26,}"
+            "\n\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib "
             "enrich`\n  to continue; fetched records are not re-paid for."
         )
     else:
+        if manifest.unavailable:
+            _echo(f"  unavailable             {len(manifest.unavailable):>26,}")
         _echo("\n  Run sealed. Re-run `prismabib build` to load the subject areas.")
 
 

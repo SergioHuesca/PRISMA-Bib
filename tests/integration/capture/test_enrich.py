@@ -983,3 +983,41 @@ def test_abstract__url__addresses_the_eid_endpoint_with_the_stored_identifier(
     assert "/scopus_id/" not in url, "an EID sent to the scopus_id path 404s on real Scopus"
     assert "scopus:" not in url, "the prismabib namespace must not reach the API"
     assert "view=FULL" in url
+
+
+@pytest.mark.integration
+def test_capture_abstracts__404s_interleaved_with_403s__do_not_trip_the_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The breaker counts *consecutive* 404s, so a 403 between them breaks the run.
+
+    Without clearing on 403, a 404/403 alternation accumulates toward the limit
+    while no two 404s are ever adjacent -- and the run aborts claiming the
+    endpoint is refusing, when what it actually met was a mix of withdrawn and
+    embargoed records, which is an ordinary state a corpus can be in.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+    alternating = {record: (404 if index % 2 == 0 else 403) for index, record in enumerate(records)}
+
+    def alternate(request: httpx.Request) -> httpx.Response:
+        scopus_id = _scopus_id_of(request)
+        status = next(
+            (code for record, code in alternating.items() if scopus_id in record),
+            200,
+        )
+        if status == 200:
+            return httpx.Response(200, json=_abstract_body(scopus_id))
+        return httpx.Response(status, json={"error": "unavailable"})
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=alternate)
+        manifest = capture_abstracts(project, record_ids=records)
+
+    # Every record was attempted; nothing aborted despite far more than
+    # CONSECUTIVE_NOT_FOUND_LIMIT 404s in total.
+    assert route.call_count == _CORPUS_SIZE
+    reasons = sorted({unavailable.reason for unavailable in manifest.unavailable})
+    assert reasons == ["not_entitled", "not_found"]
+    assert len(manifest.unavailable) == _CORPUS_SIZE
