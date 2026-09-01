@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-09-01
+
+### Added
+
+- **`prismabib enrich <slug>`** — the CLI command for Scopus Abstract Retrieval. The
+  enrichment has shipped since v0.8.0 (ADR 0011) and was reachable only from Python, so a
+  researcher whose `criteria.yaml` restricts `subject_areas` met a documented feature they
+  could not invoke. `--budget` spends a known slice of a weekly quota; the run is resumable.
+
+### Fixed
+
+- **Abstract Retrieval addressed the wrong endpoint and had never worked against real
+  Scopus.** A prismabib record id is `scopus:2-s2.0-<digits>` (BUILD_PLAN §3.2) — an
+  **EID** — and the client sent it to `/content/abstract/scopus_id/`, which expects the
+  bare numeric id. Measured on 2026-09-01, same record, same key:
+  `/scopus_id/2-s2.0-105044913252` → **404**, `/scopus_id/105044913252` → **200**,
+  `/eid/2-s2.0-105044913252` → **200**. It now uses the `/eid/` path, which takes exactly
+  what the store holds.
+
+  Shipped in v0.8.0 and undetected for three releases because **every test mocked whatever
+  URL the client sent**: `tests/integration/capture/test_enrich.py` restated the endpoint
+  prefix as a literal instead of deriving it from `ScopusClient`, so 22 tests agreed with
+  the client rather than with Elsevier. The prefix is now derived, and
+  `test_abstract__url__addresses_the_eid_endpoint_with_the_stored_identifier` asserts the
+  URL against the API's contract rather than against our own mock.
+
+- **A run whose every request 404s now stops instead of spending the quota.** The 404s
+  above were recorded as withdrawn records and the run carried on. On the corpus this was
+  found with, that meant 1,864 calls — an entire weekly quota — to seal a run with zero
+  subject areas and a manifest asserting that every record in a live corpus had been
+  withdrawn from Scopus. Recording a falsehood about the corpus is worse than failing.
+
+  A run that has never once succeeded now stops after
+  `CONSECUTIVE_NOT_FOUND_LIMIT` consecutive 404s, writes nothing, seals nothing, and raises
+  an error naming both possible causes — a 404 alone cannot distinguish them — with the
+  one-step way to tell them apart: request a record id straight out of a fresh
+  `prismabib search` result. A handful of genuinely withdrawn records still completes the
+  run, which the control test pins.
+
 ## [0.11.0] — 2026-09-01
 
 ### Added
@@ -674,7 +713,8 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.8.0...v0.9.0

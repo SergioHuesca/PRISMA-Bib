@@ -37,16 +37,30 @@ import respx
 
 from prismabib import __version__ as CLIENT_VERSION
 from prismabib.capture import enrich
-from prismabib.capture.enrich import BATCH_SIZE, PROGRESS_FILENAME, capture_abstracts
+from prismabib.capture.enrich import (
+    BATCH_SIZE,
+    CONSECUTIVE_NOT_FOUND_LIMIT,
+    PROGRESS_FILENAME,
+    capture_abstracts,
+)
 from prismabib.capture.layout import ABSTRACTS_DIRNAME, CACHE_DIRNAME, SealedRunError
 from prismabib.capture.manifest import AbstractUnavailable
 from prismabib.capture.writer import _find_resumable_run, capture_search
 from prismabib.errors import EntitlementError, QuotaExceededError, ValidationError
 from prismabib.project import Project
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.sources.scopus import ScopusClient
 from prismabib.store.load import _sealed_run_dirs
 
-_ABSTRACT_URL_PREFIX = "https://api.elsevier.com/content/abstract/scopus_id/"
+#: Derived from the client, never restated.
+#:
+#: This was a literal `.../scopus_id/`, and that is why 22 tests mocked the
+#: wrong endpoint for three releases without noticing: the client sent an EID
+#: to a path that expects a bare numeric id, real Scopus answered 404 for every
+#: record, and every test here passed because the mock answered whatever the
+#: test itself had written down. A restated constant cannot catch a change in
+#: the thing it restates.
+_ABSTRACT_URL_PREFIX = ScopusClient.ABSTRACT_URL_PREFIX
 
 #: Enough records to cross a payload-file boundary twice over, since batching by
 #: position in the sorted record list is the property most of these tests are
@@ -854,3 +868,156 @@ def test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothin
     assert second_route.call_count == _CORPUS_SIZE - BATCH_SIZE
     assert manifest.records_fetched == _CORPUS_SIZE
     assert (_sole_run_dir(project) / "manifest.json").is_file()
+
+
+@pytest.mark.integration
+def test_capture_abstracts__every_request_404s__stops_instead_of_spending_the_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unentitled key is refused with 404 here, not 403 -- measured, not assumed.
+
+    Found on 2026-09-01 by probing a real key: Scopus answered a Search
+    ``view=COMPLETE`` query with 1,662 results and then returned **404** for a
+    record that same response had just supplied. Elsevier signals "not entitled
+    to this endpoint" that way, so the 403 probe never fires.
+
+    Before this breaker the run treated each 404 as a withdrawn record and
+    carried on: it would have spent the whole weekly quota, sealed
+    successfully, loaded zero subject areas, and left a manifest asserting that
+    every record in a live corpus had been withdrawn from Scopus. Recording a
+    falsehood about the corpus is worse than failing.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+
+    def always_404(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"})
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=always_404)
+        with pytest.raises(EntitlementError) as excinfo:
+            capture_abstracts(project, record_ids=records)
+
+    message = str(excinfo.value)
+    assert "Abstract Retrieval entitlement" in message
+    assert "SCOPUS_INSTTOKEN" in message
+    assert "no manifest now claims your" in message
+    # Stopped early: the breaker's limit, not the corpus size.
+    assert route.call_count == CONSECUTIVE_NOT_FOUND_LIMIT
+    assert route.call_count < _CORPUS_SIZE
+    # Nothing sealed, so no run asserts the corpus was withdrawn.
+    root = project.raw_dir / ABSTRACTS_DIRNAME
+    assert not root.exists() or not any(
+        (entry / "manifest.json").exists() for entry in root.iterdir() if entry.is_dir()
+    )
+
+
+@pytest.mark.integration
+def test_capture_abstracts__a_few_withdrawn_records__still_completes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: genuinely withdrawn records must not trip the breaker.
+
+    Scopus really does withdraw and merge records -- the first attempt of the
+    investigation above hit one -- so a handful of 404s is ordinary and the run
+    has to finish, recording them as unavailable. Without this test the breaker
+    could be tightened to 1 and everything above would still pass, turning a
+    normal corpus into an unrunnable one.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+    withdrawn = set(records[:3])
+
+    def mostly_ok(request: httpx.Request) -> httpx.Response:
+        scopus_id = _scopus_id_of(request)
+        if any(scopus_id in record for record in withdrawn):
+            return httpx.Response(404, json={"error": "not found"})
+        return httpx.Response(200, json=_abstract_body(scopus_id))
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=mostly_ok)
+        manifest = capture_abstracts(project, record_ids=records)
+
+    assert route.call_count == _CORPUS_SIZE
+    assert manifest.records_fetched == _CORPUS_SIZE - len(withdrawn)
+    assert sorted(u.reason for u in manifest.unavailable) == ["not_found"] * len(withdrawn)
+
+
+@pytest.mark.integration
+def test_abstract__url__addresses_the_eid_endpoint_with_the_stored_identifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The request URL must match what Scopus actually serves.
+
+    Every other test here mocks whichever endpoint the client happens to call,
+    so all of them passed for three releases while the client sent an EID to
+    ``/content/abstract/scopus_id/`` -- a path that expects the bare numeric
+    Scopus id. Real Scopus answered 404 for every record of a live corpus, and
+    the enrichment appeared to find nothing.
+
+    This asserts the URL against Elsevier's contract rather than against our
+    own mock: a record id is ``scopus:2-s2.0-<digits>`` (BUILD_PLAN §3.2),
+    which is an EID, so it belongs on the ``/eid/`` path with only the
+    namespace removed. Measured against a real key on 2026-09-01:
+    ``/scopus_id/2-s2.0-...`` 404s while ``/eid/2-s2.0-...`` returns 200.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    seen: list[str] = []
+
+    def record_url(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_abstract_body("2-s2.0-85012345678"))
+
+    with respx.mock:
+        respx.get(url__startswith="https://api.elsevier.com/content/abstract/").mock(
+            side_effect=record_url
+        )
+        with ScopusClient() as client:
+            client.abstract("scopus:2-s2.0-85012345678")
+
+    assert len(seen) == 1
+    url = seen[0]
+    assert "/content/abstract/eid/2-s2.0-85012345678" in url, url
+    assert "/scopus_id/" not in url, "an EID sent to the scopus_id path 404s on real Scopus"
+    assert "scopus:" not in url, "the prismabib namespace must not reach the API"
+    assert "view=FULL" in url
+
+
+@pytest.mark.integration
+def test_capture_abstracts__404s_interleaved_with_403s__do_not_trip_the_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The breaker counts *consecutive* 404s, so a 403 between them breaks the run.
+
+    Without clearing on 403, a 404/403 alternation accumulates toward the limit
+    while no two 404s are ever adjacent -- and the run aborts claiming the
+    endpoint is refusing, when what it actually met was a mix of withdrawn and
+    embargoed records, which is an ordinary state a corpus can be in.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+    alternating = {record: (404 if index % 2 == 0 else 403) for index, record in enumerate(records)}
+
+    def alternate(request: httpx.Request) -> httpx.Response:
+        scopus_id = _scopus_id_of(request)
+        status = next(
+            (code for record, code in alternating.items() if scopus_id in record),
+            200,
+        )
+        if status == 200:
+            return httpx.Response(200, json=_abstract_body(scopus_id))
+        return httpx.Response(status, json={"error": "unavailable"})
+
+    with respx.mock:
+        route = _mock_abstracts(side_effect=alternate)
+        manifest = capture_abstracts(project, record_ids=records)
+
+    # Every record was attempted; nothing aborted despite far more than
+    # CONSECUTIVE_NOT_FOUND_LIMIT 404s in total.
+    assert route.call_count == _CORPUS_SIZE
+    reasons = sorted({unavailable.reason for unavailable in manifest.unavailable})
+    assert reasons == ["not_entitled", "not_found"]
+    assert len(manifest.unavailable) == _CORPUS_SIZE

@@ -369,7 +369,24 @@ class ScopusClient:
     """
 
     SEARCH_ENDPOINT = "https://api.elsevier.com/content/search/scopus"
-    ABSTRACT_ENDPOINT_TEMPLATE = "https://api.elsevier.com/content/abstract/scopus_id/{scopus_id}"
+    #: Abstract Retrieval, addressed by **EID**.
+    #:
+    #: Not ``/scopus_id/{id}``, which is what this was and which never worked
+    #: against real Scopus: that path expects the bare numeric Scopus id, while
+    #: a prismabib record id is ``scopus:2-s2.0-<digits>`` (BUILD_PLAN §3.2) --
+    #: an EID. Sending ``2-s2.0-<digits>`` to ``/scopus_id/`` returns **404**,
+    #: indistinguishable from a withdrawn record, so the enrichment appeared to
+    #: find nothing for every record of a live corpus.
+    #:
+    #: Measured on 2026-09-01 against a real key, same record, same call:
+    #: ``/scopus_id/2-s2.0-105044913252`` -> 404,
+    #: ``/scopus_id/105044913252`` -> 200,
+    #: ``/eid/2-s2.0-105044913252`` -> 200.
+    #:
+    #: The EID path is used rather than stripping the prefix because it takes
+    #: exactly what the store holds: one namespace removal, no reformatting of
+    #: an identifier into a shape it was not stored in.
+    ABSTRACT_ENDPOINT_TEMPLATE = "https://api.elsevier.com/content/abstract/eid/{scopus_id}"
 
     #: The fixed part of :data:`ABSTRACT_ENDPOINT_TEMPLATE`, i.e. every URL that
     #: addresses **one record by identifier**. Derived from the template rather

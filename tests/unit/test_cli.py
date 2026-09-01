@@ -15,22 +15,25 @@ shape ``capture/writer.py`` actually logs.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 import structlog
 import typer
 from typer.testing import CliRunner
 
 import prismabib
+from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable
 from prismabib.cli import _CaptureProgress, _print_flow, _reporting_errors, app
 from prismabib.errors import ConfigError
 from prismabib.prisma.flow import FlowCounts
 
 runner = CliRunner()
 
-#: The four subcommands Stage 11 line 1455 names *and* that have a tested
+#: The subcommands Stage 11 line 1455 names *and* that have a tested
 #: library function behind them today. `code` are named there too
 #: and are deliberately not implemented (see the cli.py module docstring).
-_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "export", "fill"}
+_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "enrich", "export", "fill"}
 
 
 def _counts(**overrides: object) -> FlowCounts:
@@ -259,3 +262,89 @@ def test_print_flow__large_counts__are_thousands_separated_not_repr(
     out = capsys.readouterr().out
     assert "1,771" in out
     assert "FlowCounts(" not in out
+
+
+def _abstract_manifest(
+    *,
+    records_requested: int,
+    records_fetched: int,
+    unavailable: list[AbstractUnavailable],
+) -> AbstractRunManifest:
+    """A minimal :class:`AbstractRunManifest` for rendering tests (helper, not a test)."""
+    return AbstractRunManifest(
+        run_id="20260901T000000Z-deadbeef",
+        started_at=datetime(2026, 9, 1, tzinfo=UTC),
+        finished_at=datetime(2026, 9, 1, tzinfo=UTC),
+        endpoint="https://api.elsevier.com/content/abstract/eid/{scopus_id}",
+        view="FULL",
+        source_run_ids=["20260826T064957Z-63236ef3"],
+        missing_source_payload_files=[],
+        records_requested=records_requested,
+        records_fetched=records_fetched,
+        unavailable=unavailable,
+        payload_files=["abstracts-0000.jsonl"],
+        payload_sha256="0" * 64,
+        client_version="test",
+        criteria_version="1.0.0",
+    )
+
+
+@pytest.mark.unit
+def test_print_abstract_manifest__sealed_run_with_unavailable_records__is_not_called_unsealed() -> (
+    None
+):
+    """A withdrawn record must not make a finished run look interrupted.
+
+    ``records_fetched < records_requested`` is true of every *sealed* run that
+    met a withdrawn (404) or unentitled (403) record, which is ordinary. Using
+    it as the seal test told the reader to re-run a completed enrichment --
+    paying a second time, against a weekly quota, for work already done.
+
+    A record is accounted for whether it was fetched or recorded unavailable.
+    """
+    from prismabib.cli import _print_abstract_manifest
+
+    manifest = _abstract_manifest(
+        records_requested=100,
+        records_fetched=97,
+        unavailable=[
+            AbstractUnavailable(record_id=f"scopus:2-s2.0-{n}", http_status=404, reason="not_found")
+            for n in range(3)
+        ],
+    )
+
+    result = runner.invoke(app, ["--help"])  # keep typer's context happy
+    assert result.exit_code == 0
+
+    import io
+    from contextlib import redirect_stdout
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        _print_abstract_manifest(manifest, slug="demo")
+    output = buffer.getvalue()
+
+    assert "Run sealed" in output
+    assert "UNSEALED" not in output
+    assert "unavailable" in output
+
+
+@pytest.mark.unit
+def test_print_abstract_manifest__budget_stopped_run__is_called_unsealed() -> None:
+    """The control: a genuinely short run must still say so.
+
+    Without it, a seal test that always said "sealed" would satisfy the test
+    above while hiding the state that actually needs a re-run.
+    """
+    import io
+    from contextlib import redirect_stdout
+
+    from prismabib.cli import _print_abstract_manifest
+
+    manifest = _abstract_manifest(records_requested=100, records_fetched=40, unavailable=[])
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        _print_abstract_manifest(manifest, slug="demo")
+
+    assert "UNSEALED" in buffer.getvalue()

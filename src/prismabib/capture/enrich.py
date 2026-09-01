@@ -579,6 +579,81 @@ def _abstract_entitlement_error(record_id: str, cause: EntitlementError) -> Enti
     )
 
 
+#: How many consecutive 404s at the start of a run are treated as evidence that
+#: the *endpoint* is refusing rather than that the records are withdrawn.
+#:
+#: Measured against a real key, 2026-09-01: a Scopus key with a working Search
+#: `view=COMPLETE` entitlement returns **404, not 403**, for every Abstract
+#: Retrieval request -- including for a record the Search API returned one
+#: second earlier. Elsevier signals "you are not entitled to this endpoint" that
+#: way, so the 403 probe below never fires and every record is recorded as a
+#: withdrawn record instead.
+#:
+#: Without this breaker, that key spends its entire weekly quota (1,864 calls on
+#: the corpus it was found on), seals the run successfully, loads zero subject
+#: areas, and leaves a manifest asserting that every record in a live corpus has
+#: been withdrawn from Scopus. That last part is the worst of it: the run does
+#: not merely fail, it records a falsehood about the corpus.
+#:
+#: Ten is chosen to survive a genuinely withdrawn record at the head of the run
+#: -- which really happens; the first probe attempt during that investigation hit
+#: one -- while a corpus whose first ten consecutive records are *all* withdrawn
+#: is not a corpus, it is a symptom.
+CONSECUTIVE_NOT_FOUND_LIMIT = 10
+
+
+def _abstract_endpoint_refusing_error(record_ids: list[str]) -> EntitlementError:
+    """Build the message for a run whose every early request 404s.
+
+    Args:
+        record_ids: The consecutive record ids that returned 404.
+
+    Returns:
+        An :class:`~prismabib.errors.EntitlementError` naming both possible
+        causes, because a 404 alone cannot distinguish them -- and giving the
+        reader a one-command way to tell them apart.
+    """
+    shown = ", ".join(record_ids[:3])
+    return EntitlementError(
+        f"Scopus returned HTTP 404 for the first {len(record_ids)} records of this run "
+        f"({shown}, ...), so it stopped rather than spend the rest of your quota.\n"
+        "\n"
+        "A single 404 means a withdrawn or merged record. This many in a row, at the\n"
+        "start of a run, means something else. Two causes produce an identical\n"
+        "signature, and they are told apart differently:\n"
+        "\n"
+        "  * **The request is malformed.** This exact failure shipped in v0.8.0: the\n"
+        "    client sent an EID to Elsevier's `/content/abstract/scopus_id/` path,\n"
+        "    which expects a bare numeric id, and every record 404'd on a corpus\n"
+        "    that was entirely live. Check the URL in the error above against\n"
+        "    Elsevier's documentation before concluding anything about your key.\n"
+        "  * **The key lacks the Abstract Retrieval entitlement.** A key can be\n"
+        "    refused with 404 rather than the 403 you would expect. A working\n"
+        "    Search entitlement proves nothing about it -- they are licensed\n"
+        "    separately.\n"
+        "\n"
+        "How to rule out the records in one step: take an id straight out of a fresh\n"
+        "`prismabib search` result and request it here. If a record Scopus returned\n"
+        "seconds ago also 404s, the records are not the problem -- which leaves the\n"
+        "URL and the entitlement, in that order.\n"
+        "\n"
+        "What to do:\n"
+        "  1. Run from your institution's network, which is often sufficient.\n"
+        "  2. Off campus, ask your library for a Scopus institutional token and set\n"
+        "     SCOPUS_INSTTOKEN alongside SCOPUS_API_KEY in your .env. If it is\n"
+        "     already set, ask whether the subscription covers Abstract Retrieval\n"
+        "     ('full text / abstract retrieval' in Elsevier's terms), naming that\n"
+        "     API rather than Scopus generally.\n"
+        "  3. Without it, subject-area codes cannot be obtained: set subject_areas\n"
+        "     to [] in criteria.yaml and record the limitation in your protocol.\n"
+        "     Nothing else in prismabib needs this endpoint -- search, screening,\n"
+        "     flow counts and export all work without it.\n"
+        "\n"
+        "Nothing was written and no run was sealed, so no manifest now claims your\n"
+        "corpus was withdrawn from Scopus."
+    )
+
+
 def capture_abstracts(
     project: Project,
     *,
@@ -626,10 +701,14 @@ def capture_abstracts(
         **When ``budget`` stops the run short, this value is returned but not
         written to disk**, and no ``manifest.json`` appears: the run stays
         unsealed and a later call resumes it. The absence of the file, not the
-        return value, is what says "unfinished" -- so a caller that wants to
-        know should test ``payload_files``/``records_fetched`` against
-        ``records_requested`` rather than assume a returned manifest was
-        sealed.
+        return value, is what says "unfinished".
+
+        A caller testing the returned value instead must compare
+        ``records_fetched + len(unavailable)`` against ``records_requested``.
+        ``records_fetched`` alone is not enough: a *sealed* run legitimately
+        fetches fewer records than it requested whenever one is withdrawn
+        (404) or unentitled (403), so that comparison reports a finished run
+        as unfinished and sends the caller to pay for it again.
 
     Raises:
         ConfigError: If ``project.criteria`` cannot be read.
@@ -721,6 +800,10 @@ def capture_abstracts(
     settings = Settings()
     cache = HttpCache(raw_dir / CACHE_DIRNAME)
     attempted = 0
+    #: Record ids that have returned 404 with nothing yet fetched. Reset on the
+    #: first success, so a withdrawn record mid-run cannot accumulate toward the
+    #: breaker. See CONSECUTIVE_NOT_FOUND_LIMIT.
+    consecutive_not_found: list[str] = []
     budget_exhausted = False
 
     # A fresh limiter, never one carried over from a search run: Scopus quotas
@@ -779,13 +862,45 @@ def capture_abstracts(
                         record_id=record_id,
                         reason="not_entitled",
                     )
+                    # A 403 breaks the run of 404s. The breaker counts
+                    # *consecutive* 404s, and without this a 404/403/404/403
+                    # alternation accumulates toward it while no two 404s are
+                    # ever adjacent.
+                    consecutive_not_found.clear()
                     continue
-                except RecordNotFoundError:
+                except RecordNotFoundError as not_found_exc:
                     # A withdrawn or merged record. Recording it keeps the
                     # distinction a later reader needs -- "Scopus has no such
                     # record" is not "we never asked" and not "Scopus assigns no
                     # subject areas" -- and lets the run finish, which retrying
                     # a permanent 404 never would.
+                    #
+                    # Unless every request is 404ing. An unentitled key is
+                    # refused with 404 on this endpoint rather than 403, so the
+                    # probe above never fires and this branch would record a
+                    # whole live corpus as withdrawn, at the cost of a weekly
+                    # quota. See CONSECUTIVE_NOT_FOUND_LIMIT.
+                    consecutive_not_found.append(record_id)
+                    # `state.records_fetched` covers a resumed run: an
+                    # invocation that continues a run which already fetched
+                    # records has proved the endpoint answers, so a cluster of
+                    # genuinely withdrawn records later in the corpus must not
+                    # trip this. The breaker is strictly about a run that has
+                    # never once succeeded.
+                    if (
+                        state.records_fetched == 0
+                        and not batch_responses
+                        and len(consecutive_not_found) >= CONSECUTIVE_NOT_FOUND_LIMIT
+                    ):
+                        logger.warning(
+                            "capture.abstracts.endpoint_refusing",
+                            run_id=run_id,
+                            endpoint=endpoint,
+                            consecutive_404s=len(consecutive_not_found),
+                        )
+                        raise _abstract_endpoint_refusing_error(
+                            consecutive_not_found
+                        ) from not_found_exc
                     batch_unavailable.append(
                         AbstractUnavailable(
                             record_id=record_id, http_status=404, reason="not_found"
@@ -799,6 +914,7 @@ def capture_abstracts(
                     )
                     continue
 
+                consecutive_not_found.clear()
                 batch_responses.append(response)
                 if not _has_subject_areas(response):
                     batch_unavailable.append(
