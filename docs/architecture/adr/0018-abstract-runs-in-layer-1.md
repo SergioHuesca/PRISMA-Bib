@@ -94,11 +94,15 @@ identified" (S02-AC5), and a row there would inflate `identified` for records th
 already counted by the search that found them. This is asserted by a test, not left to
 care.
 
-### The later run wins
+### The later *observation* wins
 
-Where two sealed runs both carry areas for one record, the later `run_id` supplies its
-`subject_areas` rows — a re-enrichment observes Scopus as it is now, and a corpus whose
-areas came from two dates is not one filter. Coverage rows are kept per run, since the PK
+Where two sealed runs both **observe** one record, the later `run_id` supplies its
+`subject_areas` rows — a re-enrichment sees Scopus as it is now, and a corpus whose areas
+came from two dates is not one filter. An observation means a status of `assigned` or
+`none_assigned`; a `not_found` or `not_entitled` in a later run does **not** clear areas an
+earlier run really saw, because a failed fetch carries no subject-area information and
+discarding evidence in favour of its absence is not "newer". Scopus withdraws and merges
+records, so an identifier that stops resolving is ordinary rather than exotic. Coverage rows are kept per run, since the PK
 is `(record_id, run_id)`: the history of what was asked and when stays legible even though
 only the newest answer is filtered on.
 
@@ -106,7 +110,8 @@ only the newest answer is filtered on.
 
 `tests/fixtures/projects/reference/criteria.yaml` declares `subject_areas: []` and the
 reference fixture has no abstract runs, so every existing golden value is unchanged;
-`reference_table_checksums.json` gains two empty-table digests and alters nothing.
+`reference_table_checksums.json` gains five keys — two empty-table digests and three
+`row_counts` entries — and alters none of the values already there.
 
 This is worth stating because it is the opposite of what a schema addition that finally
 switches on a filter would normally imply, and because §5 risk 11 makes a moved golden the
@@ -162,11 +167,23 @@ the queue.
 The sealed payloads are read as they stand. Quota already spent is not spent again — which
 matters, because this ADR is what makes that spend worth anything.
 
-### 3. Partial coverage is visible rather than assumed
+### 3. A half-enriched corpus is refused, not filtered blind
 
-`record_subject_area_coverage` lets a reviewer ask "how much of the corpus did the
-subject-area filter actually see?" — a question that could not previously be asked and whose
-answer belongs in a limitations section.
+The coverage table is **read**, not merely written. Once enrichment has been run at all, a
+record that was never looked up makes `subject_areas` unenforceable and
+`_refuse_unenforceable_subject_filter` raises, naming how many records and what to do.
+
+This is the point of the table, and writing it without reading it would have left exactly
+the failure Alternative 1 is rejected for: a never-asked record passes the filter for the
+same reason a genuinely unclassified one does, so the diagram reports one "excluded by
+subject area" figure computed over an unknown fraction of the corpus. An exhausted quota, an
+interrupted run and a `--budget` cap all produce that state, so it is the expected way to
+reach it.
+
+A corpus that was *never* enriched is not refused on these grounds — sparse subject-area
+data from search entries is the case `_passes_subject_areas`' "no data, so passes" branch
+deliberately tolerates. It is the half-finished state that is dangerous, because there the
+filter looks like it worked.
 
 ### 4. `identified` is unaffected
 
@@ -175,15 +192,26 @@ Guaranteed by the "`runs` gains no row" rule and asserted by a test.
 ## Constraints
 
 - `runs` never gains a row from an abstract run.
-- Traversal is sorted by `run_id`, then `payload_files` in manifest order, then line order —
+- Traversal is sorted by run **directory name**, then `payload_files` in manifest order, then
+  line order —
   the same discipline `store/load.py` already applies to search runs, because Layer 1 must
   rebuild byte-identically on another machine.
 - A record present in an abstract run but absent from `records` is skipped and **counted**,
-  never silently dropped (§5 risk 8's discipline).
+  never silently dropped (§5 risk 8's discipline). `unmatched_abstract_record_ids` is the one
+  `StoreStats` field with no table behind it, so it is empty on the `rebuild=False` reuse
+  path; `prismabib build` says so explicitly rather than printing nothing, because a line
+  that appears only when non-empty cannot be told apart from "nothing was skipped".
 - An unsealed abstract run is ignored entirely. A partial load is worse than none.
 - The four `status` values are exactly Layer 0's three `AbstractUnavailableReason` values
   plus `assigned`. Adding a fifth means Layer 0 gained a reason, and both must change
-  together.
+  together. A test asserts the vocabulary is closed, because the single line that keeps
+  `no_subject_areas` from becoming a fifth value could otherwise be removed with the whole
+  suite still green.
+- Subject-area extraction from an abstract payload takes `@code` **only**, never the
+  `@code or $` fallback the search-entry path applies. `capture.enrich._has_subject_areas`
+  already decided that an entry without a code is not evidence of codes; a lenient reader
+  made the layers contradict each other, storing a human-readable name as an area code and
+  excluding a record Layer 0 had sealed as `no_subject_areas`.
 
 ## Related decisions
 

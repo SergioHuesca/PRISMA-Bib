@@ -979,16 +979,32 @@ def _subject_areas_from_abstract_payload(payload: dict[str, Any]) -> list[str]:
         payload: One parsed, verbatim Abstract Retrieval response.
 
     Returns:
-        Area codes read via :func:`_subject_areas_from_entry` -- the same
-        ``@code``-preferring extraction the search-entry path already uses,
-        reused rather than reimplemented -- once
-        :func:`_subject_area_entries_from_abstract_payload` has normalised
-        Scopus's scalar-vs-list inconsistency for a lone subject area into a
-        plain list, the shape :func:`_subject_areas_from_entry` expects at
-        its own (flat) ``"subject-area"`` key.
+        Every entry's ``@code``, in payload order. Entries without a
+        non-empty ``@code`` are dropped.
+
+    ``@code`` **only** -- deliberately not the ``@code or $`` fallback
+    :func:`_subject_areas_from_entry` applies to a search entry. The write
+    side already decided this question: ``capture.enrich._has_subject_areas``
+    counts a record as carrying areas only if some entry has a non-empty
+    ``@code``, "because an entry without a code cannot be matched against
+    ``criteria.yaml``'s ``subject_areas`` list, so it is not evidence that
+    the record has codes", and seals such a record as ``no_subject_areas``.
+
+    Reusing the lenient extraction made the two layers contradict each
+    other: Layer 0 said "no areas observed -- keep this record", Layer 1
+    stored ``"Artificial Intelligence"`` as an area code, recorded the
+    record as ``assigned``, and then *excluded* it, because a
+    human-readable name matches no ASJC grouping. A record dropped from a
+    published corpus on the strength of a log line is BUILD_PLAN §1.4, so
+    the two predicates must agree by construction.
     """
-    entries = _subject_area_entries_from_abstract_payload(payload)
-    return _subject_areas_from_entry({"subject-area": entries})
+    return [
+        code
+        for entry in _subject_area_entries_from_abstract_payload(payload)
+        if isinstance(entry, dict)
+        for code in [entry.get("@code")]
+        if isinstance(code, str) and code
+    ]
 
 
 def _record_from_entry(entry: dict[str, Any], *, record_id: str, payload_ref: PayloadRef) -> Record:

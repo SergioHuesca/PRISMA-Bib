@@ -135,6 +135,13 @@ class _RecordAttributes:
     venue_type: str
     venue_name: str
     subject_areas: frozenset[str]
+    #: Whether any sealed abstract run has an observation for this record
+    #: (ADR 0018). ``False`` means *never asked*, which is a different claim
+    #: from "asked, Scopus assigns none" -- the latter is a defensible
+    #: inclusion, the former means the corpus is incompletely enriched and a
+    #: subject-area exclusion count would be computed over an unknown
+    #: fraction of it.
+    subject_area_observed: bool
 
 
 @contextmanager
@@ -206,6 +213,12 @@ def _fetch_record_attributes(
         "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id"
     ).fetchall()
     area_rows = connection.execute("SELECT record_id, area_code FROM subject_areas").fetchall()
+    observed = {
+        record_id
+        for (record_id,) in connection.execute(
+            "SELECT DISTINCT record_id FROM record_subject_area_coverage"
+        ).fetchall()
+    }
 
     areas_by_record: dict[str, set[str]] = defaultdict(set)
     for record_id, area_code in area_rows:
@@ -219,6 +232,10 @@ def _fetch_record_attributes(
             venue_type=venue_type,
             venue_name=venue_name,
             subject_areas=frozenset(areas_by_record.get(record_id, ())),
+            # Having areas *is* an observation: the coverage table is the extra
+            # evidence needed only for a record with none, where "Scopus assigns
+            # this paper none" and "we never asked" are otherwise identical.
+            subject_area_observed=record_id in observed or bool(areas_by_record.get(record_id)),
         )
         for record_id, year, doc_type, language, venue_type, venue_name in rows
     }
@@ -545,7 +562,13 @@ def _capture_layer1(
     resolved = project.criteria if criteria is None else criteria
     with _layer1_connection(project, connection) as open_connection:
         attributes = _fetch_record_attributes(open_connection)
-    _refuse_unenforceable_subject_filter(project, resolved, attributes)
+        abstract_run_count = open_connection.execute(
+            "SELECT count(*) FROM abstract_runs"
+        ).fetchone()
+        enrichment_attempted = abstract_run_count is not None and bool(abstract_run_count[0])
+    _refuse_unenforceable_subject_filter(
+        project, resolved, attributes, enrichment_attempted=enrichment_attempted
+    )
     automated, language, excluded_by_reason = _compute_a_and_l(attributes, resolved)
     return _Layer1View(
         criteria=resolved,
@@ -560,6 +583,8 @@ def _refuse_unenforceable_subject_filter(
     project: Project,
     criteria: Criteria,
     attributes: Mapping[str, _RecordAttributes],
+    *,
+    enrichment_attempted: bool,
 ) -> None:
     """Refuse a ``subject_areas`` restriction that this corpus cannot evaluate.
 
@@ -586,9 +611,9 @@ def _refuse_unenforceable_subject_filter(
         attributes: Every record's Layer 1 attributes, from this snapshot.
 
     Raises:
-        ConfigError: If ``subject_areas`` is non-empty and not one record in
-            the corpus carries subject-area data that this build can
-            *recognise*.
+        ConfigError: If ``subject_areas`` is non-empty and either (a) not one
+            record in the corpus carries subject-area data that this build can
+            *recognise*, or (b) any record has never been looked up at all.
 
     "Recognise" is doing real work there. Checking merely that some record
     carries a row leaves a second route to the same silent no-op -- or rather
@@ -619,7 +644,49 @@ def _refuse_unenforceable_subject_filter(
         # Same discipline as `store.load`'s unmapped-country report (§5 risk 8):
         # a value this build cannot interpret must be visible, never absorbed.
         logger.warning("prisma.subject_areas.unmapped", values=tuple(unmapped))
-    if any(area_abbrev(code)[1] for record in attributes.values() for code in record.subject_areas):
+    recognisable = any(
+        area_abbrev(code)[1] for record in attributes.values() for code in record.subject_areas
+    )
+    unenriched = sorted(
+        record_id for record_id, record in attributes.items() if not record.subject_area_observed
+    )
+    # Only once enrichment has actually been run. A corpus whose subject areas
+    # came sparsely from search entries is the case `_passes_subject_areas`'s
+    # "no data, so passes" branch is deliberately designed to tolerate (see this
+    # module's "no Layer 1 data" latitude note), and refusing there would block a
+    # legitimate review over data Scopus simply never returned.
+    #
+    # A *half-enriched* corpus is different in kind. The operator ran `enrich`,
+    # so they intend the filter to apply to the whole corpus; stopping short --
+    # an exhausted quota, an interrupted run, a `--budget` cap -- leaves records
+    # that pass the filter only because nothing was ever asked about them, while
+    # the diagram reports one "excluded by subject area" figure as though it had
+    # been. That is the failure ADR 0018's coverage table exists to make visible,
+    # and a table nothing reads makes nothing visible.
+    if enrichment_attempted and unenriched:
+        # Computed above the pragma -- see the note in `criteria._run_git`.
+        criteria_path = project.root / "criteria.yaml"
+        restricted_to = list(criteria.subject_areas)
+        shown = unenriched[:3]
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+        raise ConfigError(
+            f"{criteria_path} restricts subject_areas to {restricted_to!r}, but "
+            f"{len(unenriched)} of the {len(attributes)} records in this corpus have "
+            "never been looked up in the Abstract Retrieval API, so nothing is known "
+            f"about their subject areas (e.g. {shown}).\n\n"
+            "A record with no subject-area data passes this filter, so the review "
+            "would proceed with the restriction applied to only "
+            f"{len(attributes) - len(unenriched)} of {len(attributes)} records while the "
+            "PRISMA diagram reported a single 'excluded by subject area' count -- a "
+            "number computed over an unknown fraction of the corpus, which is exactly "
+            "the kind of plausible wrong figure this tool exists to prevent.\n\n"
+            "Run `prismabib enrich` to completion (it is resumable and does not "
+            "re-spend quota on records already fetched), then rebuild. Records Scopus "
+            "cannot resolve (404) or refuses (403) do not block this: they are recorded "
+            "as looked-up-and-unavailable and count as answered."
+        )
+        # pragma: no mutate end
+    if recognisable:
         return
     # Computed above the pragma, not interpolated inside it -- see the note in
     # `criteria._run_git`.

@@ -333,7 +333,7 @@ def test_build_store__unsealed_abstract_run__is_ignored_entirely(tmp_path: Path)
 _E2E_KEEP_BOTH = RecordSpec(number=1)  # ENGI + COMP via abstract run -> keep
 _E2E_KEEP_MATH = RecordSpec(number=2)  # MATH via abstract run -> keep
 _E2E_EXCLUDE_MEDI = RecordSpec(number=3)  # MEDI via abstract run -> excluded
-_E2E_NEVER_ENRICHED = RecordSpec(number=4)  # no abstract-run entry at all -> keep
+_E2E_NEVER_ENRICHED = RecordSpec(number=4)  # no abstract-run entry at all -> refuses
 _E2E_ASSIGNED_NONE = RecordSpec(number=5)  # enriched, Scopus assigned none -> keep
 
 
@@ -355,7 +355,6 @@ def test_build_store__real_asjc_codes_from_an_abstract_run__filters_the_engine_e
         _E2E_KEEP_BOTH,
         _E2E_KEEP_MATH,
         _E2E_EXCLUDE_MEDI,
-        _E2E_NEVER_ENRICHED,
         _E2E_ASSIGNED_NONE,
     ]
     write_criteria(project, CriteriaSpec(subject_areas=("COMP", "ENGI", "MATH", "MULT")))
@@ -379,7 +378,6 @@ def test_build_store__real_asjc_codes_from_an_abstract_run__filters_the_engine_e
                 eid=_E2E_EXCLUDE_MEDI.eid, subject_areas=[{"@code": "2746"}]
             ),  # MEDI
             make_abstract_entry(eid=_E2E_ASSIGNED_NONE.eid, subject_areas=None),
-            # `_E2E_NEVER_ENRICHED` is absent from this run entirely.
         ],
         started_at=_ABSTRACT_STARTED_AT,
         records_requested=4,
@@ -393,14 +391,72 @@ def test_build_store__real_asjc_codes_from_an_abstract_run__filters_the_engine_e
     assert automated == {
         _E2E_KEEP_BOTH.record_id,
         _E2E_KEEP_MATH.record_id,
-        _E2E_NEVER_ENRICHED.record_id,
+        # Kept: Scopus was asked and assigned it nothing, which is no evidence
+        # to exclude on -- distinct from never having been asked, which is what
+        # `..._half_enriched_corpus__is_refused` covers.
         _E2E_ASSIGNED_NONE.record_id,
     }
 
     counts = compute_flow_counts(project)
-    assert counts.identified == 5
+    assert counts.identified == 4
     assert counts.excluded_automated_by_reason["subject_area"] == 1
-    assert counts.after_automated == 4
+    assert counts.after_automated == 3
+
+
+@pytest.mark.integration
+def test_automated_set__half_enriched_corpus__is_refused_rather_than_filtered_blind(
+    tmp_path: Path,
+) -> None:
+    """A corpus where enrichment ran but did not finish is refused.
+
+    This is the failure ADR 0018's coverage table exists to make visible, and
+    the reason the table has to be *read* rather than merely written: a record
+    that was never looked up carries no subject areas, so it passes the filter
+    for the same reason a record Scopus genuinely classified as nothing does.
+    The PRISMA diagram then reports one "excluded by subject area" figure
+    computed over an unknown fraction of the corpus -- BUILD_PLAN §1.4.
+
+    An exhausted weekly quota, an interrupted run, or a ``--budget`` cap all
+    produce exactly this state, so it is the expected way to get here rather
+    than an exotic one.
+
+    Contrast ``test_engine.py``'s sparse-search-entry corpora, which are
+    *not* refused: enrichment was never attempted there, so the "no data, so
+    passes" latitude applies.
+    """
+    project = Project.init("half-enriched", title="Half enriched", root=tmp_path)
+    records = [
+        _E2E_KEEP_BOTH,
+        _E2E_KEEP_MATH,
+        _E2E_EXCLUDE_MEDI,
+        _E2E_NEVER_ENRICHED,
+        _E2E_ASSIGNED_NONE,
+    ]
+    write_criteria(project, CriteriaSpec(subject_areas=("COMP", "ENGI", "MATH", "MULT")))
+    write_sealed_run(
+        project.raw_dir,
+        _SEARCH_RUN_ID,
+        [record.to_entry() for record in records],
+        started_at=_SEARCH_STARTED_AT,
+        total_results=len(records),
+    )
+    write_sealed_abstract_run(
+        project.raw_dir,
+        _ABSTRACT_RUN_ID,
+        [
+            make_abstract_entry(eid=_E2E_KEEP_BOTH.eid, subject_areas=[{"@code": "1702"}]),
+            make_abstract_entry(eid=_E2E_KEEP_MATH.eid, subject_areas=[{"@code": "2611"}]),
+            make_abstract_entry(eid=_E2E_EXCLUDE_MEDI.eid, subject_areas=[{"@code": "2746"}]),
+            make_abstract_entry(eid=_E2E_ASSIGNED_NONE.eid, subject_areas=None),
+            # `_E2E_NEVER_ENRICHED` is absent: the quota ran out before it.
+        ],
+        started_at=_ABSTRACT_STARTED_AT,
+        records_requested=4,
+    )
+    build_store(project, rebuild=True)
+
+    with pytest.raises(ConfigError, match="never been looked up"):
+        engine.automated_set(project)
 
 
 @pytest.mark.integration
@@ -421,3 +477,159 @@ def test_build_store__subject_filter_declared_before_enrichment__still_refuses(
 
     with pytest.raises(ConfigError, match="recognises"):
         engine.automated_set(project)
+
+
+@pytest.mark.integration
+def test_build_store__a_later_failed_fetch__does_not_erase_an_earlier_runs_areas(
+    tmp_path: Path,
+) -> None:
+    """A 404 in a later run leaves the areas an earlier run actually observed.
+
+    "The later run wins" is a rule about *observations*. A ``not_found`` or
+    ``not_entitled`` carries no subject-area information at all, so letting it
+    overwrite real codes would discard evidence in favour of its absence --
+    and Scopus withdraws and merges records, so an identifier that stops
+    resolving is common rather than exotic.
+
+    Nothing pinned this: inverting the condition left the whole suite green.
+    """
+    project = Project.init("failed-refetch", title="Failed refetch", root=tmp_path)
+    record = RecordSpec(number=1)
+    write_criteria(project, CriteriaSpec(subject_areas=("COMP",)))
+    write_sealed_run(
+        project.raw_dir,
+        _SEARCH_RUN_ID,
+        [record.to_entry()],
+        started_at=_SEARCH_STARTED_AT,
+        total_results=1,
+    )
+    write_sealed_abstract_run(
+        project.raw_dir,
+        "20250101T000000Z-aaaaaaaa",
+        [make_abstract_entry(eid=record.eid, subject_areas=[{"@code": "1702"}])],
+        started_at=_ABSTRACT_STARTED_AT,
+    )
+    write_sealed_abstract_run(
+        project.raw_dir,
+        "20250102T000000Z-bbbbbbbb",
+        [],
+        started_at=_ABSTRACT_STARTED_AT,
+        unavailable=[
+            AbstractUnavailable(record_id=record.record_id, http_status=404, reason="not_found")
+        ],
+        records_requested=1,
+    )
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        areas = connection.execute("SELECT area_code FROM subject_areas").fetchall()
+        statuses = connection.execute(
+            "SELECT status FROM record_subject_area_coverage ORDER BY run_id"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert areas == [("1702",)]
+    assert statuses == [("assigned",), ("not_found",)]
+
+
+@pytest.mark.integration
+def test_build_store__no_subject_areas_in_unavailable__records_none_assigned_and_keeps_no_codes(
+    tmp_path: Path,
+) -> None:
+    """A ``no_subject_areas`` record is ``none_assigned``, not a fifth status.
+
+    ``capture.enrich`` emits this for *every* record whose response carries no
+    usable ``@code``, so it is the common path rather than an edge case, and
+    its payload line **is** written -- the record must therefore be reconciled
+    from two places at once without producing a status ADR 0018's constraints
+    declare impossible.
+    """
+    project = Project.init("none-assigned", title="None assigned", root=tmp_path)
+    record = RecordSpec(number=1)
+    write_criteria(project, CriteriaSpec(subject_areas=("COMP",)))
+    write_sealed_run(
+        project.raw_dir,
+        _SEARCH_RUN_ID,
+        [record.to_entry()],
+        started_at=_SEARCH_STARTED_AT,
+        total_results=1,
+    )
+    write_sealed_abstract_run(
+        project.raw_dir,
+        _ABSTRACT_RUN_ID,
+        [make_abstract_entry(eid=record.eid, subject_areas=None)],
+        started_at=_ABSTRACT_STARTED_AT,
+        unavailable=[
+            AbstractUnavailable(
+                record_id=record.record_id, http_status=200, reason="no_subject_areas"
+            )
+        ],
+        records_requested=1,
+    )
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute(
+            "SELECT record_id, status FROM record_subject_area_coverage"
+        ).fetchall()
+        areas = connection.execute("SELECT count(*) FROM subject_areas").fetchone()
+    finally:
+        connection.close()
+
+    assert rows == [(record.record_id, "none_assigned")]
+    assert areas == (0,)
+
+
+@pytest.mark.integration
+def test_build_store__coverage_status__is_a_closed_vocabulary_of_four(tmp_path: Path) -> None:
+    """Every status written is one of ADR 0018's four, whatever Layer 0 contained.
+
+    Written out longhand rather than derived from the loader or from
+    ``AbstractUnavailableReason``: an expectation built from the thing under
+    test agrees with itself no matter what it starts emitting.
+    """
+    project = Project.init("closed-vocab", title="Closed vocab", root=tmp_path)
+    records = [RecordSpec(number=n) for n in range(1, 5)]
+    write_criteria(project, CriteriaSpec(subject_areas=("COMP",)))
+    write_sealed_run(
+        project.raw_dir,
+        _SEARCH_RUN_ID,
+        [record.to_entry() for record in records],
+        started_at=_SEARCH_STARTED_AT,
+        total_results=len(records),
+    )
+    write_sealed_abstract_run(
+        project.raw_dir,
+        _ABSTRACT_RUN_ID,
+        [
+            make_abstract_entry(eid=records[0].eid, subject_areas=[{"@code": "1702"}]),
+            make_abstract_entry(eid=records[1].eid, subject_areas=None),
+        ],
+        started_at=_ABSTRACT_STARTED_AT,
+        unavailable=[
+            AbstractUnavailable(
+                record_id=records[1].record_id, http_status=200, reason="no_subject_areas"
+            ),
+            AbstractUnavailable(
+                record_id=records[2].record_id, http_status=404, reason="not_found"
+            ),
+            AbstractUnavailable(
+                record_id=records[3].record_id, http_status=403, reason="not_entitled"
+            ),
+        ],
+        records_requested=4,
+    )
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        statuses = connection.execute(
+            "SELECT DISTINCT status FROM record_subject_area_coverage ORDER BY status"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert statuses == [("assigned",), ("none_assigned",), ("not_entitled",), ("not_found",)]

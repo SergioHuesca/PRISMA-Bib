@@ -66,7 +66,7 @@ version: 1.1.0            # was 1.0.0 — always bump
 temporal:
   year_start: 2014        # was 2016 — this amendment widens the window
   year_end: 2026
-subject_areas: []         # must stay empty; a non-empty list is refused (see below)
+subject_areas: []         # needs `prismabib enrich` first; see below
 doc_types:
   include: [ar, cp]
   conference_whitelist: ["Computer Vision and Pattern Recognition"]

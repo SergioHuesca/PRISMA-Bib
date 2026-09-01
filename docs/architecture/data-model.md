@@ -464,7 +464,15 @@ The 11 tables are:
 **`subject_areas`** — Scopus subject classification codes for records.
 - **Primary key:** implicit
 - **Columns:** `record_id`, `area_code` (e.g. "COMP" for computer science, per `criteria.yaml`)
-- **Role:** Supports subject-based filtering. Always empty for Search API `view=COMPLETE` captures (Abstract Retrieval API required); schema-present for forward compatibility.
+- **Role:** Supports subject-based filtering. Empty for a corpus captured only from the Search API — `view=COMPLETE` returns no subject-area codes — and populated by `prismabib enrich`, whose sealed Abstract Retrieval runs load via [ADR 0018](adr/0018-abstract-runs-in-layer-1.md). Holds Scopus's four-digit ASJC `@code`; `criteria.yaml` declares the four-letter grouping and `prismabib.asjc` bridges the two ([ADR 0017](adr/0017-subject-areas-match-by-asjc-grouping.md)).
+
+### `abstract_runs`
+
+- **Role:** One row per sealed Abstract Retrieval run, including its `payload_sha256`. Provenance for every subject area in the store. **Never a row in `runs`** — an abstract run identifies nothing, and `runs` is the only sanctioned source of PRISMA "records identified" (S02-AC5).
+
+### `record_subject_area_coverage`
+
+- **Role:** Per record and run, whether Scopus assigned areas (`assigned`), assigned none (`none_assigned`), had no such record (`not_found`), or refused (`not_entitled`). **A record with no row here was never looked up** — absence is the fourth state, and it is what lets the engine tell "this paper carries no classification" apart from "we never asked". Once enrichment has been run, a record in that state makes `subject_areas` unenforceable and the engine refuses rather than filtering over part of the corpus.
 
 **`malformed_entries`** — one row per Layer 0 entry that could not be turned into a record. **Not part of the frozen BUILD_PLAN schema**; added by [ADR 0012](adr/0012-persisting-skipped-layer0-entries.md).
 - **Primary key:** `(payload_file, payload_line)` composite key

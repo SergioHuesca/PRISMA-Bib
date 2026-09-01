@@ -507,6 +507,19 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
             f"(prismabib enrich), covering {stats.record_subject_area_coverage_loaded:,} "
             "record/run pair(s) in record_subject_area_coverage."
         )
+        # Printed on the rebuild path even when zero. `unmatched_abstract_record_ids`
+        # is the one `StoreStats` field with no table behind it, so it is empty on
+        # the reuse path for want of anywhere to read it back from -- and a line
+        # that appears only when non-empty is indistinguishable from that silence.
+        # Saying which of the two this is costs one line and removes the reading
+        # ADR 0012 added `malformed_entries` to eliminate: absence read as "nothing
+        # was skipped".
+        _echo(
+            f"  {len(stats.unmatched_abstract_record_ids):,} abstract-run record(s) "
+            "not in this store's records table."
+            if stats.rebuilt
+            else "  (whether any abstract-run record was skipped is only reported with --rebuild.)"
+        )
     if stats.unmatched_abstract_record_ids:
         unmatched = stats.unmatched_abstract_record_ids
         # Same "capped, not truncated to a count" discipline as the
