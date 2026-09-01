@@ -70,6 +70,18 @@ jobs:
       - name: Fast tests (unit + contract)
         run: uv run pytest -m "unit or contract" -n auto
 
+  # `benchmark` is deselected from every job below and runs in `nightly.yml` instead.
+  # It asserts a wall-clock budget (S05-AC3, "within 100 ms"), and a shared runner cannot
+  # measure one: three false reds in two days -- 290 ms, 184 ms, 160 ms -- all on commits
+  # containing no source change, against a real cost of ~13 ms. Each one asks a human to
+  # decide that a red X does not count, which is the judgement that eventually waves a real
+  # regression through.
+  #
+  # It is not replaced by a proxy in PR CI on purpose. The obvious one -- assert the CPU-time
+  # ratio between two log sizes -- measures 1.4x to 2.3x across trials for an 8x larger log,
+  # because fixed per-append costs dominate at testable sizes. A 60%-variance assertion is a
+  # second flaky test, not a fix. `test_ci__benchmark_tests__run_in_some_workflow` is what
+  # stops the deselection becoming "measured nowhere".
   full-matrix:
     name: full-matrix
     runs-on: ubuntu-latest
@@ -90,7 +102,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Full suite with coverage
-        run: uv run pytest -m "not live and not e2e" -n auto --cov --cov-report=term-missing --cov-report=html
+        run: uv run pytest -m "not live and not e2e and not benchmark" -n auto --cov --cov-report=term-missing --cov-report=html
 
       - name: Upload coverage report
         if: always()
@@ -155,7 +167,7 @@ jobs:
       # Same selection as `full`, without the coverage report: the per-module gates are
       # measured once, on Linux, by `full-matrix`. What is wanted here is pass/fail.
       - name: Full suite on Windows
-        run: uv run pytest -m "not live and not e2e" -n auto
+        run: uv run pytest -m "not live and not e2e and not benchmark" -n auto
 
   # BUILD_PLAN §3.7.7: "e2e — pytest -m e2e (single job, ubuntu, py3.12)". Layer 0 through
   # to FlowCounts on the frozen reference project, which is the only check that the
@@ -241,7 +253,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Measure coverage
-        run: uv run pytest -m "not live" -q --cov=prismabib --cov-report=json:coverage.json --cov-branch
+        run: uv run pytest -m "not live and not benchmark" -q --cov=prismabib --cov-report=json:coverage.json --cov-branch
 
       - name: Enforce the per-module gates
         run: |

@@ -9,6 +9,7 @@ actually catches an unclaimed criterion, and that the coverage gates in
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tomllib
@@ -185,3 +186,47 @@ def test_gitattributes__checksummed_files__are_never_newline_normalised(path: st
     )
 
     assert result.stdout.strip() == f"{path}: text: unset"
+
+
+@pytest.mark.unit
+def test_ci__benchmark_tests__run_in_some_workflow() -> None:
+    """A deselected test must still be selected somewhere, or it is measured nowhere.
+
+    ``benchmark`` is deselected from every PR-CI job because it asserts a
+    wall-clock budget and a shared runner cannot measure one -- three false
+    reds in two days, 290/184/160 ms against a real cost of ~13 ms. It runs in
+    ``nightly.yml`` instead.
+
+    That arrangement has a failure mode with no symptom. ``pytest
+    --acceptance-report`` counts *collected* tests, so S05-AC3 keeps reporting
+    "claimed" whether or not the test that claims it is ever run. Delete the
+    nightly job, or add ``and not benchmark`` to its selector, and the
+    criterion silently stops being measured while every check stays green and
+    the report still says covered.
+
+    So this asserts the invariant directly: some workflow must select
+    ``benchmark``. Where it runs is free to change; running nowhere is not.
+    """
+    workflows = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
+    assert workflows, "no workflows found"
+
+    selectors = [
+        line.strip()
+        for path in workflows
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "pytest" in line and "-m " in line
+    ]
+    assert selectors, "no pytest invocations found in any workflow"
+
+    selects_benchmark = [
+        selector
+        for selector in selectors
+        if re.search(r'-m\s+"?[^"\n]*\bbenchmark\b', selector)
+        and not re.search(r"not\s+benchmark", selector)
+    ]
+    assert selects_benchmark, (
+        "no workflow runs the benchmark tests. They are deselected from PR CI on "
+        "purpose, but S05-AC3 is claimed by one of them and `--acceptance-report` "
+        "will keep calling it claimed regardless. Restore a job that runs "
+        "`pytest -m benchmark`, or move the claim to a test that does run."
+    )
