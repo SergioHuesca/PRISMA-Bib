@@ -176,15 +176,15 @@ Created project 'demo-talk' at ./projects/demo-talk
 `prismabib search` cannot run until you edit these two files, in this order:
 
   1. ./projects/demo-talk/project.toml
-     Fill in [query] terms / compound_terms -- the Boolean search itself. They 
-     are scaffolded empty, and an empty query is refused rather than silently run 
+     Fill in [query] terms / compound_terms -- the Boolean search itself. They
+     are scaffolded empty, and an empty query is refused rather than silently run
      against all of Scopus.
   2. ./projects/demo-talk/criteria.yaml
-     Set temporal.year_start / year_end, and whichever of doc_types.include and 
-     languages your protocol restricts; every list left empty means no restriction on 
-     that dimension, which is a real eligibility choice rather than a placeholder. 
-     Replace the starter exclusion reason codes with the ones your review actually 
-     distinguishes, and bump `version` whenever you change any of it. The file's own 
+     Set temporal.year_start / year_end, and whichever of doc_types.include and
+     languages your protocol restricts; every list left empty means no restriction on
+     that dimension, which is a real eligibility choice rather than a placeholder.
+     Replace the starter exclusion reason codes with the ones your review actually
+     distinguishes, and bump `version` whenever you change any of it. The file's own
      comments explain each block.
 
 Then, in order:
@@ -275,7 +275,7 @@ Rebuilt store at ./projects/demo-talk/store/corpus.duckdb
   subject-area links                 0
   citation snapshots                 0
 
-  duplicate DOI groups: 12 (24 records). Reported, never applied -- every one of 
+  duplicate DOI groups: 12 (24 records). Reported, never applied -- every one of
   those rows is still in the store; deduplication is a screening decision.
 
 Next: prismabib flow demo-talk
@@ -473,9 +473,9 @@ You'll see the placeholders replaced:
 ```markdown
 ## Results
 
-We identified 1,771 records from the Scopus search. 
-After removing duplicates, 1,322 records remained for screening. 
-We excluded 150 at title/abstract, 
+We identified 1,771 records from the Scopus search.
+After removing duplicates, 1,322 records remained for screening.
+We excluded 150 at title/abstract,
 and included 18 studies in the final corpus.
 ```
 
