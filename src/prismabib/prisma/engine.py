@@ -97,7 +97,7 @@ documented at the function that makes it; the summary:
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
@@ -390,18 +390,62 @@ class _Layer1View:
         automated: ``A`` -- ``raw`` filtered by
             ``temporal``/``subject_areas``/``doc_types``.
         language: ``L`` -- ``automated`` further filtered by ``languages``.
+        excluded_by_reason: How many records each automated criterion removed,
+            attributed by precedence (:data:`AUTOMATED_EXCLUSION_PRECEDENCE`).
+            Sums to ``len(raw) - len(automated)``, which
+            :meth:`~prismabib.prisma.flow.FlowCounts.assert_consistent`
+            checks -- so a criterion silently attributing nothing, or twice,
+            is a failure rather than a plausible number.
     """
 
     criteria: Criteria
     raw: frozenset[str]
     automated: frozenset[str]
     language: frozenset[str]
+    excluded_by_reason: Mapping[str, int]
+
+
+#: The order a record's automated exclusion is attributed in, and the order the
+#: PRISMA diagram reports (ADR 0016).
+#:
+#: A record can fail several of these at once, so "excluded by subject area" is
+#: only well defined once an order is fixed. Under precedence it means *passed
+#: every earlier test and failed this one* -- which is what makes the four
+#: counts sum exactly to ``excluded_automated`` instead of exceeding it.
+#:
+#: This is the order the tests were already applied in, so no record changes
+#: sets because of this constant; it only names which reason each already-
+#: excluded record is filed under.
+#: The single source of truth: each reason paired with the predicate whose
+#: failure attributes a record to it. Written as one table rather than as a
+#: constant *and* an ``if``/``elif`` chain because those two are a divergence
+#: waiting to happen -- reorder the constant alone and the diagram would report
+#: reasons in an order that no longer means "the first criterion this record
+#: failed", with every count still summing correctly and every test still
+#: green. Here, order is stated once.
+_AUTOMATED_PREDICATES: Final[
+    tuple[tuple[str, Callable[[_RecordAttributes, Criteria], bool]], ...]
+] = (
+    ("year", lambda attrs, crit: _passes_temporal(attrs, crit)),
+    ("subject_area", lambda attrs, crit: _passes_subject_areas(attrs, crit.subject_areas)),
+    ("doc_type", lambda attrs, crit: _doc_type_matches(attrs.doc_type, crit.doc_types.include)),
+    (
+        "venue",
+        lambda attrs, crit: _passes_conference_whitelist(
+            attrs, crit.doc_types.conference_whitelist
+        ),
+    ),
+)
+
+AUTOMATED_EXCLUSION_PRECEDENCE: Final[tuple[str, ...]] = tuple(
+    reason for reason, _ in _AUTOMATED_PREDICATES
+)
 
 
 def _compute_a_and_l(
     attributes: Mapping[str, _RecordAttributes], criteria: Criteria
-) -> tuple[frozenset[str], frozenset[str]]:
-    """Compute ``A`` and ``L`` together from one already-read set of record attributes.
+) -> tuple[frozenset[str], frozenset[str], dict[str, int]]:
+    """Compute ``A``, ``L`` and the automated-exclusion breakdown in one pass.
 
     The one place both :func:`automated_set`/:func:`language_set` (under the
     project's *current* criteria) and :func:`replay` (under an arbitrary,
@@ -427,20 +471,28 @@ def _compute_a_and_l(
         matching :class:`~prismabib.stage.PrismaStage`'s own description of
         ``L`` as "``A`` further filtered by language".
     """
-    automated = frozenset(
-        record_id
-        for record_id, attrs in attributes.items()
-        if _passes_temporal(attrs, criteria)
-        and _passes_subject_areas(attrs, criteria.subject_areas)
-        and _doc_type_matches(attrs.doc_type, criteria.doc_types.include)
-        and _passes_conference_whitelist(attrs, criteria.doc_types.conference_whitelist)
-    )
+    passing: set[str] = set()
+    # Attribution is by *precedence*, not by membership: a 2003 paper outside
+    # the subject areas fails both the year test and the subject test, and is
+    # counted once, under the first criterion it fails. The order below is the
+    # order stated by `_AUTOMATED_PREDICATES`, and it is the order the PRISMA
+    # diagram reports -- so `excluded_by_reason` sums exactly to
+    # `excluded_automated` rather than double-counting (ADR 0016).
+    excluded_by_reason: dict[str, int] = dict.fromkeys(AUTOMATED_EXCLUSION_PRECEDENCE, 0)
+    for record_id, attrs in attributes.items():
+        for reason, passes in _AUTOMATED_PREDICATES:
+            if not passes(attrs, criteria):
+                excluded_by_reason[reason] += 1
+                break
+        else:
+            passing.add(record_id)
+    automated = frozenset(passing)
     language = frozenset(
         record_id
         for record_id in automated
         if _passes_language(attributes[record_id], criteria.languages)
     )
-    return automated, language
+    return automated, language, excluded_by_reason
 
 
 def _capture_layer1(
@@ -475,12 +527,13 @@ def _capture_layer1(
     with _layer1_connection(project, connection) as open_connection:
         attributes = _fetch_record_attributes(open_connection)
     _refuse_unenforceable_subject_filter(project, resolved, attributes)
-    automated, language = _compute_a_and_l(attributes, resolved)
+    automated, language, excluded_by_reason = _compute_a_and_l(attributes, resolved)
     return _Layer1View(
         criteria=resolved,
         raw=frozenset(attributes),
         automated=automated,
         language=language,
+        excluded_by_reason=excluded_by_reason,
     )
 
 

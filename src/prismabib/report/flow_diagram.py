@@ -22,7 +22,8 @@ citable artefact needs.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Final
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
@@ -40,6 +41,39 @@ _LEFT_X = 40
 _TOP_Y = 40
 _LINE_HEIGHT = 17
 _CANVAS_WIDTH = 760
+
+
+#: Reason-key -> figure label. Duplicated deliberately from ``cli.py``'s own
+#: table: ``report/`` is importable without the CLI, and the figure's wording
+#: is a publication surface that should not change because a terminal string
+#: was reworded.
+_AUTOMATED_REASON_LABELS: Final[Mapping[str, str]] = {
+    "year": "by publication year",
+    "subject_area": "by subject area",
+    "doc_type": "by document type",
+    "venue": "by conference whitelist",
+}
+
+
+def _automated_reason_lines(counts: FlowCounts) -> list[str]:
+    """One line per automated-exclusion reason, in precedence order.
+
+    Args:
+        counts: The flow counts being drawn.
+
+    Returns:
+        A line per reason, including reasons that excluded nothing. A reason
+        omitted at zero would make "we did not filter on subject area" and "we
+        filtered and it excluded nothing" look identical in the published
+        figure, and those are different methodological claims. Order is the
+        attribution order (ADR 0016), not alphabetical: a record is charged to
+        the first criterion it fails, so "by subject area" means *passed the
+        year test and failed this one*, which only the order conveys.
+    """
+    return [
+        f"  {_AUTOMATED_REASON_LABELS[reason]}: {count}"
+        for reason, count in counts.excluded_automated_by_reason.items()
+    ]
 
 
 def _identification_note(counts: FlowCounts) -> str:
@@ -161,7 +195,8 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             "after-automated",
             [
                 f"Records after automated filters (n = {counts.after_automated})",
-                f"excluded by year/subject/doc-type: {counts.excluded_automated}",
+                f"excluded by automated filters: {counts.excluded_automated}",
+                *_automated_reason_lines(counts),
             ],
         ),
         (

@@ -225,6 +225,15 @@ def test_flow_counts__project_with_no_runs__is_every_count_zero(tmp_path: Path) 
         duplicates_across_searches=0,
         removed_other_reasons=0,
         excluded_automated=0,
+        # Every precedence key is always present, including on an empty project:
+        # the breakdown's key set is a contract that `numbers.json` and the PRISMA
+        # diagram both depend on, so it must not vary with the data.
+        excluded_automated_by_reason={
+            "year": 0,
+            "subject_area": 0,
+            "doc_type": 0,
+            "venue": 0,
+        },
         after_automated=0,
         excluded_language=0,
         after_language=0,
@@ -613,4 +622,96 @@ def test_flow_counts__entry_unloadable_in_one_run_but_loaded_by_another__is_not_
     counts = compute_flow_counts(project)
 
     assert counts.removed_other_reasons == 0
+    counts.assert_consistent()
+
+
+#: A corpus where records fail *several* automated criteria at once, with a
+#: deliberately uneven shape: 1 record whose earliest failure is the year,
+#: 2 the subject area, 3 the document type, 4 the conference whitelist.
+#:
+#: The unevenness is the point. With one record per reason the tally is
+#: ``{1, 1, 1, 1}``, and *any* permutation of
+#: :data:`~prismabib.prisma.engine.AUTOMATED_EXCLUSION_PRECEDENCE` produces the
+#: same four numbers -- so the test that exists to pin the order could not see
+#: the order change. Distinct counts make a permutation a diff. This is the
+#: same lesson S10-AC4's ``DISTINCT_COUNTS`` records, applied to attribution
+#: rather than to rendering.
+#:
+#: Every record here also fails every criterion *after* its charged one, so a
+#: naive implementation that counted each failure separately would report a
+#: breakdown summing to 26 rather than 10.
+_PRECEDENCE_CRITERIA = CriteriaSpec(
+    year_start=2016,
+    year_end=2026,
+    subject_areas=("COMP",),
+    doc_types_include=("ar",),
+    conference_whitelist=("CVPR",),
+)
+
+#: ``(count, kwargs)`` per reason, in precedence order. A record is built from
+#: the defaults, then made to fail its own criterion and every later one.
+_FAILS_LATER = {
+    "aggregation_type": "Conference Proceeding",
+    "venue_name": "Workshop on Unrelated Things",
+}
+_PRECEDENCE_RECORDS = (
+    # Fails year, subject area, doc type and venue -- charged to year.
+    [
+        RecordSpec(number=n, year=1999, subject_areas=("MEDI",), doc_type="Review", **_FAILS_LATER)
+        for n in range(1, 2)
+    ]
+    # Passes year; fails subject area, doc type and venue -- charged to subject area.
+    + [
+        RecordSpec(number=n, year=2020, subject_areas=("MEDI",), doc_type="Review", **_FAILS_LATER)
+        for n in range(10, 12)
+    ]
+    # Passes year and subject area; fails doc type and venue -- charged to doc type.
+    + [
+        RecordSpec(number=n, year=2020, subject_areas=("COMP",), doc_type="Review", **_FAILS_LATER)
+        for n in range(20, 23)
+    ]
+    # Passes year, subject area and doc type; fails venue -- charged to venue.
+    + [
+        RecordSpec(number=n, year=2020, subject_areas=("COMP",), doc_type="Article", **_FAILS_LATER)
+        for n in range(30, 34)
+    ]
+    # Passes everything, so the corpus is not all-exclusions.
+    + [
+        RecordSpec(
+            number=40,
+            year=2020,
+            subject_areas=("COMP",),
+            doc_type="Article",
+            aggregation_type="Conference Proceeding",
+            venue_name="CVPR 2020",
+        )
+    ]
+)
+
+#: Written out as literals rather than derived from the specs, for the reason
+#: this module's docstring gives: a second implementation of the rules is not
+#: an expectation.
+_PRECEDENCE_EXPECTED = {"year": 1, "subject_area": 2, "doc_type": 3, "venue": 4}
+
+
+@pytest.mark.integration
+def test_flow_counts__record_failing_several_criteria__is_charged_to_the_first_one(
+    tmp_path: Path,
+) -> None:
+    """A multiply-failing record counts once, under the earliest criterion it fails.
+
+    PRISMA 2020 asks for exclusions to be reported *with reasons*, which a
+    single combined figure cannot do. Attributing by precedence is what makes
+    the per-reason counts sum to the total instead of over-counting every
+    record that fails more than one criterion (ADR 0016).
+    """
+    project = build_project(
+        tmp_path, CorpusSpec(records=_PRECEDENCE_RECORDS, criteria=_PRECEDENCE_CRITERIA)
+    )
+
+    counts = compute_flow_counts(project)
+
+    assert dict(counts.excluded_automated_by_reason) == _PRECEDENCE_EXPECTED
+    assert counts.excluded_automated == 10
+    assert counts.after_automated == 1
     counts.assert_consistent()

@@ -43,6 +43,14 @@ def _counts(**overrides: object) -> FlowCounts:
         "duplicates_across_searches": 0,
         "removed_other_reasons": 0,
         "excluded_automated": 412,
+        # Sums to excluded_automated, which equation 5 checks -- so this fixture
+        # cannot drift into an inconsistent shape without failing.
+        "excluded_automated_by_reason": {
+            "year": 300,
+            "subject_area": 60,
+            "doc_type": 40,
+            "venue": 12,
+        },
         "after_automated": 1359,
         "excluded_language": 27,
         "after_language": 1332,

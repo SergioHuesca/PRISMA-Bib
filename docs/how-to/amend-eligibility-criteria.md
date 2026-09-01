@@ -215,8 +215,8 @@ cited alongside it.
 
 If `assert_consistent()` raises on equation 1 (`identified - duplicates_across_searches -
 removed_other_reasons - excluded_automated == after_automated`), do not adjust a number to
-make it close — see [PRISMA Mapping — the four consistency
-equations](../methodology/prisma-mapping.md#the-four-consistency-equations) for why that
+make it close — see [PRISMA Mapping — the five consistency
+equations](../methodology/prisma-mapping.md#the-five-consistency-equations) for why that
 equation is a genuine cross-check against Layer 0 rather than an identity, and [when equation
 1 does not close](../methodology/prisma-mapping.md#when-equation-1-does-not-close) for the
 causes to work through. Amending criteria is not one of them: `identified` and the two

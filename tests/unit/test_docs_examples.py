@@ -134,7 +134,14 @@ def test_docs__sample_prisma_diagrams__add_up(page: Path) -> None:
         )
         fields = dict(zip(_FLOW_FIELDS, values, strict=True))
         total = fields.pop("excluded_fulltext_total")
-        counts = FlowCounts(**fields, excluded_fulltext={"REASON": total} if total else {})
+        # A printed diagram shows the combined automated total, not its
+        # precedence breakdown, so attribute it all to one reason: this test is
+        # about whether the identities close, not about attribution.
+        counts = FlowCounts(
+            **fields,
+            excluded_fulltext={"REASON": total} if total else {},
+            excluded_automated_by_reason={"year": fields["excluded_automated"]},
+        )
         try:
             counts.assert_consistent()
         except ValidationError as exc:  # pragma: no cover - failure path

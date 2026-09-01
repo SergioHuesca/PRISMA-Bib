@@ -318,6 +318,16 @@ def reference_golden() -> FlowCounts:
         duplicates_across_searches=0,
         removed_other_reasons=0,
         excluded_automated=REFERENCE_EXCLUDED_AUTOMATED,
+        # All 24 are venue exclusions: the fixture's criteria carry a
+        # conference whitelist and no year, subject or doc-type restriction that
+        # removes anything. Derived from the fixture and cross-checked against
+        # REFERENCE_EXCLUDED_AUTOMATED, never read off a failing test (§5 risk 11).
+        excluded_automated_by_reason={
+            "year": 0,
+            "subject_area": 0,
+            "doc_type": 0,
+            "venue": REFERENCE_EXCLUDED_AUTOMATED,
+        },
         after_automated=after_automated,
         # Inert on this fixture: its one non-English record is also a
         # non-whitelisted conference paper, so `A` has already removed it by

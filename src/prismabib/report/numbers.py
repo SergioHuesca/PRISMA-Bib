@@ -52,9 +52,10 @@ def _flow_numbers(counts: FlowCounts) -> dict[str, Any]:
 
     Returns:
         One key per integer field, plus ``flow.excluded_fulltext.<CODE>``
-        per recorded reason and a ``flow.excluded_fulltext.total``. Reasons
-        are emitted in sorted order so the key sequence does not depend on a
-        SQL result set's ordering.
+        per recorded reason, a ``flow.excluded_fulltext.total``, and
+        ``flow.excluded_automated.<reason>`` per automated-exclusion reason.
+        Reasons are emitted in sorted order so the key sequence does not
+        depend on a SQL result set's ordering.
     """
     numbers: dict[str, Any] = {}
     for field in dataclasses.fields(counts):
@@ -65,6 +66,15 @@ def _flow_numbers(counts: FlowCounts) -> dict[str, Any]:
     numbers["flow.excluded_fulltext.total"] = sum(reasons.values())
     for code in sorted(reasons):
         numbers[f"flow.excluded_fulltext.{code}"] = reasons[code]
+    # The automated reasons are attributed by precedence (ADR 0016), so unlike
+    # the full-text codes their key set is fixed and every key is always
+    # present -- a reason that excluded nothing reports 0 rather than vanishing.
+    # A key that appeared only when non-zero would make "we did not filter on
+    # subject area" and "we filtered and it excluded nothing" indistinguishable
+    # in the manuscript, and those are different methodological claims.
+    automated = dict(counts.excluded_automated_by_reason)
+    for reason in sorted(automated):
+        numbers[f"flow.excluded_automated.{reason}"] = automated[reason]
     return numbers
 
 

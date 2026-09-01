@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Automated exclusions are now reported with reasons.** The PRISMA diagram, `numbers.json`
+  and `prismabib flow` break `excluded_automated` down into `year`, `subject_area`,
+  `doc_type` and `venue` instead of printing one combined figure. PRISMA 2020 asks for
+  exclusions to be reported with reasons, and a single number cannot do that: on this
+  project's own corpus the combined 754 turned out to be 673 by year and 81 by document
+  type, with the declared subject-area restriction excluding **nothing** — a filter reported
+  in the methods section that never removed a record. See
+  [ADR 0016](docs/architecture/adr/0016-automated-exclusion-reasons.md).
+
+  A record that fails several criteria at once is attributed to **the first criterion it
+  fails**, so the four counts sum to the total rather than exceeding it (a naive count of
+  every failure gives 26 for 10 excluded records on the reference fixture).
+  `FlowCounts.assert_consistent()` gains equation 5 to check exactly that; equations 1-4
+  keep their numbers. Every reason key is always present, reporting `0` when a criterion
+  excluded nothing, so "not filtered" and "filtered, excluded nothing" stay distinguishable.
+
+### Changed
+
+- **`FlowCounts` gains `excluded_automated_by_reason`** (third deviation from the frozen
+  contract, after ADRs 0007 and 0013). No existing field or equation changes, and **no
+  published number moves** — the goldens gained four keys and altered none.
+- `docs/assets/prisma-flow-example.svg` regenerated, since the figure gained four lines.
+  Re-read by hand afterwards: 120 identified, 24 excluded (all conference-whitelist), 96
+  after automated filters, 5 included.
+
 ## [0.12.0] — 2026-09-01
 
 ### Added

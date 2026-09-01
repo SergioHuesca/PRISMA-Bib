@@ -436,7 +436,7 @@ If the counts do not close into a consistent diagram, the command prints a warni
 stderr, still prints the numbers, and still exits `0`. That is not a crash: the usual cause
 is a capture that is incomplete or a store built before the last `search` finished. Do not
 publish a diagram whose warning you have not explained. See
-[PRISMA Mapping — the four consistency equations](methodology/prisma-mapping.md#the-four-consistency-equations)
+[PRISMA Mapping — the five consistency equations](methodology/prisma-mapping.md#the-five-consistency-equations)
 and [when equation 1 does not close](methodology/prisma-mapping.md#when-equation-1-does-not-close),
 which lists every cause observed so far and what to do about each.
 

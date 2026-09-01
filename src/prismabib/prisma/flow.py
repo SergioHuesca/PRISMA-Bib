@@ -64,6 +64,18 @@ class FlowCounts:
             for exactly which run's ``total_results`` this is, and why).
         excluded_automated: ``|S_raw| - |S_raw ∩ A|`` -- records removed by
             the automated year/subject/doc-type filter.
+        excluded_automated_by_reason: The same removals, broken down by which
+            criterion removed each record, keyed by
+            :data:`~prismabib.prisma.engine.AUTOMATED_EXCLUSION_PRECEDENCE`.
+
+            **Attributed by precedence, not by membership** (ADR 0016). A 2003
+            paper outside the subject areas fails both the year test and the
+            subject test; it is counted once, under the first criterion it
+            fails. So "excluded by subject area" means *passed the year test
+            and failed the subject test*, and the four counts sum exactly to
+            ``excluded_automated`` -- which equation 5 checks, so a criterion
+            that attributes nothing, or twice, fails rather than reporting a
+            plausible number.
         after_automated: ``|A|``.
         excluded_language: ``|A| - |L|`` -- records removed by the
             automated language filter.
@@ -90,6 +102,7 @@ class FlowCounts:
     duplicates_across_searches: int
     removed_other_reasons: int
     excluded_automated: int
+    excluded_automated_by_reason: Mapping[str, int]
     after_automated: int
     excluded_language: int
     after_language: int
@@ -106,8 +119,8 @@ class FlowCounts:
         Delegates to :func:`_assert_flow_counts_consistent`, which holds every
         equation. That indirection exists for one reason: mutmut does not
         mutate the body of a decorated class, and ``FlowCounts`` is a
-        ``@dataclass(frozen=True)``. Written inline, the ~51 mutants of the
-        four PRISMA identities were never generated -- the check that decides
+        ``@dataclass(frozen=True)``. Written inline, the mutants of the
+        PRISMA identities were never generated -- the check that decides
         whether a published diagram adds up had 100% line and branch coverage
         and no mutation testing at all, which is precisely the combination
         BUILD_PLAN §3.7.6 warns proves nothing.
@@ -136,7 +149,7 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     arrive in, which ADR 0007 names as the population these checks stay
     load-bearing for.
 
-    Then four equations, each checked independently so a failure names
+    Then five equations, each checked independently so a failure names
     exactly which step of the diagram does not add up:
 
     1. ``identified - duplicates_across_searches - removed_other_reasons
@@ -146,6 +159,12 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
        unsure_title_abstract + retrieved_fulltext``
     4. ``retrieved_fulltext == sum(excluded_fulltext.values()) +
        unsure_fulltext + included``
+    5. ``sum(excluded_automated_by_reason.values()) ==
+       excluded_automated``
+
+    Equation 5 is checked last rather than first so that equations 1-4 keep
+    the numbers every document in this project cites them by (ADR 0016 added
+    it; ADRs 0007 and 0013 already reference "equation 1" by number).
 
     Raises:
         ValidationError: On the *first* negative count (in field
@@ -223,6 +242,11 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
             "retrieved_fulltext == sum(excluded_fulltext.values()) + unsure_fulltext + included",
             flow.retrieved_fulltext,
             sum(flow.excluded_fulltext.values()) + flow.unsure_fulltext + flow.included,
+        ),
+        (
+            "sum(excluded_automated_by_reason.values()) == excluded_automated",
+            sum(flow.excluded_automated_by_reason.values()),
+            flow.excluded_automated,
         ),
     )
     for equation, left, right in equations:
@@ -484,6 +508,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         duplicates_across_searches=duplicates_across_searches,
         removed_other_reasons=removed_other_reasons,
         excluded_automated=excluded_automated,
+        excluded_automated_by_reason=dict(snapshot.layer1.excluded_by_reason),
         after_automated=after_automated,
         excluded_language=excluded_language,
         after_language=after_language,

@@ -434,7 +434,7 @@ close, a warning on stderr — it still prints the numbers and still exits `0`, 
 incomplete-but-valid capture is a state you need described rather than one that should look
 like a crash. Do not publish a diagram whose warning you have not explained. See
 [PRISMA Mapping](../methodology/prisma-mapping.md) for the box-by-box audit table and the
-four consistency equations, and [when equation 1 does not
+five consistency equations, and [when equation 1 does not
 close](../methodology/prisma-mapping.md#when-equation-1-does-not-close) for the causes to work
 through when it does not.
 

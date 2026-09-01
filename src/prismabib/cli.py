@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Final, NoReturn
@@ -701,6 +701,19 @@ def fill(
             _echo(f"filled {manuscript} -> {output}")
 
 
+#: Human-readable labels for the automated-exclusion reasons, in the order
+#: :data:`~prismabib.prisma.engine.AUTOMATED_EXCLUSION_PRECEDENCE` attributes
+#: them. The order is part of what the number means -- "excluded by subject
+#: area" is *passed the year test and failed the subject test* -- so the
+#: printed order matches the attribution order rather than being alphabetical.
+_AUTOMATED_REASON_LABELS: Final[Mapping[str, str]] = {
+    "year": "by publication year",
+    "subject_area": "by subject area",
+    "doc_type": "by document type",
+    "venue": "by conference whitelist",
+}
+
+
 def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     """Render :class:`FlowCounts` as a readable PRISMA 2020 summary.
 
@@ -730,7 +743,13 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     row("other reasons (unreadable capture entries)", minus(counts.removed_other_reasons))
     _echo()
     _echo("Screening -- automated, from criteria.yaml")
-    row("excluded by year / subject area / doc type", minus(counts.excluded_automated))
+    row("excluded by automated criteria", minus(counts.excluded_automated))
+    # Broken out by precedence (ADR 0016): each record is attributed to the first
+    # criterion it fails, so these sum to the line above rather than
+    # double-counting a record that fails several. PRISMA 2020 asks for exclusions
+    # to be reported with reasons, and a single combined figure cannot be.
+    for reason, count in counts.excluded_automated_by_reason.items():
+        row(f"    {_AUTOMATED_REASON_LABELS[reason]}", minus(count))
     row("remaining", f"{counts.after_automated:,}")
     row("excluded by language", minus(counts.excluded_language))
     row("remaining, to title/abstract screening", f"{counts.after_language:,}")

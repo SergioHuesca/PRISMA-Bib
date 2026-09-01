@@ -65,6 +65,11 @@ DISTINCT_COUNTS = FlowCounts(
     duplicates_across_searches=5,
     removed_other_reasons=8,
     excluded_automated=21,
+    # Pairwise distinct, and distinct from every other value in this fixture,
+    # for the same reason the integer counts are: a renderer that showed the
+    # doc-type count under the subject-area label is an identity error, and
+    # only distinct values can catch one. 1 + 2 + 6 + 12 == 21.
+    excluded_automated_by_reason={"year": 12, "subject_area": 1, "doc_type": 6, "venue": 2},
     after_automated=107,
     excluded_language=13,
     after_language=94,
@@ -89,7 +94,7 @@ FIELD_TO_LABEL = {
         r"duplicates across searches: {value}(?!\d)",
     ),
     "removed_other_reasons": ("removed-before-screening", r"other reasons: {value}(?!\d)"),
-    "excluded_automated": ("after-automated", r"year/subject/doc-type: {value}(?!\d)"),
+    "excluded_automated": ("after-automated", r"by automated filters: {value}(?!\d)"),
     "after_automated": ("after-automated", r"after automated filters \(n = {value}\)"),
     "excluded_language": ("after-language", r"excluded by language: {value}(?!\d)"),
     "after_language": ("after-language", r"Records screened \(n = {value}\)"),
@@ -101,6 +106,18 @@ FIELD_TO_LABEL = {
     "retrieved_fulltext": ("title-abstract", r"sought for retrieval \(n = {value}\)"),
     "unsure_fulltext": ("fulltext", r"unsure at full text: {value}(?!\d)"),
     "included": ("fulltext", r"included in review \(n = {value}\)"),
+}
+
+
+#: Reason key -> the label that introduces its count in the ``after-automated``
+#: box. Kept separate from :data:`FIELD_TO_LABEL` because these come from a
+#: mapping field rather than an integer one, so the ``dataclasses.fields`` sweep
+#: cannot reach them -- and an unreached line is an unchecked line.
+REASON_TO_LABEL = {
+    "year": r"by publication year: {value}(?!\d)",
+    "subject_area": r"by subject area: {value}(?!\d)",
+    "doc_type": r"by document type: {value}(?!\d)",
+    "venue": r"by conference whitelist: {value}(?!\d)",
 }
 
 
@@ -136,6 +153,17 @@ def test_flow_diagram__generated_numbers__equal_flowcounts() -> None:
         assert re.search(template.format(value=value), text), (
             f"{field_name}={value} is not shown under its label in the {box_id!r} box; "
             f"it reads {text!r}"
+        )
+
+    automated_text = box_text(svg, "after-automated")
+    assert set(REASON_TO_LABEL) == set(DISTINCT_COUNTS.excluded_automated_by_reason), (
+        "an automated-exclusion reason has no label on the diagram"
+    )
+    for reason, template in REASON_TO_LABEL.items():
+        count = DISTINCT_COUNTS.excluded_automated_by_reason[reason]
+        assert re.search(template.format(value=count), automated_text), (
+            f"{reason}={count} is not shown under its label in the 'after-automated' "
+            f"box; it reads {automated_text!r}"
         )
 
 
