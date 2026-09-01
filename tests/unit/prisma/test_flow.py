@@ -11,7 +11,10 @@ source manuscript exhibits"; a guard is only worth anything if it fires, and
 a *diagnostic* guard is only worth anything if its message says which
 equation broke and by how much (§3.7.3 rule 12). There is therefore one
 failing case per equation, each asserting the message names that equation
-verbatim and both of its sides.
+verbatim and both of its sides. Equations 1-4 perturb a single integer field
+and share one parametrisation; equation 5 constrains a mapping, so it has its
+own case below -- along with the two preconditions on that mapping's shape
+that the equation cannot see (ADR 0016).
 """
 
 from __future__ import annotations
@@ -28,12 +31,18 @@ from prismabib.prisma.flow import FlowCounts
 #: 60 retrieved, and 60 = (7 + 8) excluded + 5 unsure + 40 included. Every
 #: failing case below is this instance with exactly one field perturbed, so
 #: the perturbation is unambiguously the cause of the failure.
+#: Every precedence reason at zero. `FlowCounts` requires the full key set
+#: (ADR 0016), so "no automated exclusions" is four zeros, not an empty dict.
+_NO_AUTOMATED_EXCLUSIONS = {"year": 0, "subject_area": 0, "doc_type": 0, "venue": 0}
+
 CONSISTENT = FlowCounts(
     identified=100,
     duplicates_across_searches=0,
     removed_other_reasons=0,
     excluded_automated=10,
-    excluded_automated_by_reason={"year": 10},
+    # Pairwise distinct and summing to `excluded_automated`, so a test that
+    # perturbs one reason cannot be satisfied by another's value.
+    excluded_automated_by_reason={"year": 1, "subject_area": 2, "doc_type": 3, "venue": 4},
     after_automated=90,
     excluded_language=5,
     after_language=85,
@@ -109,6 +118,84 @@ def test_flow_counts__one_equation_violated__message_names_that_equation_and_bot
 
 
 @pytest.mark.unit
+def test_flow_counts__breakdown_does_not_sum__message_names_equation_5() -> None:
+    """Equation 5 fires when the reasons do not add up to the total.
+
+    Without this case, deleting equation 5 outright left the whole suite
+    green: the check ADR 0016 calls "what makes the breakdown a partition"
+    was worth nothing to the tests, and its message string had no killable
+    mutants inside the 85% gate's scope.
+    """
+    # 1 + 2 + 3 + 5 == 11, against excluded_automated == 10.
+    broken = dataclasses.replace(
+        CONSISTENT,
+        excluded_automated_by_reason={"year": 1, "subject_area": 2, "doc_type": 3, "venue": 5},
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        broken.assert_consistent()
+
+    message = str(excinfo.value)
+    assert "sum(excluded_automated_by_reason.values()) == excluded_automated" in message
+    assert "11 != 10" in message
+    assert "off by 1" in message
+
+
+@pytest.mark.unit
+def test_flow_counts__a_negative_reason_count__is_rejected_naming_the_reason() -> None:
+    """A negative reason count is caught even though the reasons still sum correctly.
+
+    ``-5 + 15 == 10`` satisfies equation 5, so the equation cannot see this;
+    it is exactly the "pair of errors that cancel" case the non-negativity
+    precondition exists for. Before this, the breakdown was the one mapping
+    the sweep did not cover, and ``"flow.excluded_automated.year": -5``
+    reached ``numbers.json`` and the published figure.
+    """
+    broken = dataclasses.replace(
+        CONSISTENT,
+        excluded_automated_by_reason={"year": -5, "subject_area": 0, "doc_type": 0, "venue": 15},
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        broken.assert_consistent()
+
+    message = str(excinfo.value)
+    assert "excluded_automated_by_reason['year']" in message
+    assert "-5" in message
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("reasons", "id_"),
+    [
+        pytest.param({"year": 10}, "missing-three-reasons", id="a-dropped-zero-valued-reason"),
+        pytest.param(
+            {"yaer": 1, "subject_area": 2, "doc_type": 3, "venue": 4},
+            "misspelled",
+            id="a-misspelled-reason",
+        ),
+    ],
+)
+def test_flow_counts__breakdown_key_set__must_be_exactly_the_precedence_reasons(
+    reasons: dict[str, int], id_: str
+) -> None:
+    """Every precedence reason must be present, and nothing else.
+
+    Both cases here sum to ``excluded_automated``, so equation 5 accepts them.
+    Dropping a zero-valued reason makes "we did not filter on subject area"
+    and "we filtered and it excluded nothing" indistinguishable in the figure
+    -- the ambiguity ADR 0016 exists to remove -- and a misspelled key raises
+    ``KeyError`` deep inside a renderer instead of naming the problem here.
+    """
+    broken = dataclasses.replace(CONSISTENT, excluded_automated_by_reason=reasons)
+
+    with pytest.raises(ValidationError) as excinfo:
+        broken.assert_consistent()
+
+    assert "excluded_automated_by_reason" in str(excinfo.value)
+
+
+@pytest.mark.unit
 def test_flow_counts__equation_2_violated_by_a_later_field__equation_1_is_not_blamed() -> None:
     # Equation 2 is the only one broken here; the message must not blame
     # equation 1, which still closes. Each equation is checked independently
@@ -130,7 +217,7 @@ def test_flow_counts__empty_excluded_fulltext_breakdown__still_closes() -> None:
         duplicates_across_searches=0,
         removed_other_reasons=0,
         excluded_automated=0,
-        excluded_automated_by_reason={"year": 0},
+        excluded_automated_by_reason=_NO_AUTOMATED_EXCLUSIONS,
         after_automated=3,
         excluded_language=0,
         after_language=3,
@@ -158,14 +245,14 @@ def test_flow_counts__instances_with_equal_fields__compare_equal() -> None:
 # ---------------------------------------------------------------------------
 #
 # Every count is a cardinality, so none of them can be below zero -- and the
-# four equations cannot enforce that on their own, because each is an equality
+# five equations cannot enforce that on their own, because each is an equality
 # between two *sums* and a negative term closes one exactly as happily as a
 # positive one. `unsure_title_abstract` and `unsure_fulltext` are computed by
 # `compute_flow_counts` as the remainders of their partitions, so an
 # over-count anywhere else in a partition drives its remainder negative and
 # leaves the equation closing perfectly. Every case in the first
 # parametrisation below is `CONSISTENT` with a *compensated* perturbation --
-# all four equations still hold -- so the raise it asserts can only have come
+# all five equations still hold -- so the raise it asserts can only have come
 # from the precondition. The two tests after it break an equation as well, and
 # assert that the precondition is nonetheless what speaks.
 
@@ -270,7 +357,7 @@ def test_flow_counts__every_count_zero__is_not_treated_as_negative() -> None:
         duplicates_across_searches=0,
         removed_other_reasons=0,
         excluded_automated=0,
-        excluded_automated_by_reason={"year": 0},
+        excluded_automated_by_reason=_NO_AUTOMATED_EXCLUSIONS,
         after_automated=0,
         excluded_language=0,
         after_language=0,

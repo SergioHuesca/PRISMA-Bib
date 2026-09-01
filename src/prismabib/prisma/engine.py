@@ -405,17 +405,6 @@ class _Layer1View:
     excluded_by_reason: Mapping[str, int]
 
 
-#: The order a record's automated exclusion is attributed in, and the order the
-#: PRISMA diagram reports (ADR 0016).
-#:
-#: A record can fail several of these at once, so "excluded by subject area" is
-#: only well defined once an order is fixed. Under precedence it means *passed
-#: every earlier test and failed this one* -- which is what makes the four
-#: counts sum exactly to ``excluded_automated`` instead of exceeding it.
-#:
-#: This is the order the tests were already applied in, so no record changes
-#: sets because of this constant; it only names which reason each already-
-#: excluded record is filed under.
 #: The single source of truth: each reason paired with the predicate whose
 #: failure attributes a record to it. Written as one table rather than as a
 #: constant *and* an ``if``/``elif`` chain because those two are a divergence
@@ -437,6 +426,18 @@ _AUTOMATED_PREDICATES: Final[
     ),
 )
 
+#: The order a record's automated exclusion is attributed in, and the order the
+#: PRISMA diagram and ``prismabib flow`` report (ADR 0016).
+#:
+#: A record can fail several of these at once, so "excluded by subject area" is
+#: only well defined once an order is fixed. Under precedence it means *passed
+#: every earlier test and failed this one* -- which is what makes the four
+#: counts sum exactly to ``excluded_automated`` instead of exceeding it.
+#:
+#: This is the order the tests were already applied in, so no record changes
+#: sets because of it; it only names which reason each already-excluded record
+#: is filed under. Derived from :data:`_AUTOMATED_PREDICATES` rather than
+#: written out again, so the stated order and the applied order cannot diverge.
 AUTOMATED_EXCLUSION_PRECEDENCE: Final[tuple[str, ...]] = tuple(
     reason for reason, _ in _AUTOMATED_PREDICATES
 )
@@ -464,12 +465,16 @@ def _compute_a_and_l(
             :func:`~prismabib.prisma.criteria.resolve_criteria`.
 
     Returns:
-        ``(automated, language)``: ``automated`` is ``S_raw`` filtered by
+        ``(automated, language, excluded_by_reason)``: ``automated`` is
+        ``S_raw`` filtered by
         ``criteria.temporal``/``subject_areas``/``doc_types``; ``language``
         is ``automated`` further filtered by ``criteria.languages`` -- so
         ``language`` is always a subset of ``automated`` by construction,
         matching :class:`~prismabib.stage.PrismaStage`'s own description of
-        ``L`` as "``A`` further filtered by language".
+        ``L`` as "``A`` further filtered by language". ``excluded_by_reason``
+        carries one count per reason in
+        :data:`AUTOMATED_EXCLUSION_PRECEDENCE`, every key always present, each
+        excluded record counted under exactly one of them (ADR 0016).
     """
     passing: set[str] = set()
     # Attribution is by *precedence*, not by membership: a 2003 paper outside

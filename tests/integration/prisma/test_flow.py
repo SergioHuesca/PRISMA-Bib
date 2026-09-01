@@ -638,8 +638,9 @@ def test_flow_counts__entry_unloadable_in_one_run_but_loaded_by_another__is_not_
 #: rather than to rendering.
 #:
 #: Every record here also fails every criterion *after* its charged one, so a
-#: naive implementation that counted each failure separately would report a
-#: breakdown summing to 26 rather than 10.
+#: naive implementation that counted each failure separately would report
+#: `{year: 1, subject_area: 3, doc_type: 6, venue: 10}` -- summing to 20
+#: rather than 10.
 _PRECEDENCE_CRITERIA = CriteriaSpec(
     year_start=2016,
     year_end=2026,

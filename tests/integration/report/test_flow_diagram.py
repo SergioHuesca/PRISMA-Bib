@@ -256,3 +256,38 @@ def test_flow_diagram__fulltext_reasons__are_rendered_in_sorted_order(tmp_path: 
     svg = flow_diagram_svg(with_reasons, title="A Review")
 
     assert svg.index("NO_FULL_TEXT") < svg.index("WRONG_POPULATION")
+
+
+@pytest.mark.integration
+def test_flow_diagram__every_text_line__is_drawn_inside_its_own_box() -> None:
+    """No box's text escapes its rect, however many lines the box has.
+
+    The box height was a fixed constant, sized by eye for the two- and
+    three-line boxes that existed when the renderer was written. ADR 0016 gave
+    the ``after-automated`` box six lines, and the centring arithmetic put the
+    first baseline above the rect and the last below it -- the heading and the
+    only non-zero exclusion count were drawn *outside* the box, struck through
+    by the arrows, in the figure shipped in the docs and produced by
+    ``prismabib export``.
+
+    Nothing caught it: every other assertion in this module reads the
+    ``<text>`` elements' *content*, and the docs-asset golden compares bytes
+    against a file regenerated from the same broken renderer. Both are blind
+    to where the text is drawn. This test is not.
+    """
+    svg = flow_diagram_svg(DISTINCT_COUNTS, title="A Review")
+
+    groups = re.findall(r'<g id="([^"]+)">(.*?)</g>', svg, re.DOTALL)
+    assert groups, "no boxes found in the rendered SVG"
+
+    for box_id, group in groups:
+        rect = re.search(r'<rect[^>]*\by="(-?\d+)"[^>]*\bheight="(\d+)"', group)
+        assert rect, f"box {box_id!r} has no rect"
+        top, height = int(rect.group(1)), int(rect.group(2))
+        baselines = [int(y) for y in re.findall(r'<text[^>]*\by="(-?\d+)"', group)]
+        assert baselines, f"box {box_id!r} has no text"
+        outside = [y for y in baselines if not top <= y <= top + height]
+        assert not outside, (
+            f"box {box_id!r} spans y={top}..{top + height} but has text baselines at "
+            f"{outside} -- that text is drawn outside its box, over the arrows"
+        )

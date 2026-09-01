@@ -229,6 +229,15 @@ def _flow_source_rows(counts: FlowCounts) -> Table:
     rows.extend(
         (f"excluded_fulltext.{code}", n) for code, n in sorted(counts.excluded_fulltext.items())
     )
+    # The `isinstance(..., int)` sweep above skips both mapping fields, so each
+    # needs its own line here. Without this one the CSV held four fewer numbers
+    # than the figure it is supposed to reproduce, and the round-trip test could
+    # not see it: that test walks CSV -> SVG, so a number present in the figure
+    # and absent from the CSV is invisible to it (S10-AC1).
+    rows.extend(
+        (f"excluded_automated.{reason}", n)
+        for reason, n in sorted(counts.excluded_automated_by_reason.items())
+    )
     return Table(
         slug="prisma_flow",
         caption="PRISMA 2020 flow counts",

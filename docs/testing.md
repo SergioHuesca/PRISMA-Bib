@@ -368,7 +368,7 @@ this comparison were wrong, would any test say so?*
 
 The same argument applies to `log.fold_events`'s `(ts, event_id)` tie-break, to
 `_aggregate_record_decisions`'s precedence rules ([ADR 0008](architecture/adr/0008-multi-reviewer-adjudication.md)),
-and to each of the four equations in `FlowCounts.assert_consistent()` — every one of which is
+and to each of the five equations in `FlowCounts.assert_consistent()` — every one of which is
 a small comparison or arithmetic expression whose corruption produces a *credible* number
 rather than an obvious failure.
 

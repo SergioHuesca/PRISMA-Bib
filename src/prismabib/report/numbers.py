@@ -72,6 +72,11 @@ def _flow_numbers(counts: FlowCounts) -> dict[str, Any]:
     # A key that appeared only when non-zero would make "we did not filter on
     # subject area" and "we filtered and it excluded nothing" indistinguishable
     # in the manuscript, and those are different methodological claims.
+    # Sorted, not in precedence order, because every key in this file is sorted
+    # and a reader looks a key up by name rather than reading the file in
+    # sequence. The precedence order still carries meaning -- see ADR 0016 --
+    # but it is the *figure* and `prismabib flow` that present it, where the
+    # lines are read top to bottom.
     automated = dict(counts.excluded_automated_by_reason)
     for reason in sorted(automated):
         numbers[f"flow.excluded_automated.{reason}"] = automated[reason]

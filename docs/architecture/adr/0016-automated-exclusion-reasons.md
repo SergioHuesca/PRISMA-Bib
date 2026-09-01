@@ -37,7 +37,9 @@ A record can fail several criteria at once. A 2003 medical case report in an unl
 fails the year window, the subject areas, the document type and the conference whitelist. If
 each failing criterion counted it, the four reasons would sum to more than
 `excluded_automated`, and the diagram would report an exclusion total that disagrees with its
-own breakdown. On the reference fixture the naive sum is 26 for 10 excluded records.
+own breakdown. On the fixture built to exercise this (11 records, 10 excluded, each failing its charged
+criterion and every later one), the naive membership sum is 20 against a true total of 10:
+`year: 1, subject_area: 3, doc_type: 6, venue: 10`. Under precedence it is `1, 2, 3, 4`.
 
 A breakdown that does not sum to its total is worse than no breakdown: it invites the reader
 to add the lines up, and the sum is wrong.
@@ -72,9 +74,14 @@ failed", while every count still sums correctly and every test stays green. `eng
 therefore holds a single `_AUTOMATED_PREDICATES` table of `(reason, predicate)` pairs; the
 loop iterates it and `AUTOMATED_EXCLUSION_PRECEDENCE` is derived from it.
 
-### Every reason key is always present
+### Every reason key is always present, and this is enforced
 
-A reason that excluded nothing reports `0`; it does not vanish from the mapping. A key that
+A reason that excluded nothing reports `0`; it does not vanish from the mapping.
+`assert_consistent()` rejects a breakdown whose key set is not exactly
+`AUTOMATED_EXCLUSION_PRECEDENCE`, so this is a checked precondition rather than a convention
+the engine happens to follow. Equation 5 cannot see it on its own — dropping a zero-valued
+reason still sums correctly — and a misspelled key would otherwise surface as a `KeyError`
+inside a renderer rather than as a message naming the problem. A key that
 appeared only when non-zero would make "we did not filter on subject area" and "we filtered
 on subject area and it excluded nothing" indistinguishable in the figure and in
 `numbers.json` — and those are exactly the two claims this ADR exists to separate. The fixed
@@ -138,13 +145,24 @@ rather than calling `engine.py`, and cross-checked against the pinned
 `REFERENCE_EXCLUDED_AUTOMATED = 24` (§5 risk 11: never read a golden off the code it tests).
 The two goldens gained exactly four keys apiece and no existing value was touched.
 
-### 3. `docs/assets/prisma-flow-example.svg` was regenerated
+### 3. Box height had to become a function of line count
+
+The renderer sized every box at a fixed 64 units, chosen by eye for the two- and three-line
+boxes that existed before this ADR. Six lines overflowed it: the heading and the only
+non-zero exclusion count were drawn *outside* the rect, struck through by the arrows, in
+both `prismabib export`'s output and the figure shipped in the docs. Every test passed —
+they assert on the `<text>` elements' content, and the docs-asset golden compares bytes
+against a file regenerated from the same renderer, so both are blind to geometry. A test now
+asserts that every text baseline lies inside its own rect.
+
+### 4. `docs/assets/prisma-flow-example.svg` was regenerated
 
 The figure changed, so the checked-in example is a deliberate regeneration, not a test being
 made to pass. Its numbers were re-read by hand afterwards: 120 identified, 24 excluded (all
-`venue`), 96 after automated filters, 5 included.
+`venue`), 96 after automated filters, 5 included — and its geometry checked, which is how
+the overflow above was found.
 
-### 4. The precedence order is now part of the contract
+### 5. The precedence order is now part of the contract
 
 Changing it silently re-files records under different reasons without changing any total, so
 `assert_consistent()` cannot detect it. The order is pinned by an integration test whose
@@ -161,6 +179,13 @@ count-every-failure implementation were injected and confirmed to fail it.
   including one where nothing was excluded at all.
 - `_AUTOMATED_PREDICATES` stays the only statement of the order.
 - A test pinning the order must use pairwise-distinct per-reason counts.
+- The breakdown's key set must equal `AUTOMATED_EXCLUSION_PRECEDENCE` exactly, and its values
+  must be non-negative. Equation 5 checks neither: `-5 + 15 == 10` closes it, and so does a
+  breakdown with a dropped zero.
+- A test asserting how a reason is *labelled* must state the label literally. Deriving the
+  expectation from the label table under test makes it agree with itself; the first version
+  of the CLI test did exactly that and passed with two labels swapped.
+- Box geometry must be derived from content. No box may be given a fixed height.
 
 ## Related decisions
 

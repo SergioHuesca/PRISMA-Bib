@@ -393,7 +393,11 @@ Removed before screening
   other reasons (unreadable capture entries)            0
 
 Screening -- automated, from criteria.yaml
-  excluded by year / subject area / doc type         -412
+  excluded by automated criteria                     -412
+      by publication year                             355
+      by subject area                                   0
+      by document type                                 57
+      by conference whitelist                           0
   remaining                                         1,359
   excluded by language                                -37
   remaining, to title/abstract screening            1,322

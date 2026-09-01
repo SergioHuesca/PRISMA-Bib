@@ -30,7 +30,12 @@ from typing import Final
 import duckdb
 
 from prismabib.errors import ValidationError
-from prismabib.prisma.engine import _PENDING, _capture_snapshot, _RecordDecision
+from prismabib.prisma.engine import (
+    _PENDING,
+    AUTOMATED_EXCLUSION_PRECEDENCE,
+    _capture_snapshot,
+    _RecordDecision,
+)
 from prismabib.project import Project
 from prismabib.store.db import connect
 
@@ -183,6 +188,20 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     # can compare against the class above; a field added there without a
     # line here is a gap, and the class is frozen by BUILD_PLAN plus one
     # ADR, so it does not move often.
+    if set(flow.excluded_automated_by_reason) != set(AUTOMATED_EXCLUSION_PRECEDENCE):
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+        raise ValidationError(
+            "FlowCounts is inconsistent: excluded_automated_by_reason has keys "
+            f"{sorted(flow.excluded_automated_by_reason)}, but every reason in "
+            f"{list(AUTOMATED_EXCLUSION_PRECEDENCE)} must be present exactly once "
+            "-- a reason that excluded nothing reports 0 rather than being absent, "
+            "so that 'we did not filter on this' and 'we filtered and it excluded "
+            "nothing' stay distinguishable in the diagram and in numbers.json "
+            "(ADR 0016). Equation 5 cannot catch a missing or misspelled key on "
+            "its own: it only checks the total, so dropping a zero-valued reason "
+            "still sums correctly while silently changing what the figure claims."
+        )
+        # pragma: no mutate end
     counts: tuple[tuple[str, int], ...] = (
         ("identified", flow.identified),
         ("duplicates_across_searches", flow.duplicates_across_searches),
@@ -199,6 +218,10 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
         *(
             (f"excluded_fulltext[{reason!r}]", count)
             for reason, count in sorted(flow.excluded_fulltext.items())
+        ),
+        *(
+            (f"excluded_automated_by_reason[{reason!r}]", count)
+            for reason, count in sorted(flow.excluded_automated_by_reason.items())
         ),
     )
     for field_name, count in counts:

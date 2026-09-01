@@ -748,8 +748,13 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     # criterion it fails, so these sum to the line above rather than
     # double-counting a record that fails several. PRISMA 2020 asks for exclusions
     # to be reported with reasons, and a single combined figure cannot be.
+    # Plain counts, not `minus()`: these are a breakdown *of* the line above,
+    # not four further subtractions. Rendered with minus signs under a fifth
+    # minus-signed line, a reader who subtracts every signed line from
+    # `identified` gets a wrong `remaining` -- and indentation is too weak a
+    # cue to carry that distinction on its own.
     for reason, count in counts.excluded_automated_by_reason.items():
-        row(f"    {_AUTOMATED_REASON_LABELS[reason]}", minus(count))
+        row(f"    {_AUTOMATED_REASON_LABELS[reason]}", f"{count:,}")
     row("remaining", f"{counts.after_automated:,}")
     row("excluded by language", minus(counts.excluded_language))
     row("remaining, to title/abstract screening", f"{counts.after_language:,}")

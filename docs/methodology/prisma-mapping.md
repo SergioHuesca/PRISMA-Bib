@@ -16,7 +16,7 @@ Layer 3 renders the diagram; it invents no numbers of its own.
 3. Compare the returned `FlowCounts` field by field against the diagram, using the
    [box-by-box table](#the-prisma-2020-flow-diagram-box-by-box) below.
 4. Call `FlowCounts.assert_consistent()`. It raises `ValidationError` naming the first
-   equation that does not close — see [the four equations](#the-four-consistency-equations).
+   equation that does not close — see [the five equations](#the-five-consistency-equations).
 
 Every count is recomputed on every call. Nothing in `flow.py` or `engine.py` caches,
 memoises, or persists a count, so step 2 is a re-derivation and not a lookup of a stored
@@ -286,11 +286,13 @@ several criteria at once is counted once, under the first it fails, so the reaso
 the diagram add up to the total printed above them
 ([ADR 0016](../architecture/adr/0016-automated-exclusion-reasons.md)).
 
-Equations 2, 3, 4 and 5 hold by construction for anything `compute_flow_counts` returns:
+Equations 2, 3 and 4 hold by construction for anything `compute_flow_counts` returns:
 `unsure_title_abstract` and `unsure_fulltext` are each computed as the remainder of their
 partition rather than measured independently. They are not therefore pointless — they are
 what catches a hand-assembled, mutated, or deserialised `FlowCounts` whose fields have
-drifted.
+drifted. Equation 5 holds by construction for a different reason: the breakdown is
+accumulated in the same single pass that builds `A`, so a record cannot be excluded without
+being charged to exactly one reason.
 
 **Equation 1 is a genuine cross-check and can legitimately fail.** `identified` is the sum of
 the servers' own reported totals across the project's distinct searches; `after_automated`
