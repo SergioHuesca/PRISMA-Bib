@@ -49,9 +49,18 @@ from prismabib.capture.writer import _find_resumable_run, capture_search
 from prismabib.errors import EntitlementError, QuotaExceededError, ValidationError
 from prismabib.project import Project
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.sources.scopus import ScopusClient
 from prismabib.store.load import _sealed_run_dirs
 
-_ABSTRACT_URL_PREFIX = "https://api.elsevier.com/content/abstract/scopus_id/"
+#: Derived from the client, never restated.
+#:
+#: This was a literal `.../scopus_id/`, and that is why 22 tests mocked the
+#: wrong endpoint for three releases without noticing: the client sent an EID
+#: to a path that expects a bare numeric id, real Scopus answered 404 for every
+#: record, and every test here passed because the mock answered whatever the
+#: test itself had written down. A restated constant cannot catch a change in
+#: the thing it restates.
+_ABSTRACT_URL_PREFIX = ScopusClient.ABSTRACT_URL_PREFIX
 
 #: Enough records to cross a payload-file boundary twice over, since batching by
 #: position in the sorted record list is the property most of these tests are
@@ -934,3 +943,43 @@ def test_capture_abstracts__a_few_withdrawn_records__still_completes(
     assert route.call_count == _CORPUS_SIZE
     assert manifest.records_fetched == _CORPUS_SIZE - len(withdrawn)
     assert sorted(u.reason for u in manifest.unavailable) == ["not_found"] * len(withdrawn)
+
+
+@pytest.mark.integration
+def test_abstract__url__addresses_the_eid_endpoint_with_the_stored_identifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The request URL must match what Scopus actually serves.
+
+    Every other test here mocks whichever endpoint the client happens to call,
+    so all of them passed for three releases while the client sent an EID to
+    ``/content/abstract/scopus_id/`` -- a path that expects the bare numeric
+    Scopus id. Real Scopus answered 404 for every record of a live corpus, and
+    the enrichment appeared to find nothing.
+
+    This asserts the URL against Elsevier's contract rather than against our
+    own mock: a record id is ``scopus:2-s2.0-<digits>`` (BUILD_PLAN §3.2),
+    which is an EID, so it belongs on the ``/eid/`` path with only the
+    namespace removed. Measured against a real key on 2026-09-01:
+    ``/scopus_id/2-s2.0-...`` 404s while ``/eid/2-s2.0-...`` returns 200.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    seen: list[str] = []
+
+    def record_url(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_abstract_body("2-s2.0-85012345678"))
+
+    with respx.mock:
+        respx.get(url__startswith="https://api.elsevier.com/content/abstract/").mock(
+            side_effect=record_url
+        )
+        with ScopusClient() as client:
+            client.abstract("scopus:2-s2.0-85012345678")
+
+    assert len(seen) == 1
+    url = seen[0]
+    assert "/content/abstract/eid/2-s2.0-85012345678" in url, url
+    assert "/scopus_id/" not in url, "an EID sent to the scopus_id path 404s on real Scopus"
+    assert "scopus:" not in url, "the prismabib namespace must not reach the API"
+    assert "view=FULL" in url

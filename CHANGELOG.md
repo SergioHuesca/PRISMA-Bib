@@ -16,11 +16,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **An unentitled key is refused with HTTP 404 on Abstract Retrieval, not 403 — and the
-  entitlement probe only watched for 403.** Measured against a real key on 2026-09-01:
-  Scopus answered a Search `view=COMPLETE` query with 1,662 results and then returned 404
-  for a record that same response had just supplied. Every request 404s, so the probe never
-  fired and each one was recorded as a withdrawn record.
+- **Abstract Retrieval addressed the wrong endpoint and had never worked against real
+  Scopus.** A prismabib record id is `scopus:2-s2.0-<digits>` (BUILD_PLAN §3.2) — an
+  **EID** — and the client sent it to `/content/abstract/scopus_id/`, which expects the
+  bare numeric id. Measured on 2026-09-01, same record, same key:
+  `/scopus_id/2-s2.0-105044913252` → **404**, `/scopus_id/105044913252` → **200**,
+  `/eid/2-s2.0-105044913252` → **200**. It now uses the `/eid/` path, which takes exactly
+  what the store holds.
+
+  Shipped in v0.8.0 and undetected for three releases because **every test mocked whatever
+  URL the client sent**: `tests/integration/capture/test_enrich.py` restated the endpoint
+  prefix as a literal instead of deriving it from `ScopusClient`, so 22 tests agreed with
+  the client rather than with Elsevier. The prefix is now derived, and
+  `test_abstract__url__addresses_the_eid_endpoint_with_the_stored_identifier` asserts the
+  URL against the API's contract rather than against our own mock.
+
+- **A run whose every request 404s now stops instead of spending the quota.** The 404s
+  above were recorded as withdrawn records and the run carried on. On the corpus this was
+  found with, that meant 1,864 calls — an entire weekly quota — to seal a run with zero
+  subject areas and a manifest asserting that every record in a live corpus had been
+  withdrawn from Scopus. Recording a falsehood about the corpus is worse than failing.
 
   On the corpus this was found with, `prismabib enrich` would have spent all 1,864 calls of
   the weekly quota, sealed the run successfully, loaded zero subject areas, and left a
