@@ -290,3 +290,60 @@ def test_resolve_criteria__git_not_on_path__raises_config_error(
 
     with pytest.raises(ConfigError, match="git is not available on PATH"):
         resolve_criteria(project, "0.9.0")
+
+
+@pytest.mark.integration
+def test_resolve_criteria__requested_version_no_longer_validates__raises_rather_than_walking_back(
+    project: Project,
+) -> None:
+    """A commit that declares the wanted version but fails validation is fatal.
+
+    ``_criteria_at_commit`` tolerates an unparsable commit so that a file
+    predating the current schema does not abort the search. Applied to the
+    version actually being asked for, that tolerance is a trap: the search
+    walks past the criteria that were in force and resolves an *older* commit
+    reusing the same version string, so ``replay()`` recomputes the review
+    under rules that never applied to it -- silently, with no error, which is
+    the audit trail this project exists to provide, corrupted.
+
+    Both commits below declare ``1.1.0``. The newer one is the one that was in
+    force; it carries a subject-area value the current schema refuses.
+    """
+    commit_criteria(project, CriteriaSpec(version="1.1.0", year_start=2001), "older 1.1.0")
+    write_criteria(project, CriteriaSpec(version="1.1.0", year_start=2002))
+    # Written past the model, because the point is a file that the *current*
+    # schema rejects; CriteriaSpec would not let this be constructed.
+    path = project.root / "criteria.yaml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("subject_areas: []", 'subject_areas: ["1702"]'),
+        encoding="utf-8",
+    )
+    run_git(project.root, "add", "-A")
+    run_git(project.root, "commit", "-m", "newer 1.1.0, no longer valid")
+    commit_criteria(project, CriteriaSpec(version="2.0.0", year_start=2030), "v2.0.0")
+
+    with pytest.raises(ConfigError, match="no longer validates"):
+        resolve_criteria(project, "1.1.0")
+
+
+@pytest.mark.integration
+def test_resolve_criteria__a_historical_commit_holding_non_mapping_yaml__is_skipped(
+    project: Project,
+) -> None:
+    """A commit whose ``criteria.yaml`` is valid YAML but not a mapping is skipped.
+
+    ``yaml.safe_load`` returns ``None`` for an empty file and a ``str`` for a
+    stray scalar, neither of which ``Criteria.model_validate`` can be asked
+    about -- and neither can declare a version, so neither can be the commit
+    being searched for. Skipping is right here; the fatal case above is
+    specifically a commit that *does* declare the wanted version.
+    """
+    commit_criteria(project, CriteriaSpec(version="1.0.0", year_start=1990), "v1.0.0")
+    (project.root / "criteria.yaml").write_text("just a bare string\n", encoding="utf-8")
+    run_git(project.root, "add", "-A")
+    run_git(project.root, "commit", "-m", "criteria.yaml clobbered")
+    commit_criteria(project, CriteriaSpec(version="2.0.0", year_start=2020), "v2.0.0")
+
+    resolved = resolve_criteria(project, "1.0.0")
+
+    assert (resolved.version, resolved.temporal.year_start) == ("1.0.0", 1990)

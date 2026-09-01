@@ -18,19 +18,74 @@ from prismabib.asjc import KNOWN_ABBREVS, area_abbrev
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        # Transcribed from the recorded Scopus response in
+        # The first three are transcribed from the recorded Scopus response in
         # tests/fixtures/cassettes/abstract-full-multi-subject-area.json, which
-        # carries @code and @abbrev side by side -- so these pairs are Scopus's
-        # own, not this table restating itself.
-        pytest.param("2202", "ENGI", id="aerospace-engineering"),
-        pytest.param("2205", "ENGI", id="civil-and-structural-engineering"),
-        pytest.param("1702", "COMP", id="artificial-intelligence"),
-        pytest.param("2611", "MATH", id="modelling-and-simulation"),
-        pytest.param("2746", "MEDI", id="surgery"),
-        pytest.param("1000", "MULT", id="multidisciplinary"),
+        # carries @code and @abbrev side by side -- Scopus's own answer, not
+        # this table restating itself. That cassette contains only those three
+        # pairs; the rest below are transcribed from Elsevier's published ASJC
+        # category list, which is the only other authority available offline.
+        # Both provenances are named because a claim about how a table was
+        # checked has to be true -- see ADR 0017's own constraint.
+        pytest.param("2202", "ENGI", id="cassette-aerospace-engineering"),
+        pytest.param("2205", "ENGI", id="cassette-civil-and-structural-engineering"),
+        pytest.param("1702", "COMP", id="cassette-artificial-intelligence"),
     ],
 )
 def test_area_abbrev__a_four_digit_asjc_code__maps_to_its_grouping(raw: str, expected: str) -> None:
+    assert area_abbrev(raw) == (expected, True)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param("1000", "MULT", id="multidisciplinary"),
+        pytest.param("1105", "AGRI", id="ecology-evolution-behaviour-and-systematics"),
+        pytest.param("1202", "ARTS", id="history"),
+        pytest.param("1305", "BIOC", id="biotechnology"),
+        pytest.param("1408", "BUSI", id="strategy-and-management"),
+        pytest.param("1502", "CENG", id="bioengineering"),
+        pytest.param("1602", "CHEM", id="analytical-chemistry"),
+        pytest.param("1706", "COMP", id="computer-science-applications"),
+        pytest.param("1802", "DECI", id="information-systems-and-management"),
+        pytest.param("1908", "EART", id="geophysics"),
+        pytest.param("2002", "ECON", id="economics-and-econometrics"),
+        pytest.param("2105", "ENER", id="renewable-energy"),
+        pytest.param("2207", "ENGI", id="biomedical-engineering"),
+        pytest.param("2304", "ENVI", id="environmental-chemistry"),
+        pytest.param("2403", "IMMU", id="immunology"),
+        pytest.param("2504", "MATE", id="electronic-optical-and-magnetic-materials"),
+        pytest.param("2611", "MATH", id="modelling-and-simulation"),
+        pytest.param("2739", "MEDI", id="public-health"),
+        pytest.param("2802", "NEUR", id="behavioural-neuroscience"),
+        pytest.param("2902", "NURS", id="advanced-and-specialised-nursing"),
+        pytest.param("3004", "PHAR", id="pharmacology"),
+        pytest.param("3105", "PHYS", id="instrumentation"),
+        pytest.param("3204", "PSYC", id="developmental-and-educational-psychology"),
+        pytest.param("3306", "SOCI", id="health-social-science"),
+        pytest.param("3403", "VETE", id="food-animals"),
+        pytest.param("3506", "DENT", id="periodontics"),
+        pytest.param("3605", "HEAL", id="speech-and-hearing"),
+    ],
+)
+def test_area_abbrev__every_asjc_grouping__has_a_pinned_code(raw: str, expected: str) -> None:
+    """One real ASJC code per grouping, so a permuted table cannot ship green.
+
+    ``test_known_abbrevs__is_the_full_asjc_top_level_set`` compares the *value
+    set*, so it catches a dropped or added grouping but is blind to any
+    permutation of prefix to abbreviation. Swapping ``34: VETE`` with
+    ``35: DENT`` -- every veterinary paper filed as dentistry -- passed the
+    entire suite before this test existed.
+
+    ``asjc.py`` is also outside the mutation gate (``only_mutate`` is
+    ``src/prismabib/prisma/*``) and its 100% branch coverage says nothing
+    about a table's factual content, so an explicit case per prefix is the
+    only thing standing between a mis-transcribed digit and a wrongly
+    filtered corpus.
+
+    Codes are transcribed from Elsevier's published ASJC category list, not
+    derived from ``_PREFIX_TO_ABBREV``.
+    """
     assert area_abbrev(raw) == (expected, True)
 
 

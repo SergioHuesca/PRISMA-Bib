@@ -42,10 +42,9 @@ Measured on a four-record corpus with criteria `[COMP, ENGI, MATH, MULT]`, befor
 | 4 | *(never enriched)* | keep | keep |
 
 Three excluded where one should be. A reviewer would read "excluded by subject area: 3" and
-have no way to see that it names the wrong three. This is BUILD_PLAN §1.4 exactly, and ADR
-0011's own design pass predicted it — "today's bug is a filter that never runs; the naive fix
-is a filter that excludes everything" — and specified `src/prismabib/asjc.py` as the remedy.
-That file was never written.
+have no way to see that it names the wrong three. This is BUILD_PLAN §1.4 exactly. ADR 0011
+recorded that `@code` and `@abbrev` both exist, but resolved which one the criteria match the
+other way (see Status), and no mapping table was ever written.
 
 It stayed invisible because the corpus had zero subject-area rows, so
 `_refuse_unenforceable_subject_filter` raised before any comparison happened. The defect was
@@ -92,7 +91,7 @@ recover which. Layer 1 is meant to hold what Scopus said; throwing away precisio
 
 ### 2. Add `area_abbrev` as a second column
 
-ADR 0011's design pass floated `subject_areas(record_id, area_code, area_abbrev)`.
+Store the grouping alongside the code: `subject_areas(record_id, area_code, area_abbrev)`.
 
 *Rejected here, not forever:* it is a change to the frozen Layer 1 schema, requiring its own
 ADR under ADR 0012's rule, and it stores a value wholly derivable from one already present —

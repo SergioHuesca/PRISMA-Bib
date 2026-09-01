@@ -103,6 +103,7 @@ from dataclasses import dataclass
 from typing import Final
 
 import duckdb
+import structlog
 
 from prismabib.asjc import area_abbrev
 from prismabib.errors import ConfigError
@@ -300,6 +301,9 @@ def _passes_conference_whitelist(attrs: _RecordAttributes, whitelist: Sequence[s
         return True
     name_folded = attrs.venue_name.casefold()
     return any(token.strip().casefold() in name_folded for token in whitelist)
+
+
+logger = structlog.get_logger(__name__)
 
 
 def _passes_subject_areas(attrs: _RecordAttributes, subject_areas: Sequence[str]) -> bool:
@@ -583,11 +587,39 @@ def _refuse_unenforceable_subject_filter(
 
     Raises:
         ConfigError: If ``subject_areas`` is non-empty and not one record in
-            the corpus carries subject-area data.
+            the corpus carries subject-area data that this build can
+            *recognise*.
+
+    "Recognise" is doing real work there. Checking merely that some record
+    carries a row leaves a second route to the same silent no-op -- or rather
+    to its inverse. A corpus whose rows are all values
+    :func:`~prismabib.asjc.area_abbrev` cannot map (an entry that arrived
+    without ``@code``, so ``store/load.py`` stored the human-readable name;
+    or a grouping ASJC adds after this table was written) satisfies the
+    weaker check, fires no guard, and then fails every comparison: the whole
+    corpus is excluded, reported as "by subject area: N", with no error and
+    no warning. That is the §1.4 failure this module exists to prevent, so
+    the evidence the guard demands is a row it can actually use.
+
+    Unmapped values that are *not* universal are logged rather than raised:
+    one unrecognised code among many is the sparse-data case the filter is
+    designed to tolerate, and refusing there would block a legitimate review.
     """
     if not criteria.subject_areas or not attributes:
         return
-    if any(record.subject_areas for record in attributes.values()):
+    unmapped = sorted(
+        {
+            code
+            for record in attributes.values()
+            for code in record.subject_areas
+            if not area_abbrev(code)[1]
+        }
+    )
+    if unmapped:
+        # Same discipline as `store.load`'s unmapped-country report (§5 risk 8):
+        # a value this build cannot interpret must be visible, never absorbed.
+        logger.warning("prisma.subject_areas.unmapped", values=tuple(unmapped))
+    if any(area_abbrev(code)[1] for record in attributes.values() for code in record.subject_areas):
         return
     # Computed above the pragma, not interpolated inside it -- see the note in
     # `criteria._run_git`.
@@ -597,7 +629,8 @@ def _refuse_unenforceable_subject_filter(
     raise ConfigError(
         f"{criteria_path} restricts subject_areas to "
         f"{restricted_to!r}, but not one of the {len(attributes)} records "
-        "in this corpus carries subject-area data, so the restriction would match every "
+        "in this corpus carries subject-area data this build recognises, so the "
+        "restriction would match every "
         "record and exclude nothing.\n"
         "\nThe Scopus Search API (view=COMPLETE) does not return subject-area codes, so "
         "a corpus captured from it never has them. Continuing would put a filter in your "

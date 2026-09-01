@@ -19,12 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   should have been.
 
   Both sides are now normalised to ASJC's four-letter grouping through a new checked-in table,
-  `src/prismabib/asjc.py` (the file [ADR 0011](docs/architecture/adr/0011-abstract-retrieval-for-subject-areas.md)'s
-  design pass called for and that was never written). See
+  `src/prismabib/asjc.py`. See
   [ADR 0017](docs/architecture/adr/0017-subject-areas-match-by-asjc-grouping.md).
 
-  The defect was unreachable until the first enrichment run — `_refuse_unenforceable_subject_filter`
-  raised first — so it would have surfaced the moment the filter was first relied on, not before.
+  **This does not make `subject_areas` usable.** `prismabib enrich` writes Abstract Retrieval
+  payloads into `raw/abstracts/`, but `store/load.py` excludes that directory by name and reads
+  no abstract payloads, so the filter still has no data and is still refused — ADR 0011 split
+  its work into a Layer 0 PR and a Layer 1 PR, and only the first shipped. This fixes the
+  comparison, which was independently wrong; the Layer 1 loader is separate outstanding work.
+  Running `prismabib enrich` today spends about one quota call per record and changes nothing
+  observable.
+
+- **An unmappable subject-area code no longer excludes a whole corpus in silence.** A store
+  whose rows are all values the ASJC table cannot map — an entry that arrived without `@code`,
+  so the loader stored the human-readable name, or a grouping ASJC adds later — passed the
+  "does any record carry a row?" guard and then failed every comparison: whole corpus excluded,
+  `by subject area: N` on the diagram, no error. The guard now demands a row it can actually
+  use, and unmapped values are logged as `prisma.subject_areas.unmapped`.
+
+- **`replay()` could resolve criteria that were never in force.** `_criteria_at_commit`
+  swallowed a validation failure and walked to an older commit, so if two commits declared the
+  same `version` and the newer one no longer validated, replay silently recomputed the review
+  under the older one. It now raises when the failing commit declares the version being
+  searched for — that tolerance was meant for commits declaring *other* versions.
 
 ### Added
 

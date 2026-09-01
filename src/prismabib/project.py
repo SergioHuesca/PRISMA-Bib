@@ -142,13 +142,18 @@ class Criteria(BaseModel):
         if unknown:
             raise ValueError(
                 f"unknown subject-area code(s): {', '.join(unknown)}. Use ASJC's "
-                f"four-letter groupings: {', '.join(sorted(KNOWN_ABBREVS))}. A code "
-                "this list does not contain matches no record, so it would narrow "
-                "the review to nothing while looking like a deliberate restriction. "
-                "A four-digit ASJC number such as 1702 is refused for the opposite "
-                "reason: it names one category ('Artificial Intelligence') but can "
-                "only be matched at its grouping, so it would silently widen to all "
-                "of COMP -- write the grouping you mean."
+                f"four-letter groupings: {', '.join(sorted(KNOWN_ABBREVS))}.\n\n"
+                + (
+                    "A four-digit ASJC number names one category but can only be "
+                    "matched at its grouping, so accepting it would silently widen "
+                    "the restriction to that whole grouping -- 1702 ('Artificial "
+                    "Intelligence') would match all of COMP. Write the grouping you "
+                    "mean."
+                    if any(code.strip().isdigit() for code in unknown)
+                    else "A code this list does not contain matches no record, so it "
+                    "would narrow the review to nothing while reading, in your "
+                    "protocol, as a deliberate restriction."
+                )
             )
         return value
 
@@ -200,17 +205,16 @@ temporal:
 # MEDI, MULT, ... An unknown code is refused rather than silently matching
 # nothing.
 #
-# REQUIRES ENRICHMENT. The Search API's view=COMPLETE does not return
-# subject-area codes, so a project that has not run `prismabib enrich` has no
-# data here and this filter cannot exclude anything -- your PRISMA diagram will
-# report "by subject area: 0" whatever you list. Run `prismabib enrich <slug>`
-# (one Abstract Retrieval call per record, against a separate weekly quota)
-# BEFORE screening begins, since it changes which records reach the queue.
+# NOT YET ENFORCEABLE. The Search API's view=COMPLETE does not return
+# subject-area codes, and while `prismabib enrich` fetches them into Layer 0,
+# nothing loads them into Layer 1 yet -- so no corpus has data for this filter.
+# Setting it is REFUSED rather than silently ignored, so that no diagram can
+# claim a filter that never ran. Leave it empty and put SUBJAREA(...) in your
+# project.toml query instead, which applies the restriction server-side.
 #
-# Filtering here rather than with SUBJAREA(...) in your project.toml query is
-# what makes the exclusion *reportable*: records excluded here are identified,
-# counted, and shown in the flow diagram with their reason. Records excluded by
-# a server-side SUBJAREA never reach you, so they can never be reported.
+# Note the trade-off, for when this does become enforceable: a record excluded
+# by a server-side SUBJAREA is never identified, so it can never appear in your
+# flow diagram. Filtering here is what makes the exclusion *reportable*.
 subject_areas: []
 
 doc_types:

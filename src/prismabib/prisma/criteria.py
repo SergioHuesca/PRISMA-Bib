@@ -171,7 +171,9 @@ def _resolve_from_git_history(
         )
         # pragma: no mutate end
     for commit_hash in commit_hashes:
-        candidate = _criteria_at_commit(top_level, commit_hash, relative_path)
+        candidate = _criteria_at_commit(
+            top_level, commit_hash, relative_path, wanted_version=criteria_version
+        )
         if candidate is not None and candidate.version == criteria_version:
             return candidate
     # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
@@ -183,7 +185,9 @@ def _resolve_from_git_history(
     # pragma: no mutate end
 
 
-def _criteria_at_commit(top_level: Path, commit_hash: str, relative_path: Path) -> Criteria | None:
+def _criteria_at_commit(
+    top_level: Path, commit_hash: str, relative_path: Path, *, wanted_version: str
+) -> Criteria | None:
     """Parse ``criteria.yaml`` as it stood at one commit, tolerating an unparsable one.
 
     Args:
@@ -200,15 +204,47 @@ def _criteria_at_commit(top_level: Path, commit_hash: str, relative_path: Path) 
         possibility in a long-lived project's history and must not abort
         the search for a different, earlier commit that *does* still
         parse and declares the requested version.
+
+    Args (continued):
+        wanted_version: The version being searched for. Returning ``None``
+            for a commit that *declares this very version* would not skip a
+            stale commit -- it would walk past the criteria actually in
+            force and resolve an older commit that happens to reuse the
+            version string, silently replaying a review under rules that
+            never applied to it. That is the audit trail this module exists
+            to provide, corrupted without a symptom, so it raises instead.
+
+    Raises:
+        ConfigError: If the blob declares ``wanted_version`` but does not
+            validate. The tolerance above is for commits declaring *other*
+            versions; it was never meant to cover the one being asked for.
     """
     content = _git_show(top_level, commit_hash, relative_path)
     if content is None:
         return None
     try:
         raw = yaml.safe_load(content)
-        return Criteria.model_validate(raw or {})
-    except (yaml.YAMLError, PydanticValidationError):
+    except yaml.YAMLError:
         return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return Criteria.model_validate(raw)
+    except PydanticValidationError as error:
+        if raw.get("version") != wanted_version:
+            return None
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+        raise ConfigError(
+            f"criteria_version {wanted_version!r} was found at commit {commit_hash} "
+            f"in {relative_path}, but it no longer validates:\n\n{error}\n\n"
+            "This is the version a decision was logged under, so it cannot be skipped: "
+            "continuing the search would resolve an older commit that reuses the same "
+            "version string and replay the review under criteria that were never in "
+            "force. Amend the historical file only if you are certain it was wrong when "
+            "written, and record why -- the alternative is a published diagram computed "
+            "from rules the reviewers never applied."
+        ) from error
+        # pragma: no mutate end
 
 
 def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
