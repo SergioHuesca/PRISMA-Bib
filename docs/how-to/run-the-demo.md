@@ -316,14 +316,14 @@ Screening -- automated, from criteria.yaml
 
 Screening -- title/abstract, from logged human decisions
   excluded                                           -150
-  unsure or not yet screened                       1,172
+  unsure or not yet screened                       1,154
       (unsure never resolves to inclusion; it stays in the queue)
   sought for full-text retrieval                       18
 
 Eligibility -- full text, from logged human decisions
   excluded                                              0
       (no full-text exclusion reason codes logged)
-  unsure or not yet screened                          18
+  unsure or not yet screened                           0
       (unsure never resolves to inclusion; it stays in the queue)
 
 Included
@@ -405,7 +405,7 @@ You'll see:
 Exported demo-talk to ./projects/demo-talk/exports
 
   figures                             2
-  table renderings                    3
+  table renderings                   12
   numbers.json keys                  33
   git commit          3f9a2c11
 ```

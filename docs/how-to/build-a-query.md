@@ -214,11 +214,16 @@ Otherwise, let Scopus return every year and filter in `criteria.yaml` (see below
 
 ### In `criteria.yaml`: Automated Filtering
 
-The `temporal` block in `criteria.yaml` defines an inclusive year window:
+The `temporal` block in `criteria.yaml` defines an inclusive year window. This is an
+*excerpt* — `criteria.yaml` also requires `subject_areas`, `doc_types`, `languages`
+and the two `manual_*` blocks, and pasting only what is shown here is rejected with a
+message naming each missing one. `prismabib init` writes a complete file; edit that
+rather than building one from these fragments. The [full worked example](#a-worked-example-carbon-capture)
+below shows every block together.
+
 
 ```yaml
-version: 0.1.0
-
+# excerpt from criteria.yaml -- see the worked example below for a complete file
 temporal:
   year_start: 2010
   year_end: 2026
