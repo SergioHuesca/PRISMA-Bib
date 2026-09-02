@@ -34,9 +34,13 @@ The run ID printed at the end (e.g., `20260825T090000Z-3f9a2c11`) is what you'll
 Open the screening notebook and manually review at least 20 records. This is load-bearing: a diagram with `included = 0` reads badly to an audience. A diagram where every line has a non-zero count tells the story much better.
 
 ```bash
-uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
+PRISMABIB_NOTEBOOK_SLUG=<your-slug> PRISMABIB_NOTEBOOK_REVIEWER=<your-name> \
+  uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
 # Or from the notebook: screener(project, stage="title_abstract", reviewer="presenter")
 ```
+
+**Set the slug.** The notebook defaults to the bundled `reference` fixture so it runs in CI without a Scopus key. That project does not exist in your projects directory, so without the variables above the notebook stops on its first cell — and because the page still returns HTTP 200, you get a blank browser tab with the reason only in the terminal you launched from. Since v0.15.2 it renders a red **Screening cannot start** message instead, but you still need the slug to screen anything.
+
 
 Screen records until you have included 5–15 studies. Leave the decision log in place — you'll show it.
 
@@ -364,7 +368,8 @@ Included
 Open the screening notebook. Switch to your browser tab or run:
 
 ```bash
-uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
+PRISMABIB_NOTEBOOK_SLUG=<your-slug> PRISMABIB_NOTEBOOK_REVIEWER=<your-name> \
+  uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
 ```
 
 Wait for it to load. Then open a Python cell and run:
