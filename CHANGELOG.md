@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] — 2026-09-01
+
+### Fixed
+
+- **The screening notebook served a blank page when its project did not exist.** The notebook
+  defaults to `PRISMABIB_NOTEBOOK_SLUG=reference`, a fixture that exists only under the test
+  fixtures, so anyone screening a real project got `ConfigError` on the first cell. Under
+  `panel serve` that kills the whole document: the browser receives a valid **HTTP 200** page
+  of about 4 KB with no content, and the traceback goes to the terminal — which someone who
+  launched with `--show` is not looking at. A blank screen is the least debuggable failure a
+  UI has.
+
+  The startup error is now caught and rendered *in the page*, as a red **Screening cannot
+  start** block quoting the error and giving the exact command with the slug set. The
+  notebook's prose renders alongside it instead of vanishing. The working path is byte-for-byte
+  unchanged — verified by screenshotting the served screener in Chrome before and after.
+
+- **`docs/how-to/run-the-demo.md` and `docs/getting-started.md` told you to run the notebook
+  without setting the slug**, which is exactly how the blank page is reached. Both now show
+  `PRISMABIB_NOTEBOOK_SLUG=<your-slug>` and explain why it is needed.
+
 ## [0.15.1] — 2026-09-01
 
 ### Fixed

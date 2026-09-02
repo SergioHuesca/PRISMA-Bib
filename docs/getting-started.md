@@ -312,8 +312,12 @@ Open `notebooks/01_screen_title_abstract.ipynb`, set the slug, and run it. The s
 serves outside a notebook with no code change:
 
 ```bash
-uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
+PRISMABIB_NOTEBOOK_SLUG=<your-slug> PRISMABIB_NOTEBOOK_REVIEWER=<your-name> \
+  uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
 ```
+
+`PRISMABIB_NOTEBOOK_SLUG` is required for your own project: the notebook defaults to the bundled `reference` fixture, which exists only under the test fixtures. Launch without it and the notebook renders its prose plus a red **Screening cannot start** message naming the project it could not find.
+
 
 ![The screening view: progress and pace, one record, the reason palette, and the mouse
 controls](assets/screening-ui.png)
