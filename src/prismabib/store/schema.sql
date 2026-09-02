@@ -101,3 +101,29 @@ CREATE TABLE record_subject_area_coverage (
   record_id TEXT, run_id TEXT, status TEXT,
   PRIMARY KEY (record_id, run_id)
 );
+
+-- Added by ADR 0019, not part of the frozen BUILD_PLAN schema. `fulltext_assets`
+-- holds one row per resolver *attempt*, not per asset: a ScienceDirect 403 yields
+-- no asset yet must still be recorded, because `entitled = false` (an entitlement
+-- gap) is exactly what the Stage 6 coverage table needs to tell apart from
+-- `entitled IS NULL` (no open-access copy, no manual drop, HTTP 404) -- conflating
+-- the two is the corpus bias this stage exists to prevent. `path`/`media_type` are
+-- NULL when an attempt yielded no asset; a resolver is never re-attempted for a
+-- record that already has a row here (the primary key is the resumption key).
+CREATE TABLE fulltext_assets (
+  record_id TEXT, resolver_name TEXT, media_type TEXT, path TEXT,
+  retrieved_at TIMESTAMP, entitled BOOLEAN,
+  PRIMARY KEY (record_id, resolver_name)
+);
+
+-- Added by ADR 0019, not part of the frozen BUILD_PLAN schema. `position` preserves
+-- document order -- section names alone cannot say "methods" came before "results"
+-- -- and `low_confidence` is per section rather than per document because one record
+-- can carry sections from more than one source document; it is set when
+-- `pdfplumber` finds no text layer for a PDF section. No OCR is attempted: the flag
+-- exists so a human reads that section instead.
+CREATE TABLE fulltext_sections (
+  record_id TEXT, position INTEGER, section_name TEXT, text TEXT,
+  low_confidence BOOLEAN,
+  PRIMARY KEY (record_id, position)
+);

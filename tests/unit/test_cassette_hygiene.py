@@ -37,7 +37,15 @@ _GENERATED_DATA = sorted(
     ]
 )
 
-_CASSETTES = _GENERATED_DATA
+# Stage 6 (ADR 0019) added the first non-JSON cassette (a modelled ScienceDirect
+# Article Retrieval XML response). It carries no credential-scanning exemption
+# of its own in `.pre-commit-config.yaml` -- `detect-secrets`' JSON exclusion
+# never applied to XML -- but it belongs in the credential check below for the
+# same reason every other cassette does: "applies to whatever is in the
+# directory", not to a fixed list. Kept out of `_GENERATED_DATA` (and therefore
+# out of the JSON/JSONL parse checks below), since `json.loads` on an XML file
+# would fail for a reason that has nothing to do with cassette hygiene.
+_CASSETTES = sorted([*_GENERATED_DATA, *(_TESTS_ROOT / "fixtures" / "cassettes").glob("*.xml")])
 
 # Elsevier keys are 32 hex characters. Any bare 32-hex token in a fixture is
 # either a real credential or something indistinguishable from one; neither

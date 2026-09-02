@@ -103,6 +103,7 @@ nav:
           - "ADR 0016: automated exclusions are attributed by precedence": architecture/adr/0016-automated-exclusion-reasons.md
           - "ADR 0017: subject areas match by ASJC grouping": architecture/adr/0017-subject-areas-match-by-asjc-grouping.md
           - "ADR 0018: abstract runs load into Layer 1": architecture/adr/0018-abstract-runs-in-layer-1.md
+          - "ADR 0019: full-text resolution and coverage": architecture/adr/0019-fulltext-resolution-and-coverage.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

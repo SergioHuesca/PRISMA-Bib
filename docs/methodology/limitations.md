@@ -108,25 +108,55 @@ The schema supports subject areas, and the `subject_areas` table loads normally 
 captured entry ever carries a `subject-area` array. It is the API response that is missing
 them, not the model.
 
-## No full-text retrieval
+## Full-text retrieval exists, and its coverage is structurally biased by publisher
 
-**Not built yet** (Stage 7 in the build plan). There is no ScienceDirect client, no PDF or
-XML acquisition, and no section extraction. `projects/<slug>/fulltext/` is created by
-`init` and stays empty.
+**Current state.** `prismabib fulltext` runs a three-step resolver chain, first hit wins,
+for every record in `M_abs` (the set advanced to full-text screening):
 
-For the PRISMA diagram this means:
+1. **ScienceDirect Article Retrieval** — entitled Elsevier content only, fetched as
+   structured XML.
+2. **Unpaywall** — a DOI-keyed lookup for a legitimate open-access copy, wherever one
+   happens to be hosted (an institutional repository, a preprint server, the publisher's
+   own site under an OA licence).
+3. **A manual drop** — `projects/<slug>/fulltext/manual/<record_id>.pdf`, for whatever a
+   reviewer's own institutional access can obtain outside prismabib.
 
-- **"Reports not retrieved" is not modelled.** `retrieved_fulltext` is `|M_abs|` — the
-  records *advanced* to full-text screening — so "sought for retrieval" and "assessed for
-  eligibility" are equal by construction. If you could not obtain some reports, you must
-  say so in prose; `FlowCounts` cannot express it.
-- Full-text *eligibility decisions* are supported (`PrismaStage.FULLTEXT`), and their
-  reason-code breakdown is what fills the diagram's "reports excluded, with reasons" box.
-  You just have to obtain and read the PDFs yourself.
+Every attempt, hit or miss, is recorded in Layer 1's `fulltext_assets` table with its
+resolver name and a three-valued `entitled` flag (`true`/`false`/`NULL` — see
+[ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md)), and section text
+extracted into `fulltext_sections`. `prismabib.fulltext.coverage` renders that table into a
+coverage-by-resolver and a coverage-by-publisher report.
 
-When full-text acquisition does arrive it will be entitlement-gated and publisher-skewed:
-ScienceDirect access is a separate Elsevier entitlement, so coverage will be incomplete in a
-way that correlates with publisher.
+**State the mechanism plainly, because it determines whose corpus you actually read.**
+ScienceDirect answers for Elsevier journals only — Pattern Recognition, Neurocomputing,
+Knowledge-Based Systems, and similar Elsevier venues are, in principle, retrievable by
+resolver 1 alone. IEEE, Springer, MDPI, and CVF/AAAI proceedings are not: resolver 1 can
+never succeed for them, and they depend entirely on resolver 2 (whether an OA copy happens
+to exist) or resolver 3 (a reviewer's own access). The three resolvers therefore do not
+sample the underlying corpus uniformly by publisher, and **the set of records with resolved
+full text is not a representative subset of `M_abs`** — it is systematically weighted
+toward Elsevier, and secondarily toward however open-access-friendly each remaining
+publisher happens to be. Any statistic computed only over resolved full text (a
+methods-section content analysis, a per-venue eligibility rate derived by reading the PDF)
+inherits that skew silently unless it is checked against the coverage report first.
+
+Two hard rules exist specifically to keep that skew from becoming invisible bias rather
+than a stated, measured one:
+
+- **A ScienceDirect refusal (HTTP 403) is recorded as an entitlement gap, `entitled=false`,
+  and the chain moves on** — it is never conflated with "this paper does not exist" (which
+  is `entitled=NULL`, e.g. a genuine HTTP 404 or no OA location found). Collapsing the two
+  would make an institution's subscription gaps look like a property of the literature.
+- **No record is ever marked `INACCESSIBLE` automatically.** Exhausting all three resolvers
+  is a fact about this run, not a verdict; only a human, during full-text screening and
+  after confirming no institutional route exists, may log that decision
+  (enforced by a static check over the whole codebase, not merely by convention).
+
+**Figures for your project.** Run `prismabib fulltext <slug>` and read the coverage-by-
+resolver and coverage-by-publisher tables it produces — no numbers are asserted here, since
+they depend entirely on your corpus's publisher mix and your institution's entitlements.
+Report them alongside any full-text-derived finding, the same way a database's own coverage
+is reported under "No cross-database deduplication" above.
 
 ## No screening interface
 

@@ -39,7 +39,7 @@ runner = CliRunner()
 #: The subcommands Stage 11 line 1455 names *and* that have a tested
 #: library function behind them today. `code` are named there too
 #: and are deliberately not implemented (see the cli.py module docstring).
-_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "enrich", "export", "fill"}
+_IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "enrich", "fulltext", "export", "fill"}
 
 
 def _counts(**overrides: object) -> FlowCounts:

@@ -6,8 +6,18 @@ Reads the four ``.env`` variables via ``pydantic-settings``:
 SCOPUS_API_KEY=
 SCOPUS_INSTTOKEN=          # optional; required for off-campus COMPLETE view
 ELSEVIER_SD_API_KEY=       # may be the same key with different entitlements
+UNPAYWALL_EMAIL=           # Stage 6 (ADR 0019): required by the Unpaywall API's
+                           # own terms of use, not a credential -- see below
 PRISMABIB_PROJECTS_ROOT=./projects
 ```
+
+``UNPAYWALL_EMAIL`` is not a secret: Unpaywall's API takes a plain ``email``
+query parameter instead of an API key (https://unpaywall.org/products/api),
+and its terms of use require a real, reachable address rather than a
+placeholder -- Unpaywall states it may contact high-volume users, and a
+fabricated address forfeits that. It stays a plain ``str`` field (unlike the
+``SecretStr`` credentials above) precisely because it is not meant to be kept
+out of logs; it is meant to be a real contact.
 
 ``SCOPUS_API_KEY`` is the one required secret: without it, no source can be
 queried, so :class:`Settings` fails loudly and by name rather than letting a
@@ -72,6 +82,7 @@ class Settings(BaseSettings):
     scopus_api_key: SecretStr
     scopus_insttoken: SecretStr | None = None
     elsevier_sd_api_key: SecretStr | None = None
+    unpaywall_email: str | None = None
     prismabib_projects_root: Path = Path("./projects")
 
     def __init__(self, **data: Any) -> None:

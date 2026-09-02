@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Stage 6 — full-text resolution and eligibility.** A resolver chain (ScienceDirect → open
+  access via Unpaywall → a manual drop directory, first hit wins), XML and PDF extraction, and
+  a `prismabib fulltext` command. Two new Layer 1 tables, `fulltext_assets` and
+  `fulltext_sections`. See
+  [ADR 0019](docs/architecture/adr/0019-fulltext-resolution-and-coverage.md).
+
+  The stage exists to stop an entitlement limit biasing the corpus. The ScienceDirect API
+  serves Elsevier only, so defining "accessible" as "ScienceDirect returned text" would make
+  the corpus Elsevier-weighted and every downstream venue and geography statistic wrong.
+  Three rules enforce that, each verified by injecting its own violation:
+
+  - **A 403 records `entitled = false` and the chain continues.** A refusal is an entitlement
+    gap, not an absent paper. `entitled` is three-valued — `true` accessed, `false` refused,
+    `NULL` not an entitlement question — because collapsing refused into unavailable is the
+    bias itself.
+  - **`INACCESSIBLE` can only be written by a human**, enforced by a test that walks the source
+    AST and fails if any module outside `screening/` constructs it. Exhausting the chain
+    returns `None` and writes no decision event: exhaustion is not a verdict.
+  - **Publisher is derived from the DOI registrant prefix**, never from the resolver that
+    succeeded — deriving it from the resolver is circular, making every resolved paper Elsevier
+    by construction and every unresolved paper publisher-less, so the table could never show a
+    gap. New `src/prismabib/publishers.py`, the same closed-table shape as `countries.py` and
+    `asjc.py`.
+
+  The publisher coverage table reports **records attempted**, resolved, refused and coverage %,
+  not just a share of what was resolved. A publisher refused across the board has no resolved
+  records and would otherwise vanish from the table entirely.
+
+**No published number moves.** No project has full-text assets yet, so every golden is
+byte-identical; `reference_table_checksums.json` gains two empty-table digests.
+
 ## [0.15.2] — 2026-09-01
 
 ### Fixed

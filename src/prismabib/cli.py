@@ -51,6 +51,7 @@ from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import PrismabibError
+from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
 from prismabib.report.export import ExportResult, export_project
@@ -634,6 +635,79 @@ def _print_abstract_manifest(manifest: AbstractRunManifest, *, slug: str) -> Non
         if manifest.unavailable:
             _echo(f"  unavailable             {len(manifest.unavailable):>26,}")
         _echo("\n  Run sealed. Re-run `prismabib build` to load the subject areas.")
+
+
+# ---------------------------------------------------------------------------
+# fulltext
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def fulltext(
+    slug: Annotated[str, typer.Argument(help="Project slug to resolve full text for.")],
+    budget: Annotated[
+        int | None,
+        typer.Option(
+            "--budget",
+            help="Attempt at most this many not-yet-resolved records this run.",
+        ),
+    ] = None,
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Resolve full text for the records sought for full-text retrieval (M_abs).
+
+    Chain, first hit wins (BUILD_PLAN Stage 6 / ADR 0019):
+
+    \b
+      1. ScienceDirect  -- entitled Elsevier content, XML via Article Retrieval
+      2. Open access     -- DOI -> OA location (Unpaywall), PDF fetch
+      3. Manual drop      -- projects/<slug>/fulltext/manual/<record_id>.pdf
+
+    A ScienceDirect refusal (HTTP 403) is recorded as an entitlement gap and
+    the chain moves on to the next resolver -- it never marks a record
+    inaccessible by itself. A record the whole chain exhausts is reported
+    here as a candidate, never decided: only a human, during full-text
+    screening and after confirming no institutional route exists, may log
+    it ``INACCESSIBLE``.
+
+    Resumable: an already-resolved record is never re-attempted. ``--budget``
+    bounds how many *not yet resolved* records this invocation attempts.
+    """
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        summary = run_fulltext_resolution(project, budget=budget)
+        _print_fulltext_summary(summary, slug=slug)
+
+
+def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
+    """Render a full-text resolution run.
+
+    Args:
+        summary: What :func:`~prismabib.fulltext.run.run_fulltext_resolution` did.
+        slug: The project slug, for the heading.
+    """
+    _echo(f"\nResolved full text for {slug}")
+    _echo(f"  records considered      {summary.records_considered:>26,}")
+    _echo(f"  records attempted       {summary.records_attempted:>26,}")
+    _echo(f"  records resolved        {summary.records_resolved:>26,}")
+
+    if summary.resolved_by_resolver:
+        _echo("\n  resolved, by resolver:")
+        for resolver_name, count in sorted(summary.resolved_by_resolver.items()):
+            _echo(f"    {resolver_name:<24} {count:>10,}")
+
+    if summary.refused_by_resolver:
+        _echo("\n  refused (entitlement gap -- NOT an absent paper), by resolver:")
+        for resolver_name, count in sorted(summary.refused_by_resolver.items()):
+            _echo(f"    {resolver_name:<24} {count:>10,}")
+
+    if summary.unresolved_record_ids:
+        _echo(
+            f"\n  {len(summary.unresolved_record_ids):,} record(s) exhausted the chain with no "
+            "full text found.\n  That is not a verdict: only a human may mark one "
+            "INACCESSIBLE, during full-text\n  screening, after confirming no institutional "
+            "route exists."
+        )
 
 
 @app.command()
