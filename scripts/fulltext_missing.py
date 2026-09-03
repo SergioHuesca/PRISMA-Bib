@@ -57,7 +57,12 @@ def main() -> None:
         # `prismabib fulltext` would list every record just resolved as still
         # missing. The sealed runs are the source of truth, and `run.py` reads
         # the same function to decide what to skip.
-        resolved = already_resolved_record_ids(project.fulltext_dir)
+        # : this answers "what must the reviewer still
+        # fetch?", not "what may resumption skip?". A budget-bounded run leaves
+        # its assets on disk unsealed, and listing those papers would send
+        # someone to a library for files they already have -- contradicting the
+        # command that just reported resolving them.
+        resolved = already_resolved_record_ids(project.fulltext_dir, include_unsealed=True)
         meta: dict[str, tuple[str, int | None, str, str | None]] = {
             record_id: (title, year, venue, doi)
             for record_id, title, year, venue, doi in connection.execute(

@@ -119,7 +119,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-import httpx
 import structlog
 
 from prismabib.capture.layout import CACHE_DIRNAME
@@ -520,17 +519,28 @@ class OpenAccessResolver:
             # serves the same paper. Raising here would discard those.
             try:
                 content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
-            except (PrismabibError, httpx.HTTPError) as exc:
-                # Broad on purpose, and broader than it first was. What this
-                # frame defends is *scope*: one candidate location failing must
-                # cost that location, never the record. `follow_redirects=True`
-                # newly makes `httpx.TooManyRedirects` and
-                # `httpx.UnsupportedProtocol` reachable here, and a dead mirror
-                # host has always raised `httpx.ConnectError` -- none of which
-                # are `UpstreamError`. Any of them escaping reaches
-                # `resolve_fulltext`'s outer handler, which abandons the whole
-                # chain for this record, so `ManualDropResolver` never runs and
-                # a PDF the reviewer fetched by hand is silently ignored.
+            except Exception as exc:  # noqa: BLE001 -- see the comment below
+                # `Exception`, matching the outer frame at the end of this
+                # function and for the identical reason. What this frame
+                # defends is *scope*: one candidate location failing must cost
+                # that location, never the record.
+                #
+                # A curated tuple was tried twice and was wrong twice.
+                # `(UpstreamError, RateLimitError)` missed `httpx.ConnectError`
+                # from a dead mirror; `httpx.HTTPError` then missed
+                # `idna.IDNAError` and `httpx.InvalidURL`, raised while merely
+                # *building* the request from a malformed URL -- and those
+                # arrive verbatim from Unpaywall, which is untrusted
+                # third-party data. The outer frame's comment already names
+                # `idna.IDNAError` as the exception that defeated its own
+                # narrow tuple; this frame was narrower than the one it was
+                # widened for.
+                #
+                # Anything escaping here reaches that outer handler, which
+                # abandons the whole chain for this record -- so
+                # `ManualDropResolver` never runs and a PDF the reviewer
+                # fetched by hand is silently ignored, on this run and every
+                # one after it. The scope is a single `fetch_bytes` call.
                 logger.info(
                     "fulltext.resolver.openaccess.candidate_failed",
                     record_id=record_id,

@@ -367,3 +367,51 @@ def test_openaccess__a_candidate_host_is_unreachable__the_chain_continues(
     assert asset is not None
     assert asset.resolver_name == "manual"
     assert [attempt.resolver_name for attempt in attempts] == ["openaccess", "manual"]
+
+
+@pytest.mark.integration
+@respx.mock
+@pytest.mark.parametrize(
+    "malformed_url",
+    [
+        pytest.param("https://xn--/paper.pdf", id="idna-error-empty-punycode-label"),
+        pytest.param("https://[::1/paper.pdf", id="invalid-url-unclosed-bracket"),
+    ],
+)
+def test_openaccess__unpaywall_names_a_malformed_url__the_manual_drop_still_wins(
+    tmp_path: Path, malformed_url: str
+) -> None:
+    """A URL that cannot even be built costs that candidate, not the record.
+
+    These raise while *constructing* the request, before any transport is
+    involved: `idna.IDNAError` and `httpx.InvalidURL`, neither of which is an
+    `httpx.HTTPError`. They arrive verbatim from Unpaywall -- untrusted
+    third-party data -- and the outer frame's own comment already names
+    `idna.IDNAError` as the exception that defeated *its* curated tuple. This
+    frame was briefly narrower than the one it was widened for.
+
+    Escaping here abandons the whole chain for the record, so the PDF the
+    reviewer fetched by hand is ignored -- on this run and every one after it.
+    """
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(200, json={"best_oa_location": {"url_for_pdf": malformed_url}})
+    )
+
+    record_id = "scopus:2-s2.0-900000000004"
+    drop = manual_drop_path(tmp_path, record_id)
+    drop.parent.mkdir(parents=True, exist_ok=True)
+    drop.write_bytes(_MINIMAL_PDF)
+
+    oa_client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with oa_client:
+        asset, _attempts = resolve_fulltext(
+            record_id=record_id,
+            doi=_DOI,
+            resolvers=[
+                OpenAccessResolver(unpaywall_client=oa_client),
+                ManualDropResolver(fulltext_dir=tmp_path),
+            ],
+        )
+
+    assert asset is not None
+    assert asset.resolver_name == "manual"

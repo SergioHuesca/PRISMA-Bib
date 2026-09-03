@@ -733,9 +733,14 @@ def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
     _echo(f"  already had full text   {already_resolved:>26,}")
     _echo(f"  records attempted       {summary.records_attempted:>26,}")
     _echo(f"  resolved this run       {summary.records_resolved:>26,}")
+    # `records_resolved_this_run`, not `records_resolved`: the latter counts
+    # this call alone, so a budget-bounded run resumed four times reported the
+    # same total every time while the corpus filled up behind it. The two terms
+    # are disjoint -- sealed runs, and the current unsealed one.
     _echo(
         f"  TOTAL with full text    "
-        f"{already_resolved + summary.records_resolved:>19,} of {summary.records_considered:,}"
+        f"{already_resolved + summary.records_resolved_this_run:>19,}"
+        f" of {summary.records_considered:,}"
     )
 
     if summary.resolved_by_resolver:

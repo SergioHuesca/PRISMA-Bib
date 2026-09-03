@@ -708,6 +708,9 @@ def test_cli_fulltext__budget_capped_first_run__does_not_claim_records_already_h
 
     project = _screened_reference(tmp_path)
     sought = len(manual_abstract_set(project))
+    # Stated, not assumed: at sought == 1 the measured and derived counts
+    # coincide and this test would pass with the defect present.
+    assert sought > 1, "fixture cannot distinguish measured from derived"
 
     result = runner.invoke(
         app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
@@ -717,3 +720,50 @@ def test_cli_fulltext__budget_capped_first_run__does_not_claim_records_already_h
     # Nothing has ever been resolved for this project.
     assert re.search(r"already had full text\s+0\b", result.stdout), result.stdout
     assert re.search(rf"TOTAL with full text\s+0 of {sought}\b", result.stdout), result.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__resumed_budget_run__the_running_total_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two budgeted calls must not report the same total twice.
+
+    `already_resolved_record_ids` reads *sealed* runs, and `records_resolved`
+    counts *this call*. Between them, nothing counted what the current unsealed
+    run had resolved on earlier calls -- so four successive `--budget` calls
+    each printed the same total while the corpus filled up behind them. That is
+    the exact state the CLI's own footer sends the operator back into ("Run is
+    UNSEALED -- re-run to continue"), so it is the common path, not an edge.
+
+    The first fix removed a `--budget` overcount and left a `--budget` freeze.
+    `records_resolved_this_run` comes from the manifest, which counts over the
+    run's whole lifetime.
+    """
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    sought = sorted(manual_abstract_set(project))
+    # Needs at least three so two budgeted calls of one each leave work behind.
+    assert len(sought) >= 3, "fixture cannot exercise a resumed budgeted run"
+    for record_id in sought[:2]:
+        drop = manual_drop_path(project.fulltext_dir, record_id)
+        drop.parent.mkdir(parents=True, exist_ok=True)
+        drop.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"])
+    second = runner.invoke(
+        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+    )
+
+    assert first.exit_code == 0, first.output
+    assert second.exit_code == 0, second.output
+    first_total = re.search(r"TOTAL with full text\s+(\d+) of", first.stdout)
+    second_total = re.search(r"TOTAL with full text\s+(\d+) of", second.stdout)
+    assert first_total is not None and second_total is not None
+    assert int(first_total.group(1)) == 1
+    # The whole point: the second call's total counts the first call's work.
+    assert int(second_total.group(1)) == 2
