@@ -631,3 +631,48 @@ def test_cli_init__no_scopus_credentials__still_creates_the_project(
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "projects" / "my-review" / "criteria.yaml").is_file()
+
+
+@pytest.mark.integration
+def test_cli_fulltext__resumed_run_finds_nothing_new__still_reports_the_running_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that resolves nothing new must not read as though nothing is resolved.
+
+    `records_resolved` counts this call. On the real corpus a second run printed
+    "records resolved 0" while six of thirty-five records already had full text,
+    and the operator reasonably read it as the tool having failed. The
+    difference between considered and attempted is precisely the records that
+    were skipped because they were already done -- so the running total is
+    derivable and belongs on screen.
+    """
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    (record_id,) = sorted(manual_abstract_set(project))[:1]
+    drop_path = manual_drop_path(project.fulltext_dir, record_id)
+    drop_path.parent.mkdir(parents=True, exist_ok=True)
+    drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+    assert first.exit_code == 0, first.output
+    assert "unexpected error mid-chain" not in first.stdout
+
+    second = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+
+    assert second.exit_code == 0, second.output
+    assert "unexpected error mid-chain" not in second.stdout
+    assert "already had full text" in second.stdout
+    assert "resolved this run" in second.stdout
+    # Matched on structure, not on column spacing -- a width change is a
+    # formatting choice, not a regression in what the line says.
+    assert re.search(r"resolved this run\s+0\b", second.stdout), second.stdout
+    total = re.search(r"TOTAL with full text\s+(\d+) of (\d+)", second.stdout)
+    assert total is not None, second.stdout
+    # The point of the line: a non-zero running total on a call that resolved none.
+    assert int(total.group(1)) >= 1
+    assert int(total.group(1)) <= int(total.group(2))

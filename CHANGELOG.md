@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Full-text resolution retrieved nothing on a real corpus.** The first live
+  `prismabib fulltext` run resolved **0 of 35**; the same corpus now resolves 6, with no
+  mid-chain failures. Three defects, each found by reading what the run reported:
+
+  - **Redirects were not followed.** `httpx` defaults `follow_redirects` to `False`, unlike
+    `requests`, and the Unpaywall client is the only one here that downloads from *arbitrary*
+    hosts. Repositories redirect constantly — DSpace to a bitstream, a DOI to a publisher,
+    http to https. **Six of ten mid-chain failures were 301/302**, reported to the operator as
+    "an upstream outage, a network timeout".
+  - **No `User-Agent` was sent**, so hosts saw `python-httpx/x.y.z`. The same run drew three
+    403s and a 418 from open-access repositories. The client now identifies itself and links
+    to the project — deliberately carrying **no email**: Unpaywall receives one as a query
+    parameter because its terms require it, but the OA hosts it then downloads from are third
+    parties that never asked.
+  - **Only one open-access location was tried.** `best_oa_pdf_url` read `best_oa_location`
+    alone and fell back to that location's landing-page `url`. **Nine records** were reported
+    as having no full text on that basis — Unpaywall *knew* an open-access copy existed.
+    `oa_pdf_candidates` now returns every direct PDF link across every location first, then
+    every landing page, de-duplicated and capped; the resolver keeps going when a candidate is
+    refused, has moved, or turns out not to be a PDF.
+
+- **A resumed run read as though nothing had been resolved.** `records_resolved` counts the
+  current call, so a second run over a mostly-finished corpus printed `records resolved 0`
+  while six of thirty-five records already had full text — and was reasonably read as the tool
+  having failed. The summary now names what was already done and the running total.
+
+### Added
+
+- **`scripts/fulltext_missing.py`** — the records still needing full text, grouped by venue,
+  each with its DOI link and **the exact filename the manual drop expects**. What the chain
+  cannot reach (paywalled content, hosts that refuse automated clients) is a fetching exercise
+  for a reviewer with institutional access; this turns it into a worklist rather than a
+  database query. Read-only, spends no quota.
+
 ## [0.16.0] — 2026-09-03
 
 ### Added
