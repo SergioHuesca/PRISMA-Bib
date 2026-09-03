@@ -17,6 +17,7 @@ import pytest
 from prismabib.errors import UpstreamError
 from prismabib.fulltext.capture import (
     ATTEMPTS_FILENAME,
+    RUNS_DIRNAME,
     already_resolved_record_ids,
     capture_fulltext,
     sealed_fulltext_run_dirs,
@@ -201,3 +202,80 @@ def test_capture__mid_chain_failure__persists_prior_attempts_and_continues_to_ne
 
     record_b_rows = [row for row in rows if row["record_id"] == _RECORD_B]
     assert any(row["entitled"] is True for row in record_b_rows)
+
+
+def _write_run(fulltext_dir: Path, run_id: str, record_id: str, *, sealed: bool) -> None:
+    """Hand-write one Layer 0 full-text run, sealed or not."""
+    run_dir = fulltext_dir / RUNS_DIRNAME / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / ATTEMPTS_FILENAME).write_text(
+        json.dumps(
+            {
+                "record_id": record_id,
+                "resolver_name": "manual",
+                "media_type": "pdf",
+                "asset_file": "assets/x.pdf",
+                "retrieved_at": "2026-01-01T00:00:00+00:00",
+                "entitled": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if sealed:
+        (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("sealed_ids", "unsealed_ids", "expected_default", "expected_including_unsealed"),
+    [
+        pytest.param([], [], set(), set(), id="nothing-run"),
+        pytest.param([], ["b"], set(), {"b"}, id="unsealed-only"),
+        pytest.param(["a"], [], {"a"}, {"a"}, id="sealed-only"),
+        pytest.param(["a"], ["b"], {"a"}, {"a", "b"}, id="sealed-and-unsealed"),
+    ],
+)
+def test_already_resolved__include_unsealed__changes_only_the_unsealed_runs(
+    tmp_path: Path,
+    sealed_ids: list[str],
+    unsealed_ids: list[str],
+    expected_default: set[str],
+    expected_including_unsealed: set[str],
+) -> None:
+    """The default stays sealed-only; the flag adds in-progress runs and nothing else.
+
+    The default is what protects quota discipline -- resumption must never
+    treat an unsealed run's work as a committed fact. The flag exists for a
+    different question ("what must a reviewer still fetch by hand?"), where an
+    unsealed run's assets are as real on disk as a sealed run's.
+
+    Both the helper that sweeps every run directory and the branch that selects
+    it were reachable only through an untested script; a covered ternary line
+    proved nothing about the branch never being taken.
+    """
+    fulltext_dir = tmp_path / "fulltext"
+    for index, record_id in enumerate(sealed_ids):
+        _write_run(fulltext_dir, f"20260101T00000{index}Z-aaaaaaaa", record_id, sealed=True)
+    for index, record_id in enumerate(unsealed_ids):
+        _write_run(fulltext_dir, f"20260202T00000{index}Z-bbbbbbbb", record_id, sealed=False)
+
+    assert already_resolved_record_ids(fulltext_dir) == expected_default
+    assert (
+        already_resolved_record_ids(fulltext_dir, include_unsealed=True)
+        == expected_including_unsealed
+    )
+
+
+@pytest.mark.integration
+def test_already_resolved__run_directory_without_attempts__is_skipped(tmp_path: Path) -> None:
+    """A run directory mid-creation, or emptied, must not break the sweep.
+
+    `include_unsealed=True` reads directories the sealed-only path never
+    touched, including one a run has just created and not yet written to.
+    """
+    fulltext_dir = tmp_path / "fulltext"
+    (fulltext_dir / RUNS_DIRNAME / "20260303T000000Z-cccccccc").mkdir(parents=True)
+    _write_run(fulltext_dir, "20260304T000000Z-dddddddd", "a", sealed=False)
+
+    assert already_resolved_record_ids(fulltext_dir, include_unsealed=True) == {"a"}

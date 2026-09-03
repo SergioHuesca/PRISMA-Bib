@@ -53,15 +53,23 @@ def main() -> None:
     connection = connect(project, read_only=True)
     try:
         # Layer 0, not Layer 1: `fulltext_assets` only reflects what
-        # `build --rebuild` has folded in, so running this straight after
+        # `build --rebuild` has folded in, so reading it straight after
         # `prismabib fulltext` would list every record just resolved as still
-        # missing. The sealed runs are the source of truth, and `run.py` reads
-        # the same function to decide what to skip.
-        # : this answers "what must the reviewer still
-        # fetch?", not "what may resumption skip?". A budget-bounded run leaves
-        # its assets on disk unsealed, and listing those papers would send
-        # someone to a library for files they already have -- contradicting the
-        # command that just reported resolving them.
+        # missing.
+        #
+        # `include_unsealed=True` because this answers "what must the reviewer
+        # still fetch?", not "what may resumption skip?" -- a different
+        # question from the one `run.py` asks of the same function. A
+        # budget-bounded run leaves its assets on disk unsealed, and listing
+        # those papers would send someone to a library for files they already
+        # have, contradicting the command that just reported resolving them.
+        #
+        # The cost of that choice, stated: an *orphaned* unsealed run (one
+        # whose target set no longer matches, so it will never resume or seal)
+        # holds assets `build_store` will never fold into Layer 1, and this
+        # will report those records as not needed. The opposite default sends
+        # a reviewer to a library for files they already hold, which is the
+        # commoner harm.
         resolved = already_resolved_record_ids(project.fulltext_dir, include_unsealed=True)
         meta: dict[str, tuple[str, int | None, str, str | None]] = {
             record_id: (title, year, venue, doi)

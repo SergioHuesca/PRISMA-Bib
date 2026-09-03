@@ -305,7 +305,7 @@ def _all_fulltext_run_dirs(fulltext_dir: Path) -> list[Path]:
 def already_resolved_record_ids(
     fulltext_dir: Path, *, include_unsealed: bool = False
 ) -> frozenset[str]:
-    """Record ids with a resolved attempt in some *sealed* full-text run.
+    """Record ids with a resolved attempt in a full-text run -- sealed only, by default.
 
     Args:
         fulltext_dir: A project's ``fulltext/`` directory.
@@ -321,8 +321,9 @@ def already_resolved_record_ids(
         ``attempts.jsonl`` carries an attempt with a non-null ``asset_file`` --
         the resumption set BUILD_PLAN's "resumable" requirement needs: quota
         already spent resolving a record is never spent again. Reads only
-        *sealed* runs -- an unsealed run's in-progress work is not yet a fact
-        this function commits to, the same discipline
+        *sealed* runs unless ``include_unsealed`` says otherwise -- an
+        unsealed run's in-progress work is not yet a fact resumption commits
+        to, the same discipline
         :func:`prismabib.store.load._sealed_run_dirs` applies to search runs.
     """
     run_dirs = (
