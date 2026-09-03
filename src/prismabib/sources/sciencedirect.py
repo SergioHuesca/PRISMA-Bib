@@ -29,7 +29,7 @@ import httpx
 import structlog
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
-from prismabib.config import Settings
+from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import (
     AuthError,
     ConfigError,
@@ -95,7 +95,7 @@ class ScienceDirectClient:
 
     def __init__(
         self,
-        settings: Settings | None = None,
+        settings: Settings | FullTextSettings | None = None,
         *,
         http_client: httpx.Client | None = None,
         rate_limiter: RateLimiter | None = None,

@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from prismabib.config import FullTextSettings
 from prismabib.errors import EntitlementError, UpstreamError
 from prismabib.fulltext.resolve import (
     FullTextAsset,
@@ -227,3 +228,31 @@ def test_manual_drop_path__record_id_with_no_special_characters__is_unchanged() 
     path = manual_drop_path(Path("/tmp/project/fulltext"), "plainrecordid123")
 
     assert path.name == "plainrecordid123.pdf"
+
+
+@pytest.mark.unit
+def test_fulltext_settings__no_credentials_in_the_environment__constructs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full-text resolution must not require a Scopus key it never uses.
+
+    `Settings` requires `SCOPUS_API_KEY` unconditionally, and `default_chain`
+    used it -- so `prismabib fulltext` failed outright for a reviewer holding
+    PDFs in `fulltext/manual/` and no Scopus subscription. The failure was
+    invisible to every developer, because this repository's working copy has a
+    `.env` that supplies the key; it appeared only in CI, where there is none.
+    Reproduced locally by moving `.env` aside: two CLI tests failed exactly as
+    CI reported.
+
+    `FullTextSettings` declares no required secret, because every resolver it
+    configures is individually optional and the chain degrades to the manual
+    drop when both are absent.
+    """
+    for name in ("SCOPUS_API_KEY", "SCOPUS_INSTTOKEN", "ELSEVIER_SD_API_KEY", "UNPAYWALL_EMAIL"):
+        monkeypatch.delenv(name, raising=False)
+    # `_env_file=None` so the repository's own `.env` cannot supply what CI
+    # will not have -- the very asymmetry that hid this defect.
+    settings = FullTextSettings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.elsevier_sd_api_key is None
+    assert settings.unpaywall_email is None

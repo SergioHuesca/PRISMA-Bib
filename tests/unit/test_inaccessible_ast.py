@@ -197,7 +197,12 @@ def test_decisionlog_write__no_code_path_calls_it_outside_screening_or_cli() -> 
     offenders: dict[str, list[int]] = {}
     for path in source_files:
         relative = path.relative_to(_SRC_ROOT)
-        if _is_exempt(relative) or str(relative) == _DECISIONLOG_MODULE_RELATIVE_PATH:
+        # `as_posix()`, not `str()`: `str(Path("prisma/log.py"))` renders as
+        # `prisma\\log.py` on Windows, so the comparison never matched there and
+        # `DecisionLog.append`'s own `self.append_event(event)` was reported as a
+        # violation. Green on Linux, red on the `full-windows` job -- the
+        # machine-dependence class CLAUDE.md names, in the guard itself.
+        if _is_exempt(relative) or relative.as_posix() == _DECISIONLOG_MODULE_RELATIVE_PATH:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         lines = _decisionlog_write_lines(tree)

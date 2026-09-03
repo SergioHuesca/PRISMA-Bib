@@ -64,6 +64,34 @@ class ProjectsRootSettings(BaseSettings):
     prismabib_projects_root: Path = Path("./projects")
 
 
+class FullTextSettings(BaseSettings):
+    """The credentials full-text resolution needs, and nothing else.
+
+    :class:`Settings` requires ``SCOPUS_API_KEY`` unconditionally, but
+    :func:`prismabib.fulltext.resolve.default_chain` never calls Scopus: it
+    talks to Elsevier's Article Retrieval API, to Unpaywall, and to a local
+    drop directory. Requiring the Scopus key there made ``prismabib fulltext``
+    fail outright for a reviewer who has PDFs in ``fulltext/manual/`` and no
+    Scopus subscription at all -- and it hid in CI behind developers' own
+    ``.env`` files, which do carry the key.
+
+    Same reasoning as :class:`ProjectsRootSettings`, which exists because a
+    researcher wants somewhere to put a project before they go and request an
+    API key. Reads the same ``.env``; declares no required secret of its own,
+    because every resolver it configures is individually optional and the chain
+    degrades to the manual drop when both are absent.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    elsevier_sd_api_key: SecretStr | None = None
+    unpaywall_email: str | None = None
+
+
 class Settings(BaseSettings):
     """prismabib's environment configuration.
 

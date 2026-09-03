@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
-from prismabib.config import Settings
+from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import ValidationError
 from prismabib.fulltext.capture import already_resolved_record_ids, capture_fulltext
 from prismabib.fulltext.resolve import default_chain
@@ -107,7 +107,7 @@ def run_fulltext_resolution(
     *,
     record_ids: Sequence[str] | None = None,
     budget: int | None = None,
-    settings: Settings | None = None,
+    settings: Settings | FullTextSettings | None = None,
 ) -> FullTextRunSummary:
     """Run (or resume) the Stage 6 resolver chain over a project.
 

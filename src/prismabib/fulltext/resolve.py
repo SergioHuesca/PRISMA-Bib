@@ -122,7 +122,7 @@ from typing import TYPE_CHECKING, Protocol
 import structlog
 
 from prismabib.capture.layout import CACHE_DIRNAME
-from prismabib.config import Settings
+from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import ConfigError, EntitlementError, PrismabibError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
@@ -577,7 +577,7 @@ class ManualDropResolver:
 
 @contextmanager
 def default_chain(
-    project: Project, settings: Settings | None = None
+    project: Project, settings: Settings | FullTextSettings | None = None
 ) -> Iterator[tuple[FullTextResolver, ...]]:
     """Build BUILD_PLAN's standard three-resolver chain for one project.
 
@@ -601,13 +601,19 @@ def default_chain(
         The chain, in BUILD_PLAN order (ScienceDirect, open access, manual
         drop, omitting whichever of the first two lack their credential).
 
-    Raises:
-        ConfigError: If ``settings`` is omitted and the environment cannot
-            be loaded (``SCOPUS_API_KEY`` is unconditionally required by
-            :class:`~prismabib.config.Settings`, regardless of this
-            function's own, narrower needs).
+    Note:
+        When ``settings`` is omitted this reads
+        :class:`~prismabib.config.FullTextSettings`, **not**
+        :class:`~prismabib.config.Settings`. The full chain calls Elsevier,
+        Unpaywall and the local drop directory; it never calls Scopus, and
+        requiring ``SCOPUS_API_KEY`` here made ``prismabib fulltext`` fail
+        outright for a reviewer holding PDFs in ``fulltext/manual/`` and no
+        Scopus subscription. That failure was invisible locally, because a
+        developer's own ``.env`` supplies the key; it surfaced only in CI.
     """
-    resolved_settings = settings if settings is not None else Settings()
+    resolved_settings: Settings | FullTextSettings = (
+        settings if settings is not None else FullTextSettings()
+    )
     resolvers: list[FullTextResolver] = []
     closers: list[ScienceDirectClient | UnpaywallClient] = []
     cache_dir = project.fulltext_dir / CACHE_DIRNAME
