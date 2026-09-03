@@ -6,6 +6,9 @@
     "citation_snapshots_loaded": 120,
     "duplicate_doi_groups": 1,
     "duplicate_records": 2,
+    "fulltext_assets_loaded": 0,
+    "fulltext_runs_loaded": 0,
+    "fulltext_sections_loaded": 0,
     "keywords_loaded": 30,
     "malformed_entries_skipped": [],
     "record_keyword_links_loaded": 452,
@@ -17,6 +20,7 @@
       "Korea"
     ],
     "unmatched_abstract_record_ids": [],
+    "unmatched_fulltext_record_ids": [],
     "venues_loaded": 120
   },
   "table_checksums": {

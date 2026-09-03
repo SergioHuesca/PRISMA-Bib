@@ -39,31 +39,6 @@ if TYPE_CHECKING:
     import duckdb
 
 
-def _resolved_dois(connection: duckdb.DuckDBPyConnection) -> list[str | None]:
-    """The DOI (possibly ``None``) of every record with at least one resolved asset.
-
-    Args:
-        connection: An open Layer 1 connection.
-
-    Returns:
-        One entry per **record** that has at least one ``fulltext_assets``
-        row with a non-``NULL`` ``media_type`` (i.e. an asset was actually
-        obtained, by whichever resolver reached it first) -- a record
-        resolved by two attempts within one run cannot happen (BUILD_PLAN's
-        "first hit wins"), but this still counts by distinct record to be
-        explicit about it.
-    """
-    rows = connection.execute(
-        """
-        SELECT DISTINCT fa.record_id, r.doi
-        FROM fulltext_assets fa
-        LEFT JOIN records r ON r.record_id = fa.record_id
-        WHERE fa.media_type IS NOT NULL
-        """
-    ).fetchall()
-    return [doi for _, doi in rows]
-
-
 def coverage_by_resolver_table(connection: duckdb.DuckDBPyConnection) -> Table:
     """Full-text attempts broken down by resolver and outcome.
 
@@ -132,10 +107,17 @@ def coverage_by_publisher_table(connection: duckdb.DuckDBPyConnection) -> Table:
     "Coverage (%)" mean something, and "Refused" separates an entitlement gap
     from a paper that does not exist.
     """
+    # `media_type IS NOT NULL`, not `path IS NOT NULL`: the same "is this attempt
+    # resolved" predicate `coverage_by_resolver_table` and
+    # `already_resolved_record_ids` (`prismabib.fulltext.capture`) already use.
+    # Both columns are NULL together on every attempt this codebase writes, so the
+    # two predicates never disagreed in practice, but a table row keyed on one and
+    # a table row keyed on the other is one definition of "resolved" away from
+    # silently drifting apart.
     attempted = connection.execute(
         """
         SELECT r.doi,
-               MAX(CASE WHEN a.path IS NOT NULL THEN 1 ELSE 0 END) AS resolved,
+               MAX(CASE WHEN a.media_type IS NOT NULL THEN 1 ELSE 0 END) AS resolved,
                MAX(CASE WHEN a.entitled IS FALSE THEN 1 ELSE 0 END) AS refused
         FROM fulltext_assets a
         JOIN records r ON r.record_id = a.record_id

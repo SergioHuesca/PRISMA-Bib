@@ -34,6 +34,43 @@ a footnote.
 
 ## Decision
 
+### 0. Resolution writes **Layer 0**; Layer 1 is rebuilt from it
+
+*Added 2026-09-02, after review. The first version of this ADR chose the Layer 1 schema and
+never asked the question every previous schema ADR answered: is this derivable from Layer 0?
+It was not, and that made `fulltext_assets` the first Layer 1 table that is not a function of
+the archive.*
+
+The consequence was measured, not theorised: resolve a record, run
+`build_store(rebuild=True)`, and every asset row and every `entitled = false` refusal is gone.
+That falsifies **S03-AC3** — "Deleting `corpus.duckdb` and rebuilding loses nothing" — which
+is frozen, and it is not a trap a careful user avoids: `prismabib build`'s own output says
+"The store is derived data: deleting it and running this again loses nothing", the v0.15.1
+stale-schema guard *instructs* the reader to run `--rebuild`, and folding in a new search or
+enrichment run requires it. Hours of Elsevier quota and a record of which publishers refused
+us would vanish on a documented, recommended command.
+
+So full-text resolution is a **capture**, in the same sense `prismabib search` and
+`prismabib enrich` are, and it seals its output the same way
+([ADR 0011](0011-abstract-retrieval-for-subject-areas.md),
+[ADR 0018](0018-abstract-runs-in-layer-1.md)):
+
+```
+projects/<slug>/fulltext/runs/<run_id>/
+├── attempts.jsonl     # one line per resolver attempt, verbatim outcome
+├── assets/            # the fetched bytes, named by content digest
+└── manifest.json      # the seal
+```
+
+`attempts.jsonl` records **every** attempt including refusals, because the refusal is the
+datum this stage exists to preserve. `build_store` reads sealed full-text runs exactly as it
+reads sealed abstract runs and rebuilds `fulltext_assets` and `fulltext_sections` from them,
+so §2.2's reconstructibility rule holds, S03-AC3 is true again, and a rebuild re-spends no
+quota.
+
+`fulltext/manual/<record_id>.pdf` stays where BUILD_PLAN puts it — an operator drop-box, not a
+run — and a resolution run that consumes one records the fact in its own `attempts.jsonl`.
+
 ### 1. `fulltext_assets` holds one row per resolver *attempt*, not per asset
 
 ```sql
@@ -100,10 +137,24 @@ Records with no DOI are reported as `unknown`, counted, and never silently dropp
 ### 4. `INACCESSIBLE` is enforced architecturally, not documented
 
 S06-AC4 requires that no code path can write it. A docstring cannot enforce that, so a unit
-test walks the source AST and fails if any module outside `screening/` constructs a decision
-event with `reason_code="INACCESSIBLE"`. Exhausting the chain returns `None` and writes no
-decision event of any kind: **exhaustion is not a verdict**, it is the absence of one, and
-only a human who has confirmed no institutional route exists may turn it into one.
+test walks the source AST and fails if any module outside `screening/`/`cli.py` constructs a
+decision event with `reason_code="INACCESSIBLE"`, or calls `DecisionLog.append`/`append_event`
+at all. Exhausting the chain returns `None` and writes no decision event of any kind:
+**exhaustion is not a verdict**, it is the absence of one, and only a human who has confirmed
+no institutional route exists may turn it into one.
+
+**What the AST test actually proves, stated precisely (amended after review).** "No code path
+can write it" overstates what a syntactic AST match supports: one line of indirection -- a
+module-level constant, string concatenation, `**kwargs`, or a helper function taking
+`reason_code` as a parameter -- defeats the literal-string check, and an arbitrary
+`DecisionEvent` handed to `append_event` some other way defeats the narrower call-shape check
+too. What the test actually guarantees is narrower and still worth having: no module outside
+the exempted set spells either construct out directly at the call site. That is exactly the
+failure mode this stage has shipped in practice -- a resolver author reaching for the obvious,
+direct way to mark a record inaccessible -- and it means a reviewer auditing a diff for the
+literal string always finds every real call site. Closing every path a determined author could
+construct is code review's job, not a static test's; see
+`tests/unit/test_inaccessible_ast.py`'s own docstring for the full argument.
 
 ## Alternatives rejected
 
@@ -153,8 +204,14 @@ sources is not one asset.
    chain continues; only a human can write `INACCESSIBLE`.
 3. **`fulltext/` holds fetched bytes and is never committed.** Publisher PDFs and XML are
    licensed content, already covered by the `projects/*/fulltext/` guard.
-4. **No published number moves.** No project has full-text assets yet, so every existing
-   golden is unchanged; `reference_table_checksums.json` gains two empty-table digests.
+4. **A rebuild costs nothing and loses nothing.** Resolution is a capture; Layer 1 is
+   derived from its seal. S03-AC3 holds, and re-running `build_store --rebuild` after an
+   `enrich` does not re-spend Elsevier quota or discard which publishers refused us.
+5. **No published number moves.** No project has full-text assets yet, so every existing
+   *value* is byte-identical; `reference_table_checksums.json` gains two empty-table digests,
+   and (Decision 0) `StoreStats`/its golden gain four new zero-valued fields recording the
+   Layer 0 fold-in (`fulltext_runs_loaded`, `fulltext_assets_loaded`,
+   `fulltext_sections_loaded`, `unmatched_fulltext_record_ids`) -- new keys, not changed ones.
 
 ## Constraints
 
@@ -165,7 +222,10 @@ sources is not one asset.
 - Chain order is ScienceDirect → open access → manual drop, first hit wins, and a resolver is
   not called once an earlier one has produced an asset.
 - No OCR. A PDF with no text layer is flagged `low_confidence` and left to a human.
-- Fetched full text stays under `projects/<slug>/fulltext/` and is never committed.
+- Fetched full text stays under `projects/<slug>/fulltext/` and is never committed — and
+  never inside `raw/`, including via an HTTP cache directory.
+- `fulltext_assets` and `fulltext_sections` are rebuilt from sealed Layer 0 runs, never
+  written directly by a resolver. Any table Layer 1 holds must be a function of Layer 0.
 
 ## Related decisions
 
@@ -180,7 +240,7 @@ sources is not one asset.
 ## References
 
 - BUILD_PLAN §Stage 6, lines 1121–1179 (frozen; outside this repository)
-- `src/prismabib/fulltext/` — `resolve.py`, `extract.py`, `coverage.py`
+- `src/prismabib/fulltext/` — `resolve.py`, `capture.py`, `extract.py`, `coverage.py`, `run.py`
 - `src/prismabib/publishers.py` — the DOI-prefix table
 - `src/prismabib/store/schema.sql` — `fulltext_assets`, `fulltext_sections`
 - [Unpaywall API](https://unpaywall.org/products/api), [ScienceDirect Article Retrieval](https://dev.elsevier.com/sd_article_retrieval.html)

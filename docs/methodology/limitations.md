@@ -121,11 +121,17 @@ for every record in `M_abs` (the set advanced to full-text screening):
 3. **A manual drop** — `projects/<slug>/fulltext/manual/<record_id>.pdf`, for whatever a
    reviewer's own institutional access can obtain outside prismabib.
 
-Every attempt, hit or miss, is recorded in Layer 1's `fulltext_assets` table with its
-resolver name and a three-valued `entitled` flag (`true`/`false`/`NULL` — see
-[ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md)), and section text
-extracted into `fulltext_sections`. `prismabib.fulltext.coverage` renders that table into a
-coverage-by-resolver and a coverage-by-publisher report.
+Every attempt, hit or miss, is sealed into a Layer 0 run under
+`projects/<slug>/fulltext/runs/` — `prismabib fulltext` is a **capture**, exactly like
+`prismabib search`/`prismabib enrich`, so a resolution run costs no Elsevier or Unpaywall
+quota twice and is never lost by deleting and rebuilding `corpus.duckdb` (ADR 0019
+Decision 0). Running `prismabib build <slug> --rebuild` afterward folds that run into Layer
+1's `fulltext_assets` table — resolver name and a three-valued `entitled` flag
+(`true`/`false`/`NULL`; see
+[ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md)) — and extracts
+section text into `fulltext_sections`. `prismabib.fulltext.coverage` renders that table into
+a coverage-by-resolver and a coverage-by-publisher report, which `prismabib export` writes
+alongside every other table.
 
 **State the mechanism plainly, because it determines whose corpus you actually read.**
 ScienceDirect answers for Elsevier journals only — Pattern Recognition, Neurocomputing,
@@ -152,8 +158,10 @@ than a stated, measured one:
   after confirming no institutional route exists, may log that decision
   (enforced by a static check over the whole codebase, not merely by convention).
 
-**Figures for your project.** Run `prismabib fulltext <slug>` and read the coverage-by-
-resolver and coverage-by-publisher tables it produces — no numbers are asserted here, since
+**Figures for your project.** Run `prismabib fulltext <slug>`, then
+`prismabib build <slug> --rebuild` to fold the run into the store, then `prismabib export
+<slug>` and read `tables/fulltext_coverage_by_resolver.{csv,md,tex}` and
+`tables/fulltext_coverage_by_publisher.{csv,md,tex}` — no numbers are asserted here, since
 they depend entirely on your corpus's publisher mix and your institution's entitlements.
 Report them alongside any full-text-derived finding, the same way a database's own coverage
 is reported under "No cross-database deduplication" above.

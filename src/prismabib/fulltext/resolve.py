@@ -12,14 +12,17 @@ under-represented rather than un-fetched.
 
 1. :class:`ScienceDirectResolver` -- entitled Elsevier content, XML via
    Article Retrieval.
-2. :class:`OpenAccessResolver` -- DOI -> OA location (Unpaywall), PDF fetch.
+2. :class:`OpenAccessResolver` -- DOI -> OA location (Unpaywall), PDF fetch,
+   verified to actually be a PDF (:func:`~prismabib.sources.unpaywall.looks_like_pdf`)
+   before it is accepted -- a bare HTTP 200 is not enough, since Unpaywall's
+   fallback location is routinely an HTML landing page.
 3. :class:`ManualDropResolver` -- ``projects/<slug>/fulltext/manual/<record_id>.pdf``.
 4. None of the above -> :func:`resolve_fulltext` returns ``(None, attempts)``.
    That is a candidate for a human to mark ``INACCESSIBLE`` during
    full-text screening (BUILD_PLAN, ADR 0019 hard rule 2) -- **never**
    something this module, or anything it calls, writes on its own. See
    :mod:`prismabib.screening` for where ``INACCESSIBLE`` may actually be
-   constructed, and ``tests/unit/fulltext/test_inaccessible_ast.py`` for the
+   constructed, and ``tests/unit/test_inaccessible_ast.py`` for the
    architectural test that enforces it.
 
 **Hard rule 1, and how this module keeps it.** BUILD_PLAN: "A 403 from
@@ -35,20 +38,61 @@ that is allowed to catch it, and it always does: an
 as one :class:`FullTextAttempt` with ``entitled=False`` and the loop moves
 to resolver *N+1* unconditionally. A resolver returning plain ``None``
 (no exception) records ``entitled=None`` instead -- "not an entitlement
-question" (HTTP 404, no OA location, no manual file present) -- which is
-the three-valued distinction ADR 0019 requires the coverage table to be
-able to draw.
+question" (HTTP 404, no OA location, a non-PDF response, no manual file
+present) -- which is the three-valued distinction ADR 0019 requires the
+coverage table to be able to draw.
+
+**A non-entitlement failure mid-chain must not discard what was already
+learned, or abort the whole run.** Before this module caught only
+:class:`~prismabib.errors.EntitlementError`, an ``UpstreamError`` (a 5xx
+exhausting retries, or -- until :mod:`prismabib.sources.unpaywall` was
+fixed alongside this -- a Cloudflare 403 retried five times and raised
+anyway) from resolver *N* propagated straight out of this function,
+discarding every :class:`FullTextAttempt` already collected for this record
+(including a resolver 1 refusal that had just been recorded) and, one frame
+up, aborting :func:`~prismabib.fulltext.capture.capture_fulltext`'s entire
+loop -- leaving every later record in the run completely untried. Now, a
+:class:`~prismabib.errors.PrismabibError` (other than
+:class:`~prismabib.errors.EntitlementError`) or an ``httpx`` transport
+failure (``httpx.TransportError`` -- connection failures, timeouts, neither
+of which any client here translates into a prismabib exception) raised by a
+resolver is caught, logged, and re-raised as
+:class:`FullTextResolutionError`, which carries the attempts collected so
+far as its own ``.attempts`` attribute. The caller
+(:func:`~prismabib.fulltext.capture.capture_fulltext`) catches that one
+type, persists ``.attempts`` exactly as it would a normal return, records
+the record as failed, and moves on to the next record -- a resolver bug or
+an upstream outage now costs one record's progress, not the run's.
 
 **Why ``FullTextAttempt`` exists alongside ``FullTextAsset``.**
-:class:`FullTextAsset` is BUILD_PLAN's own shape (record_id, resolver_name,
-media_type, path, retrieved_at) for a *successful* resolution.
-:class:`FullTextAttempt` is the row :mod:`prismabib.cli`'s ``fulltext``
-command actually persists to ``fulltext_assets`` -- one per resolver
-*invoked*, hit or miss, per ADR 0019's "one row per attempt" reading. A
-resolver whose earlier sibling in the chain already produced an asset is
-never called at all and gets no row -- BUILD_PLAN's "first hit wins" is
-enforced by :func:`resolve_fulltext` returning as soon as one resolver
-succeeds, not by a resolver checking whether it should bother.
+:class:`FullTextAsset` is what a resolver returns on success: the resolved
+bytes plus enough metadata to place them (BUILD_PLAN's ``record_id``,
+``resolver_name``, ``media_type``, ``retrieved_at`` shape for
+``fulltext_assets``, minus ``path`` -- see below).
+:class:`FullTextAttempt` is what :func:`resolve_fulltext` returns for
+*every* resolver invoked, hit or miss -- one per resolver actually called,
+per ADR 0019's "one row per attempt" reading. A resolver whose earlier
+sibling in the chain already produced an asset is never called at all and
+gets no row -- BUILD_PLAN's "first hit wins" is enforced by
+:func:`resolve_fulltext` returning as soon as one resolver succeeds, not by
+a resolver checking whether it should bother.
+
+**Why ``FullTextAsset``/``FullTextAttempt`` carry raw ``content: bytes``,
+not a ``path`` (ADR 0019 Decision 0).** Earlier, each resolver wrote its own
+bytes directly into ``project.fulltext_dir/<resolver_name>/<record_id>.<ext>``
+and Layer 1's ``fulltext_assets``/``fulltext_sections`` were written straight
+from this module -- which made those two tables the first Layer 1 tables
+that were not a function of Layer 0: deleting and rebuilding the store lost
+every asset and every recorded refusal, falsifying S03-AC3. Resolvers here
+now return bytes in memory and do no filesystem writes of their own (except
+:class:`ManualDropResolver`'s *read* of the fixed drop-box path, which is not
+a run). Placing those bytes under a sealed ``fulltext/runs/<run_id>/`` Layer 0
+run -- content-addressed, alongside every attempt including refusals -- is
+:mod:`prismabib.fulltext.capture`'s job; :mod:`prismabib.store.load` then
+rebuilds ``fulltext_assets``/``fulltext_sections`` from those sealed runs the
+same way it already rebuilds ``abstract_runs``/``record_subject_area_coverage``
+from sealed abstract runs (ADR 0018). See ADR 0019 Decision 0 for the full
+argument.
 
 **Why ``FullTextResolver.resolve`` takes ``record_id``/``doi`` rather than a
 full ``prismabib.models.Record``.** BUILD_PLAN's own Stage 6 sketch shows
@@ -56,14 +100,14 @@ full ``prismabib.models.Record``.** BUILD_PLAN's own Stage 6 sketch shows
 ``Corpus.records()`` returns a Polars ``DataFrame`` (Stage 3's own,
 already-shipped design), not a stream of
 :class:`~prismabib.models.Record` objects, and a resolver only ever reads
-two of that domain object's fields -- the record id (for filenames and the
-``fulltext_assets`` key) and the DOI (the only lookup key ScienceDirect and
-Unpaywall both take). Threading a full domain object through three
-resolvers to use two of its fields would either force a second
-Layer-1-to-``Record`` assembly step this stage does not otherwise need, or
-leave most of a constructed ``Record`` unused. This is a deliberate,
-reported adaptation of BUILD_PLAN's sketch to this codebase's actual Layer 1
-shape, not a silent narrowing of it.
+two of that domain object's fields -- the record id (for the
+``fulltext_assets`` key and, downstream, the asset filename) and the DOI
+(the only lookup key ScienceDirect and Unpaywall both take). Threading a
+full domain object through three resolvers to use two of its fields would
+either force a second Layer-1-to-``Record`` assembly step this stage does
+not otherwise need, or leave most of a constructed ``Record`` unused. This
+is a deliberate, reported adaptation of BUILD_PLAN's sketch to this
+codebase's actual Layer 1 shape, not a silent narrowing of it.
 """
 
 from __future__ import annotations
@@ -75,14 +119,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+import httpx
 import structlog
 
+from prismabib.capture.layout import CACHE_DIRNAME
 from prismabib.config import Settings
-from prismabib.errors import ConfigError, EntitlementError
+from prismabib.errors import ConfigError, EntitlementError, PrismabibError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.sciencedirect import ArticleNotFoundError, ScienceDirectClient
-from prismabib.sources.unpaywall import UnpaywallClient, best_oa_pdf_url
+from prismabib.sources.unpaywall import UnpaywallClient, best_oa_pdf_url, looks_like_pdf
 
 if TYPE_CHECKING:
     from prismabib.project import Project
@@ -96,10 +142,55 @@ SCIENCEDIRECT = "sciencedirect"
 OPENACCESS = "openaccess"
 MANUAL = "manual"
 
+#: The relative path (under ``project.fulltext_dir``) where a reviewer drops a
+#: PDF they obtained through their own institutional access. An operator
+#: drop-box, not a Layer 0 run: it is mutable, permanent, and outside any
+#: sealed run's immutability guarantee (ADR 0019 Decision 0) -- a resolution
+#: run that reads one *copies* its bytes into its own sealed run instead of
+#: recording a reference to this mutable path, so a later edit or deletion
+#: here cannot retroactively change what a sealed run says it saw.
+MANUAL_DROP_DIRNAME = "manual"
+
+#: Characters this project's on-disk record ids (``scopus:2-s2.0-...``) can
+#: contain that are illegal in an NTFS filename -- today, only ``:``.
+#: :func:`manual_drop_path` replaces each with ``_`` so the same record id is
+#: usable as a filename on every platform this project runs
+#: ``full-windows`` CI for, including the working copy of this repository
+#: itself (an NTFS mount, per this project's own environment notes).
+_WINDOWS_ILLEGAL_FILENAME_CHARS = '<>:"/\\|?*'
+_FILENAME_SANITISE_TABLE = str.maketrans(dict.fromkeys(_WINDOWS_ILLEGAL_FILENAME_CHARS, "_"))
+
+
+def manual_drop_path(fulltext_dir: Path, record_id: str) -> Path:
+    """Where a reviewer's manually-dropped PDF for ``record_id`` is expected to be.
+
+    Args:
+        fulltext_dir: ``project.fulltext_dir``.
+        record_id: The record id, e.g. ``"scopus:2-s2.0-85100000001"``.
+
+    Returns:
+        ``<fulltext_dir>/manual/<sanitised record_id>.pdf``. BUILD_PLAN's own
+        Stage 6 sketch names this path with the *literal* record id
+        (``projects/<slug>/fulltext/manual/<record_id>.pdf``); it is
+        sanitised here because ``record_id`` contains ``:`` (the
+        ``scopus:`` namespace prefix, BUILD_PLAN §3.2), which is a legal
+        POSIX filename character but not a legal NTFS one -- a project this
+        codebase already develops on, and CI already tests, that path would
+        raise `OSError` creating the file at all. Every character
+        :data:`_WINDOWS_ILLEGAL_FILENAME_CHARS` names is replaced with
+        ``_``, which keeps the record id trivially recoverable by eye
+        (``scopus_2-s2.0-85100000001.pdf`` unambiguously names
+        ``scopus:2-s2.0-85100000001``) without attempting a reversible
+        encoding no operator would want to type by hand into a drop-box
+        anyway.
+    """
+    sanitised = record_id.translate(_FILENAME_SANITISE_TABLE)
+    return fulltext_dir / MANUAL_DROP_DIRNAME / f"{sanitised}.pdf"
+
 
 @dataclass(frozen=True)
 class FullTextAsset:
-    """A successfully resolved full-text asset (BUILD_PLAN line 1141).
+    """A successfully resolved full-text asset, in memory (BUILD_PLAN line 1141, ADR 0019 Decision 0).
 
     Attributes:
         record_id: The record this asset is for.
@@ -107,28 +198,30 @@ class FullTextAsset:
             :data:`SCIENCEDIRECT`, :data:`OPENACCESS`, :data:`MANUAL`.
         media_type: ``"xml"`` (ScienceDirect) or ``"pdf"`` (open access,
             manual drop).
-        path: Where the raw bytes were written, under
-            ``project.fulltext_dir`` -- never committed (guard-blocked by
-            ``projects/*/fulltext/`` in ``.gitignore``).
+        content: The raw fetched (or read) bytes. Not yet written anywhere --
+            :mod:`prismabib.fulltext.capture` places them under a sealed Layer 0
+            run, content-addressed by their own SHA-256 digest.
         retrieved_at: When this resolver produced the asset.
     """
 
     record_id: str
     resolver_name: str
     media_type: str
-    path: Path
+    content: bytes
     retrieved_at: datetime
 
 
 @dataclass(frozen=True)
 class FullTextAttempt:
-    """One ``fulltext_assets`` row: a resolver's outcome for one record, always recorded.
+    """One resolver's outcome for one record, always recorded (ADR 0019).
 
     Attributes:
         record_id: The record attempted.
         resolver_name: Which resolver this attempt is for.
         media_type: ``None`` when this attempt produced no asset.
-        path: ``None`` when this attempt produced no asset.
+        content: The fetched bytes, or ``None`` when this attempt produced no
+            asset. Mirrors :attr:`FullTextAsset.content` -- not yet placed
+            anywhere on disk.
         retrieved_at: When the attempt was made (success or not).
         entitled: The three-valued column ADR 0019 requires:
 
@@ -137,15 +230,53 @@ class FullTextAttempt:
               (:class:`~prismabib.errors.EntitlementError`). An entitlement
               gap, not an absent paper.
             - ``None`` -- not an entitlement question: no asset, and no
-              refusal either (HTTP 404, no OA location, no manual file).
+              refusal either (HTTP 404, no OA location, a response that came
+              back 200 but was not actually a PDF, no manual file).
     """
 
     record_id: str
     resolver_name: str
     media_type: str | None
-    path: Path | None
+    content: bytes | None
     retrieved_at: datetime
     entitled: bool | None
+
+
+class FullTextResolutionError(PrismabibError):
+    """A resolver failed mid-chain for reasons other than an entitlement refusal.
+
+    Not one of the named leaves in BUILD_PLAN §3.3's error tree (that tree
+    predates this module, the same way :class:`~prismabib.capture.layout.SealedRunError`
+    is a direct :class:`~prismabib.errors.PrismabibError` subclass outside it): this
+    carries data (``attempts``) no taxonomy leaf needs to, and it exists purely to
+    cross the one function boundary (:func:`resolve_fulltext` ->
+    :func:`~prismabib.fulltext.capture.capture_fulltext`) where "what did we learn
+    before this broke" has to survive the exception.
+
+    Attributes:
+        record_id: The record whose chain was interrupted.
+        resolver_name: The resolver that raised.
+        attempts: Every :class:`FullTextAttempt` collected before the failing
+            resolver was reached -- exactly what :func:`resolve_fulltext` would have
+            returned so far had nothing gone wrong. The caller persists these; they
+            are not lost with the exception.
+    """
+
+    def __init__(
+        self,
+        *,
+        record_id: str,
+        resolver_name: str,
+        attempts: tuple[FullTextAttempt, ...],
+        cause: BaseException,
+    ) -> None:
+        super().__init__(
+            f"full-text resolution for {record_id!r} was interrupted at resolver "
+            f"{resolver_name!r}: {cause}"
+        )
+        self.record_id = record_id
+        self.resolver_name = resolver_name
+        self.attempts = attempts
 
 
 class FullTextResolver(Protocol):
@@ -208,6 +339,15 @@ def resolve_fulltext(
         ``attempts`` is one :class:`FullTextAttempt` per resolver actually
         invoked, in chain order -- BUILD_PLAN's per-record provenance and
         the raw material for :mod:`prismabib.fulltext.coverage`.
+
+    Raises:
+        FullTextResolutionError: If a resolver raises anything other than
+            :class:`~prismabib.errors.EntitlementError` -- a
+            :class:`~prismabib.errors.PrismabibError` (an upstream 5xx
+            exhausting retries, a rate limit exhausting retries, ...) or an
+            ``httpx`` transport failure. Carries every :class:`FullTextAttempt`
+            collected before the failure, so the caller can persist them
+            rather than losing that work. See the module docstring.
     """
     attempts: list[FullTextAttempt] = []
     for resolver in resolvers:
@@ -224,12 +364,26 @@ def resolve_fulltext(
                     record_id=record_id,
                     resolver_name=resolver.name,
                     media_type=None,
-                    path=None,
+                    content=None,
                     retrieved_at=datetime.now(UTC),
                     entitled=False,
                 )
             )
             continue
+        except (PrismabibError, httpx.TransportError) as exc:
+            logger.warning(
+                "fulltext.resolver.failed",
+                record_id=record_id,
+                resolver=resolver.name,
+                error=str(exc),
+                exc_info=True,
+            )
+            raise FullTextResolutionError(
+                record_id=record_id,
+                resolver_name=resolver.name,
+                attempts=tuple(attempts),
+                cause=exc,
+            ) from exc
 
         if asset is None:
             attempts.append(
@@ -237,7 +391,7 @@ def resolve_fulltext(
                     record_id=record_id,
                     resolver_name=resolver.name,
                     media_type=None,
-                    path=None,
+                    content=None,
                     retrieved_at=datetime.now(UTC),
                     entitled=None,
                 )
@@ -255,7 +409,7 @@ def resolve_fulltext(
                 record_id=record_id,
                 resolver_name=resolver.name,
                 media_type=asset.media_type,
-                path=asset.path,
+                content=asset.content,
                 retrieved_at=asset.retrieved_at,
                 entitled=True,
             )
@@ -265,34 +419,16 @@ def resolve_fulltext(
     return None, tuple(attempts)
 
 
-def _asset_path(fulltext_dir: Path, resolver_name: str, record_id: str, extension: str) -> Path:
-    """Where a resolver writes (or reads) one record's fetched bytes.
-
-    Args:
-        fulltext_dir: ``project.fulltext_dir``.
-        resolver_name: The resolver's :attr:`FullTextResolver.name`.
-        record_id: The record id.
-        extension: File extension, without the dot (``"xml"``, ``"pdf"``).
-
-    Returns:
-        ``<fulltext_dir>/<resolver_name>/<record_id>.<extension>``.
-    """
-    return fulltext_dir / resolver_name / f"{record_id}.{extension}"
-
-
 @dataclass
 class ScienceDirectResolver:
     """Entitled Elsevier content via ScienceDirect Article Retrieval (``FULL`` XML).
 
     Args:
-        fulltext_dir: ``project.fulltext_dir``; resolved XML is written
-            under ``<fulltext_dir>/sciencedirect/``.
         client: The :class:`~prismabib.sources.sciencedirect.ScienceDirectClient`
             to use.
         name: Fixed at :data:`SCIENCEDIRECT`.
     """
 
-    fulltext_dir: Path
     client: ScienceDirectClient
     name: str = SCIENCEDIRECT
 
@@ -311,31 +447,25 @@ class ScienceDirectResolver:
             xml_bytes = self.client.article_retrieval_xml(doi)
         except ArticleNotFoundError:
             return None
-        path = _asset_path(self.fulltext_dir, self.name, record_id, "xml")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(xml_bytes)
         return FullTextAsset(
             record_id=record_id,
             resolver_name=self.name,
             media_type="xml",
-            path=path,
+            content=xml_bytes,
             retrieved_at=datetime.now(UTC),
         )
 
 
 @dataclass
 class OpenAccessResolver:
-    """DOI -> open-access location (Unpaywall) -> PDF fetch.
+    """DOI -> open-access location (Unpaywall) -> PDF fetch, verified to be a PDF.
 
     Args:
-        fulltext_dir: ``project.fulltext_dir``; fetched PDFs are written
-            under ``<fulltext_dir>/openaccess/``.
         unpaywall_client: The :class:`~prismabib.sources.unpaywall.UnpaywallClient`
             to use.
         name: Fixed at :data:`OPENACCESS`.
     """
 
-    fulltext_dir: Path
     unpaywall_client: UnpaywallClient
     name: str = OPENACCESS
 
@@ -346,6 +476,16 @@ class OpenAccessResolver:
         is a public API with no entitlement concept, so an OA miss is
         always "not an entitlement question" (``entitled=None``), never a
         refusal.
+
+        A response that comes back HTTP 200 but is not actually a PDF (an
+        HTML landing page -- :func:`~prismabib.sources.unpaywall.best_oa_pdf_url`
+        falls back to a generic ``url`` when no ``url_for_pdf`` exists) is
+        treated exactly like "nothing found": ``None``, not an asset. Before
+        this check existed, that HTML was written to disk as
+        ``media_type="pdf"``/``entitled=True``, ``pdfplumber`` silently
+        extracted zero sections from it, and the record was counted resolved
+        forever with no full text behind it -- overstating coverage, the one
+        thing ADR 0019's report must not do.
         """
         if not doi:
             return None
@@ -355,22 +495,26 @@ class OpenAccessResolver:
         pdf_url = best_oa_pdf_url(response)
         if pdf_url is None:
             return None
-        content = self.unpaywall_client.fetch_bytes(pdf_url)
-        path = _asset_path(self.fulltext_dir, self.name, record_id, "pdf")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
+        content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
+        if not looks_like_pdf(content, content_type):
+            logger.info(
+                "fulltext.resolver.openaccess.not_a_pdf",
+                record_id=record_id,
+                content_type=content_type,
+            )
+            return None
         return FullTextAsset(
             record_id=record_id,
             resolver_name=self.name,
             media_type="pdf",
-            path=path,
+            content=content,
             retrieved_at=datetime.now(UTC),
         )
 
 
 @dataclass
 class ManualDropResolver:
-    """A human-provided PDF at ``projects/<slug>/fulltext/manual/<record_id>.pdf``.
+    """A human-provided PDF at :func:`manual_drop_path`.
 
     The chain's last resort: a reviewer with institutional access outside
     prismabib's own resolvers can drop a PDF here and it is picked up on
@@ -389,21 +533,32 @@ class ManualDropResolver:
 
         Never raises :class:`~prismabib.errors.EntitlementError`: reading a
         local file has no entitlement concept, so a missing drop is always
-        ``entitled=None``.
+        ``entitled=None``. A file present but not actually a PDF (an operator
+        mistake -- the wrong file dropped, a ``.pdf``-renamed HTML save) is
+        treated the same way, for the same reason
+        :class:`OpenAccessResolver` verifies its own download.
         """
         # `doi` is unused: a manual drop is keyed on `record_id` alone (the
         # ADR 0019 path convention), never on the DOI. It stays a named
         # parameter -- not `**_kwargs` -- so this resolver keeps satisfying
         # `FullTextResolver` structurally, keyword for keyword.
         del doi
-        path = _asset_path(self.fulltext_dir, self.name, record_id, "pdf")
+        path = manual_drop_path(self.fulltext_dir, record_id)
         if not path.is_file():
+            return None
+        content = path.read_bytes()
+        if not looks_like_pdf(content, None):
+            logger.warning(
+                "fulltext.resolver.manual.not_a_pdf",
+                record_id=record_id,
+                path=str(path),
+            )
             return None
         return FullTextAsset(
             record_id=record_id,
             resolver_name=self.name,
             media_type="pdf",
-            path=path,
+            content=content,
             retrieved_at=datetime.now(UTC),
         )
 
@@ -421,8 +576,12 @@ def default_chain(
     credential and costs no network call to construct.
 
     Args:
-        project: The project resolvers write fetched bytes under
-            (``project.fulltext_dir``).
+        project: The project resolvers read the manual drop-box under
+            (``project.fulltext_dir``) and cache HTTP responses under
+            (``project.fulltext_dir`` / the shared cache directory --
+            **not** ``project.raw_dir``: fetched full text is licensed
+            content and must never sit anywhere near the Layer 0 archive,
+            per ``project.fulltext_dir``'s own docstring and ADR 0019).
         settings: The environment configuration. Defaults to
             ``Settings()`` when omitted.
 
@@ -439,32 +598,31 @@ def default_chain(
     resolved_settings = settings if settings is not None else Settings()
     resolvers: list[FullTextResolver] = []
     closers: list[ScienceDirectClient | UnpaywallClient] = []
+    cache_dir = project.fulltext_dir / CACHE_DIRNAME
 
     try:
         sd_client = ScienceDirectClient(
             resolved_settings,
             rate_limiter=RateLimiter(),
-            cache=HttpCache(project.raw_dir / "_cache"),
+            cache=HttpCache(cache_dir),
         )
     except ConfigError as exc:
         logger.warning("fulltext.chain.sciencedirect_unavailable", reason=str(exc))
     else:
         closers.append(sd_client)
-        resolvers.append(ScienceDirectResolver(fulltext_dir=project.fulltext_dir, client=sd_client))
+        resolvers.append(ScienceDirectResolver(client=sd_client))
 
     try:
         oa_client = UnpaywallClient(
             resolved_settings,
             rate_limiter=RateLimiter(),
-            cache=HttpCache(project.raw_dir / "_cache"),
+            cache=HttpCache(cache_dir),
         )
     except ConfigError as exc:
         logger.warning("fulltext.chain.openaccess_unavailable", reason=str(exc))
     else:
         closers.append(oa_client)
-        resolvers.append(
-            OpenAccessResolver(fulltext_dir=project.fulltext_dir, unpaywall_client=oa_client)
-        )
+        resolvers.append(OpenAccessResolver(unpaywall_client=oa_client))
 
     resolvers.append(ManualDropResolver(fulltext_dir=project.fulltext_dir))
 
@@ -477,14 +635,17 @@ def default_chain(
 
 __all__ = [
     "MANUAL",
+    "MANUAL_DROP_DIRNAME",
     "OPENACCESS",
     "SCIENCEDIRECT",
     "FullTextAsset",
     "FullTextAttempt",
+    "FullTextResolutionError",
     "FullTextResolver",
     "ManualDropResolver",
     "OpenAccessResolver",
     "ScienceDirectResolver",
     "default_chain",
+    "manual_drop_path",
     "resolve_fulltext",
 ]

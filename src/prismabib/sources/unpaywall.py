@@ -41,6 +41,21 @@ logger = structlog.get_logger(__name__)
 JsonDict = dict[str, Any]
 
 
+class _RetryableUpstreamError(UpstreamError):
+    """A 5xx from Unpaywall or the OA host it redirected to -- the only outcome retried.
+
+    A distinct subclass, not a status-code check inside the retry predicate,
+    because :func:`tenacity.retry_if_exception_type` matches on type alone. Before
+    this split, *every* unexpected non-2xx/404 status -- 401, 403, a
+    Cloudflare-fronted OA host answering 403 to a scripted download -- was raised as
+    plain :class:`~prismabib.errors.UpstreamError`, which was also the retried type:
+    a transient-looking 403 was retried five times with exponential backoff and then
+    raised anyway, for no benefit and five times the latency. Only a 5xx is
+    transient in the sense retrying helps with; a 4xx from the OA host is a
+    permanent answer to this specific request.
+    """
+
+
 class UnpaywallClient:
     """A client for the Unpaywall API and for downloading the OA copies it locates.
 
@@ -135,7 +150,7 @@ class UnpaywallClient:
         logger.info("unpaywall.lookup", endpoint=url, cache="miss")
         return _parse_json(body)
 
-    def fetch_bytes(self, url: str) -> bytes:
+    def fetch_bytes(self, url: str) -> tuple[bytes, str | None]:
         """Download the bytes at an open-access location URL.
 
         Args:
@@ -144,16 +159,25 @@ class UnpaywallClient:
                 this is wherever the OA copy actually lives.
 
         Returns:
-            The raw response body.
+            ``(content, content_type)``: the raw response body and its
+            ``Content-Type`` header (``None`` if the host did not send one).
+            The caller (:class:`~prismabib.fulltext.resolve.OpenAccessResolver`)
+            needs the content type, alongside the bytes themselves, to tell an
+            actual PDF apart from an HTML landing page that ``best_oa_pdf_url``
+            fell back to (:func:`~prismabib.sources.unpaywall.looks_like_pdf`)
+            -- a distinction this client is best placed to hand back, since it
+            is the only place that ever sees the response headers.
 
         Raises:
             RateLimitError: On HTTP 429 exhausting the retry budget.
-            UpstreamError: On HTTP 5xx exhausting the retry budget, on HTTP
-                404 (the location Unpaywall pointed to no longer resolves),
-                or any other unexpected non-2xx status.
+            UpstreamError: On HTTP 5xx exhausting the retry budget (retried
+                first), on HTTP 404 (the location Unpaywall pointed to no
+                longer resolves), or any other unexpected non-2xx status
+                (never retried for a non-5xx status -- see
+                :class:`_RetryableUpstreamError`).
         """
         response = self._request_with_retry(url, {}, allow_404=False)
-        return response.content
+        return response.content, response.headers.get("content-type")
 
     def _request_with_retry(
         self, url: str, params: Mapping[str, str], *, allow_404: bool = True
@@ -162,7 +186,11 @@ class UnpaywallClient:
         retryer = Retrying(
             stop=stop_after_attempt(self.MAX_ATTEMPTS),
             wait=wait_random_exponential(multiplier=1, max=30),
-            retry=retry_if_exception_type((RateLimitError, UpstreamError)),
+            # `_RetryableUpstreamError`, not the base `UpstreamError`: a 5xx is worth
+            # retrying, a 4xx the "unexpected status" branch below raises as plain
+            # `UpstreamError` is a permanent answer to this exact request and must not
+            # cost four more attempts and up to ~2 minutes of backoff before surfacing.
+            retry=retry_if_exception_type((RateLimitError, _RetryableUpstreamError)),
             reraise=True,
         )
         response: httpx.Response = retryer(self._do_request, url, params, allow_404)
@@ -192,10 +220,16 @@ class UnpaywallClient:
 
         if 500 <= status < 600:
             logger.warning("unpaywall.request.upstream_error", endpoint=endpoint, status=status)
-            raise UpstreamError(
+            raise _RetryableUpstreamError(
                 f"Unpaywall (or the OA host) returned HTTP {status} for {endpoint}."
             )
 
+        # Everything else -- 401, 403 (a Cloudflare-fronted OA host refusing a
+        # scripted download is the case that motivated this split), a stray 3xx --
+        # is a permanent answer to *this* request and is deliberately the base
+        # `UpstreamError`, not `_RetryableUpstreamError`: retrying cannot change a
+        # 403 into a 200, so paying the retry budget for it before giving up
+        # anyway only adds latency.
         logger.warning("unpaywall.request.unexpected_status", endpoint=endpoint, status=status)
         raise UpstreamError(
             f"Unpaywall (or the OA host) returned unexpected HTTP {status} for {endpoint}."
@@ -249,4 +283,49 @@ def best_oa_pdf_url(response: JsonDict) -> str | None:
     return None
 
 
-__all__ = ["UnpaywallClient", "best_oa_pdf_url"]
+#: A PDF's magic bytes, per the PDF spec (ISO 32000-1 §7.5.2): the header
+#: ``%PDF-1.N`` must appear somewhere in the first 1024 bytes of the file (some
+#: producers prepend a short binary comment or BOM before it), so this module does
+#: not require it at byte offset 0.
+_PDF_MAGIC = b"%PDF-"
+_PDF_SNIFF_WINDOW = 1024
+
+
+def looks_like_pdf(content: bytes, content_type: str | None) -> bool:
+    """Whether a downloaded body is actually a PDF, not an HTML landing page.
+
+    :func:`best_oa_pdf_url` falls back from ``url_for_pdf`` to the generic
+    ``url`` when Unpaywall's best OA location carries no direct PDF link --
+    and that ``url`` is routinely a publisher landing page, not a PDF. Before
+    this check existed, :class:`~prismabib.fulltext.resolve.OpenAccessResolver`
+    wrote whatever bytes came back straight to disk as ``media_type="pdf"``,
+    ``entitled=True``: ``pdfplumber`` then failed to extract any section from
+    the HTML (an exception this codebase already swallows, by design, as "an
+    unparseable file is a fact about that file"), so the record silently got
+    zero sections *and* was counted resolved forever -- never retried, and
+    counted toward coverage in a report whose entire point is not to overstate
+    it.
+
+    Args:
+        content: The downloaded response body.
+        content_type: The response's ``Content-Type`` header, or ``None`` when
+            the host sent none (some OA hosts, and every local manual-drop
+            file, have no HTTP response to draw one from at all).
+
+    Returns:
+        ``False`` immediately if ``content_type`` is present and, once its
+        parameters (``; charset=...``) are stripped, does not mention
+        ``"pdf"`` -- ``"text/html"`` is the landing-page case this function
+        exists to catch. Otherwise, ``True`` iff :data:`_PDF_MAGIC` appears
+        within the first :data:`_PDF_SNIFF_WINDOW` bytes of ``content``: the
+        one signal that is authoritative regardless of what (or whether) a
+        server claimed about the content type.
+    """
+    if content_type is not None:
+        normalised = content_type.split(";", 1)[0].strip().casefold()
+        if normalised and "pdf" not in normalised:
+            return False
+    return _PDF_MAGIC in content[:_PDF_SNIFF_WINDOW]
+
+
+__all__ = ["UnpaywallClient", "best_oa_pdf_url", "looks_like_pdf"]

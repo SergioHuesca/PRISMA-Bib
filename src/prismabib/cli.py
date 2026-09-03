@@ -672,6 +672,12 @@ def fulltext(
 
     Resumable: an already-resolved record is never re-attempted. ``--budget``
     bounds how many *not yet resolved* records this invocation attempts.
+
+    This writes Layer 0 only (a sealed run under
+    ``projects/<slug>/fulltext/runs/``), exactly like ``prismabib enrich``:
+    run ``prismabib build <slug> --rebuild`` afterward to fold the results
+    into ``fulltext_assets``/``fulltext_sections`` and see them reflected in
+    ``prismabib export``'s coverage tables.
     """
     with _reporting_errors():
         project = Project.open(slug, root=root)
@@ -707,6 +713,24 @@ def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
             "full text found.\n  That is not a verdict: only a human may mark one "
             "INACCESSIBLE, during full-text\n  screening, after confirming no institutional "
             "route exists."
+        )
+
+    if summary.failed_record_ids:
+        _echo(
+            f"\n  {len(summary.failed_record_ids):,} record(s) hit an unexpected error mid-chain "
+            "(an upstream\n  outage, a network timeout) and were not fully attempted. Whatever "
+            "was\n  learned before the failure is saved; re-run this command to retry them."
+        )
+
+    if summary.sealed:
+        _echo(
+            "\n  Run sealed. Re-run `prismabib build <slug> --rebuild` to load full text into "
+            "the store."
+        )
+    else:
+        _echo(
+            "\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib fulltext` "
+            "to\n  continue; already-attempted records are not re-paid for."
         )
 
 

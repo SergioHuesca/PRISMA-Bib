@@ -9,6 +9,11 @@ function's own docstring) -- exactly the scenario a researcher with no
 Elsevier entitlement and no wish to fetch open-access copies actually has,
 and it lets this module's *orchestration* (targeting, resumability,
 budget, persistence) be tested without mocking any HTTP boundary at all.
+
+**ADR 0019 Decision 0.** ``run_fulltext_resolution`` writes Layer 0 only.
+Every test below that wants to see ``fulltext_assets``/``fulltext_sections``
+therefore calls ``build_store(project, rebuild=True)`` *after* resolving,
+the same two-step shape already established for ``prismabib enrich``.
 """
 
 from __future__ import annotations
@@ -16,11 +21,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from prismabib.config import Settings
-from prismabib.errors import ValidationError
-from prismabib.fulltext.run import already_resolved_record_ids, run_fulltext_resolution
+from prismabib.errors import StoreError, ValidationError
+from prismabib.fulltext.capture import already_resolved_record_ids
+from prismabib.fulltext.resolve import manual_drop_path
+from prismabib.fulltext.run import run_fulltext_resolution
 from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
@@ -61,17 +69,19 @@ def _build_project_with_two_included_records(tmp_path: Path) -> tuple[Project, s
 
 
 def _drop_manual_pdf(project: Project, record_id: str) -> None:
-    manual_dir = project.fulltext_dir / "manual"
-    manual_dir.mkdir(parents=True, exist_ok=True)
-    (manual_dir / f"{record_id}.pdf").write_bytes(
-        make_minimal_pdf(b"BT /F1 24 Tf 10 100 Td (Synthetic Manual Drop) Tj ET")
-    )
+    path = manual_drop_path(project.fulltext_dir, record_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(make_minimal_pdf(b"BT /F1 24 Tf 10 100 Td (Synthetic Manual Drop) Tj ET"))
 
 
 @pytest.mark.integration
-def test_run__manual_drop_for_both_records__resolves_both_and_persists_sections(
-    tmp_path: Path,
-) -> None:
+def test_run__manual_drop_for_both_records__seals_layer0_only(tmp_path: Path) -> None:
+    """Resolution writes Layer 0, not Layer 1 (ADR 0019 Decision 0).
+
+    Named for the opposite of what an earlier version of this test asserted:
+    ``run_fulltext_resolution`` no longer writes ``fulltext_assets`` at all,
+    so the store must be unaffected until a rebuild.
+    """
     project, record_a, record_b = _build_project_with_two_included_records(tmp_path)
     _drop_manual_pdf(project, record_a)
     _drop_manual_pdf(project, record_b)
@@ -84,18 +94,72 @@ def test_run__manual_drop_for_both_records__resolves_both_and_persists_sections(
     assert summary.resolved_by_resolver == {"manual": 2}
     assert summary.refused_by_resolver == {}
     assert summary.unresolved_record_ids == ()
+    assert summary.failed_record_ids == ()
+    assert summary.sealed is True
 
     connection = connect(project, read_only=True)
     try:
-        resolved = already_resolved_record_ids(connection)
+        asset_count = connection.execute("SELECT count(*) FROM fulltext_assets").fetchone()
         section_count = connection.execute("SELECT count(*) FROM fulltext_sections").fetchone()
     finally:
         connection.close()
 
-    assert resolved == {record_a, record_b}
-    # A page with no text layer still produces one (low-confidence) section row.
+    assert asset_count is not None and asset_count[0] == 0
+    assert section_count is not None and section_count[0] == 0
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S03-AC3")
+def test_run__resolve_then_rebuild__loads_assets_and_sections_from_layer0(
+    tmp_path: Path,
+) -> None:
+    """The BLOCKING fix: rebuilding the store must not lose a resolution run.
+
+    Resolve, then ``build_store(rebuild=True)`` -- exactly the documented,
+    recommended command ``prismabib build`` prints as losing nothing. Before
+    ADR 0019 Decision 0, a resolver wrote ``fulltext_assets``/
+    ``fulltext_sections`` directly into Layer 1, and this exact sequence
+    discarded every row.
+    """
+    project, record_a, record_b = _build_project_with_two_included_records(tmp_path)
+    _drop_manual_pdf(project, record_a)
+    _drop_manual_pdf(project, record_b)
+
+    run_fulltext_resolution(project, settings=_settings())
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute(
+            "SELECT record_id, resolver_name, media_type, entitled FROM fulltext_assets "
+            "ORDER BY record_id"
+        ).fetchall()
+        section_count = connection.execute("SELECT count(*) FROM fulltext_sections").fetchone()
+    finally:
+        connection.close()
+
+    assert rows == [
+        (record_a, "manual", "pdf", True),
+        (record_b, "manual", "pdf", True),
+    ]
+    # A page with a text layer produces one (non-low-confidence) section row.
     assert section_count is not None
     assert section_count[0] == 2
+
+    # And rebuilding *again* -- deleting corpus.duckdb and rerunning, the
+    # documented "loses nothing" command -- reproduces exactly the same rows,
+    # because they are derived from the sealed Layer 0 run, not held only in
+    # the store that was just deleted.
+    build_store(project, rebuild=True)
+    connection = connect(project, read_only=True)
+    try:
+        rows_again = connection.execute(
+            "SELECT record_id, resolver_name, media_type, entitled FROM fulltext_assets "
+            "ORDER BY record_id"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert rows_again == rows
 
 
 @pytest.mark.integration
@@ -112,6 +176,7 @@ def test_run__second_invocation__does_not_re_attempt_already_resolved_records(
     assert second_summary.records_considered == 2
     assert second_summary.records_attempted == 0
     assert second_summary.records_resolved == 0
+    assert second_summary.sealed is True
 
 
 @pytest.mark.integration
@@ -125,17 +190,15 @@ def test_run__budget_of_one__attempts_only_one_record_this_call(tmp_path: Path) 
     assert first.records_considered == 2
     assert first.records_attempted == 1
     assert first.records_resolved == 1
+    assert first.sealed is False
 
     second = run_fulltext_resolution(project, settings=_settings(), budget=1)
 
     assert second.records_attempted == 1
     assert second.records_resolved == 1
+    assert second.sealed is True
 
-    connection = connect(project, read_only=True)
-    try:
-        resolved = already_resolved_record_ids(connection)
-    finally:
-        connection.close()
+    resolved = already_resolved_record_ids(project.fulltext_dir)
     assert resolved == {record_a, record_b}
 
 
@@ -161,3 +224,37 @@ def test_run__no_target_records__raises_validation_error(tmp_path: Path) -> None
 
     with pytest.raises(ValidationError, match="No records to resolve"):
         run_fulltext_resolution(project, settings=_settings())
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S06-AC2")
+def test_run__explicit_record_ids_on_pre_v016_store__raises_actionable_store_error(
+    tmp_path: Path,
+) -> None:
+    """A pre-``fulltext_assets`` store must be refused with guidance, not a raw ``CatalogException``.
+
+    Passing ``record_ids`` explicitly is exactly the path that used to skip
+    the stale-schema guard entirely: it never calls ``manual_abstract_set``
+    (the only other place a read connection was opened), and the old
+    implementation's own Layer 1 connection was opened read/write, which
+    :mod:`prismabib.store.db` never guards. This call now always opens a
+    read-only connection first (to look up DOIs), so the guard fires
+    unconditionally.
+    """
+    project = Project.init("pre-v016-demo", title="Pre v0.16 Demo", root=tmp_path)
+    entries = [make_entry(eid="2-s2.0-85100000401", doi="10.1016/j.example.2026.100401")]
+    write_sealed_run(project.raw_dir, "20250101T000000Z-demorun03", entries, started_at=_STARTED_AT)
+    build_store(project, rebuild=True)
+
+    # Simulate a store built before ADR 0019: drop the two tables it added.
+    connection = duckdb.connect(str(project.db_path))
+    try:
+        connection.execute("DROP TABLE fulltext_assets")
+        connection.execute("DROP TABLE fulltext_sections")
+    finally:
+        connection.close()
+
+    with pytest.raises(StoreError, match=r"prismabib build .* --rebuild"):
+        run_fulltext_resolution(
+            project, record_ids=["scopus:2-s2.0-85100000401"], settings=_settings()
+        )

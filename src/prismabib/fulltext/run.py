@@ -1,36 +1,37 @@
-"""Run the Stage 6 resolver chain over a project and persist to Layer 1 (ADR 0019).
+"""Orchestrate the Stage 6 resolver chain over a project (ADR 0019, Decision 0).
 
 :func:`run_fulltext_resolution` is what ``prismabib fulltext`` (see
-:mod:`prismabib.cli`) actually calls: for each targeted record, run
-:func:`~prismabib.fulltext.resolve.resolve_fulltext`, write every
-:class:`~prismabib.fulltext.resolve.FullTextAttempt` to ``fulltext_assets``,
-and -- when an asset was obtained -- extract and write its
-:class:`~prismabib.fulltext.extract.Section`\\ s to ``fulltext_sections``.
+:mod:`prismabib.cli`) actually calls: resolve which records to target, look up
+their DOIs from Layer 1 (read-only), then hand the resolver chain and the
+not-already-resolved subset to :func:`~prismabib.fulltext.capture.capture_fulltext`,
+which writes and seals a Layer 0 run.
 
-**On writing to Layer 1 outside ``build_store``.**
-:mod:`prismabib.store.db`'s own docstring states the established convention
-plainly: a read/write connection is meant for
-:func:`prismabib.store.load.build_store` alone, and every analysis module
-opens read-only. This module is a deliberate, reported exception, not an
-oversight -- see the project report for the full reasoning; summarised:
+**This module opens no read/write Layer 1 connection at all.** Earlier, it did
+-- a documented exception to :mod:`prismabib.store.db`'s "write connections are
+for ``build_store`` alone" convention -- and wrote ``fulltext_assets``/
+``fulltext_sections`` directly. That made those two tables the first Layer 1
+tables that were not a function of Layer 0: measured, ``build_store(rebuild=True)``
+after a resolution run silently discarded every asset and every recorded
+refusal, falsifying S03-AC3. Full-text resolution is now a Layer 0 capture like
+any other (:mod:`prismabib.fulltext.capture`); ``fulltext_assets``/
+``fulltext_sections`` are rebuilt from its sealed runs by
+:mod:`prismabib.store.load`, exactly as ``abstract_runs``/
+``record_subject_area_coverage`` are rebuilt from sealed abstract runs (ADR
+0018). A caller who wants the results reflected in Layer 1 runs
+``prismabib build --rebuild`` afterward -- the same two-step shape
+``prismabib enrich`` already has.
 
-1. Unlike ``abstract_runs``/``record_subject_area_coverage`` (ADR 0018),
-   ADR 0019 does not define a Layer 0 sealed-run scheme for full text --
-   fetched bytes live under ``project.fulltext_dir``, not ``raw/``, and are
-   never re-derivable byte-for-byte in the way a JSON API response is (a
-   PDF's extracted text is not stable across ``pdfplumber``/``pdfminer``
-   versions the way a JSON re-parse is). "Layer 1 reconstructible from
-   Layer 0 by running one function" cannot be a clean guarantee for these
-   two tables regardless of how they are written.
-2. ``fulltext_assets``' primary key, ``(record_id, resolver_name)``, is
-   already the natural resumption key BUILD_PLAN's "resumable" requirement
-   needs (:func:`already_resolved_record_ids`) -- unlike Scopus Search's
-   page-ordered pagination, there is no batch-boundary reproducibility
-   concern a file-based Layer 0 run would exist to solve.
-
-No golden value depends on this: no project has full-text assets yet
-(BUILD_PLAN, ADR 0019 consequence 4), so this module has no reproducibility
-obligation to a committed snapshot to violate.
+The one Layer 1 access this module still performs is a **read-only** DOI
+lookup for the targeted records, via :func:`prismabib.store.db.connect`
+(``read_only=True``). That incidentally closes a second gap: opening
+read-only is what makes :mod:`prismabib.store.db`'s stale-schema guard run at
+all (it is a no-op on a read/write connection, by that module's own
+docstring) -- so a store built before ``fulltext_assets``/``fulltext_sections``
+existed (pre-v0.16) now fails with the guard's actionable
+``prismabib build <slug> --rebuild`` message instead of a raw
+``duckdb.CatalogException``, on every path through this function, including an
+explicit ``record_ids`` call that never touches
+:func:`~prismabib.prisma.engine.manual_abstract_set` at all.
 """
 
 from __future__ import annotations
@@ -38,26 +39,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import duckdb
-import structlog
 from pydantic import BaseModel, ConfigDict
 
 from prismabib.config import Settings
 from prismabib.errors import ValidationError
-from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
-from prismabib.fulltext.resolve import (
-    FullTextAsset,
-    FullTextAttempt,
-    default_chain,
-    resolve_fulltext,
-)
+from prismabib.fulltext.capture import already_resolved_record_ids, capture_fulltext
+from prismabib.fulltext.resolve import default_chain
 from prismabib.prisma.engine import manual_abstract_set
 from prismabib.store.db import connect
 
 if TYPE_CHECKING:
     from prismabib.project import Project
 
-logger = structlog.get_logger(__name__)
+__all__ = ["FullTextRunSummary", "run_fulltext_resolution"]
 
 
 class FullTextRunSummary(BaseModel):
@@ -77,11 +71,23 @@ class FullTextRunSummary(BaseModel):
             refusals (``entitled=false``) each resolver produced this call
             -- the anti-bias number ADR 0019 exists to surface.
         unresolved_record_ids: Records attempted this call for which the
-            chain was exhausted with no asset -- candidates for a human to
-            review and, only after confirming no institutional route
-            exists, mark ``INACCESSIBLE`` during full-text screening. This
-            list is not itself a decision; see the module docstring of
-            :mod:`prismabib.fulltext.resolve`.
+            chain was exhausted with no asset and no unhandled failure --
+            candidates for a human to review and, only after confirming no
+            institutional route exists, mark ``INACCESSIBLE`` during
+            full-text screening. This list is not itself a decision; see
+            the module docstring of :mod:`prismabib.fulltext.resolve`.
+        failed_record_ids: Records attempted this call for which a resolver
+            raised something other than an entitlement refusal partway
+            through the chain (an upstream outage, a network timeout, ...).
+            Distinct from ``unresolved_record_ids``: whatever the chain
+            learned before the failure (e.g. an earlier resolver's refusal)
+            is still recorded, but later resolvers were never tried for
+            this record, and a later call re-attempts it from the start.
+        sealed: Whether the underlying Layer 0 run finished this call
+            (``True`` -- every pending record was attempted or exhausted,
+            and ``manifest.json`` was written) or was left unsealed because
+            ``budget`` stopped it short. ``True`` (trivially) when nothing
+            was pending at all.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -92,131 +98,8 @@ class FullTextRunSummary(BaseModel):
     resolved_by_resolver: dict[str, int]
     refused_by_resolver: dict[str, int]
     unresolved_record_ids: tuple[str, ...]
-
-
-def already_resolved_record_ids(connection: duckdb.DuckDBPyConnection) -> frozenset[str]:
-    """Record ids that already have a resolved ``fulltext_assets`` row.
-
-    Args:
-        connection: An open Layer 1 connection.
-
-    Returns:
-        Every ``record_id`` with at least one ``fulltext_assets`` row whose
-        ``media_type`` is not ``NULL`` -- the resumption set: a record
-        already resolved is never re-attempted (BUILD_PLAN "resumable").
-    """
-    rows = connection.execute(
-        "SELECT DISTINCT record_id FROM fulltext_assets WHERE media_type IS NOT NULL"
-    ).fetchall()
-    return frozenset(str(record_id) for (record_id,) in rows)
-
-
-def record_fulltext_attempt(
-    connection: duckdb.DuckDBPyConnection, attempt: FullTextAttempt
-) -> None:
-    """Persist one :class:`~prismabib.fulltext.resolve.FullTextAttempt` row.
-
-    Args:
-        connection: An open, read/write Layer 1 connection.
-        attempt: The attempt to persist.
-
-    ``INSERT OR REPLACE`` rather than a bare ``INSERT``: a record that was
-    previously refused (``entitled=false``) and is now resolved (a new
-    institutional token, a fresh manual drop) must overwrite its old row
-    rather than violate the ``(record_id, resolver_name)`` primary key.
-    """
-    connection.execute(
-        """
-        INSERT OR REPLACE INTO fulltext_assets
-          (record_id, resolver_name, media_type, path, retrieved_at, entitled)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        [
-            attempt.record_id,
-            attempt.resolver_name,
-            attempt.media_type,
-            str(attempt.path) if attempt.path is not None else None,
-            attempt.retrieved_at,
-            attempt.entitled,
-        ],
-    )
-
-
-def record_fulltext_sections(
-    connection: duckdb.DuckDBPyConnection, record_id: str, sections: Sequence[Section]
-) -> None:
-    """Persist one record's extracted sections, replacing any it already had.
-
-    Args:
-        connection: An open, read/write Layer 1 connection.
-        record_id: The record these sections belong to.
-        sections: The sections to persist, in the order they should be
-            stored -- their own ``position`` field, not insertion order, is
-            what a reader relies on, but writing them in order keeps the
-            two agreeing.
-
-    A delete-then-insert rather than an upsert: a re-resolution can produce
-    a different number of sections than a previous one, and stale trailing
-    rows from a longer previous extraction must not survive.
-    """
-    connection.execute("DELETE FROM fulltext_sections WHERE record_id = ?", [record_id])
-    for section in sections:
-        connection.execute(
-            """
-            INSERT INTO fulltext_sections (record_id, position, section_name, text, low_confidence)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            [
-                record_id,
-                section.position,
-                section.section_name,
-                section.text,
-                section.low_confidence,
-            ],
-        )
-
-
-def _extract_sections(asset: FullTextAsset) -> tuple[Section, ...]:
-    """Dispatch extraction by an asset's media type.
-
-    Args:
-        asset: A resolved asset.
-
-    Returns:
-        Its extracted sections -- :func:`~prismabib.fulltext.extract.extract_sciencedirect_xml`
-        for ``media_type == "xml"``, :func:`~prismabib.fulltext.extract.extract_pdf`
-        for ``"pdf"``. An unrecognised media type (unreachable through this
-        module's own resolvers, which only ever produce these two) yields
-        no sections rather than raising, so a future resolver's new media
-        type degrades to "nothing extracted yet" instead of aborting a run.
-
-        A file that resolved successfully (the resolver obtained bytes and
-        wrote them to disk) but does not actually parse -- a corrupted
-        download, a manual drop that turns out not to be a real PDF -- also
-        yields no sections rather than raising. The asset row (with its
-        real ``resolver_name``/``entitled``) is still persisted either way:
-        an unparseable file is a fact about that one file, not a reason to
-        abort a run that may have hundreds of other records left to
-        process, and BUILD_PLAN's "no OCR, a human reads it" applies just
-        as much to a file this extractor cannot open at all.
-    """
-    try:
-        if asset.media_type == "xml":
-            return extract_sciencedirect_xml(asset.path.read_bytes())
-        if asset.media_type == "pdf":
-            return extract_pdf(asset.path)
-    except Exception:
-        logger.warning(
-            "fulltext.extract.failed",
-            record_id=asset.record_id,
-            resolver=asset.resolver_name,
-            media_type=asset.media_type,
-            path=str(asset.path),
-            exc_info=True,
-        )
-        return ()
-    logger.warning("fulltext.extract.unknown_media_type", media_type=asset.media_type)
-    return ()
+    failed_record_ids: tuple[str, ...]
+    sealed: bool
 
 
 def run_fulltext_resolution(
@@ -246,12 +129,13 @@ def run_fulltext_resolution(
             from. Defaults to ``Settings()`` (via
             :func:`~prismabib.fulltext.resolve.default_chain`) when
             omitted. Exposed primarily so a test can inject one without
-            touching the real environment, exactly as
-            :class:`~prismabib.sources.scopus.ScopusClient` and
-            :class:`~prismabib.capture.enrich.capture_abstracts` already do.
+            touching the real environment.
 
     Returns:
-        A :class:`FullTextRunSummary` of what this call did.
+        A :class:`FullTextRunSummary` of what this call did. Nothing is
+        written to Layer 1 by this call -- run ``prismabib build --rebuild``
+        afterward to fold the sealed run into ``fulltext_assets``/
+        ``fulltext_sections`` (see the module docstring).
 
     Raises:
         ValidationError: If ``budget`` is not strictly positive, or if
@@ -262,17 +146,17 @@ def run_fulltext_resolution(
             -- required unconditionally by
             :class:`~prismabib.config.Settings`, even though this function
             itself never calls Scopus).
-        StoreError: If no Layer 1 store exists yet for ``project``.
+        StoreError: If no Layer 1 store exists yet for ``project``, or if
+            one exists but predates ``fulltext_assets``/``fulltext_sections``
+            (a pre-v0.16 store) -- the actionable
+            ``prismabib build <slug> --rebuild`` message, not a raw
+            ``duckdb.CatalogException``.
         LogError: If the decision log fails to load while computing
             ``manual_abstract_set``.
     """
     if budget is not None and budget < 1:
         raise ValidationError(f"budget must be a positive number of records, got {budget!r}")
 
-    # Resolved *before* opening a read/write connection below: DuckDB refuses a
-    # second connection to the same file from one process when the two
-    # disagree about configuration (see prismabib.store.load.Corpus.records),
-    # and manual_abstract_set opens (and closes) its own read-only one.
     if record_ids is None:
         target_ids = sorted(manual_abstract_set(project))
     else:
@@ -286,75 +170,51 @@ def run_fulltext_resolution(
             "draw ids from."
         )
 
-    resolved_by_resolver: dict[str, int] = {}
-    refused_by_resolver: dict[str, int] = {}
-    records_resolved = 0
-    attempted = 0
-    unresolved: list[str] = []
+    # Read-only, and always performed -- even for an explicit `record_ids` call
+    # that never touches `manual_abstract_set` -- so a pre-v0.16 store is refused
+    # here, with an actionable message, before any resolver runs. See the module
+    # docstring.
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute(
+            "SELECT record_id, doi FROM records WHERE record_id = ANY(?)",
+            [target_ids],
+        ).fetchall()
+        doi_by_record_id = {str(record_id): doi for record_id, doi in rows}
+    finally:
+        connection.close()
+
+    already_resolved = already_resolved_record_ids(project.fulltext_dir)
+    pending_ids = [record_id for record_id in target_ids if record_id not in already_resolved]
+
+    if not pending_ids:
+        return FullTextRunSummary(
+            records_considered=len(target_ids),
+            records_attempted=0,
+            records_resolved=0,
+            resolved_by_resolver={},
+            refused_by_resolver={},
+            unresolved_record_ids=(),
+            failed_record_ids=(),
+            sealed=True,
+        )
 
     with default_chain(project, settings) as resolvers:
-        connection = connect(project, read_only=False)
-        try:
-            rows = connection.execute(
-                "SELECT record_id, doi FROM records WHERE record_id = ANY(?)",
-                [target_ids],
-            ).fetchall()
-            doi_by_record_id = {str(record_id): doi for record_id, doi in rows}
-
-            already_resolved = already_resolved_record_ids(connection)
-            pending = [record_id for record_id in target_ids if record_id not in already_resolved]
-
-            for record_id in pending:
-                if budget is not None and attempted >= budget:
-                    break
-                attempted += 1
-
-                doi = doi_by_record_id.get(record_id)
-                asset, attempts = resolve_fulltext(
-                    record_id=record_id, doi=doi, resolvers=resolvers
-                )
-
-                for attempt in attempts:
-                    record_fulltext_attempt(connection, attempt)
-                    if attempt.entitled is False:
-                        refused_by_resolver[attempt.resolver_name] = (
-                            refused_by_resolver.get(attempt.resolver_name, 0) + 1
-                        )
-
-                if asset is None:
-                    unresolved.append(record_id)
-                    continue
-
-                records_resolved += 1
-                resolved_by_resolver[asset.resolver_name] = (
-                    resolved_by_resolver.get(asset.resolver_name, 0) + 1
-                )
-                record_fulltext_sections(connection, record_id, _extract_sections(asset))
-
-            logger.info(
-                "fulltext.run.complete",
-                records_considered=len(target_ids),
-                records_attempted=attempted,
-                records_resolved=records_resolved,
-                unresolved=len(unresolved),
-            )
-        finally:
-            connection.close()
+        outcome = capture_fulltext(
+            project,
+            pending_ids=pending_ids,
+            doi_by_record_id=doi_by_record_id,
+            resolvers=resolvers,
+            budget=budget,
+        )
 
     return FullTextRunSummary(
         records_considered=len(target_ids),
-        records_attempted=attempted,
-        records_resolved=records_resolved,
-        resolved_by_resolver=resolved_by_resolver,
-        refused_by_resolver=refused_by_resolver,
-        unresolved_record_ids=tuple(unresolved),
+        records_attempted=outcome.attempted,
+        records_resolved=outcome.resolved,
+        resolved_by_resolver=outcome.resolved_by_resolver,
+        refused_by_resolver=outcome.refused_by_resolver,
+        unresolved_record_ids=outcome.unresolved_record_ids,
+        failed_record_ids=outcome.failed_record_ids,
+        sealed=outcome.sealed,
     )
-
-
-__all__ = [
-    "FullTextRunSummary",
-    "already_resolved_record_ids",
-    "record_fulltext_attempt",
-    "record_fulltext_sections",
-    "run_fulltext_resolution",
-]

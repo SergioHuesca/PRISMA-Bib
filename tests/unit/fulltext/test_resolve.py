@@ -13,10 +13,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
-from prismabib.errors import EntitlementError
-from prismabib.fulltext.resolve import FullTextAsset, resolve_fulltext
+from prismabib.errors import EntitlementError, UpstreamError
+from prismabib.fulltext.resolve import (
+    FullTextAsset,
+    FullTextResolutionError,
+    manual_drop_path,
+    resolve_fulltext,
+)
 
 
 @dataclass
@@ -25,20 +31,20 @@ class _StubResolver:
 
     Records every ``record_id`` it was called with, in order -- the call
     count these tests assert on -- and either returns a fixed outcome or
-    raises :class:`~prismabib.errors.EntitlementError`, simulating a
-    ScienceDirect-style refusal without any network involved.
+    raises the exception given by ``raises``, simulating an upstream failure
+    without any network involved.
     """
 
     name: str
     outcome: FullTextAsset | None = None
-    raises: bool = False
+    raises: BaseException | None = None
     calls: list[str] = field(default_factory=list)
 
     def resolve(self, *, record_id: str, doi: str | None) -> FullTextAsset | None:
         del doi
         self.calls.append(record_id)
-        if self.raises:
-            raise EntitlementError(f"{self.name} refused this record")
+        if self.raises is not None:
+            raise self.raises
         return self.outcome
 
 
@@ -47,7 +53,7 @@ def _asset(resolver_name: str, record_id: str) -> FullTextAsset:
         record_id=record_id,
         resolver_name=resolver_name,
         media_type="xml",
-        path=Path(f"/tmp/{resolver_name}.xml"),
+        content=f"<xml>{resolver_name}</xml>".encode(),
         retrieved_at=datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
     )
 
@@ -116,3 +122,108 @@ def test_chain__empty_resolver_list__returns_none_and_no_attempts() -> None:
 
     assert asset is None
     assert attempts == ()
+
+
+@pytest.mark.unit
+def test_chain__entitlement_refusal_then_success__records_refusal_and_resolves() -> None:
+    """A refusal from resolver 1 does not stop resolver 2 from succeeding."""
+    record_id = "scopus:2-s2.0-85100000004"
+    refused = _StubResolver(name="sciencedirect", raises=EntitlementError("no entitlement"))
+    resolved = _StubResolver(name="manual", outcome=_asset("manual", record_id))
+
+    asset, attempts = resolve_fulltext(
+        record_id=record_id, doi="10.1016/z", resolvers=[refused, resolved]
+    )
+
+    assert asset is not None
+    assert asset.resolver_name == "manual"
+    by_resolver = {attempt.resolver_name: attempt for attempt in attempts}
+    assert by_resolver["sciencedirect"].entitled is False
+    assert by_resolver["sciencedirect"].content is None
+    assert by_resolver["manual"].entitled is True
+
+
+@pytest.mark.unit
+@pytest.mark.acceptance("S06-AC2")
+def test_chain__mid_chain_upstream_failure__raises_carrying_prior_attempts() -> None:
+    """A non-entitlement failure from resolver 2 does not discard resolver 1's refusal.
+
+    The regression this pins: before ``resolve_fulltext`` caught anything
+    beyond ``EntitlementError``, an ``UpstreamError`` from resolver 2 here
+    propagated bare, and the ``sciencedirect`` refusal collected just before
+    it was lost with the exception -- along with silently aborting whatever
+    called this function next, for every other record in the run.
+    """
+    record_id = "scopus:2-s2.0-85100000005"
+    refused = _StubResolver(name="sciencedirect", raises=EntitlementError("no entitlement"))
+    broken = _StubResolver(name="openaccess", raises=UpstreamError("HTTP 503"))
+    never_reached = _StubResolver(name="manual", outcome=_asset("manual", record_id))
+
+    with pytest.raises(FullTextResolutionError) as excinfo:
+        resolve_fulltext(
+            record_id=record_id, doi="10.1016/z", resolvers=[refused, broken, never_reached]
+        )
+
+    error = excinfo.value
+    assert error.record_id == record_id
+    assert error.resolver_name == "openaccess"
+    assert [attempt.resolver_name for attempt in error.attempts] == ["sciencedirect"]
+    assert error.attempts[0].entitled is False
+    assert never_reached.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "transport_error",
+    [
+        pytest.param(httpx.ConnectError("connection refused"), id="connect-error"),
+        pytest.param(httpx.TimeoutException("timed out"), id="timeout-exception"),
+    ],
+)
+def test_chain__httpx_transport_failure__raises_full_text_resolution_error(
+    transport_error: httpx.TransportError,
+) -> None:
+    """A connection failure (never mapped to a prismabib exception by any client) is also caught.
+
+    ``UnpaywallClient``/``ScienceDirectClient`` never translate
+    ``httpx.ConnectError``/``httpx.TimeoutException`` into a
+    :class:`~prismabib.errors.PrismabibError` -- they propagate bare from
+    ``httpx``. This is the second half of the catch clause
+    (``PrismabibError, httpx.TransportError``) that keeps a network blip from
+    escaping :func:`resolve_fulltext` uncaught. Parameterised over both named
+    subclasses, since neither is a subclass of the other.
+    """
+    record_id = "scopus:2-s2.0-85100000006"
+    broken = _StubResolver(name="sciencedirect", raises=transport_error)
+
+    with pytest.raises(FullTextResolutionError) as excinfo:
+        resolve_fulltext(record_id=record_id, doi="10.1016/z", resolvers=[broken])
+
+    assert excinfo.value.attempts == ()
+    assert excinfo.value.__cause__ is transport_error
+
+
+@pytest.mark.unit
+def test_manual_drop_path__record_id_with_colon__sanitises_for_windows() -> None:
+    """The BLOCKING regression this pins: NTFS forbids ``:`` in a filename.
+
+    Every record id on-disk today is namespaced ``scopus:<eid>``, and the
+    working copy of this repository is itself on an NTFS mount -- a literal
+    ``fulltext/manual/scopus:2-s2.0-....pdf`` path would fail to create at
+    all on that filesystem, not merely look unusual.
+    """
+    path = manual_drop_path(Path("/tmp/project/fulltext"), "scopus:2-s2.0-85100000001")
+
+    assert ":" not in path.name
+    assert path.name == "scopus_2-s2.0-85100000001.pdf"
+    # Recoverable by eye: the sanitised name still unambiguously names the
+    # original record id.
+    assert path.name.replace("_", ":", 1) == "scopus:2-s2.0-85100000001.pdf"
+
+
+@pytest.mark.unit
+def test_manual_drop_path__record_id_with_no_special_characters__is_unchanged() -> None:
+    """The negative case, so the sanitisation above means something."""
+    path = manual_drop_path(Path("/tmp/project/fulltext"), "plainrecordid123")
+
+    assert path.name == "plainrecordid123.pdf"

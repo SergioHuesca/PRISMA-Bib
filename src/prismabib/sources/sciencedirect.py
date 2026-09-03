@@ -103,7 +103,16 @@ class ScienceDirectClient:
         timeout: float = 30.0,
     ) -> None:
         self._settings = settings if settings is not None else Settings()
-        if self._settings.elsevier_sd_api_key is None:
+        api_key = self._settings.elsevier_sd_api_key
+        # `is None` alone is not enough: `.env` files ship (via `.env.example`) with
+        # `ELSEVIER_SD_API_KEY=`, and pydantic-settings parses that into
+        # `SecretStr("")`, not `None`. `UnpaywallClient` already gets this right
+        # (`if not self._settings.unpaywall_email`); this client did not, so an empty
+        # key constructed successfully, sent an empty `X-ELS-APIKey` header, Elsevier
+        # answered 401, and `AuthError` propagated out of `default_chain` -- aborting
+        # the whole resolver chain before `ManualDropResolver` (which needs no
+        # credential at all) ever ran.
+        if api_key is None or not api_key.get_secret_value():
             raise ConfigError(
                 "ELSEVIER_SD_API_KEY is not set. ScienceDirect Article Retrieval is a "
                 "different Elsevier entitlement from Scopus Search -- set "
@@ -115,7 +124,7 @@ class ScienceDirectClient:
         self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
         self._cache = cache
 
-        register_secret_for_redaction(self._settings.elsevier_sd_api_key.get_secret_value())
+        register_secret_for_redaction(api_key.get_secret_value())
 
     def __enter__(self) -> Self:
         """Enter the client as a context manager; returns ``self``."""
@@ -254,7 +263,7 @@ class ScienceDirectClient:
                 ``SecretStr | None`` to ``SecretStr`` without an ``assert``.
         """
         api_key = self._settings.elsevier_sd_api_key
-        if api_key is None:
+        if api_key is None or not api_key.get_secret_value():
             raise ConfigError("ELSEVIER_SD_API_KEY is not set.")
         return {
             "X-ELS-APIKey": api_key.get_secret_value(),

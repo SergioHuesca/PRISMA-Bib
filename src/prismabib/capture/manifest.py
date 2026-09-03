@@ -215,3 +215,88 @@ class AbstractRunManifest(BaseModel):
     payload_sha256: str
     client_version: str
     criteria_version: str
+
+
+class FullTextRunManifest(BaseModel):
+    """The manifest for one Stage 6 full-text resolution run (ADR 0019, Decision 0).
+
+    Written to ``fulltext/runs/<run_id>/manifest.json`` once a run completes; its
+    presence is the seal, exactly as for :class:`RunManifest`/:class:`AbstractRunManifest`
+    (:func:`prismabib.capture.layout.is_sealed` answers the question for any of the
+    three without knowing which kind it is looking at). Nested under
+    ``projects/<slug>/fulltext/``, not ``raw/``: full-text resolution writes licensed
+    publisher content, which BUILD_PLAN and ADR 0019 both require stays out of the
+    Layer 0 archive entirely -- ``fulltext/`` is guard-blocked from ``git`` on its
+    own, and is scanned by :mod:`prismabib.store.load` as a second, independent tree
+    of sealed runs, the same way ``raw/abstracts/`` is.
+
+    Unlike :class:`RunManifest`, this identifies no record and unlike
+    :class:`AbstractRunManifest`, it re-describes no Layer 0 payload byte for byte --
+    a PDF's extracted sections are not stable across ``pdfplumber``/``pdfminer``
+    versions, so ``build_store`` reruns extraction from the sealed ``assets/`` bytes
+    on every rebuild rather than trusting a previously-computed result. What this
+    manifest records is what the *run itself* did: how many records it attempted,
+    resolved, refused and left unresolved, broken down by resolver -- everything
+    :class:`~prismabib.fulltext.run.FullTextRunSummary` needs without re-parsing
+    ``attempts.jsonl``.
+
+    Attributes:
+        run_id: The run's identifier; also its directory name under
+            ``fulltext/runs/``.
+        started_at: When the run began (UTC). Preserved across resumption, so it
+            dates the first attempt, not the last.
+        finished_at: When the run completed (UTC) -- i.e. when it sealed.
+        records_requested: How many distinct, not-already-resolved record ids this
+            run was asked to attempt (BUILD_PLAN "resumable": a record with an
+            already-resolved row in an *earlier* sealed run is never a member of
+            this set at all -- see :func:`prismabib.fulltext.capture.already_resolved_record_ids`).
+        records_attempted: How many of ``records_requested`` this specific call to
+            :func:`~prismabib.fulltext.capture.capture_fulltext` actually ran
+            through the chain -- ``0`` when a resumed/budget-bounded call attempted
+            nothing further, and always ``<= records_requested``.
+        records_resolved: How many records this run obtained an asset for, summed
+            over the whole run's lifetime (i.e. including earlier calls that
+            resumed into this same unsealed run directory), not just this call.
+        resolved_by_resolver: ``records_resolved``, broken down by which resolver
+            produced the asset, over the whole run's lifetime.
+        refused_by_resolver: How many :class:`~prismabib.errors.EntitlementError`
+            refusals (``entitled=false``) each resolver produced, over the whole
+            run's lifetime -- the anti-bias number ADR 0019 exists to surface.
+        unresolved_record_ids: Records whose chain was exhausted with no asset and
+            no unhandled resolver failure -- candidates for a human to review and,
+            only after confirming no institutional route exists, mark
+            ``INACCESSIBLE`` during full-text screening. Never itself a decision;
+            see :mod:`prismabib.fulltext.resolve`.
+        failed_record_ids: Records for which a resolver raised something other than
+            :class:`~prismabib.errors.EntitlementError` partway through the chain
+            (an upstream 5xx exhausting retries, a network timeout, ...) --
+            distinct from ``unresolved_record_ids``: a *failure* means the chain
+            did not run to completion for that record, so attempts made by any
+            resolver reached before the failure are still recorded in
+            ``attempts.jsonl``, but later resolvers in the chain were never tried
+            for it. A later call re-attempts it from resolver 1, exactly like a
+            record that was never attempted at all.
+        attempts_file: The payload filename, always ``"attempts.jsonl"``.
+        attempts_sha256: SHA-256 digest of the exact bytes written to
+            ``attempts_file``.
+        client_version: The prismabib package version that performed the run.
+        criteria_version: The ``criteria.yaml`` version in effect when the run was
+            made.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    started_at: datetime
+    finished_at: datetime
+    records_requested: int
+    records_attempted: int
+    records_resolved: int
+    resolved_by_resolver: dict[str, int]
+    refused_by_resolver: dict[str, int]
+    unresolved_record_ids: list[str]
+    failed_record_ids: list[str]
+    attempts_file: str
+    attempts_sha256: str
+    client_version: str
+    criteria_version: str

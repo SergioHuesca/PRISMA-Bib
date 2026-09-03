@@ -76,7 +76,12 @@ _PREFIX_TO_PUBLISHER: Final[dict[str, str]] = {
     "10.1126": "AAAS (Science)",
     "10.1364": "Optica Publishing Group",
     "10.4230": "Dagstuhl (LIPIcs)",
-    "10.24963": "AAAI",
+    # 10.24963 is IJCAI's registrant prefix (International Joint Conferences on
+    # Artificial Intelligence), not AAAI's -- AAAI's own prefix is 10.1609. The
+    # two were swapped in an earlier version of this table, which misattributed
+    # every IJCAI paper to AAAI and left every real AAAI paper unmapped.
+    "10.24963": "IJCAI",
+    "10.1609": "AAAI",
     "10.1137": "SIAM",
     "10.2200": "Morgan & Claypool",
     "10.1142": "World Scientific",
