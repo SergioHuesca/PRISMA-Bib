@@ -60,11 +60,29 @@ class FullTextRunSummary(BaseModel):
     Attributes:
         records_considered: How many records were targeted in total
             (before excluding already-resolved ones).
+        records_already_resolved: How many of ``records_considered`` already
+            had full text from an earlier sealed run and were skipped without
+            re-spending anything. **Measured, not derived.**
+            ``records_considered - records_attempted`` looks like the same
+            number and is not: a ``budget``-capped or resumed call also
+            attempts fewer than it considers, so the subtraction reports
+            records as already having full text that have never been fetched.
         records_attempted: How many of those were actually run through the
             chain this call -- ``0`` when every targeted record was already
             resolved, or bounded by ``budget``.
         records_resolved: How many of ``records_attempted`` obtained an
-            asset.
+            asset **on this call**.
+        records_resolved_this_run: How many the current Layer 0 run has
+            obtained over its whole lifetime, including earlier
+            budget-bounded calls that resumed into the same unsealed run.
+            Disjoint from ``records_already_resolved``, which counts *sealed*
+            runs -- so the two sum to the corpus total.
+
+            Without this, a resumed run's total is frozen:
+            ``already_resolved`` ignores the unsealed run and
+            ``records_resolved`` forgets every earlier call, so four
+            successive ``--budget 2`` calls each report the same total while
+            the corpus fills up behind it.
         resolved_by_resolver: ``records_resolved``, broken down by which
             resolver produced the asset.
         refused_by_resolver: How many :class:`~prismabib.errors.EntitlementError`
@@ -93,8 +111,10 @@ class FullTextRunSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     records_considered: int
+    records_already_resolved: int
     records_attempted: int
     records_resolved: int
+    records_resolved_this_run: int
     resolved_by_resolver: dict[str, int]
     refused_by_resolver: dict[str, int]
     unresolved_record_ids: tuple[str, ...]
@@ -192,8 +212,10 @@ def run_fulltext_resolution(
     if not pending_ids:
         return FullTextRunSummary(
             records_considered=len(target_ids),
+            records_already_resolved=len(target_ids),
             records_attempted=0,
             records_resolved=0,
+            records_resolved_this_run=0,
             resolved_by_resolver={},
             refused_by_resolver={},
             unresolved_record_ids=(),
@@ -212,8 +234,15 @@ def run_fulltext_resolution(
 
     return FullTextRunSummary(
         records_considered=len(target_ids),
+        # `len(target_ids) - len(pending_ids)`, computed above: the records a
+        # sealed run already resolved. Not `considered - attempted`, which a
+        # `budget` cap or a resumed run also shrinks.
+        records_already_resolved=len(target_ids) - len(pending_ids),
         records_attempted=outcome.attempted,
         records_resolved=outcome.resolved,
+        # The manifest's count, not `outcome.resolved`: it is summed over the
+        # run's whole lifetime, which is exactly what a resumed call forgets.
+        records_resolved_this_run=outcome.manifest.records_resolved,
         resolved_by_resolver=outcome.resolved_by_resolver,
         refused_by_resolver=outcome.refused_by_resolver,
         unresolved_record_ids=outcome.unresolved_record_ids,

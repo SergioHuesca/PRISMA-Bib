@@ -286,23 +286,53 @@ def _iter_attempt_rows(attempts_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def already_resolved_record_ids(fulltext_dir: Path) -> frozenset[str]:
-    """Record ids with a resolved attempt in some *sealed* full-text run.
+def _all_fulltext_run_dirs(fulltext_dir: Path) -> list[Path]:
+    """Every run directory under ``runs/``, sealed or not, oldest first.
 
     Args:
         fulltext_dir: A project's ``fulltext/`` directory.
+
+    Returns:
+        Directories sorted by name, which sorts chronologically by
+        construction. ``[]`` if ``runs/`` does not exist.
+    """
+    runs_dir = fulltext_dir / RUNS_DIRNAME
+    if not runs_dir.is_dir():
+        return []
+    return sorted((entry for entry in runs_dir.iterdir() if entry.is_dir()), key=lambda p: p.name)
+
+
+def already_resolved_record_ids(
+    fulltext_dir: Path, *, include_unsealed: bool = False
+) -> frozenset[str]:
+    """Record ids with a resolved attempt in a full-text run -- sealed only, by default.
+
+    Args:
+        fulltext_dir: A project's ``fulltext/`` directory.
+        include_unsealed: Also read the in-progress run, if any. **Never for
+            resumption** -- that is what the default guards. Set it only to
+            answer "what is on disk right now?", which is a different question:
+            a reviewer asking which papers they must still fetch by hand should
+            not be handed one a budget-bounded run has already downloaded, and
+            an unsealed run's assets are as real on disk as a sealed one's.
 
     Returns:
         Every ``record_id`` for which at least one sealed run's
         ``attempts.jsonl`` carries an attempt with a non-null ``asset_file`` --
         the resumption set BUILD_PLAN's "resumable" requirement needs: quota
         already spent resolving a record is never spent again. Reads only
-        *sealed* runs -- an unsealed run's in-progress work is not yet a fact
-        this function commits to, the same discipline
+        *sealed* runs unless ``include_unsealed`` says otherwise -- an
+        unsealed run's in-progress work is not yet a fact resumption commits
+        to, the same discipline
         :func:`prismabib.store.load._sealed_run_dirs` applies to search runs.
     """
+    run_dirs = (
+        _all_fulltext_run_dirs(fulltext_dir)
+        if include_unsealed
+        else sealed_fulltext_run_dirs(fulltext_dir)
+    )
     resolved: set[str] = set()
-    for run_dir in sealed_fulltext_run_dirs(fulltext_dir):
+    for run_dir in run_dirs:
         for row in _iter_attempt_rows(run_dir / ATTEMPTS_FILENAME):
             if row.get("asset_file") is not None:
                 record_id = row.get("record_id")

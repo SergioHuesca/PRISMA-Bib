@@ -631,3 +631,139 @@ def test_cli_init__no_scopus_credentials__still_creates_the_project(
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "projects" / "my-review" / "criteria.yaml").is_file()
+
+
+@pytest.mark.integration
+def test_cli_fulltext__resumed_run_finds_nothing_new__still_reports_the_running_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that resolves nothing new must not read as though nothing is resolved.
+
+    `records_resolved` counts this call. On the real corpus a second run printed
+    "records resolved 0" while six of thirty-five records already had full text,
+    and the operator reasonably read it as the tool having failed. The
+    difference between considered and attempted is precisely the records that
+    were skipped because they were already done -- so the running total is
+    derivable and belongs on screen.
+    """
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    (record_id,) = sorted(manual_abstract_set(project))[:1]
+    drop_path = manual_drop_path(project.fulltext_dir, record_id)
+    drop_path.parent.mkdir(parents=True, exist_ok=True)
+    drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+    assert first.exit_code == 0, first.output
+    assert "unexpected error mid-chain" not in first.stdout
+
+    second = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+
+    assert second.exit_code == 0, second.output
+    assert "unexpected error mid-chain" not in second.stdout
+    assert "already had full text" in second.stdout
+    assert "resolved this run" in second.stdout
+    # Matched on structure, not on column spacing -- a width change is a
+    # formatting choice, not a regression in what the line says.
+    assert re.search(r"resolved this run\s+0\b", second.stdout), second.stdout
+    total = re.search(r"TOTAL with full text\s+(\d+) of (\d+)", second.stdout)
+    assert total is not None, second.stdout
+
+    # Asserted exactly, not as a range. Exactly one drop file was placed, so the
+    # answer is known: `>= 1` passed with the count deliberately inflated by
+    # three, which is the very defect this line exists to prevent -- it detected
+    # the line being absent, never the number being wrong.
+    sought = len(manual_abstract_set(project))
+    assert (int(total.group(1)), int(total.group(2))) == (1, sought)
+    assert re.search(r"already had full text\s+1\b", second.stdout), second.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__budget_capped_first_run__does_not_claim_records_already_had_full_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A budget cap must not be reported as prior coverage.
+
+    `records_attempted` is bounded by `--budget` as well as by prior
+    resolution, so deriving "already had full text" as
+    `considered - attempted` reports records as already fetched that have never
+    been touched. On a first-ever run of ten records with `--budget 1` the
+    derived version claimed nine already had full text and a running total of
+    nine of ten -- near-complete coverage, for a project holding nothing.
+
+    That is strictly worse than the bare "resolved 0" it replaced: that line
+    was uninformative, this one is false. The count is measured by the run
+    (`records_already_resolved`) precisely so this cannot happen, and the
+    fixture here is the only one that can tell the two apart.
+    """
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    sought = len(manual_abstract_set(project))
+    # Stated, not assumed: at sought == 1 the measured and derived counts
+    # coincide and this test would pass with the defect present.
+    assert sought > 1, "fixture cannot distinguish measured from derived"
+
+    result = runner.invoke(
+        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    # Nothing has ever been resolved for this project.
+    assert re.search(r"already had full text\s+0\b", result.stdout), result.stdout
+    assert re.search(rf"TOTAL with full text\s+0 of {sought}\b", result.stdout), result.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__resumed_budget_run__the_running_total_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two budgeted calls must not report the same total twice.
+
+    `already_resolved_record_ids` reads *sealed* runs, and `records_resolved`
+    counts *this call*. Between them, nothing counted what the current unsealed
+    run had resolved on earlier calls -- so four successive `--budget` calls
+    each printed the same total while the corpus filled up behind them. That is
+    the exact state the CLI's own footer sends the operator back into ("Run is
+    UNSEALED -- re-run to continue"), so it is the common path, not an edge.
+
+    The first fix removed a `--budget` overcount and left a `--budget` freeze.
+    `records_resolved_this_run` comes from the manifest, which counts over the
+    run's whole lifetime.
+    """
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    sought = sorted(manual_abstract_set(project))
+    # Needs at least three so two budgeted calls of one each leave work behind.
+    assert len(sought) >= 3, "fixture cannot exercise a resumed budgeted run"
+    for record_id in sought[:2]:
+        drop = manual_drop_path(project.fulltext_dir, record_id)
+        drop.parent.mkdir(parents=True, exist_ok=True)
+        drop.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"])
+    second = runner.invoke(
+        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+    )
+
+    assert first.exit_code == 0, first.output
+    assert second.exit_code == 0, second.output
+    first_total = re.search(r"TOTAL with full text\s+(\d+) of", first.stdout)
+    second_total = re.search(r"TOTAL with full text\s+(\d+) of", second.stdout)
+    assert first_total is not None and second_total is not None
+    assert int(first_total.group(1)) == 1
+    # The whole point: the second call's total counts the first call's work.
+    assert int(second_total.group(1)) == 2

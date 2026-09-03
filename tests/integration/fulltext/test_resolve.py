@@ -238,3 +238,180 @@ def test_default_chain__caches_http_responses_under_fulltext_dir_not_raw_dir(
     assert fulltext_cache.is_dir()
     assert any(fulltext_cache.rglob("*.bin")), "the cache under fulltext/ is empty"
     assert not raw_cache.exists(), f"an HTTP cache was written under raw/: {raw_cache}"
+
+
+@pytest.mark.integration
+@respx.mock
+def test_openaccess__first_candidate_is_a_landing_page__the_next_one_is_tried(
+    tmp_path: Path,
+) -> None:
+    """A bad candidate costs that candidate, not the record.
+
+    Unpaywall reports every open-access location it knows. The publisher's own
+    "best" one frequently links only to an HTML landing page while a repository
+    mirror serves the PDF itself -- on a real 35-record corpus, nine records
+    were reported as having no full text for exactly this reason.
+
+    Stopping at the first non-PDF passed every other test in this suite, so
+    this one exists to make the *continuation* observable rather than implied.
+    """
+    # The first candidate's `url_for_pdf` *lies* -- it answers 200 with HTML.
+    # That is the realistic shape: publishers advertise a PDF link that lands on
+    # a paywall or a cookie wall. A candidate that merely lacks `url_for_pdf`
+    # would be ordered last and never reached, so it could not exercise this.
+    landing_url = "https://publisher.example.org/claims-to-be.pdf"
+    mirror_url = "https://repo.example.org/bitstream/paper.pdf"
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "best_oa_location": {"url_for_pdf": landing_url},
+                "oa_locations": [{"url_for_pdf": mirror_url}],
+            },
+        )
+    )
+    respx.get(landing_url).mock(
+        return_value=httpx.Response(
+            200, content=b"<html>Sign in to view</html>", headers={"content-type": "text/html"}
+        )
+    )
+    respx.get(mirror_url).mock(
+        return_value=httpx.Response(
+            200, content=_MINIMAL_PDF, headers={"content-type": "application/pdf"}
+        )
+    )
+
+    client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with client:
+        asset = OpenAccessResolver(unpaywall_client=client).resolve(
+            record_id="scopus:2-s2.0-900000000001", doi=_DOI
+        )
+
+    assert asset is not None
+    assert asset.content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+@respx.mock
+def test_openaccess__a_candidate_host_refuses__the_next_one_is_tried(tmp_path: Path) -> None:
+    """A 403 from one repository says nothing about the next.
+
+    Open-access hosts sit behind bot filters; the same corpus drew 403s from
+    two repositories that nonetheless publish the papers freely. Letting that
+    abort the record discards the mirror Unpaywall named in the same response.
+    """
+    blocked_url = "https://blocked.example.org/paper.pdf"
+    mirror_url = "https://repo.example.org/paper.pdf"
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "best_oa_location": {"url_for_pdf": blocked_url},
+                "oa_locations": [{"url_for_pdf": mirror_url}],
+            },
+        )
+    )
+    respx.get(blocked_url).mock(return_value=httpx.Response(403))
+    respx.get(mirror_url).mock(
+        return_value=httpx.Response(
+            200, content=_MINIMAL_PDF, headers={"content-type": "application/pdf"}
+        )
+    )
+
+    client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with client:
+        asset = OpenAccessResolver(unpaywall_client=client).resolve(
+            record_id="scopus:2-s2.0-900000000002", doi=_DOI
+        )
+
+    assert asset is not None
+    assert asset.content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+@respx.mock
+def test_openaccess__a_candidate_host_is_unreachable__the_chain_continues(
+    tmp_path: Path,
+) -> None:
+    """A dead mirror costs that mirror, not the record's manual drop.
+
+    `httpx.ConnectError` is not an `UpstreamError`, so a narrower `except` let
+    it escape into `resolve_fulltext`'s outer handler, which abandons the whole
+    chain for the record -- meaning `ManualDropResolver` never ran and a PDF the
+    reviewer had fetched by hand was silently ignored. `follow_redirects=True`
+    adds two more of the same shape (`TooManyRedirects`, `UnsupportedProtocol`).
+    """
+    dead_url = "https://dead.example.org/paper.pdf"
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(200, json={"best_oa_location": {"url_for_pdf": dead_url}})
+    )
+    respx.get(dead_url).mock(side_effect=httpx.ConnectError("host is down"))
+
+    record_id = "scopus:2-s2.0-900000000003"
+    drop = manual_drop_path(tmp_path, record_id)
+    drop.parent.mkdir(parents=True, exist_ok=True)
+    drop.write_bytes(_MINIMAL_PDF)
+
+    oa_client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with oa_client:
+        asset, attempts = resolve_fulltext(
+            record_id=record_id,
+            doi=_DOI,
+            resolvers=[
+                OpenAccessResolver(unpaywall_client=oa_client),
+                ManualDropResolver(fulltext_dir=tmp_path),
+            ],
+        )
+
+    # The manual drop is reached and wins -- the whole point.
+    assert asset is not None
+    assert asset.resolver_name == "manual"
+    assert [attempt.resolver_name for attempt in attempts] == ["openaccess", "manual"]
+
+
+@pytest.mark.integration
+@respx.mock
+@pytest.mark.parametrize(
+    "malformed_url",
+    [
+        pytest.param("https://xn--/paper.pdf", id="idna-error-empty-punycode-label"),
+        pytest.param("https://[::1/paper.pdf", id="invalid-url-unclosed-bracket"),
+    ],
+)
+def test_openaccess__unpaywall_names_a_malformed_url__the_manual_drop_still_wins(
+    tmp_path: Path, malformed_url: str
+) -> None:
+    """A URL that cannot even be built costs that candidate, not the record.
+
+    These raise while *constructing* the request, before any transport is
+    involved: `idna.IDNAError` and `httpx.InvalidURL`, neither of which is an
+    `httpx.HTTPError`. They arrive verbatim from Unpaywall -- untrusted
+    third-party data -- and the outer frame's own comment already names
+    `idna.IDNAError` as the exception that defeated *its* curated tuple. This
+    frame was briefly narrower than the one it was widened for.
+
+    Escaping here abandons the whole chain for the record, so the PDF the
+    reviewer fetched by hand is ignored -- on this run and every one after it.
+    """
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(200, json={"best_oa_location": {"url_for_pdf": malformed_url}})
+    )
+
+    record_id = "scopus:2-s2.0-900000000004"
+    drop = manual_drop_path(tmp_path, record_id)
+    drop.parent.mkdir(parents=True, exist_ok=True)
+    drop.write_bytes(_MINIMAL_PDF)
+
+    oa_client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with oa_client:
+        asset, _attempts = resolve_fulltext(
+            record_id=record_id,
+            doi=_DOI,
+            resolvers=[
+                OpenAccessResolver(unpaywall_client=oa_client),
+                ManualDropResolver(fulltext_dir=tmp_path),
+            ],
+        )
+
+    assert asset is not None
+    assert asset.resolver_name == "manual"

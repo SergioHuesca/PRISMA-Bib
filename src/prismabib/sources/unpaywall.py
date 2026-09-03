@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, Self
+from typing import Any, Final, Self
 
 import httpx
 import structlog
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
+from prismabib import __version__
 from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import ConfigError, RateLimitError, UpstreamError, ValidationError
 from prismabib.sources.cache import HttpCache
@@ -54,6 +55,23 @@ class _RetryableUpstreamError(UpstreamError):
     transient in the sense retrying helps with; a 4xx from the OA host is a
     permanent answer to this specific request.
     """
+
+
+#: Sent on every request. Identifying the client is ordinary good manners for an
+#: unauthenticated API, and several open-access hosts refuse `python-httpx/x.y.z`
+#: outright -- the same 35-record run drew three 403s and a 418 ("I'm a teapot",
+#: which some hosts use as a bot block) from OA repositories.
+#:
+#: Deliberately carries no email. Unpaywall already receives one as a query
+#: parameter because its terms require it; the OA hosts this client then downloads
+#: from are third parties that never asked, and a User-Agent is broadcast to every
+#: one of them.
+#: `__version__`, not `importlib.metadata.version(...)`: the latter raises
+#: `PackageNotFoundError` in a source checkout, and because this module is
+#: imported by `fulltext.resolve` and thence by `cli`, that would kill the whole
+#: CLI at import rather than degrade one header. `prismabib.__init__` already
+#: falls back to "0+unknown" for exactly this case.
+_USER_AGENT: Final = f"prismabib/{__version__} (+https://github.com/SergioHuesca/PRISMA-Bib)"
 
 
 class UnpaywallClient:
@@ -94,7 +112,28 @@ class UnpaywallClient:
                 "of use at https://unpaywall.org/products/api). Set UNPAYWALL_EMAIL in "
                 "your .env."
             )
-        self._http = http_client if http_client is not None else httpx.Client(timeout=timeout)
+        self._http = (
+            http_client
+            if http_client is not None
+            else httpx.Client(
+                timeout=timeout,
+                # `httpx` defaults `follow_redirects` to False, unlike `requests`.
+                # Unlike every other client in this package, this one fetches from
+                # *arbitrary* hosts -- whatever Unpaywall names as the open-access
+                # location -- and repositories redirect as a matter of course
+                # (DSpace to a bitstream, a DOI to a publisher, http to https).
+                # Without this, a redirect surfaced as "unexpected HTTP 302" and the
+                # record was recorded as a mid-chain failure. Measured on a real
+                # 35-record run: 6 of 10 failures were 301/302.
+                follow_redirects=True,
+                # Five covers the cases this exists for (DSpace to a bitstream,
+                # http to https, a DOI to a publisher). httpx's default of 20
+                # is a wider capability than any of them needs, granted to
+                # hosts named by a third-party API.
+                max_redirects=5,
+                headers={"User-Agent": _USER_AGENT},
+            )
+        )
         self._owns_http = http_client is None
         self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
         self._cache = cache
@@ -137,7 +176,7 @@ class UnpaywallClient:
             logger.info("unpaywall.lookup", endpoint=url, cache="hit")
             return None if cached == b"" else _parse_json(cached)
 
-        response = self._request_with_retry(url, params)
+        response = self._request_with_retry(url, params, follow_redirects=False)
         if response.status_code == 404:
             logger.info("unpaywall.lookup.not_found", endpoint=url)
             if self._cache is not None:
@@ -180,7 +219,12 @@ class UnpaywallClient:
         return response.content, response.headers.get("content-type")
 
     def _request_with_retry(
-        self, url: str, params: Mapping[str, str], *, allow_404: bool = True
+        self,
+        url: str,
+        params: Mapping[str, str],
+        *,
+        allow_404: bool = True,
+        follow_redirects: bool = True,
     ) -> httpx.Response:
         """Perform one logical request, retrying transient failures with backoff."""
         retryer = Retrying(
@@ -193,13 +237,29 @@ class UnpaywallClient:
             retry=retry_if_exception_type((RateLimitError, _RetryableUpstreamError)),
             reraise=True,
         )
-        response: httpx.Response = retryer(self._do_request, url, params, allow_404)
+        response: httpx.Response = retryer(
+            self._do_request, url, params, allow_404, follow_redirects
+        )
         return response
 
-    def _do_request(self, url: str, params: Mapping[str, str], allow_404: bool) -> httpx.Response:
+    def _do_request(
+        self,
+        url: str,
+        params: Mapping[str, str],
+        allow_404: bool,
+        follow_redirects: bool = True,
+    ) -> httpx.Response:
         """Perform exactly one HTTP GET, honouring the rate limiter and raising on error status."""
         self._rate_limiter.acquire()
-        response = self._http.get(url, params=dict(params))
+        # `or None`, never a bare `{}`: httpx *replaces* a URL's query string with
+        # `params`, so an empty mapping silently truncates it.
+        # `?sequence=1&isAllowed=y` is the canonical DSpace bitstream form --
+        # exactly the hosts this client downloads from -- and stripping it yields a
+        # 404 whose logged URL is the truncated one, so nothing in the output
+        # reveals what happened.
+        response = self._http.get(
+            url, params=dict(params) or None, follow_redirects=follow_redirects
+        )
         self._rate_limiter.observe_headers(response.headers)
         self._raise_for_status(response, allow_404=allow_404)
         return response
@@ -263,6 +323,14 @@ def _parse_json(body: bytes) -> JsonDict:
 def best_oa_pdf_url(response: JsonDict) -> str | None:
     """Read the best PDF URL out of a parsed Unpaywall response, if any.
 
+    .. deprecated::
+        Superseded by :func:`oa_pdf_candidates`, which is what
+        :class:`~prismabib.fulltext.resolve.OpenAccessResolver` now calls.
+        Reading only ``best_oa_location`` and falling back to its landing-page
+        ``url`` is precisely what reported nine records as having no full text
+        when Unpaywall knew of an open-access copy. Kept for callers outside
+        this package; nothing in ``src/`` uses it.
+
     Args:
         response: The parsed response from :meth:`UnpaywallClient.lookup`.
 
@@ -281,6 +349,54 @@ def best_oa_pdf_url(response: JsonDict) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+#: How many candidate locations one record may be tried at. Unpaywall usually
+#: reports one to three; the cap exists so a pathological response cannot turn one
+#: record into dozens of downloads.
+_MAX_OA_CANDIDATES = 5
+
+
+def oa_pdf_candidates(response: JsonDict) -> tuple[str, ...]:
+    """Every URL worth trying for a PDF, best first.
+
+    Args:
+        response: The parsed response from :meth:`UnpaywallClient.lookup`.
+
+    Returns:
+        Up to :data:`_MAX_OA_CANDIDATES` URLs, de-duplicated, ordered:
+        every location's ``url_for_pdf`` first (a direct PDF link), then
+        every location's generic ``url`` (usually a landing page). Empty
+        when Unpaywall reports no OA location at all.
+
+    :func:`best_oa_pdf_url` looks only at ``best_oa_location`` and falls
+    straight back to its landing-page ``url``. Measured on a real 35-record
+    corpus, that produced nine ``not_a_pdf`` misses -- records where Unpaywall
+    *did* know of an open-access copy, and the one location asked happened to
+    offer only HTML. Unpaywall returns every location it knows in
+    ``oa_locations``; a repository mirror frequently carries a direct
+    ``url_for_pdf`` where the publisher's own "best" location does not.
+
+    Trying a direct PDF link at *any* location before any landing page is the
+    ordering that matters: it is what turns "Unpaywall says this is open
+    access" into an actual file, rather than into a miss reported as though no
+    open-access copy existed.
+    """
+    locations: list[Mapping[str, Any]] = []
+    best = response.get("best_oa_location")
+    if isinstance(best, Mapping):
+        locations.append(best)
+    others = response.get("oa_locations")
+    if isinstance(others, list):
+        locations.extend(item for item in others if isinstance(item, Mapping))
+
+    candidates: list[str] = []
+    for key in ("url_for_pdf", "url"):
+        for location in locations:
+            value = location.get(key)
+            if isinstance(value, str) and value and value not in candidates:
+                candidates.append(value)
+    return tuple(candidates[:_MAX_OA_CANDIDATES])
 
 
 #: A PDF's magic bytes, per the PDF spec (ISO 32000-1 §7.5.2): the header
@@ -338,4 +454,4 @@ def looks_like_pdf(content: bytes, content_type: str | None) -> bool:
     return _PDF_MAGIC in content[:_PDF_SNIFF_WINDOW]
 
 
-__all__ = ["UnpaywallClient", "best_oa_pdf_url", "looks_like_pdf"]
+__all__ = ["UnpaywallClient", "best_oa_pdf_url", "looks_like_pdf", "oa_pdf_candidates"]

@@ -214,3 +214,108 @@ def test_fetch_bytes__404__raises_upstream_error_without_retry() -> None:
             client.fetch_bytes(_OA_PDF_URL)
 
     assert route.call_count == 1
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__oa_host_redirects__follows_and_returns_the_pdf() -> None:
+    """A redirect is an ordinary open-access download, not a failure.
+
+    `httpx` defaults `follow_redirects` to False, unlike `requests`. This is
+    the only client that fetches from *arbitrary* hosts -- whatever Unpaywall
+    names as the OA location -- and repositories redirect as a matter of
+    course: DSpace to a bitstream, a DOI to a publisher, http to https.
+
+    Measured on a real 35-record corpus before the fix: 10 records failed
+    mid-chain and **6 of them were 301/302**, surfaced to the operator as
+    "an upstream outage, a network timeout". Six recoverable papers lost to a
+    client default.
+    """
+    redirect_url = "https://oa-host.example.org/bitstream/1234/paper.pdf"
+    respx.get(_OA_PDF_URL).mock(
+        return_value=httpx.Response(302, headers={"location": redirect_url})
+    )
+    respx.get(redirect_url).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        content, content_type = client.fetch_bytes(_OA_PDF_URL)
+
+    assert content.startswith(b"%PDF-")
+    assert content_type == "application/pdf"
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__every_request__identifies_the_client_in_the_user_agent() -> None:
+    """Requests carry a descriptive User-Agent, not `python-httpx/x.y.z`.
+
+    Identifying an unauthenticated client is ordinary good manners, and several
+    open-access hosts refuse the default outright -- the same 35-record run drew
+    three 403s and a 418 from OA repositories.
+
+    The header carries no email: Unpaywall receives one as a query parameter
+    because its terms require it, but the OA hosts this client then downloads
+    from are third parties that never asked.
+    """
+    route = respx.get(_OA_PDF_URL).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        client.fetch_bytes(_OA_PDF_URL)
+
+    user_agent = route.calls.last.request.headers["user-agent"]
+    assert user_agent.startswith("prismabib/")
+    assert "github.com" in user_agent
+    assert "@" not in user_agent
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__url_with_a_query_string__keeps_it() -> None:
+    """A download URL's query string is part of the address, not decoration.
+
+    httpx *replaces* a URL's query with `params`, so passing a bare `{}`
+    silently truncates it. `?sequence=1&isAllowed=y` is the canonical DSpace
+    bitstream form -- exactly the hosts this client downloads from -- and the
+    truncated URL 404s while the logged endpoint shows the truncated form, so
+    nothing in the output reveals what happened.
+    """
+    url = "https://repo.example.org/bitstream/handle/1/2/paper.pdf?sequence=1&isAllowed=y"
+    route = respx.get(url).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        content, _content_type = client.fetch_bytes(url)
+
+    assert content.startswith(b"%PDF-")
+    requested = route.calls.last.request.url
+    assert requested.params["sequence"] == "1"
+    assert requested.params["isAllowed"] == "y"
+
+
+@pytest.mark.integration
+@respx.mock
+def test_lookup__api_redirects_elsewhere__is_not_followed() -> None:
+    """Unpaywall's own API does not redirect, so a redirect is not to be trusted.
+
+    A followed redirect would have its body parsed as an Unpaywall response and
+    cached under the *original* URL -- a substitution path with a cache behind
+    it. Redirects are for the download step, where the OA host legitimately
+    hands off to a bitstream.
+    """
+    respx.get(_LOOKUP_ENDPOINT).mock(
+        return_value=httpx.Response(302, headers={"location": "https://elsewhere.example.org/x"})
+    )
+
+    with _client() as client, pytest.raises(UpstreamError):
+        client.lookup(_DOI)
