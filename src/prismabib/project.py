@@ -255,6 +255,11 @@ manual_fulltext:
     - WRONG_STUDY_DESIGN
     - INSUFFICIENT_DATA
     - DUPLICATE_REPORT
+    # Stage 6 (ADR 0019): the resolver chain (ScienceDirect, open access,
+    # manual drop) found nothing for this record AND you have confirmed no
+    # institutional route exists. Only a human may log this -- prismabib
+    # refuses to write it automatically no matter how the chain concludes.
+    - INACCESSIBLE
 """
 
 
@@ -534,6 +539,21 @@ class Project:
             The path, created empty by :meth:`Project.init`.
         """
         return self.root / "decisions" / "decisions.jsonl"
+
+    @property
+    def fulltext_dir(self) -> Path:
+        """Where Stage 6 full-text resolution writes fetched bytes, ``<root>/fulltext``.
+
+        Guard-blocked from ``git`` (``projects/*/fulltext/`` in
+        ``.gitignore``) and never scanned by anything under
+        ``prismabib.capture`` -- publisher PDFs and XML are licensed
+        content (ADR 0019), and this directory exists specifically so they
+        never sit anywhere near ``raw/``'s Layer 0 archive.
+
+        Returns:
+            The path, created by :meth:`Project.init`.
+        """
+        return self.root / "fulltext"
 
 
 def _criteria_config_error(path: Path, exc: PydanticValidationError) -> ConfigError:

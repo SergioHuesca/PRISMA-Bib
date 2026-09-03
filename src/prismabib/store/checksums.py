@@ -46,6 +46,7 @@ import duckdb
 #: contains, and must show up as a moved checksum rather than only in a log.
 #: ``abstract_runs``/``record_subject_area_coverage`` (ADR 0018) follow the
 #: same rule as every table above them: sort by the declared primary key.
+#: ``fulltext_assets``/``fulltext_sections`` (ADR 0019) do too.
 _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "runs": ("run_id",),
     "records": ("record_id",),
@@ -62,6 +63,8 @@ _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "run_duplicates": ("run_id",),
     "abstract_runs": ("run_id",),
     "record_subject_area_coverage": ("record_id", "run_id"),
+    "fulltext_assets": ("record_id", "resolver_name"),
+    "fulltext_sections": ("record_id", "position"),
 }
 
 #: The full set of Layer 1 table names, in the order they appear in

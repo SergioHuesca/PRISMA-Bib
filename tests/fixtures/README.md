@@ -121,6 +121,7 @@ about explicitly, because a future maintainer might otherwise "fix" them:
 | `cassettes/abstract-full-single-subject-area.json` | **Not** a live recording | Same, with `subject-area` as a **lone mapping** — Scopus collapses a single-element container, and code that assumes a list breaks on real data. |
 | `cassettes/abstract-full-no-subject-areas.json` | **Not** a live recording | Same, with no `subject-areas` key at all (a conference-review record). This is the shape that makes `AbstractUnavailable(reason="no_subject_areas")` necessary. |
 | `cassettes/error-403-entitlement.json` | **Not** a live recording | Modelled on the same `service-error.status.{statusCode,statusText}` shape as the 401 cassette above, for a hypothetical `view=COMPLETE` entitlement denial. A live 403-on-COMPLETE recording would need a second, non-entitled API key, which this project does not have and is not worth acquiring solely to record one JSON body; the *shape* (not the exact `statusText`) is what `test_search__403_on_complete_view__raises_entitlement_error` depends on, and that shape is verified live by the sibling 401 cassette. |
+| `cassettes/sciencedirect-article-full-modelled.xml` | **Not** a live recording | Stage 6 (ADR 0019). Modelled on Elsevier's publicly documented Article Retrieval `view=FULL` XML response shape (`full-text-retrieval-response`, `coredata`, `originalText`, the `ce:` element vocabulary for `ce:abstract`/`ce:sections`/`ce:section`/`ce:para`) rather than recorded, for the same reason as the `abstract-full-*.json` cassettes below: this project has no ScienceDirect Article Retrieval entitlement to record a real one against. Every title, author name and paragraph in it is synthetic prose written for this fixture -- there is nothing in it for a sanitiser to redact, so none was run. `test_extract__sciencedirect_xml__yields_expected_sections` and `test_contract__sciencedirect_article_retrieval__required_fields_present` pin *this project's belief* about the response shape, not a verified live one -- the same caveat as the Abstract Retrieval cassettes; see below. |
 
 ## The sanitiser is tested too (§3.7.5, line 535)
 
@@ -146,3 +147,14 @@ rests on: `test_contract__search_complete_response__carries_no_subject_areas` ru
 `complete-page-0000.json` and `complete-page-0001.json` — 50 real recorded `view=COMPLETE`
 entries, not one of which carries a `subject-area` key. That is the measurement that says
 the Abstract Retrieval call is necessary at all, and it is made against real data.
+
+## `sciencedirect-article-full-modelled.xml` is modelled too, for the same reason
+
+Same status as the Abstract Retrieval cassettes above, and the same cost: nobody on this
+project holds a ScienceDirect Article Retrieval entitlement to record a real `view=FULL`
+response against, so `test_extract__sciencedirect_xml__yields_expected_sections` and
+`test_contract__sciencedirect_article_retrieval__required_fields_present` pin this
+project's belief about Elsevier's documented shape, not a verified live one. Obtaining a
+real entitlement and replacing this cassette with a genuine (sanitised) recording is
+outstanding work, exactly as ADR 0011 consequence 4 already notes for the Abstract
+Retrieval side.

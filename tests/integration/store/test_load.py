@@ -156,6 +156,23 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("run_id", "VARCHAR", True),
         ("status", "VARCHAR", False),
     ),
+    # Not from the BUILD_PLAN schema: added by ADR 0019. Transcribed from that
+    # ADR's stated shape for the same reason as the tables above.
+    "fulltext_assets": (
+        ("record_id", "VARCHAR", True),
+        ("resolver_name", "VARCHAR", True),
+        ("media_type", "VARCHAR", False),
+        ("path", "VARCHAR", False),
+        ("retrieved_at", "TIMESTAMP", False),
+        ("entitled", "BOOLEAN", False),
+    ),
+    "fulltext_sections": (
+        ("record_id", "VARCHAR", True),
+        ("position", "INTEGER", True),
+        ("section_name", "VARCHAR", False),
+        ("text", "VARCHAR", False),
+        ("low_confidence", "BOOLEAN", False),
+    ),
 }
 
 

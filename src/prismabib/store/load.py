@@ -175,9 +175,11 @@ from prismabib.capture.layout import (
     RUN_MANIFEST_FILENAME,
     is_sealed,
 )
-from prismabib.capture.manifest import AbstractRunManifest, RunManifest
+from prismabib.capture.manifest import AbstractRunManifest, FullTextRunManifest, RunManifest
 from prismabib.countries import normalise_country
 from prismabib.errors import StoreError, ValidationError
+from prismabib.fulltext.capture import sealed_fulltext_run_dirs
+from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
@@ -395,6 +397,31 @@ class StoreStats(BaseModel):
     caller that needs this number after the fact must call
     ``build_store(project, rebuild=True)`` again."""
 
+    fulltext_runs_loaded: int
+    """How many sealed ``fulltext/runs/<run_id>/`` directories (ADR 0019
+    Decision 0) were folded into this store. ``0`` for a project that has
+    never run ``prismabib fulltext``. Like ``unmatched_abstract_record_ids``,
+    **not** backed by a Layer 1 table -- no table records "how many runs", and
+    adding one would be a fifth schema addition ADR 0019 does not authorise --
+    so this is always ``0`` on the ``rebuild=False`` reuse path even if a
+    prior rebuild loaded some."""
+
+    fulltext_assets_loaded: int
+    """Rows in ``fulltext_assets`` -- one per (record, resolver) pair at
+    least one sealed full-text run recorded an attempt for."""
+
+    fulltext_sections_loaded: int
+    """Rows in ``fulltext_sections`` -- extracted, from the sealed
+    ``assets/`` bytes, fresh on every rebuild (see
+    :func:`_finalise_fulltext_sections`)."""
+
+    unmatched_fulltext_record_ids: tuple[str, ...]
+    """Sorted, deduplicated record ids that at least one loaded full-text run
+    described but that are not in ``records``. The same ADR 0018-style
+    "skipped, never silently dropped" treatment as
+    ``unmatched_abstract_record_ids``, and the same reuse-path caveat: always
+    ``()`` unless this call actually rebuilt."""
+
 
 @dataclass
 class _Accumulator:
@@ -484,6 +511,34 @@ class _Accumulator:
     #: is reported as a set accumulated during the load rather than read back
     #: from a table.
     unmatched_abstract_record_ids: set[str] = field(default_factory=set)
+    #: `fulltext_assets` rows, keyed by the table's own primary key
+    #: `(record_id, resolver_name)` (ADR 0019 Decision 0). A dict, not a list: two
+    #: sealed full-text runs can legitimately both carry an attempt for the same
+    #: (record, resolver) pair -- a record still pending after run 1's refusal is a
+    #: valid target for run 2 -- and the later run's observation must win, exactly
+    #: the `INSERT OR REPLACE` semantics this table had when a resolver wrote it
+    #: directly. Runs are folded in oldest-first (`sealed_fulltext_run_dirs`), so a
+    #: plain dict assignment already gives "the later run wins" with no explicit
+    #: comparison, the same pattern `abstract_subject_areas` uses.
+    fulltext_assets: dict[tuple[str, str], tuple[Any, ...]] = field(default_factory=dict)
+    #: record_id -> (media_type, absolute asset path) for the one resolved asset a
+    #: record has, across every sealed full-text run folded in so far -- the input
+    #: `_finalise_fulltext_sections` extracts `fulltext_sections` rows from. A
+    #: record has at most one resolved asset in practice
+    #: (`already_resolved_record_ids` never lets a resolved record be re-attempted
+    #: by a later run), but this is still a plain assignment (not `setdefault`) so
+    #: a later run's observation would win if that ever changed.
+    fulltext_resolved_assets: dict[str, tuple[str | None, Path]] = field(default_factory=dict)
+    #: `fulltext_sections` rows, populated by `_finalise_fulltext_sections` after
+    #: every sealed full-text run has been folded in.
+    fulltext_sections: list[tuple[Any, ...]] = field(default_factory=list)
+    #: How many sealed `fulltext/runs/<run_id>/` directories were folded in.
+    fulltext_runs_loaded: int = 0
+    #: record_ids at least one loaded full-text run described that are not in
+    #: `records` -- the same "skipped, never silently dropped" treatment ADR 0018
+    #: gives `unmatched_abstract_record_ids`, for the same reason: a record a
+    #: search run stopped identifying, or a stale explicit `record_ids` target.
+    unmatched_fulltext_record_ids: set[str] = field(default_factory=set)
 
 
 def _optional_str(value: object) -> str | None:
@@ -1506,6 +1561,219 @@ def _finalise_subject_areas(acc: _Accumulator) -> None:
     acc.subject_areas = kept | replaced
 
 
+def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
+    """Fold one sealed Layer 0 full-text run directory into ``acc`` (ADR 0019 Decision 0).
+
+    Args:
+        acc: The in-progress load accumulator, mutated in place. Must already
+            reflect every search run -- ``acc.seen_record_ids`` is how a
+            record this run covers is checked against ``records``, the same
+            discipline :func:`_load_abstract_run` applies.
+        run_dir: The sealed full-text run directory to load (a member of
+            :func:`~prismabib.fulltext.capture.sealed_fulltext_run_dirs`'s
+            return value).
+
+    Writes no ``runs`` row and no dedicated Layer 1 table of its own: a
+    full-text run identifies no record, and adding a table for it would
+    modify the frozen Stage 3 schema beyond what ADR 0019 authorises (only
+    ``fulltext_assets``/``fulltext_sections``). ``StoreStats.fulltext_runs_loaded``
+    is the only trace of "how many runs" this loader keeps, and it is
+    accumulated here rather than read back from a table, the same treatment
+    ``unmatched_abstract_record_ids`` gets and for the same reason.
+
+    For every attempt line in this run's ``attempts.jsonl`` whose ``record_id``
+    *is* in ``acc.seen_record_ids``, records one ``fulltext_assets`` row
+    (keyed on the table's own primary key, so a later run's observation for
+    the same ``(record_id, resolver_name)`` pair overwrites an earlier one --
+    see :attr:`_Accumulator.fulltext_assets`). An attempt whose asset was
+    written (``asset_file`` non-null) also registers the resolved asset's
+    absolute path in ``acc.fulltext_resolved_assets``, the input
+    :func:`_finalise_fulltext_sections` extracts ``fulltext_sections`` rows
+    from. An attempt line describing a record *not* in ``acc.seen_record_ids``
+    contributes no row at all and is counted in
+    ``acc.unmatched_fulltext_record_ids`` instead -- skipped, never silently
+    dropped (the same BUILD_PLAN §5 risk 8 treatment ADR 0018 applies to an
+    abstract run's unmatched records).
+
+    A malformed attempt line (not a JSON object, or missing a usable
+    ``record_id``/``resolver_name``) is skipped with a warning: one damaged
+    line must not make the rest of a run -- or the rest of the corpus --
+    unloadable, the same principle ``malformed_entries`` (ADR 0012) applies to
+    a search entry.
+    """
+    manifest = FullTextRunManifest.model_validate_json(
+        (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    )
+    acc.fulltext_runs_loaded += 1
+
+    attempts_path = run_dir / manifest.attempts_file
+    if not attempts_path.is_file():
+        logger.warning(
+            "store.load.fulltext_attempts_missing", run_id=manifest.run_id, path=str(attempts_path)
+        )
+        return
+
+    with attempts_path.open("r", encoding="utf-8") as handle:
+        for line_index, raw_line in enumerate(handle):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            # Guarded, because this function's own docstring promises it: "one
+            # damaged line must not make the rest of a run -- or the rest of the
+            # corpus -- unloadable", the principle ADR 0012 applies to malformed
+            # search entries. An unguarded `json.loads` here turned a single
+            # truncated write into a raw JSONDecodeError from `build_store`.
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "store.load.fulltext_attempt_unparsable",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
+            if not isinstance(row, dict):
+                logger.warning(
+                    "store.load.fulltext_attempt_not_an_object",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
+
+            record_id = row.get("record_id")
+            resolver_name = row.get("resolver_name")
+            if (
+                not isinstance(record_id, str)
+                or not record_id
+                or not isinstance(resolver_name, str)
+            ):
+                logger.warning(
+                    "store.load.fulltext_attempt_missing_key",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
+
+            if record_id not in acc.seen_record_ids:
+                acc.unmatched_fulltext_record_ids.add(record_id)
+                continue
+
+            media_type = row.get("media_type")
+            asset_file = row.get("asset_file")
+            entitled = row.get("entitled")
+            raw_retrieved_at = row.get("retrieved_at")
+            try:
+                retrieved_at = _as_naive_utc(datetime.fromisoformat(str(raw_retrieved_at)))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "store.load.fulltext_attempt_bad_timestamp",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
+
+            # Run-relative, never absolute. `fulltext_assets` is checksummed
+            # (`store/checksums.py`), so an absolute path makes the digest a
+            # function of where the project happens to sit on disk -- two
+            # clones of identical Layer 0 bytes produce different checksums,
+            # falsifying S03-AC1 and Stage 11's "a clean clone on a different
+            # machine reproduces numbers.json". `malformed_entries.payload_file`
+            # already stores `<run_id>/<file>` for exactly this reason; resolve
+            # against `project.fulltext_dir / RUNS_DIRNAME` at read time.
+            asset_path: str | None = None
+            if isinstance(asset_file, str) and asset_file:
+                asset_path = f"{run_dir.name}/{asset_file}"
+
+            acc.fulltext_assets[(record_id, resolver_name)] = (
+                record_id,
+                resolver_name,
+                media_type if isinstance(media_type, str) else None,
+                asset_path,
+                retrieved_at,
+                entitled if isinstance(entitled, bool) else None,
+            )
+
+            if asset_path is not None:
+                # The *absolute* path here, deliberately: extraction has to open
+                # the file. Only the value written to `fulltext_assets` is
+                # run-relative, because that one is checksummed and must not
+                # depend on where the project sits on disk.
+                acc.fulltext_resolved_assets[record_id] = (
+                    media_type if isinstance(media_type, str) else None,
+                    run_dir / str(asset_file),
+                )
+
+
+def _extract_fulltext_sections(media_type: str | None, asset_path: Path) -> tuple[Section, ...]:
+    """Dispatch section extraction by a resolved asset's media type.
+
+    Args:
+        media_type: ``"xml"`` (ScienceDirect) or ``"pdf"`` (open access,
+            manual drop); anything else (unreachable through today's
+            resolvers, which only ever produce these two) yields no sections
+            rather than raising.
+        asset_path: The resolved asset's absolute path, under a sealed
+            full-text run's ``assets/`` directory.
+
+    Returns:
+        The extracted sections, or ``()`` if extraction fails for any reason
+        -- a missing or corrupted asset file, a manual drop that turns out
+        not to be a real PDF despite passing the magic-byte check at capture
+        time, an XML parse error. The ``fulltext_assets`` row for this record
+        is still written either way (by :func:`_load_fulltext_run`, which
+        calls this only afterward, from :func:`_finalise_fulltext_sections`):
+        an unparseable file is a fact about that one file, not a reason to
+        fail the whole store build, and BUILD_PLAN's "no OCR, a human reads
+        it" applies just as much to a file this extractor cannot open at all.
+    """
+    try:
+        if media_type == "xml":
+            return extract_sciencedirect_xml(asset_path.read_bytes())
+        if media_type == "pdf":
+            return extract_pdf(asset_path)
+    except Exception:
+        logger.warning(
+            "store.load.fulltext_extract_failed",
+            media_type=media_type,
+            path=str(asset_path),
+            exc_info=True,
+        )
+        return ()
+    logger.warning("store.load.fulltext_unknown_media_type", media_type=media_type)
+    return ()
+
+
+def _finalise_fulltext_sections(acc: _Accumulator) -> None:
+    """Extract ``fulltext_sections`` rows from every resolved asset (ADR 0019 Decision 0).
+
+    Args:
+        acc: The accumulator, after every sealed full-text run has been
+            folded in via :func:`_load_fulltext_run`.
+            ``acc.fulltext_resolved_assets`` is the input; ``acc.fulltext_sections``
+            is populated in place.
+
+    Extraction is redone here, from the sealed ``assets/`` bytes, on every
+    ``build_store`` call -- never cached from a previous run's result -- so
+    that ``fulltext_sections`` is, per §2.2, a genuine function of Layer 0
+    rather than of whichever extraction happened to run at capture time. A
+    section's ``position`` (already assigned by
+    :mod:`prismabib.fulltext.extract`, document order within one asset) is
+    what a reader relies on to reconstruct order; insertion order into this
+    list is irrelevant to that.
+    """
+    for record_id, (media_type, asset_path) in acc.fulltext_resolved_assets.items():
+        for section in _extract_fulltext_sections(media_type, asset_path):
+            acc.fulltext_sections.append(
+                (
+                    record_id,
+                    section.position,
+                    section.section_name,
+                    section.text,
+                    section.low_confidence,
+                )
+            )
+
+
 def _resolve_pending_snapshots(acc: _Accumulator) -> None:
     """Promote a skipped entry's citation snapshot iff its record was loaded.
 
@@ -1697,6 +1965,11 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
         # not depend on that iteration order.
         sorted(acc.record_subject_area_coverage),
     )
+    # `.values()`, not sorted: like `venues`/`authors`/`affiliations`/`keywords`
+    # above, `checksums.table_checksum` re-sorts by primary key when hashing, so
+    # insertion order here has no bearing on S03-AC1's byte-stable checksums.
+    _insert_rows(connection, "fulltext_assets", list(acc.fulltext_assets.values()))
+    _insert_rows(connection, "fulltext_sections", acc.fulltext_sections)
 
 
 def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:
@@ -1734,6 +2007,8 @@ def _stats_from_connection(
     *,
     rebuilt: bool,
     unmatched_abstract_record_ids: tuple[str, ...] = (),
+    fulltext_runs_loaded: int = 0,
+    unmatched_fulltext_record_ids: tuple[str, ...] = (),
 ) -> StoreStats:
     """Compute a :class:`StoreStats` snapshot from a store's current content.
 
@@ -1753,6 +2028,12 @@ def _stats_from_connection(
             other field here is). Defaults to ``()``, which is what the
             ``rebuild=False`` reuse path in :func:`build_store` passes --
             deliberately, not by omission.
+        fulltext_runs_loaded: Forwarded straight through to
+            :class:`StoreStats` for the same reason as
+            ``unmatched_abstract_record_ids`` -- no table backs "how many
+            runs". Defaults to ``0``.
+        unmatched_fulltext_record_ids: Forwarded straight through, for the
+            same reason. Defaults to ``()``.
 
     Returns:
         Fresh counts read directly from ``connection`` -- see
@@ -1799,6 +2080,10 @@ def _stats_from_connection(
         abstract_runs_loaded=_count(connection, "abstract_runs"),
         record_subject_area_coverage_loaded=_count(connection, "record_subject_area_coverage"),
         unmatched_abstract_record_ids=unmatched_abstract_record_ids,
+        fulltext_runs_loaded=fulltext_runs_loaded,
+        fulltext_assets_loaded=_count(connection, "fulltext_assets"),
+        fulltext_sections_loaded=_count(connection, "fulltext_sections"),
+        unmatched_fulltext_record_ids=unmatched_fulltext_record_ids,
     )
 
 
@@ -1920,12 +2205,27 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             for abstract_run_dir in _sealed_abstract_run_dirs(project.raw_dir):
                 _load_abstract_run(accumulator, abstract_run_dir)
             _finalise_subject_areas(accumulator)
+            # Full-text runs, same reasoning as abstract runs above: they live
+            # under `project.fulltext_dir`, an entirely separate tree from
+            # `raw/` (ADR 0019 Decision 0 -- licensed content never sits near
+            # the Layer 0 archive), but the fold-in order still matters:
+            # `accumulator.seen_record_ids` must already be populated for
+            # `_load_fulltext_run` to tell "in this corpus" from "unmatched"
+            # apart, and section extraction (`_finalise_fulltext_sections`)
+            # needs every run's resolved assets collected first.
+            for fulltext_run_dir in sealed_fulltext_run_dirs(project.fulltext_dir):
+                _load_fulltext_run(accumulator, fulltext_run_dir)
+            _finalise_fulltext_sections(accumulator)
             _write_accumulator(connection, accumulator)
             stats = _stats_from_connection(
                 connection,
                 rebuilt=True,
                 unmatched_abstract_record_ids=tuple(
                     sorted(accumulator.unmatched_abstract_record_ids)
+                ),
+                fulltext_runs_loaded=accumulator.fulltext_runs_loaded,
+                unmatched_fulltext_record_ids=tuple(
+                    sorted(accumulator.unmatched_fulltext_record_ids)
                 ),
             )
         finally:
@@ -1960,16 +2260,32 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             record_ids=unmatched[:_MAX_LOGGED_MALFORMED_ENTRIES],
             truncated=len(unmatched) > _MAX_LOGGED_MALFORMED_ENTRIES,
         )
-    # `malformed_entries_skipped`/`unmatched_abstract_record_ids` are replaced by
-    # their lengths here on purpose: the real capture that motivated the former had
-    # 1 skip, but a bad one has thousands, and a single log event carrying every
-    # reference is unreadable and expensive. The references are in
-    # `malformed_entries` (queryable) or the warning above, respectively.
+    if stats.unmatched_fulltext_record_ids:
+        unmatched_fulltext = stats.unmatched_fulltext_record_ids
+        logger.warning(
+            "store.load.unmatched_fulltext_records",
+            count=len(unmatched_fulltext),
+            record_ids=unmatched_fulltext[:_MAX_LOGGED_MALFORMED_ENTRIES],
+            truncated=len(unmatched_fulltext) > _MAX_LOGGED_MALFORMED_ENTRIES,
+        )
+    # `malformed_entries_skipped`/`unmatched_abstract_record_ids`/
+    # `unmatched_fulltext_record_ids` are replaced by their lengths here on
+    # purpose: the real capture that motivated the first had 1 skip, but a bad
+    # one has thousands, and a single log event carrying every reference is
+    # unreadable and expensive. The references are in `malformed_entries`
+    # (queryable) or the warnings above, respectively.
     logger.info(
         "store.build_store.complete",
-        **stats.model_dump(exclude={"malformed_entries_skipped", "unmatched_abstract_record_ids"}),
+        **stats.model_dump(
+            exclude={
+                "malformed_entries_skipped",
+                "unmatched_abstract_record_ids",
+                "unmatched_fulltext_record_ids",
+            }
+        ),
         malformed_entries_skipped_count=len(stats.malformed_entries_skipped),
         unmatched_abstract_record_ids_count=len(stats.unmatched_abstract_record_ids),
+        unmatched_fulltext_record_ids_count=len(stats.unmatched_fulltext_record_ids),
     )
     return stats
 

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Not a live recording. Modelled on Elsevier's publicly documented Article
+  Retrieval `view=FULL` response shape (`full-text-retrieval-response`,
+  `coredata`, `originalText`, the `ce:` "common" element vocabulary for
+  `ce:abstract` / `ce:sections` / `ce:section` / `ce:para`), the same status
+  as `tests/fixtures/cassettes/abstract-full-multi-subject-area.json` (see
+  `tests/fixtures/README.md`). Every title, author name and paragraph below
+  is synthetic prose written for this fixture, not copied from a real
+  Elsevier article: there is nothing here for `sanitise.py` to redact.
+-->
+<full-text-retrieval-response
+    xmlns="http://www.elsevier.com/xml/svapi/article/dtd"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/"
+    xmlns:ce="http://www.elsevier.com/xml/common/dtd">
+  <coredata>
+    <prism:doi>10.1016/j.example.2026.100001</prism:doi>
+    <dc:title>A Synthetic Study of Full-Text Resolution Coverage</dc:title>
+    <prism:publicationName>Journal of Synthetic Testing</prism:publicationName>
+    <prism:coverDate>2026-01-01</prism:coverDate>
+  </coredata>
+  <originalText>
+    <xocs:doc xmlns:xocs="http://www.elsevier.com/xml/xocs/dtd">
+      <xocs:serial-item>
+        <ja:article xmlns:ja="http://www.elsevier.com/xml/ja/dtd">
+          <head>
+            <ce:abstract>
+              <ce:abstract-sec>
+                <ce:simple-para>
+                  This synthetic abstract summarises a fixture paper used only to
+                  pin the shape of a ScienceDirect FULL-view response.
+                </ce:simple-para>
+              </ce:abstract-sec>
+            </ce:abstract>
+          </head>
+          <body>
+            <ce:sections>
+              <ce:section>
+                <ce:section-title>Introduction</ce:section-title>
+                <ce:para>This introduction paragraph exists only for the test fixture.</ce:para>
+                <ce:para>It has two paragraphs, joined into one section's text.</ce:para>
+              </ce:section>
+              <ce:section>
+                <ce:section-title>Methods</ce:section-title>
+                <ce:para>A synthetic methods paragraph describing nothing real.</ce:para>
+              </ce:section>
+              <ce:section>
+                <ce:section-title>Results</ce:section-title>
+                <ce:para>A synthetic results paragraph, likewise fictional.</ce:para>
+              </ce:section>
+            </ce:sections>
+          </body>
+        </ja:article>
+      </xocs:serial-item>
+    </xocs:doc>
+  </originalText>
+</full-text-retrieval-response>

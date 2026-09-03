@@ -18,6 +18,7 @@ with a real stderr can assert "no traceback".
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -314,6 +315,108 @@ def test_cli_flow__counts_that_do_not_close__warns_and_still_prints_them(tmp_pat
         "identified - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated"
         in result.stderr
     )
+
+
+# ---------------------------------------------------------------------------
+# fulltext -- Stage 6 / ADR 0019 (item 15: `prismabib fulltext` had no
+# integration test at all, and `_print_fulltext_summary` was never invoked
+# by one).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_cli_fulltext__manual_drop__resolves_and_reports_a_sealed_layer0_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    # Force the chain to degrade to ManualDropResolver alone, regardless of
+    # what a developer's own local `.env` happens to carry (`Settings()`
+    # reads it, and this repository's working copy does) -- an explicit,
+    # empty-string override takes precedence over the `.env` file, and (per
+    # the BLOCKING fix for item 3) an empty value is now treated the same as
+    # an absent one.
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    (record_id,) = sorted(manual_abstract_set(project))[:1]
+    drop_path = manual_drop_path(project.fulltext_dir, record_id)
+    drop_path.parent.mkdir(parents=True, exist_ok=True)
+    drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    # No ELSEVIER_SD_API_KEY/UNPAYWALL_EMAIL in the test environment: the chain
+    # degrades to ManualDropResolver alone (see `default_chain`'s docstring),
+    # so this needs no network mock at all.
+    result = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    # `resolve_fulltext` catches `Exception` so one record's failure costs one
+    # record -- which also swallows `pytest_socket.SocketBlockedError`, a
+    # `RuntimeError`. Without this assertion a test that reached the network
+    # would still pass, recording the block as a per-record failure and leaving
+    # "no live API calls" to whoever happens to read stderr.
+    assert "unexpected error mid-chain" not in result.stdout
+    assert f"Resolved full text for {project.slug}" in result.stdout
+    assert "records attempted" in result.stdout
+    assert "resolved, by resolver:" in result.stdout
+    assert "manual" in result.stdout
+    assert "Run sealed. Re-run `prismabib build" in result.stdout
+
+    # Layer 0 was written; Layer 1 was not touched (ADR 0019 Decision 0).
+    (run_dir,) = [entry for entry in (project.fulltext_dir / "runs").iterdir() if entry.is_dir()]
+    assert (run_dir / "manifest.json").is_file()
+
+
+@pytest.mark.integration
+def test_cli_fulltext__budget_of_zero_records__reports_unsealed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.fulltext.resolve import manual_drop_path
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    for record_id in sorted(manual_abstract_set(project))[:2]:
+        drop_path = manual_drop_path(project.fulltext_dir, record_id)
+        drop_path.parent.mkdir(parents=True, exist_ok=True)
+        drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+    result = runner.invoke(
+        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+    )
+
+    assert result.exit_code == 0
+    # `resolve_fulltext` catches `Exception` so one record's failure costs one
+    # record -- which also swallows `pytest_socket.SocketBlockedError`, a
+    # `RuntimeError`. Without this assertion a test that reached the network
+    # would still pass, recording the block as a per-record failure and leaving
+    # "no live API calls" to whoever happens to read stderr.
+    assert "unexpected error mid-chain" not in result.stdout
+    assert re.search(r"records attempted\s+1\b", result.stdout)
+    assert "Run is UNSEALED" in result.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__no_eligible_records__fails_with_the_librarys_own_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+    build_project(
+        tmp_path,
+        CorpusSpec(records=[RecordSpec(number=1)]),
+        slug="no-fulltext-targets",
+    )
+
+    result = runner.invoke(app, ["fulltext", "no-fulltext-targets", "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "prismabib: ValidationError" in result.stderr
+    assert "No records to resolve full text for" in result.stderr
 
 
 # ---------------------------------------------------------------------------

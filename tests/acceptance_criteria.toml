@@ -80,3 +80,15 @@ S10-AC1 = "Every exported figure has its source CSV beside it."
 S10-AC2 = "`manifest.json` includes the git commit SHA; exporting from a dirty working tree emits a loud warning and marks `dirty: true`."
 S10-AC3 = "`prismabib fill` on a manuscript containing an undefined key exits non-zero."
 S10-AC4 = "The generated PRISMA diagram's numbers equal `FlowCounts` by test assertion."
+
+# --- Stage 6 -- Full-text resolution and eligibility (BUILD_PLAN.md lines 1150-1154) ---
+#
+# Implemented after Stage 10 in build order (ADR 0015 moved Stages 6-9 behind
+# 10), which is why this section sits here rather than between Stage 5 and
+# Stage 10 above -- this file's sections follow implementation order, not
+# BUILD_PLAN's stage numbering.
+
+S06-AC1 = "Resolver chain is unit-tested with each resolver failing in turn."
+S06-AC2 = "A 403 on resolver 1 provably reaches resolver 3 in tests."
+S06-AC3 = "Coverage report renders and shows per-publisher counts."
+S06-AC4 = "No code path can write an INACCESSIBLE decision event."

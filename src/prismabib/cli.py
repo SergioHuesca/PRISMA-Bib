@@ -51,6 +51,7 @@ from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import PrismabibError
+from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
 from prismabib.report.export import ExportResult, export_project
@@ -501,6 +502,28 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
             "map to an ISO 3166-1 alpha-3 code and are stored as the original text: "
             + ", ".join(repr(value) for value in stats.unmapped_country_values)
         )
+    # `fulltext_assets_loaded` as well as `fulltext_runs_loaded`, because only
+    # the first is a table count. `fulltext_runs_loaded` is passed through the
+    # load and is 0 on the reuse path, so gating on it alone made this whole
+    # block vanish there -- taking the `else` branch below with it, which then
+    # described behaviour the code did not have.
+    if stats.fulltext_runs_loaded or stats.fulltext_assets_loaded:
+        _echo(
+            f"  {stats.fulltext_runs_loaded:,} full-text run(s) loaded (prismabib fulltext), "
+            f"giving {stats.fulltext_assets_loaded:,} asset row(s) and "
+            f"{stats.fulltext_sections_loaded:,} extracted section(s)."
+        )
+        # Same reasoning as the unmatched-abstract line below: this is the
+        # operator's only confirmation that a resolution run reached Layer 1,
+        # and `unmatched_fulltext_record_ids` has no table behind it, so a line
+        # printed only when non-empty cannot be told from the silence of the
+        # reuse path.
+        _echo(
+            f"  {len(stats.unmatched_fulltext_record_ids):,} full-text record(s) not in "
+            "this store's records table."
+            if stats.rebuilt
+            else "  (whether any full-text record was skipped is only reported with --rebuild.)"
+        )
     if stats.abstract_runs_loaded:
         _echo(
             f"  {stats.abstract_runs_loaded:,} abstract-retrieval run(s) loaded "
@@ -634,6 +657,106 @@ def _print_abstract_manifest(manifest: AbstractRunManifest, *, slug: str) -> Non
         if manifest.unavailable:
             _echo(f"  unavailable             {len(manifest.unavailable):>26,}")
         _echo("\n  Run sealed. Re-run `prismabib build` to load the subject areas.")
+
+
+# ---------------------------------------------------------------------------
+# fulltext
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def fulltext(
+    slug: Annotated[str, typer.Argument(help="Project slug to resolve full text for.")],
+    budget: Annotated[
+        int | None,
+        typer.Option(
+            "--budget",
+            help="Attempt at most this many not-yet-resolved records this run.",
+        ),
+    ] = None,
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Resolve full text for the records sought for full-text retrieval (M_abs).
+
+    Chain, first hit wins (BUILD_PLAN Stage 6 / ADR 0019):
+
+    \b
+      1. ScienceDirect  -- entitled Elsevier content, XML via Article Retrieval
+      2. Open access     -- DOI -> OA location (Unpaywall), PDF fetch
+      3. Manual drop      -- projects/<slug>/fulltext/manual/<record_id>.pdf,
+                            with `:` replaced by `_` in the filename
+                            (scopus_2-s2.0-85100000201.pdf): a colon cannot
+                            appear in a Windows filename
+
+    A ScienceDirect refusal (HTTP 403) is recorded as an entitlement gap and
+    the chain moves on to the next resolver -- it never marks a record
+    inaccessible by itself. A record the whole chain exhausts is reported
+    here as a candidate, never decided: only a human, during full-text
+    screening and after confirming no institutional route exists, may log
+    it ``INACCESSIBLE``.
+
+    Resumable: an already-resolved record is never re-attempted. ``--budget``
+    bounds how many *not yet resolved* records this invocation attempts.
+
+    This writes Layer 0 only (a sealed run under
+    ``projects/<slug>/fulltext/runs/``), exactly like ``prismabib enrich``:
+    run ``prismabib build <slug> --rebuild`` afterward to fold the results
+    into ``fulltext_assets``/``fulltext_sections`` and see them reflected in
+    ``prismabib export``'s coverage tables.
+    """
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        summary = run_fulltext_resolution(project, budget=budget)
+        _print_fulltext_summary(summary, slug=slug)
+
+
+def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
+    """Render a full-text resolution run.
+
+    Args:
+        summary: What :func:`~prismabib.fulltext.run.run_fulltext_resolution` did.
+        slug: The project slug, for the heading.
+    """
+    _echo(f"\nResolved full text for {slug}")
+    _echo(f"  records considered      {summary.records_considered:>26,}")
+    _echo(f"  records attempted       {summary.records_attempted:>26,}")
+    _echo(f"  records resolved        {summary.records_resolved:>26,}")
+
+    if summary.resolved_by_resolver:
+        _echo("\n  resolved, by resolver:")
+        for resolver_name, count in sorted(summary.resolved_by_resolver.items()):
+            _echo(f"    {resolver_name:<24} {count:>10,}")
+
+    if summary.refused_by_resolver:
+        _echo("\n  refused (entitlement gap -- NOT an absent paper), by resolver:")
+        for resolver_name, count in sorted(summary.refused_by_resolver.items()):
+            _echo(f"    {resolver_name:<24} {count:>10,}")
+
+    if summary.unresolved_record_ids:
+        _echo(
+            f"\n  {len(summary.unresolved_record_ids):,} record(s) exhausted the chain with no "
+            "full text found.\n  That is not a verdict: only a human may mark one "
+            "INACCESSIBLE, during full-text\n  screening, after confirming no institutional "
+            "route exists."
+        )
+
+    if summary.failed_record_ids:
+        _echo(
+            f"\n  {len(summary.failed_record_ids):,} record(s) hit an unexpected error mid-chain "
+            "(an upstream\n  outage, a network timeout) and were not fully attempted. Whatever "
+            "was\n  learned before the failure is saved; re-run this command to retry them."
+        )
+
+    if summary.sealed:
+        _echo(
+            "\n  Run sealed. Re-run `prismabib build <slug> --rebuild` to load full text into "
+            "the store."
+        )
+    else:
+        _echo(
+            "\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib fulltext` "
+            "to\n  continue; already-attempted records are not re-paid for."
+        )
 
 
 @app.command()

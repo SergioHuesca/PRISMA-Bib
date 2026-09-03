@@ -77,6 +77,18 @@ and logged, never dropped — §5 risk 8.
       show_source: true
       members_order: source
 
+## publishers
+
+The checked-in DOI registrant-prefix → publisher mapping table behind Stage 6's coverage
+report (S06-AC3). Shaped like `countries` and `asjc`: an unmapped prefix is preserved and
+surfaced, never guessed at. See [ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md).
+
+::: prismabib.publishers
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ## stage
 
 `PrismaStage` — the six named record sets of the PRISMA 2020 flow. A leaf module with no
@@ -128,6 +140,29 @@ Everything that talks to an external metadata API.
 ### sources.scopus
 
 ::: prismabib.sources.scopus
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### sources.sciencedirect
+
+Elsevier Article Retrieval, addressed by DOI — entitled Elsevier content only. See
+[ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md).
+
+::: prismabib.sources.sciencedirect
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### sources.unpaywall
+
+A DOI → open-access location lookup, and the download of whatever host that location
+actually resolves to. Takes no API key; `UNPAYWALL_EMAIL` is a terms-of-use contact
+address, not a credential.
+
+::: prismabib.sources.unpaywall
     options:
       show_root_heading: true
       show_source: true
@@ -267,6 +302,58 @@ set definitions and the flow-diagram audit table.
 ### prisma.flow
 
 ::: prismabib.prisma.flow
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## fulltext
+
+Stage 6: the full-text resolver chain (ScienceDirect → open access → manual drop, first hit
+wins), section extraction, and the coverage-by-resolver/by-publisher report that makes the
+Elsevier skew visible in the output rather than hidden in the method. See
+[ADR 0019](../architecture/adr/0019-fulltext-resolution-and-coverage.md).
+
+::: prismabib.fulltext
+    options:
+      show_root_heading: true
+      members: false
+
+### fulltext.resolve
+
+::: prismabib.fulltext.resolve
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.extract
+
+::: prismabib.fulltext.extract
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.coverage
+
+::: prismabib.fulltext.coverage
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.capture
+
+::: prismabib.fulltext.capture
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.run
+
+::: prismabib.fulltext.run
     options:
       show_root_heading: true
       show_source: true

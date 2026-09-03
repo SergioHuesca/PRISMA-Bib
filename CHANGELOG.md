@@ -5,6 +5,103 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] — 2026-09-03
+
+### Added
+
+- **Stage 6 — full-text resolution and eligibility.** A resolver chain (ScienceDirect → open
+  access via Unpaywall → a manual drop directory, first hit wins), XML and PDF extraction, and
+  a `prismabib fulltext` command. Two new Layer 1 tables, `fulltext_assets` and
+  `fulltext_sections`. See
+  [ADR 0019](docs/architecture/adr/0019-fulltext-resolution-and-coverage.md).
+
+  The stage exists to stop an entitlement limit biasing the corpus. The ScienceDirect API
+  serves Elsevier only, so defining "accessible" as "ScienceDirect returned text" would make
+  the corpus Elsevier-weighted and every downstream venue and geography statistic wrong.
+  Three rules enforce that, each verified by injecting its own violation:
+
+  - **A 403 records `entitled = false` and the chain continues.** A refusal is an entitlement
+    gap, not an absent paper. `entitled` is three-valued — `true` accessed, `false` refused,
+    `NULL` not an entitlement question — because collapsing refused into unavailable is the
+    bias itself.
+  - **`INACCESSIBLE` can only be written by a human**, enforced by tests that walk the source
+    AST and fail if any module outside `screening/`/`cli.py` spells out the literal
+    `reason_code="INACCESSIBLE"` construct, or calls `DecisionLog.append`/`append_event` at
+    all. That is a narrower guarantee than "no code path can, by construction" — one line of
+    indirection defeats a syntactic match — but it is exactly the failure mode this stage has
+    shipped in practice, and a reviewer auditing a diff for the literal string always finds
+    every real call site. Exhausting the chain returns `None` and writes no decision event:
+    exhaustion is not a verdict.
+  - **Publisher is derived from the DOI registrant prefix**, never from the resolver that
+    succeeded — deriving it from the resolver is circular, making every resolved paper Elsevier
+    by construction and every unresolved paper publisher-less, so the table could never show a
+    gap. New `src/prismabib/publishers.py`, the same closed-table shape as `countries.py` and
+    `asjc.py`.
+
+  The publisher coverage table reports **records attempted**, resolved, refused and coverage %,
+  not just a share of what was resolved. A publisher refused across the board has no resolved
+  records and would otherwise vanish from the table entirely.
+
+- **Full-text resolution now writes Layer 0, not Layer 1 (ADR 0019 Decision 0).** Review of the
+  PR above found that `fulltext_assets`/`fulltext_sections` were the first Layer 1 tables not
+  derivable from Layer 0: `build_store(rebuild=True)` after a resolution run — the documented,
+  recommended command whose own output claims "deleting it and running this again loses
+  nothing" — silently discarded every resolved asset and every recorded refusal. Resolution is
+  now a **capture**, exactly like `prismabib search`/`prismabib enrich`: it seals
+  `projects/<slug>/fulltext/runs/<run_id>/` (`attempts.jsonl`, content-addressed `assets/`,
+  `manifest.json`), and `prismabib build --rebuild` rebuilds `fulltext_assets`/
+  `fulltext_sections` from those sealed runs. `prismabib fulltext` writes Layer 0 only now; a
+  subsequent `prismabib build --rebuild` is required to see results in the store, the same
+  two-step shape `prismabib enrich` already has.
+
+  Alongside that restructuring, review found and fixed several defects, each verified by
+  injecting the original bug and confirming a new or amended test fails against it:
+
+  - A resolver failure other than an entitlement refusal (an upstream 5xx exhausting retries, a
+    network timeout) aborted the *entire run*, discarding whatever the chain had already learned
+    about the failing record (including an earlier resolver's refusal) and leaving every later
+    record unattempted. `resolve_fulltext` now catches it, raises
+    `FullTextResolutionError` carrying the partial attempts, and `capture_fulltext` persists
+    them and moves on to the next record.
+  - `ELSEVIER_SD_API_KEY=` (the empty value `.env.example` ships) constructed a working-looking
+    `ScienceDirectClient`, sent an empty key, got a 401, and aborted the chain before
+    `ManualDropResolver` — which needs no credential — ever ran. Fixed to treat an empty secret
+    the same as an absent one, matching `UnpaywallClient`'s existing check.
+  - Any bytes returned with HTTP 200 were accepted as a resolved PDF, including the HTML landing
+    page `best_oa_pdf_url` falls back to when no direct PDF link exists — silently zero-section,
+    permanently "resolved", overstating coverage. A response is now verified (`Content-Type` and
+    `%PDF-` magic bytes) before being accepted; a non-PDF is `entitled=NULL` and the chain
+    continues.
+  - A Cloudflare-style 403 from an open-access host was retried five times with exponential
+    backoff before being raised anyway, because it shared `UpstreamError` with the 5xx case the
+    retry predicate actually exists for. Split into a retried `_RetryableUpstreamError` subclass
+    (5xx only) and a non-retried base `UpstreamError` (everything else).
+  - `fulltext/manual/<record_id>.pdf` embeds `:` (the `scopus:` namespace prefix) — legal on
+    POSIX, illegal on NTFS, including the NTFS mount this repository is developed on. Sanitised
+    via `manual_drop_path`.
+  - The coverage-by-resolver/by-publisher tables existed with no caller in `src/` at all; wired
+    into `report/tables.py::build_tables`, so `prismabib export` now writes them alongside every
+    other Stage 10 table.
+  - Fetched full text was cached under `raw/_cache/`, next to the Layer 0 archive `fulltext_dir`
+    exists specifically to keep licensed content away from. Moved under `fulltext/_cache/`.
+  - `10.24963` (IJCAI's registrant prefix) was mapped to "AAAI" in `publishers.py`, misattributing
+    every IJCAI paper and leaving AAAI's real prefix (`10.1609`) unmapped. Fixed, and all 39
+    prefixes now carry an independently-transcribed test case (5 did before).
+  - `run_fulltext_resolution(project, record_ids=[...])` opened its one Layer 1 connection
+    read/write, which bypasses `store.db`'s stale-schema guard entirely — a pre-v0.16 store
+    raised a raw `duckdb.CatalogException` instead of the guard's actionable
+    `prismabib build --rebuild` message. Every path now opens read-only first.
+  - The AST guard enforcing "only `screening/` may write `INACCESSIBLE`" is now joined by a
+    second check forbidding `DecisionLog.append`/`append_event` outside `screening/`/`cli.py`
+    entirely — narrower than "no code path can, by construction" (documented as such, alongside
+    ADR 0019 and this entry, rather than left overstated).
+
+  **Goldens.** `reference_table_checksums.json`'s `row_counts` gains four new zero-valued keys
+  (`fulltext_runs_loaded`, `fulltext_assets_loaded`, `fulltext_sections_loaded`,
+  `unmatched_fulltext_record_ids`) — `StoreStats` grew fields to report the new Layer 0 fold-in,
+  and the reference project has no full-text runs. Every existing value is byte-identical;
+  `table_checksums` (including the two empty-table digests) is unchanged.
+
 ## [0.15.2] — 2026-09-01
 
 ### Fixed

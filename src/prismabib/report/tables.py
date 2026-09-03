@@ -314,15 +314,34 @@ def build_tables(project: Project, numbers: dict[str, Any]) -> tuple[Table, ...]
 
     Returns:
         The tables, ordered as a reader would meet them: what was eligible,
-        then where the corpus was published, then how it is cited.
+        then where the corpus was published, then how it is cited, then --
+        for a project that has run ``prismabib fulltext`` and rebuilt its
+        store -- the two Stage 6 full-text coverage tables (S06-AC3,
+        ADR 0019), by resolver and by publisher, so an entitlement-driven
+        skew is visible in the same exported bundle as everything else
+        rather than requiring a separate tool. Both render with zero rows,
+        never omitted, for a project that has not run full-text resolution
+        yet -- an absent table would read as "no bias to report" rather
+        than "not run".
     """
+    # Local import: `prismabib.fulltext.coverage` imports `Table` from this module,
+    # so importing it at module scope here would be a circular import at process
+    # start. Deferred exactly the way `prismabib.store.load` defers its own import
+    # of `prismabib.prisma.engine` for the same reason (see that module's
+    # docstring) -- by the time `build_tables` is actually called, both modules are
+    # already fully loaded.
+    from prismabib.fulltext.coverage import coverage_tables
+
     connection = connect(project, read_only=True)
     try:
+        coverage_by_resolver, coverage_by_publisher = coverage_tables(connection)
         return (
             eligibility_criteria_table(project),
             top_venues_table(connection),
             citation_statistics_table(numbers),
             top_cited_table(connection),
+            coverage_by_resolver,
+            coverage_by_publisher,
         )
     finally:
         connection.close()
