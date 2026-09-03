@@ -123,11 +123,21 @@ import structlog
 
 from prismabib.capture.layout import CACHE_DIRNAME
 from prismabib.config import FullTextSettings, Settings
-from prismabib.errors import ConfigError, EntitlementError, PrismabibError
+from prismabib.errors import (
+    ConfigError,
+    EntitlementError,
+    PrismabibError,
+    RateLimitError,
+    UpstreamError,
+)
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.sciencedirect import ArticleNotFoundError, ScienceDirectClient
-from prismabib.sources.unpaywall import UnpaywallClient, best_oa_pdf_url, looks_like_pdf
+from prismabib.sources.unpaywall import (
+    UnpaywallClient,
+    looks_like_pdf,
+    oa_pdf_candidates,
+)
 
 if TYPE_CHECKING:
     from prismabib.project import Project
@@ -489,10 +499,14 @@ class OpenAccessResolver:
         always "not an entitlement question" (``entitled=None``), never a
         refusal.
 
-        A response that comes back HTTP 200 but is not actually a PDF (an
-        HTML landing page -- :func:`~prismabib.sources.unpaywall.best_oa_pdf_url`
-        falls back to a generic ``url`` when no ``url_for_pdf`` exists) is
-        treated exactly like "nothing found": ``None``, not an asset. Before
+        Tries every location Unpaywall knows
+        (:func:`~prismabib.sources.unpaywall.oa_pdf_candidates`), direct PDF
+        links first, and keeps going when one is refused, has moved, or turns
+        out to be an HTML landing page. A repository mirror often serves the
+        paper the publisher's own "best" location only links to.
+
+        A response that comes back HTTP 200 but is not actually a PDF is
+        treated exactly like "nothing found" for that candidate. Before
         this check existed, that HTML was written to disk as
         ``media_type="pdf"``/``entitled=True``, ``pdfplumber`` silently
         extracted zero sections from it, and the record was counted resolved
@@ -504,24 +518,35 @@ class OpenAccessResolver:
         response = self.unpaywall_client.lookup(doi)
         if response is None:
             return None
-        pdf_url = best_oa_pdf_url(response)
-        if pdf_url is None:
-            return None
-        content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
-        if not looks_like_pdf(content, content_type):
-            logger.info(
-                "fulltext.resolver.openaccess.not_a_pdf",
+        for pdf_url in oa_pdf_candidates(response):
+            # Per candidate, not per record: one location refusing (403 from a
+            # repository behind a bot filter) or having moved (404) says nothing
+            # about the next one, and Unpaywall frequently knows a mirror that
+            # serves the same paper. Raising here would discard those.
+            try:
+                content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
+            except (UpstreamError, RateLimitError) as exc:
+                logger.info(
+                    "fulltext.resolver.openaccess.candidate_failed",
+                    record_id=record_id,
+                    error=str(exc),
+                )
+                continue
+            if not looks_like_pdf(content, content_type):
+                logger.info(
+                    "fulltext.resolver.openaccess.not_a_pdf",
+                    record_id=record_id,
+                    content_type=content_type,
+                )
+                continue
+            return FullTextAsset(
                 record_id=record_id,
-                content_type=content_type,
+                resolver_name=self.name,
+                media_type="pdf",
+                content=content,
+                retrieved_at=datetime.now(UTC),
             )
-            return None
-        return FullTextAsset(
-            record_id=record_id,
-            resolver_name=self.name,
-            media_type="pdf",
-            content=content,
-            retrieved_at=datetime.now(UTC),
-        )
+        return None
 
 
 @dataclass

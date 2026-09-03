@@ -214,3 +214,63 @@ def test_fetch_bytes__404__raises_upstream_error_without_retry() -> None:
             client.fetch_bytes(_OA_PDF_URL)
 
     assert route.call_count == 1
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__oa_host_redirects__follows_and_returns_the_pdf() -> None:
+    """A redirect is an ordinary open-access download, not a failure.
+
+    `httpx` defaults `follow_redirects` to False, unlike `requests`. This is
+    the only client that fetches from *arbitrary* hosts -- whatever Unpaywall
+    names as the OA location -- and repositories redirect as a matter of
+    course: DSpace to a bitstream, a DOI to a publisher, http to https.
+
+    Measured on a real 35-record corpus before the fix: 10 records failed
+    mid-chain and **6 of them were 301/302**, surfaced to the operator as
+    "an upstream outage, a network timeout". Six recoverable papers lost to a
+    client default.
+    """
+    redirect_url = "https://oa-host.example.org/bitstream/1234/paper.pdf"
+    respx.get(_OA_PDF_URL).mock(
+        return_value=httpx.Response(302, headers={"location": redirect_url})
+    )
+    respx.get(redirect_url).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        content, content_type = client.fetch_bytes(_OA_PDF_URL)
+
+    assert content.startswith(b"%PDF-")
+    assert content_type == "application/pdf"
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__every_request__identifies_the_client_in_the_user_agent() -> None:
+    """Requests carry a descriptive User-Agent, not `python-httpx/x.y.z`.
+
+    Identifying an unauthenticated client is ordinary good manners, and several
+    open-access hosts refuse the default outright -- the same 35-record run drew
+    three 403s and a 418 from OA repositories.
+
+    The header carries no email: Unpaywall receives one as a query parameter
+    because its terms require it, but the OA hosts this client then downloads
+    from are third parties that never asked.
+    """
+    route = respx.get(_OA_PDF_URL).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        client.fetch_bytes(_OA_PDF_URL)
+
+    user_agent = route.calls.last.request.headers["user-agent"]
+    assert user_agent.startswith("prismabib/")
+    assert "github.com" in user_agent
+    assert "@" not in user_agent
