@@ -119,17 +119,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+import httpx
 import structlog
 
 from prismabib.capture.layout import CACHE_DIRNAME
 from prismabib.config import FullTextSettings, Settings
-from prismabib.errors import (
-    ConfigError,
-    EntitlementError,
-    PrismabibError,
-    RateLimitError,
-    UpstreamError,
-)
+from prismabib.errors import ConfigError, EntitlementError, PrismabibError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.sciencedirect import ArticleNotFoundError, ScienceDirectClient
@@ -525,7 +520,17 @@ class OpenAccessResolver:
             # serves the same paper. Raising here would discard those.
             try:
                 content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
-            except (UpstreamError, RateLimitError) as exc:
+            except (PrismabibError, httpx.HTTPError) as exc:
+                # Broad on purpose, and broader than it first was. What this
+                # frame defends is *scope*: one candidate location failing must
+                # cost that location, never the record. `follow_redirects=True`
+                # newly makes `httpx.TooManyRedirects` and
+                # `httpx.UnsupportedProtocol` reachable here, and a dead mirror
+                # host has always raised `httpx.ConnectError` -- none of which
+                # are `UpstreamError`. Any of them escaping reaches
+                # `resolve_fulltext`'s outer handler, which abandons the whole
+                # chain for this record, so `ManualDropResolver` never runs and
+                # a PDF the reviewer fetched by hand is silently ignored.
                 logger.info(
                     "fulltext.resolver.openaccess.candidate_failed",
                     record_id=record_id,

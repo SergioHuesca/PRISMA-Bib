@@ -60,6 +60,13 @@ class FullTextRunSummary(BaseModel):
     Attributes:
         records_considered: How many records were targeted in total
             (before excluding already-resolved ones).
+        records_already_resolved: How many of ``records_considered`` already
+            had full text from an earlier sealed run and were skipped without
+            re-spending anything. **Measured, not derived.**
+            ``records_considered - records_attempted`` looks like the same
+            number and is not: a ``budget``-capped or resumed call also
+            attempts fewer than it considers, so the subtraction reports
+            records as already having full text that have never been fetched.
         records_attempted: How many of those were actually run through the
             chain this call -- ``0`` when every targeted record was already
             resolved, or bounded by ``budget``.
@@ -93,6 +100,7 @@ class FullTextRunSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     records_considered: int
+    records_already_resolved: int
     records_attempted: int
     records_resolved: int
     resolved_by_resolver: dict[str, int]
@@ -192,6 +200,7 @@ def run_fulltext_resolution(
     if not pending_ids:
         return FullTextRunSummary(
             records_considered=len(target_ids),
+            records_already_resolved=len(target_ids),
             records_attempted=0,
             records_resolved=0,
             resolved_by_resolver={},
@@ -212,6 +221,10 @@ def run_fulltext_resolution(
 
     return FullTextRunSummary(
         records_considered=len(target_ids),
+        # `len(target_ids) - len(pending_ids)`, computed above: the records a
+        # sealed run already resolved. Not `considered - attempted`, which a
+        # `budget` cap or a resumed run also shrinks.
+        records_already_resolved=len(target_ids) - len(pending_ids),
         records_attempted=outcome.attempted,
         records_resolved=outcome.resolved,
         resolved_by_resolver=outcome.resolved_by_resolver,

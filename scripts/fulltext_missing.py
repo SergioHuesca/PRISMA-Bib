@@ -19,10 +19,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-from prismabib.fulltext.resolve import manual_drop_path
+from prismabib.errors import PrismabibError
+from prismabib.fulltext.capture import already_resolved_record_ids
+from prismabib.fulltext.resolve import MANUAL_DROP_DIRNAME, manual_drop_path
 from prismabib.prisma.engine import manual_abstract_set
 from prismabib.project import Project
 from prismabib.store.db import connect
@@ -35,18 +38,27 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path("projects"))
     args = parser.parse_args()
 
-    project = Project.open(args.slug, root=args.root)
-    sought = sorted(manual_abstract_set(project))
+    try:
+        project = Project.open(args.slug, root=args.root)
+        sought = sorted(manual_abstract_set(project))
+    except PrismabibError as error:
+        # Same contract the CLI holds itself to
+        # (`test_cli__known_error__exits_nonzero_without_a_traceback`): an
+        # unknown slug, a missing store and a store predating v0.16 are all
+        # ordinary operator situations, and a Python traceback tells a reviewer
+        # nothing they can act on.
+        print(f"prismabib: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
 
     connection = connect(project, read_only=True)
     try:
-        resolved = {
-            record_id
-            for (record_id,) in connection.execute(
-                "SELECT DISTINCT record_id FROM fulltext_assets WHERE media_type IS NOT NULL"
-            ).fetchall()
-        }
-        meta = {
+        # Layer 0, not Layer 1: `fulltext_assets` only reflects what
+        # `build --rebuild` has folded in, so running this straight after
+        # `prismabib fulltext` would list every record just resolved as still
+        # missing. The sealed runs are the source of truth, and `run.py` reads
+        # the same function to decide what to skip.
+        resolved = already_resolved_record_ids(project.fulltext_dir)
+        meta: dict[str, tuple[str, int | None, str, str | None]] = {
             record_id: (title, year, venue, doi)
             for record_id, title, year, venue, doi in connection.execute(
                 "SELECT r.record_id, r.title, r.year, COALESCE(v.name, '(no venue)'), r.doi "
@@ -61,7 +73,7 @@ def main() -> None:
     for record_id in missing:
         by_venue[meta[record_id][2]].append(record_id)
 
-    drop_dir = manual_drop_path(project.fulltext_dir, "x").parent
+    drop_dir = project.fulltext_dir / MANUAL_DROP_DIRNAME
     print(f"# Full text still needed — {project.slug}")
     print()
     print(f"{len(missing)} of {len(sought)} records sought for retrieval have no full text.")

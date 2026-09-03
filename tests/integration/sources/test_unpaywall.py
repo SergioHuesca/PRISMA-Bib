@@ -274,3 +274,48 @@ def test_fetch_bytes__every_request__identifies_the_client_in_the_user_agent() -
     assert user_agent.startswith("prismabib/")
     assert "github.com" in user_agent
     assert "@" not in user_agent
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__url_with_a_query_string__keeps_it() -> None:
+    """A download URL's query string is part of the address, not decoration.
+
+    httpx *replaces* a URL's query with `params`, so passing a bare `{}`
+    silently truncates it. `?sequence=1&isAllowed=y` is the canonical DSpace
+    bitstream form -- exactly the hosts this client downloads from -- and the
+    truncated URL 404s while the logged endpoint shows the truncated form, so
+    nothing in the output reveals what happened.
+    """
+    url = "https://repo.example.org/bitstream/handle/1/2/paper.pdf?sequence=1&isAllowed=y"
+    route = respx.get(url).mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4\n%%EOF", headers={"content-type": "application/pdf"}
+        )
+    )
+
+    with _client() as client:
+        content, _content_type = client.fetch_bytes(url)
+
+    assert content.startswith(b"%PDF-")
+    requested = route.calls.last.request.url
+    assert requested.params["sequence"] == "1"
+    assert requested.params["isAllowed"] == "y"
+
+
+@pytest.mark.integration
+@respx.mock
+def test_lookup__api_redirects_elsewhere__is_not_followed() -> None:
+    """Unpaywall's own API does not redirect, so a redirect is not to be trusted.
+
+    A followed redirect would have its body parsed as an Unpaywall response and
+    cached under the *original* URL -- a substitution path with a cache behind
+    it. Redirects are for the download step, where the OA host legitimately
+    hands off to a bitstream.
+    """
+    respx.get(_LOOKUP_ENDPOINT).mock(
+        return_value=httpx.Response(302, headers={"location": "https://elsewhere.example.org/x"})
+    )
+
+    with _client() as client, pytest.raises(UpstreamError):
+        client.lookup(_DOI)

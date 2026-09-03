@@ -673,6 +673,47 @@ def test_cli_fulltext__resumed_run_finds_nothing_new__still_reports_the_running_
     assert re.search(r"resolved this run\s+0\b", second.stdout), second.stdout
     total = re.search(r"TOTAL with full text\s+(\d+) of (\d+)", second.stdout)
     assert total is not None, second.stdout
-    # The point of the line: a non-zero running total on a call that resolved none.
-    assert int(total.group(1)) >= 1
-    assert int(total.group(1)) <= int(total.group(2))
+
+    # Asserted exactly, not as a range. Exactly one drop file was placed, so the
+    # answer is known: `>= 1` passed with the count deliberately inflated by
+    # three, which is the very defect this line exists to prevent -- it detected
+    # the line being absent, never the number being wrong.
+    sought = len(manual_abstract_set(project))
+    assert (int(total.group(1)), int(total.group(2))) == (1, sought)
+    assert re.search(r"already had full text\s+1\b", second.stdout), second.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__budget_capped_first_run__does_not_claim_records_already_had_full_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A budget cap must not be reported as prior coverage.
+
+    `records_attempted` is bounded by `--budget` as well as by prior
+    resolution, so deriving "already had full text" as
+    `considered - attempted` reports records as already fetched that have never
+    been touched. On a first-ever run of ten records with `--budget 1` the
+    derived version claimed nine already had full text and a running total of
+    nine of ten -- near-complete coverage, for a project holding nothing.
+
+    That is strictly worse than the bare "resolved 0" it replaced: that line
+    was uninformative, this one is false. The count is measured by the run
+    (`records_already_resolved`) precisely so this cannot happen, and the
+    fixture here is the only one that can tell the two apart.
+    """
+    from prismabib.prisma.engine import manual_abstract_set
+
+    monkeypatch.setenv("ELSEVIER_SD_API_KEY", "")
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "")
+
+    project = _screened_reference(tmp_path)
+    sought = len(manual_abstract_set(project))
+
+    result = runner.invoke(
+        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    # Nothing has ever been resolved for this project.
+    assert re.search(r"already had full text\s+0\b", result.stdout), result.stdout
+    assert re.search(rf"TOTAL with full text\s+0 of {sought}\b", result.stdout), result.stdout

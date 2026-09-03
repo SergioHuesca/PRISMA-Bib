@@ -150,4 +150,7 @@ def test_oa_pdf_candidates__many_locations__is_capped_and_deduplicated() -> None
 
     assert candidates[0] == shared
     assert len(candidates) == len(set(candidates))
-    assert len(candidates) <= 5
+    # `== 5`, not `<= 5`: downward drift is the harmful direction. `<= 5` passes
+    # with the cap set to 2, which is the "only one location tried" defect
+    # returning under a different name.
+    assert len(candidates) == 5

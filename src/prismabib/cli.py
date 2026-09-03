@@ -718,13 +718,17 @@ def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
         slug: The project slug, for the heading.
     """
     _echo(f"\nResolved full text for {slug}")
-    # `records_resolved` counts *this call*, and the difference between
-    # considered and attempted is records that already had full text and were
-    # skipped without re-spending anything. A resumed run that finds nothing new
-    # therefore prints "resolved 0" while the corpus may be most of the way
-    # done -- read plainly, that says the tool failed. The cumulative line is
-    # what the operator is actually asking about, so it is stated outright.
-    already_resolved = summary.records_considered - summary.records_attempted
+    # `records_resolved` counts *this call*. A resumed run that finds nothing
+    # new prints "resolved 0" while the corpus may be most of the way done --
+    # read plainly, that says the tool failed. The cumulative line is what the
+    # operator is actually asking about, so it is stated outright.
+    #
+    # `records_already_resolved` is measured by the run, never derived here as
+    # `considered - attempted`: a `--budget` cap shrinks `attempted` too, and
+    # the subtraction then reports records as already having full text that
+    # have never been fetched -- turning an under-informative line into an
+    # affirmatively false one.
+    already_resolved = summary.records_already_resolved
     _echo(f"  records considered      {summary.records_considered:>26,}")
     _echo(f"  already had full text   {already_resolved:>26,}")
     _echo(f"  records attempted       {summary.records_attempted:>26,}")

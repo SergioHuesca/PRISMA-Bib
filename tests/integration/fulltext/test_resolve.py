@@ -326,3 +326,44 @@ def test_openaccess__a_candidate_host_refuses__the_next_one_is_tried(tmp_path: P
 
     assert asset is not None
     assert asset.content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+@respx.mock
+def test_openaccess__a_candidate_host_is_unreachable__the_chain_continues(
+    tmp_path: Path,
+) -> None:
+    """A dead mirror costs that mirror, not the record's manual drop.
+
+    `httpx.ConnectError` is not an `UpstreamError`, so a narrower `except` let
+    it escape into `resolve_fulltext`'s outer handler, which abandons the whole
+    chain for the record -- meaning `ManualDropResolver` never ran and a PDF the
+    reviewer had fetched by hand was silently ignored. `follow_redirects=True`
+    adds two more of the same shape (`TooManyRedirects`, `UnsupportedProtocol`).
+    """
+    dead_url = "https://dead.example.org/paper.pdf"
+    respx.get(UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)).mock(
+        return_value=httpx.Response(200, json={"best_oa_location": {"url_for_pdf": dead_url}})
+    )
+    respx.get(dead_url).mock(side_effect=httpx.ConnectError("host is down"))
+
+    record_id = "scopus:2-s2.0-900000000003"
+    drop = manual_drop_path(tmp_path, record_id)
+    drop.parent.mkdir(parents=True, exist_ok=True)
+    drop.write_bytes(_MINIMAL_PDF)
+
+    oa_client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    with oa_client:
+        asset, attempts = resolve_fulltext(
+            record_id=record_id,
+            doi=_DOI,
+            resolvers=[
+                OpenAccessResolver(unpaywall_client=oa_client),
+                ManualDropResolver(fulltext_dir=tmp_path),
+            ],
+        )
+
+    # The manual drop is reached and wins -- the whole point.
+    assert asset is not None
+    assert asset.resolver_name == "manual"
+    assert [attempt.resolver_name for attempt in attempts] == ["openaccess", "manual"]
