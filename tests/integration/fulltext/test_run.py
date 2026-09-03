@@ -304,3 +304,41 @@ def test_run__resolver_raises_an_unexpected_exception__run_still_seals_and_keeps
     assert result.sealed, "the run must seal despite an unexpected resolver failure"
     assert is_sealed(run_dir)
     assert sorted(result.failed_record_ids) == sorted([record_a, _record_b])
+
+
+@pytest.mark.integration
+def test_build_store__fulltext_assets_table__stores_no_absolute_path(tmp_path: Path) -> None:
+    """Nothing machine-dependent may enter a checksummed table.
+
+    `fulltext_assets.path` once held an absolute filesystem path, so two clones
+    of identical Layer 0 bytes produced different table checksums -- falsifying
+    S03-AC1 and Stage 11's "a clean clone on a different machine reproduces
+    `numbers.json`" for any project that resolves any full text.
+
+    That was fixed, and then nothing tested it: reverting the fix left the
+    entire suite green. The reproducibility test that should have caught it
+    uses the reference project, which has **zero** full-text rows, so the
+    golden it compares is `sha256("")` for this table -- a checksum test
+    checksumming an empty table. This is the same degenerate-fixture pattern
+    §5 warns about, and the fourth time on this stage that a test passed
+    because the fixture could not contain the thing under test.
+
+    Modelled on `test_build_store__malformed_entries_table__stores_no_absolute_path`,
+    which already pins exactly this property for `malformed_entries.payload_file`.
+    """
+    project, record_a, _record_b = _build_project_with_two_included_records(tmp_path)
+    _drop_manual_pdf(project, record_a)
+    run_fulltext_resolution(project, settings=_settings())
+    build_store(project, rebuild=True)
+
+    connection = connect(project, read_only=True)
+    try:
+        rows = connection.execute("SELECT * FROM fulltext_assets").fetchall()
+    finally:
+        connection.close()
+
+    cells = [str(cell) for row in rows for cell in row]
+
+    assert rows, "guard the guard: an empty table would make this vacuously true"
+    assert not [cell for cell in cells if str(tmp_path) in cell]
+    assert not [cell for cell in cells if cell.startswith(("/", "\\")) or ":\\" in cell]

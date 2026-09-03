@@ -114,6 +114,11 @@ CREATE TABLE record_subject_area_coverage (
 -- because this table is rebuilt from those runs (ADR 0019 Decision 0). A
 -- record whose only rows are refusals is deliberately re-attempted: a fresh
 -- token or a newly dropped PDF can change the answer.
+-- `path` is **run-relative** (`<run_id>/assets/<digest>.pdf`), never absolute:
+-- this table is checksummed, and an absolute path would make the digest a
+-- function of where the project sits on disk -- the same reason
+-- `malformed_entries.payload_file` is relative. Resolve it against
+-- `project.fulltext_dir / 'runs'`.
 CREATE TABLE fulltext_assets (
   record_id TEXT, resolver_name TEXT, media_type TEXT, path TEXT,
   retrieved_at TIMESTAMP, entitled BOOLEAN,
@@ -122,8 +127,12 @@ CREATE TABLE fulltext_assets (
 
 -- Added by ADR 0019, not part of the frozen BUILD_PLAN schema. `position` preserves
 -- document order -- section names alone cannot say "methods" came before "results"
--- -- and `low_confidence` is per section rather than per document because one record
--- can carry sections from more than one source document; it is set when
+-- -- and `low_confidence` is per section rather than per document because
+-- confidence varies *within* one document: a PDF whose body carries a text
+-- layer and whose scanned appendix does not should flag the appendix alone.
+-- (Not because one record can carry sections from two source documents -- it
+-- cannot: first-hit-wins gives a record one resolved asset, and the primary key
+-- would collide anyway. ADR 0019 retracted that reason.) It is set when
 -- `pdfplumber` finds no text layer for a PDF section. No OCR is attempted: the flag
 -- exists so a human reads that section instead.
 CREATE TABLE fulltext_sections (

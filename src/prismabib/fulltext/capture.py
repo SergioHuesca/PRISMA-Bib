@@ -270,6 +270,16 @@ def _iter_attempt_rows(attempts_path: Path) -> list[dict[str, Any]]:
             try:
                 parsed = json.loads(stripped)
             except json.JSONDecodeError:
+                # Logged, not silent. `capture_fulltext` rebuilds
+                # `attempts.jsonl` from this function's return value, so a
+                # dropped line is *deleted* from Layer 0 on the next resume --
+                # the one place in this module where tolerance destroys data
+                # rather than skipping it. Its Layer 1 twin
+                # (`store.load._load_fulltext_run`) warns for the same reason.
+                logger.warning(
+                    "fulltext.attempts.unparsable_line",
+                    attempts_path=str(attempts_path),
+                )
                 continue
             if isinstance(parsed, dict):
                 rows.append(parsed)

@@ -595,7 +595,8 @@ def default_chain(
             content and must never sit anywhere near the Layer 0 archive,
             per ``project.fulltext_dir``'s own docstring and ADR 0019).
         settings: The environment configuration. Defaults to
-            ``Settings()`` when omitted.
+            :class:`~prismabib.config.FullTextSettings` when omitted -- see
+            the note below for why not :class:`~prismabib.config.Settings`.
 
     Yields:
         The chain, in BUILD_PLAN order (ScienceDirect, open access, manual

@@ -502,7 +502,12 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
             "map to an ISO 3166-1 alpha-3 code and are stored as the original text: "
             + ", ".join(repr(value) for value in stats.unmapped_country_values)
         )
-    if stats.fulltext_runs_loaded:
+    # `fulltext_assets_loaded` as well as `fulltext_runs_loaded`, because only
+    # the first is a table count. `fulltext_runs_loaded` is passed through the
+    # load and is 0 on the reuse path, so gating on it alone made this whole
+    # block vanish there -- taking the `else` branch below with it, which then
+    # described behaviour the code did not have.
+    if stats.fulltext_runs_loaded or stats.fulltext_assets_loaded:
         _echo(
             f"  {stats.fulltext_runs_loaded:,} full-text run(s) loaded (prismabib fulltext), "
             f"giving {stats.fulltext_assets_loaded:,} asset row(s) and "

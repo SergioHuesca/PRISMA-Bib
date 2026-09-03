@@ -352,6 +352,12 @@ def test_cli_fulltext__manual_drop__resolves_and_reports_a_sealed_layer0_run(
     result = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
 
     assert result.exit_code == 0
+    # `resolve_fulltext` catches `Exception` so one record's failure costs one
+    # record -- which also swallows `pytest_socket.SocketBlockedError`, a
+    # `RuntimeError`. Without this assertion a test that reached the network
+    # would still pass, recording the block as a per-record failure and leaving
+    # "no live API calls" to whoever happens to read stderr.
+    assert "unexpected error mid-chain" not in result.stdout
     assert f"Resolved full text for {project.slug}" in result.stdout
     assert "records attempted" in result.stdout
     assert "resolved, by resolver:" in result.stdout
@@ -384,6 +390,12 @@ def test_cli_fulltext__budget_of_zero_records__reports_unsealed(
     )
 
     assert result.exit_code == 0
+    # `resolve_fulltext` catches `Exception` so one record's failure costs one
+    # record -- which also swallows `pytest_socket.SocketBlockedError`, a
+    # `RuntimeError`. Without this assertion a test that reached the network
+    # would still pass, recording the block as a per-record failure and leaving
+    # "no live API calls" to whoever happens to read stderr.
+    assert "unexpected error mid-chain" not in result.stdout
     assert re.search(r"records attempted\s+1\b", result.stdout)
     assert "Run is UNSEALED" in result.stdout
 

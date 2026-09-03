@@ -126,7 +126,7 @@ def run_fulltext_resolution(
             large run should never look like it is making no progress
             because the budget was spent re-confirming old successes.
         settings: The environment configuration to build the resolver chain
-            from. Defaults to ``Settings()`` (via
+            from. Defaults to ``FullTextSettings()`` (via
             :func:`~prismabib.fulltext.resolve.default_chain`) when
             omitted. Exposed primarily so a test can inject one without
             touching the real environment.
@@ -142,10 +142,12 @@ def run_fulltext_resolution(
             there is nothing to resolve (an explicitly empty ``record_ids``,
             or an empty ``manual_abstract_set``).
         ConfigError: If ``project.criteria.yaml`` cannot be read, or if
-            ``Settings()`` cannot be constructed (``SCOPUS_API_KEY`` missing
-            -- required unconditionally by
-            :class:`~prismabib.config.Settings`, even though this function
-            itself never calls Scopus).
+            :class:`~prismabib.config.FullTextSettings` cannot be read.
+            It declares no required secret -- resolving full text needs an
+            Elsevier key, an Unpaywall contact, or neither (the chain then
+            degrades to the manual drop), and never needs ``SCOPUS_API_KEY``.
+            Requiring the Scopus key here once made ``prismabib fulltext``
+            fail for a reviewer with their own PDFs and no subscription.
         StoreError: If no Layer 1 store exists yet for ``project``, or if
             one exists but predates ``fulltext_assets``/``fulltext_sections``
             (a pre-v0.16 store) -- the actionable
