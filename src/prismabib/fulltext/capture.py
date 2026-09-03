@@ -265,7 +265,12 @@ def _iter_attempt_rows(attempts_path: Path) -> list[dict[str, Any]]:
             stripped = line.strip()
             if not stripped:
                 continue
-            parsed = json.loads(stripped)
+            # Same tolerance as the Layer 1 loader: a damaged line must not
+            # break resumption and force the whole run to be re-paid for.
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
             if isinstance(parsed, dict):
                 rows.append(parsed)
     return rows

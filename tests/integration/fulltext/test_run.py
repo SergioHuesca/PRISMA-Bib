@@ -24,9 +24,10 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from prismabib.capture.layout import is_sealed
 from prismabib.config import Settings
 from prismabib.errors import StoreError, ValidationError
-from prismabib.fulltext.capture import already_resolved_record_ids
+from prismabib.fulltext.capture import RUNS_DIRNAME, already_resolved_record_ids, capture_fulltext
 from prismabib.fulltext.resolve import manual_drop_path
 from prismabib.fulltext.run import run_fulltext_resolution
 from prismabib.prisma.log import DecisionLog
@@ -258,3 +259,48 @@ def test_run__explicit_record_ids_on_pre_v016_store__raises_actionable_store_err
         run_fulltext_resolution(
             project, record_ids=["scopus:2-s2.0-85100000401"], settings=_settings()
         )
+
+
+class _RaisesUnicodeError:
+    """A resolver whose failure is neither ``PrismabibError`` nor a transport error.
+
+    ``idna.IDNAError`` is a ``UnicodeError``, and ``httpx`` raises it on a URL
+    whose host label is empty or over 63 characters -- a URL that arrives
+    verbatim from Unpaywall's ``best_oa_location``, which is untrusted
+    third-party data. ``OSError`` from a manual-drop file that passes
+    ``is_file()`` and then fails to open reaches the same boundary.
+    """
+
+    name = "explodes"
+
+    def resolve(self, *, record_id: str, doi: str | None) -> None:
+        raise UnicodeError(f"malformed host label for {record_id} ({doi})")
+
+
+@pytest.mark.integration
+def test_run__resolver_raises_an_unexpected_exception__run_still_seals_and_keeps_prior_work(
+    tmp_path: Path,
+) -> None:
+    """One record's unexpected failure costs one record, not the whole run.
+
+    The per-record boundary catches ``Exception`` rather than a curated tuple,
+    because what it defends is *scope*: anything a resolver can raise must stop
+    at the record. Before that, an escaping ``UnicodeError`` aborted the loop
+    **before the manifest was written** -- so nothing sealed, every refusal
+    already recorded was lost, and the resumed run matched the same target
+    digest and died on the same record forever, unable ever to seal.
+    """
+    project, record_a, _record_b = _build_project_with_two_included_records(tmp_path)
+    _drop_manual_pdf(project, record_a)
+
+    result = capture_fulltext(
+        project,
+        pending_ids=[record_a, _record_b],
+        doi_by_record_id={record_a: None, _record_b: None},
+        resolvers=[_RaisesUnicodeError()],
+    )
+
+    run_dir = project.fulltext_dir / RUNS_DIRNAME / result.manifest.run_id
+    assert result.sealed, "the run must seal despite an unexpected resolver failure"
+    assert is_sealed(run_dir)
+    assert sorted(result.failed_record_ids) == sorted([record_a, _record_b])

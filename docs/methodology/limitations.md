@@ -118,7 +118,10 @@ for every record in `M_abs` (the set advanced to full-text screening):
 2. **Unpaywall** — a DOI-keyed lookup for a legitimate open-access copy, wherever one
    happens to be hosted (an institutional repository, a preprint server, the publisher's
    own site under an OA licence).
-3. **A manual drop** — `projects/<slug>/fulltext/manual/<record_id>.pdf`, for whatever a
+3. **A manual drop** — `projects/<slug>/fulltext/manual/<record_id>.pdf`, with `:` replaced
+   by `_` in the filename (so `scopus:2-s2.0-85100000201` is dropped as
+   `scopus_2-s2.0-85100000201.pdf`; a colon cannot appear in a Windows filename), for
+   whatever a
    reviewer's own institutional access can obtain outside prismabib.
 
 Every attempt, hit or miss, is sealed into a Layer 0 run under

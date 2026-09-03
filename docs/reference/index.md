@@ -343,6 +343,14 @@ Elsevier skew visible in the output rather than hidden in the method. See
       show_source: true
       members_order: source
 
+### fulltext.capture
+
+::: prismabib.fulltext.capture
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ### fulltext.run
 
 ::: prismabib.fulltext.run

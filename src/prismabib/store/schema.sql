@@ -109,7 +109,11 @@ CREATE TABLE record_subject_area_coverage (
 -- `entitled IS NULL` (no open-access copy, no manual drop, HTTP 404) -- conflating
 -- the two is the corpus bias this stage exists to prevent. `path`/`media_type` are
 -- NULL when an attempt yielded no asset; a resolver is never re-attempted for a
--- record that already has a row here (the primary key is the resumption key).
+-- record that already has a *resolved* attempt in a sealed Layer 0 run --
+-- resumption reads `fulltext/runs/<run_id>/attempts.jsonl`, not this table,
+-- because this table is rebuilt from those runs (ADR 0019 Decision 0). A
+-- record whose only rows are refusals is deliberately re-attempted: a fresh
+-- token or a newly dropped PDF can change the answer.
 CREATE TABLE fulltext_assets (
   record_id TEXT, resolver_name TEXT, media_type TEXT, path TEXT,
   retrieved_at TIMESTAMP, entitled BOOLEAN,

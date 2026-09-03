@@ -313,17 +313,27 @@ def looks_like_pdf(content: bytes, content_type: str | None) -> bool:
             file, have no HTTP response to draw one from at all).
 
     Returns:
-        ``False`` immediately if ``content_type`` is present and, once its
-        parameters (``; charset=...``) are stripped, does not mention
-        ``"pdf"`` -- ``"text/html"`` is the landing-page case this function
-        exists to catch. Otherwise, ``True`` iff :data:`_PDF_MAGIC` appears
-        within the first :data:`_PDF_SNIFF_WINDOW` bytes of ``content``: the
-        one signal that is authoritative regardless of what (or whether) a
-        server claimed about the content type.
+        ``True`` iff :data:`_PDF_MAGIC` appears within the first
+        :data:`_PDF_SNIFF_WINDOW` bytes of ``content`` **and** the content
+        type, if any, is not an explicitly textual one.
+
+    The magic bytes decide; the content type may only veto, and only when it
+    positively claims text. An earlier version required the type to mention
+    ``"pdf"`` and rejected everything else before ever looking at the bytes --
+    which rejected real PDFs served as ``application/octet-stream``,
+    ``binary/octet-stream`` or ``application/force-download``, exactly how
+    DSpace and EPrints bitstream endpoints serve them.
+
+    That failure is worse than the landing-page bug this function exists to
+    catch. A landing page accepted as a PDF is visible: zero sections extract
+    and the text is obviously not there. Obtainable open-access text rejected
+    is invisible, and it is *misreported* -- the record falls through the
+    chain and is counted "Not found" in the coverage table, understating what
+    was available in the one artefact whose job is to not misstate coverage.
     """
     if content_type is not None:
         normalised = content_type.split(";", 1)[0].strip().casefold()
-        if normalised and "pdf" not in normalised:
+        if normalised.startswith("text/") or "html" in normalised or "xml" in normalised:
             return False
     return _PDF_MAGIC in content[:_PDF_SNIFF_WINDOW]
 

@@ -119,7 +119,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-import httpx
 import structlog
 
 from prismabib.capture.layout import CACHE_DIRNAME
@@ -370,7 +369,20 @@ def resolve_fulltext(
                 )
             )
             continue
-        except (PrismabibError, httpx.TransportError) as exc:
+        # Deliberately `Exception`, not a curated tuple. This frame owns the
+        # promise that one record's failure costs one record, and the axis it
+        # defends on is *scope*, not exception type: anything a resolver can
+        # raise must stop at the record, or a single bad input kills the run.
+        #
+        # A narrower tuple was tried and was not enough. `idna.IDNAError`
+        # (a `UnicodeError`, not an `httpx.TransportError`) escapes on an OA URL
+        # whose host label is malformed -- a URL that arrives verbatim from
+        # Unpaywall, i.e. untrusted third-party data -- and `OSError` escapes
+        # from `ManualDropResolver`'s `read_bytes` when a file passes
+        # `is_file()` and then fails to open. Either aborts the run *before the
+        # manifest is written*, so nothing seals, every recorded refusal is
+        # lost, and the resumed run dies on the same record forever.
+        except Exception as exc:
             logger.warning(
                 "fulltext.resolver.failed",
                 record_id=record_id,

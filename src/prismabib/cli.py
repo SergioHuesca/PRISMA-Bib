@@ -502,6 +502,23 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
             "map to an ISO 3166-1 alpha-3 code and are stored as the original text: "
             + ", ".join(repr(value) for value in stats.unmapped_country_values)
         )
+    if stats.fulltext_runs_loaded:
+        _echo(
+            f"  {stats.fulltext_runs_loaded:,} full-text run(s) loaded (prismabib fulltext), "
+            f"giving {stats.fulltext_assets_loaded:,} asset row(s) and "
+            f"{stats.fulltext_sections_loaded:,} extracted section(s)."
+        )
+        # Same reasoning as the unmatched-abstract line below: this is the
+        # operator's only confirmation that a resolution run reached Layer 1,
+        # and `unmatched_fulltext_record_ids` has no table behind it, so a line
+        # printed only when non-empty cannot be told from the silence of the
+        # reuse path.
+        _echo(
+            f"  {len(stats.unmatched_fulltext_record_ids):,} full-text record(s) not in "
+            "this store's records table."
+            if stats.rebuilt
+            else "  (whether any full-text record was skipped is only reported with --rebuild.)"
+        )
     if stats.abstract_runs_loaded:
         _echo(
             f"  {stats.abstract_runs_loaded:,} abstract-retrieval run(s) loaded "
@@ -661,7 +678,10 @@ def fulltext(
     \b
       1. ScienceDirect  -- entitled Elsevier content, XML via Article Retrieval
       2. Open access     -- DOI -> OA location (Unpaywall), PDF fetch
-      3. Manual drop      -- projects/<slug>/fulltext/manual/<record_id>.pdf
+      3. Manual drop      -- projects/<slug>/fulltext/manual/<record_id>.pdf,
+                            with `:` replaced by `_` in the filename
+                            (scopus_2-s2.0-85100000201.pdf): a colon cannot
+                            appear in a Windows filename
 
     A ScienceDirect refusal (HTTP 403) is recorded as an entitlement gap and
     the chain moves on to the next resolver -- it never marks a record

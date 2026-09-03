@@ -1618,7 +1618,20 @@ def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
             stripped = raw_line.strip()
             if not stripped:
                 continue
-            row = json.loads(stripped)
+            # Guarded, because this function's own docstring promises it: "one
+            # damaged line must not make the rest of a run -- or the rest of the
+            # corpus -- unloadable", the principle ADR 0012 applies to malformed
+            # search entries. An unguarded `json.loads` here turned a single
+            # truncated write into a raw JSONDecodeError from `build_store`.
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "store.load.fulltext_attempt_unparsable",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
             if not isinstance(row, dict):
                 logger.warning(
                     "store.load.fulltext_attempt_not_an_object",
@@ -1648,25 +1661,46 @@ def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
             media_type = row.get("media_type")
             asset_file = row.get("asset_file")
             entitled = row.get("entitled")
-            retrieved_at = _as_naive_utc(datetime.fromisoformat(row["retrieved_at"]))
+            raw_retrieved_at = row.get("retrieved_at")
+            try:
+                retrieved_at = _as_naive_utc(datetime.fromisoformat(str(raw_retrieved_at)))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "store.load.fulltext_attempt_bad_timestamp",
+                    run_id=manifest.run_id,
+                    line=line_index,
+                )
+                continue
 
-            asset_path: Path | None = None
+            # Run-relative, never absolute. `fulltext_assets` is checksummed
+            # (`store/checksums.py`), so an absolute path makes the digest a
+            # function of where the project happens to sit on disk -- two
+            # clones of identical Layer 0 bytes produce different checksums,
+            # falsifying S03-AC1 and Stage 11's "a clean clone on a different
+            # machine reproduces numbers.json". `malformed_entries.payload_file`
+            # already stores `<run_id>/<file>` for exactly this reason; resolve
+            # against `project.fulltext_dir / RUNS_DIRNAME` at read time.
+            asset_path: str | None = None
             if isinstance(asset_file, str) and asset_file:
-                asset_path = run_dir / asset_file
+                asset_path = f"{run_dir.name}/{asset_file}"
 
             acc.fulltext_assets[(record_id, resolver_name)] = (
                 record_id,
                 resolver_name,
                 media_type if isinstance(media_type, str) else None,
-                str(asset_path) if asset_path is not None else None,
+                asset_path,
                 retrieved_at,
                 entitled if isinstance(entitled, bool) else None,
             )
 
             if asset_path is not None:
+                # The *absolute* path here, deliberately: extraction has to open
+                # the file. Only the value written to `fulltext_assets` is
+                # run-relative, because that one is checksummed and must not
+                # depend on where the project sits on disk.
                 acc.fulltext_resolved_assets[record_id] = (
                     media_type if isinstance(media_type, str) else None,
-                    asset_path,
+                    run_dir / str(asset_file),
                 )
 
 

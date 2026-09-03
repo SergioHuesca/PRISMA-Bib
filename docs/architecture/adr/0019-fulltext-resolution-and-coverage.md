@@ -71,6 +71,14 @@ quota.
 `fulltext/manual/<record_id>.pdf` stays where BUILD_PLAN puts it — an operator drop-box, not a
 run — and a resolution run that consumes one records the fact in its own `attempts.jsonl`.
 
+One deviation from BUILD_PLAN's literal path, and it must be stated wherever the path is:
+`:` becomes `_` in the filename, so `scopus:2-s2.0-85100000201` is dropped as
+`scopus_2-s2.0-85100000201.pdf`. A colon cannot appear in a Windows filename, and this
+project has a `full-windows` CI job. The sanitisation is invisible until someone follows the
+unsanitised instruction, at which point their file is silently never found and the record is
+reported "not found" in a coverage table whose whole purpose is to not overstate what was
+obtainable — so the *documented* path is the load-bearing half of this decision.
+
 ### 1. `fulltext_assets` holds one row per resolver *attempt*, not per asset
 
 ```sql
@@ -114,9 +122,14 @@ CREATE TABLE fulltext_sections (
 
 `position` preserves document order, which section names alone cannot: a reader comparing
 "methods" across papers needs to know it came before "results". `low_confidence` is per
-section rather than per document because a ScienceDirect XML document and a scanned PDF can
-both contribute to one record; flagging the document would either over- or under-claim. It is
-set when `pdfplumber` finds no text layer. **No OCR** — the flag exists so a human reads that
+section rather than per document because confidence varies *within* one document: a PDF whose
+body carries a text layer and whose scanned appendix does not should flag the appendix alone.
+It is set when `pdfplumber` finds no text layer.
+
+*(An earlier draft justified this by an XML document and a scanned PDF both contributing to
+one record. They cannot: first-hit-wins gives a record one resolved asset, and
+`(record_id, position)` would collide anyway. The decision is right; that reason was not, and
+it would have told a future author that multi-source records are supported.)* **No OCR** — the flag exists so a human reads that
 paper, per BUILD_PLAN.
 
 ### 3. Publisher is derived from the DOI registrant prefix, never from the resolver
