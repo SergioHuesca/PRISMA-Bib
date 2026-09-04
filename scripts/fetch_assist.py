@@ -144,9 +144,11 @@ def _poll_for_new_pdfs(
             an unrelated session must never be picked up as this batch's
             result.
         expected: How many new PDFs this batch could plausibly still
-            produce (the size of the still-unmatched candidate set). Polling
-            stops early once this many have been found stable, rather than
-            always waiting out the full timeout.
+            produce -- the number of tabs actually **opened**, not the size of
+            the candidate set. A record with no DOI gets no tab, so counting
+            candidates would make any such record force the session to wait
+            out the whole timeout for a download that was never invited.
+            Polling stops early once this many have been found stable.
         timeout: The overall time budget, in seconds, from the first poll.
         poll_interval: Seconds between directory scans.
         stability_checks: How many consecutive equal, non-zero size readings

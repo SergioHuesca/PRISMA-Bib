@@ -114,11 +114,32 @@ publishers' terms, and the blast radius of that is the institution's access, not
 
 Identification tries the DOI on page 1 first, then token containment against the record's
 title, and requires a **margin** over the runner-up. Measured against the six PDFs already
-fetched: DOI matched 2 of 6, title containment matched 5 of 6 confidently, and the sixth was
-correctly refused — two near-identical baseball-video titles, runner-up at 0.92.
+fetched, **as one fixed six-candidate batch**: DOI matched 2 of 6, title containment matched 5
+of 6 confidently, and the sixth was correctly refused — two near-identical baseball-video
+titles, runner-up at 0.92. The measurement does not carry over to a session's *last* file,
+which is a batch of one and therefore always prompts under the rule below; it justifies the
+thresholds, not an expected prompt rate.
 
 That refusal is the feature. A wrong match is silent, durable, and produces a review whose
 full-text assessment was performed on the wrong paper.
+
+**A lone candidate is never confident by title alone**, and this is not a detail. Title
+containment measures whether a title's words appear on a page, not whether the page *is* that
+paper — a references section carries whole titles verbatim. The margin over a rival is the
+only thing separating those two readings, so with no rival there is nothing to lean on. This
+matters constantly rather than rarely: each filed record leaves the candidate set, so the last
+paper of every session is a batch of one. Before this rule, a different paper's page one and
+a page merely *citing* a one-word title both filed unattended.
+
+**The residual risk this leaves, named rather than discovered later.** A DOI match stays
+confident with one candidate, because a DOI is an exact identifier rather than a similarity
+score — which makes it the only route to unattended filing on the last file of a session. But
+page-one scanning cannot distinguish a DOI a document *carries* from one it merely *prints*:
+an erratum reading "This corrects the article <DOI>", or a supplementary-material PDF with the
+article's DOI in its header, both match confidently. The exposure is bounded — the operator
+chose the download, and reads the full text at eligibility — but "unambiguous by construction"
+is true of a DOI belonging to a document and false of one appearing on its first page, and the
+distinction should not have to be rediscovered.
 
 ## Alternatives rejected
 

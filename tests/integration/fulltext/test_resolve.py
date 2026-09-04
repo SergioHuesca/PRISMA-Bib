@@ -721,3 +721,50 @@ def test_crossref_tdm__record_without_a_doi__is_skipped_with_no_request() -> Non
 
     assert asset is None
     assert route.call_count == 0
+
+
+@pytest.mark.integration
+def test_crossref_tdm__first_link_refused__the_next_link_still_resolves() -> None:
+    """A 403 on one TDM link costs that link, not the record's other links.
+
+    Reverting this to the old `raise` left 70 tests passing: the single-link
+    403 test ends in `EntitlementError` under both behaviours, so nothing
+    distinguished them. The change was entirely unpinned.
+
+    Two numbers move the wrong way without it. A paper that was reachable goes
+    unfetched, understating coverage; and the "Refused (entitlement gap)"
+    column books a refusal against a resolver whose *other* candidate would
+    have succeeded, overstating the gap. Both are the coverage table
+    misstating what happened, which ADR 0019 exists to prevent.
+    """
+    refused_url = "https://api.wiley.com/onlinelibrary/tdm/v1/articles/x"
+    good_url = "https://link.springer.com/content/pdf/10.1007/x.pdf"
+    with respx.mock:
+        respx.get(_CROSSREF_ENDPOINT).mock(
+            return_value=httpx.Response(
+                200,
+                json=_tdm_response(
+                    {"URL": refused_url, "intended-application": "text-mining"},
+                    {"URL": good_url, "intended-application": "text-mining"},
+                ),
+            )
+        )
+        refused = respx.get(refused_url).mock(return_value=httpx.Response(403))
+        good = respx.get(good_url).mock(
+            return_value=httpx.Response(
+                200, headers={"content-type": "application/pdf"}, content=_MINIMAL_PDF
+            )
+        )
+        client = CrossrefTdmClient(
+            _settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS)
+        )
+        with client:
+            asset = CrossrefTdmResolver(crossref_client=client).resolve(
+                record_id=_RECORD_ID, doi=_DOI
+            )
+
+    # The refusal was really attempted, and the next link really served the PDF.
+    assert refused.call_count == 1
+    assert good.call_count == 1
+    assert asset is not None
+    assert asset.content == _MINIMAL_PDF

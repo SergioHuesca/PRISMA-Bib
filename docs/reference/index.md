@@ -66,6 +66,19 @@ The §3.3 exception taxonomy.
       show_source: true
       members_order: source
 
+## asjc
+
+The checked-in ASJC table mapping a four-digit subject-area code to its four-letter
+grouping. Layer 1 stores Scopus's `@code`; `criteria.yaml` declares the grouping, and
+comparing them raw makes the subject-area filter *invert* rather than under-match —
+[ADR 0017](../architecture/adr/0017-subject-areas-match-by-asjc-grouping.md).
+
+::: prismabib.asjc
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ## countries
 
 The checked-in ISO 3166-1 alpha-3 mapping table. An unmapped string is preserved verbatim

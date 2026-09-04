@@ -617,9 +617,10 @@ class CrossrefTdmResolver:
             )
         if any_link_refused:
             raise EntitlementError(
-                f"every text-mining link tried for {record_id!r} that this resolver "
-                "attempted was refused (HTTP 403); recorded as an entitlement gap "
-                "rather than an absent paper (ADR 0019, ADR 0020)."
+                f"no text-mining link for {record_id!r} yielded a PDF, and at least "
+                "one was refused (HTTP 403); recorded as an entitlement gap rather "
+                "than an absent paper (ADR 0019, ADR 0020). Other links may have "
+                "failed for other reasons -- a dead host, or a non-PDF body."
             )
         return None
 
