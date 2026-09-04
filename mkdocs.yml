@@ -106,6 +106,7 @@ nav:
           - "ADR 0019: full-text resolution and coverage": architecture/adr/0019-fulltext-resolution-and-coverage.md
           - "ADR 0020: Crossref TDM and assisted manual fetch": architecture/adr/0020-crossref-tdm-and-assisted-manual-fetch.md
           - "ADR 0021: entitlement refusals are attributed to a publisher": architecture/adr/0021-entitlement-refusals-are-attributed-to-a-publisher.md
+          - "ADR 0022: the AnalysisResult contract and its provenance": architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

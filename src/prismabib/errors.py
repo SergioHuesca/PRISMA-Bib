@@ -11,7 +11,8 @@ PrismabibError
 │   └── UpstreamError        # 5xx
 ├── StoreError
 ├── LogError                 # append-only violation, schema drift
-└── ValidationError
+├── ValidationError
+└── AnalysisError            # a bibliometric result would be a wrong number, not a number
 ```
 
 **On the ``ValidationError`` name collision.** Pydantic v2 also defines
@@ -97,4 +98,15 @@ class ValidationError(PrismabibError):
 
     See the module docstring for how this relates to, and must be kept
     distinct from, ``pydantic.ValidationError``.
+    """
+
+
+class AnalysisError(PrismabibError):
+    """A :mod:`prismabib.bibliometrics` metric is degenerate for its input.
+
+    Raised instead of returning a number, per ADR 0022 Decision 3: a growth
+    rate over zero start value or a single year is not a smaller or stranger
+    number, it is not a number at all, and returning one (``inf``, or a
+    naive figure computed by silently dropping the offending input) is
+    exactly the "plausible wrong number" BUILD_PLAN §1.4 exists to prevent.
     """

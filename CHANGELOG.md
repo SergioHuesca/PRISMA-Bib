@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A partial publication year is now marked wherever it is shown, not only where it is
+  excluded** (ADR 0022 Decision 3b). `annual_counts` carries an `is_partial` column and puts
+  `first_incomplete_year` in `params`; both derive from `runs.started_at`, never the wall
+  clock. Found by measuring on the reference corpus, where the frame behind the
+  publication-trend figure read `2025: 153, 2026: 139, 2027: 1` with nothing to say that the
+  corpus was captured on 2 September 2026 and that 2027 is a single ahead-of-print record.
+  Plotted, that is a visible decline which does not exist. CAGR excluded both years and was
+  right; the figure a reader actually looks at showed both and said nothing. Stage 9 cannot
+  repair it, since its figure functions are forbidden to compute, so the flag has to live in
+  the frame.
+
+  `cagr`'s caption now also states `year_start`, `year_end`, `span_years`, `v_start` and
+  `v_end`. They were already in `data`, but the caption is the sentence that reaches a
+  manuscript, and on the reference corpus the rate is 13.8% anchored on a single 1986 paper.
+
+- **The bibliometrics engine** (BUILD_PLAN Stage 7): `src/prismabib/bibliometrics/` --
+  `trends.py` (annual counts, CAGR), `geography.py` (country counts and citation impact,
+  `full`/`fractional` counting), `venues.py` (top venues after name normalisation,
+  venue-type split), `citations.py` (citation statistics including h-index, by-year
+  averages), `keywords.py` (frequency and year-by-year evolution, project-overridable
+  stopwords), `network.py` (keyword co-occurrence and co-authorship graphs, seeded Louvain
+  clustering, VOSviewer export). Every public function returns an `AnalysisResult` --
+  `data`, `params`, and a `Provenance` (corpus size, PRISMA stage, retrieved-at, sealed
+  run ids, criteria versions, citation snapshot) -- with a generated `caption()`, per
+  [ADR 0022](docs/architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md).
+- `Corpus.venues`, `Corpus.affiliations`, `Corpus.authors` -- the frozen Stage 3 `Corpus`
+  contract's first amendment (ADR 0022 Decision 9), following `Corpus.records`/`Corpus.keywords`'s
+  own PRISMA-stage delegation exactly.
+
+### Changed
+
+- **`report/numbers.py::_venue_numbers`/`report/tables.py::top_venues_table` and
+  `report/numbers.py::_citation_numbers` now delegate to the bibliometrics engine**
+  (ADR 0022 Decision 5) instead of each running its own query. `venues.total` and the
+  top-venues table now group by a normalised venue name (casefold, collapsed whitespace, a
+  stripped leading "The", a stripped trailing parenthetical *when it is purely a year*,
+  unified `&`/`and`) rather than by Scopus's exact `name` string.
+
+  **Measured on the reference corpus: nothing moved.** `venues.total` 769 → 769, every
+  `citations.*` key identical, no golden changed -- not one rule fires on any of its 769
+  venue names. The variants that corpus actually carries are conference editions ("...
+  WACV 2020" beside "... WACV 2024"), which the rules cannot reach by design, because the
+  difference is a year and not formatting. The value delivered is therefore the
+  *delegation* -- one definition of "a venue" shared by `numbers.json`, the top-venues
+  table and the bibliometrics engine, so they cannot disagree -- and not a deduplication
+  effect. `venues.total` counts distinct venue name strings, with a recurring conference
+  appearing once per edition; recorded as a limitation, with folding left to a future
+  declared normalisation mode.
+
 ## [0.18.0] — 2026-09-04
 
 ### Fixed

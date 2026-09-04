@@ -22,11 +22,14 @@ appearance a reviewable diff rather than a surprise.
 from __future__ import annotations
 
 import dataclasses
-import statistics
 from typing import TYPE_CHECKING, Any
 
+from prismabib.bibliometrics.citations import citation_statistics
+from prismabib.bibliometrics.venues import top_venues
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
+from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
+from prismabib.store.load import Corpus
 
 if TYPE_CHECKING:
     import duckdb
@@ -106,47 +109,71 @@ def _corpus_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
     }
 
 
-def _citation_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
+#: Passed as ``top_n`` to :func:`~prismabib.bibliometrics.venues.top_venues`
+#: when this module needs *every* normalised venue group (to count
+#: ``venues.total``), not just the top :data:`TOP_N`. Large enough that no
+#: real corpus has more distinct venues than this to truncate -- if one
+#: ever did, ``venues.total`` would undercount, which is why this is a named
+#: constant rather than a magic number at the call site.
+_ALL_VENUES = 1_000_000
+
+
+def _citation_numbers(corpus: Corpus) -> dict[str, Any]:
     """Citation statistics over the latest snapshot per record.
 
+    ADR 0022 Decision 5: delegates to
+    :func:`~prismabib.bibliometrics.citations.citation_statistics` (over
+    :attr:`~prismabib.stage.PrismaStage.RAW`, matching this function's
+    historical unfiltered scope -- see :func:`_venue_numbers`) rather than
+    re-querying ``citation_snapshots``, so ``numbers.json`` and a Stage 7
+    citation table can never disagree about the same corpus's statistics.
+
     Args:
-        connection: An open, read-only Layer 1 connection.
+        corpus: A :class:`~prismabib.store.load.Corpus` over ``project``'s
+            store.
 
     Returns:
-        ``citations.*`` keys. The median is computed in Python from the
-        retrieved column rather than in SQL, so its tie-breaking is the one
-        :mod:`statistics` documents rather than one that varies with the
-        engine's percentile implementation.
+        ``citations.*`` keys, a subset of
+        :func:`~prismabib.bibliometrics.citations.citation_statistics`'s
+        row -- the fields this file has always published, kept stable so
+        no manuscript key silently vanishes.
     """
-    rows = connection.execute(
-        """
-        SELECT cited_by_count FROM citation_snapshots s
-        WHERE s.retrieved_at = (
-            SELECT max(retrieved_at) FROM citation_snapshots t WHERE t.record_id = s.record_id
-        )
-        """
-    ).fetchall()
-    counts = sorted(int(r[0]) for r in rows)
-    if not counts:
-        return {
-            "citations.records_with_a_snapshot": 0,
-            "citations.total": 0,
-            "citations.median": 0.0,
-            "citations.max": 0,
-        }
+    result = citation_statistics(corpus, stage=PrismaStage.RAW)
+    row = result.data.row(0, named=True)
     return {
-        "citations.records_with_a_snapshot": len(counts),
-        "citations.total": sum(counts),
-        "citations.median": float(statistics.median(counts)),
-        "citations.max": counts[-1],
+        "citations.records_with_a_snapshot": int(row["records_with_a_snapshot"]),
+        "citations.total": int(row["total"]),
+        "citations.median": float(row["median"]),
+        "citations.max": int(row["max"]),
     }
 
 
-def _venue_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
-    """The top :data:`TOP_N` venues by record count.
+def _venue_numbers(corpus: Corpus) -> dict[str, Any]:
+    """The top :data:`TOP_N` venues by record count, after name normalisation.
+
+    ADR 0022 Decision 5: delegates to
+    :func:`~prismabib.bibliometrics.venues.top_venues` (over
+    :attr:`~prismabib.stage.PrismaStage.RAW`, this function's historical
+    scope: neither this nor the query it replaces has ever filtered by
+    PRISMA stage -- both counted every record Layer 1 holds) rather than
+    grouping by exact ``venues.name`` itself.
+
+    What that delegation buys is the **anti-drift guarantee**: one
+    definition of "a venue" shared by this function, ``top_venues_table``
+    and Stage 7, so a table and the prose beside it cannot disagree. It does
+    *not*, on the reference corpus, change the number: none of the
+    normalisation rules fires on any of its 769 venue names, and
+    ``venues.total`` is 769 before and after (ADR 0022 Decision 5 records
+    the measurement). The variants Scopus emits there are conference
+    editions -- "... WACV 2020" beside "... WACV 2024" -- which the rules
+    cannot reach by design, since the difference is a year rather than
+    formatting. ``venues.total`` therefore counts *distinct venue name
+    strings*, with a recurring conference appearing once per edition; see
+    ``docs/methodology/limitations.md``.
 
     Args:
-        connection: An open, read-only Layer 1 connection.
+        corpus: A :class:`~prismabib.store.load.Corpus` over ``project``'s
+            store.
 
     Returns:
         ``venues.total`` plus ``venues.top<i>.name`` / ``.count`` for
@@ -155,27 +182,14 @@ def _venue_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
         depend on corpus size -- a manuscript citing ``venues.top3.name``
         must not start failing to fill because a re-capture dropped a venue.
     """
-    rows = connection.execute(
-        """
-        SELECT v.name, count(*) AS n
-        FROM records r JOIN venues v ON r.venue_id = v.venue_id
-        GROUP BY v.name
-        ORDER BY n DESC, v.name ASC
-        LIMIT ?
-        """,
-        [TOP_N],
-    ).fetchall()
-    # DISTINCT name, not `count(*)`. The loader writes one `venues` row per
-    # record, so `count(*)` is a row count that on the reference corpus reads
-    # 120 -- exactly the number of *records* -- while the corpus is published
-    # across 22 venues. A sentence citing `{{venues.total}}` would then claim
-    # "across 120 venues" beside a `venues.top1.count` of 96, which cannot both
-    # be true. `name` is also the unit `tables.top_venues_table` groups on, so
-    # the two agree by construction rather than by coincidence.
-    total = connection.execute("SELECT count(DISTINCT name) FROM venues").fetchone()
-    numbers: dict[str, Any] = {"venues.total": int(total[0]) if total else 0}
+    every_venue = top_venues(corpus, stage=PrismaStage.RAW, top_n=_ALL_VENUES).data
+    numbers: dict[str, Any] = {"venues.total": every_venue.height}
     for index in range(TOP_N):
-        name, count = (rows[index][0], int(rows[index][1])) if index < len(rows) else ("", 0)
+        name, count = (
+            (every_venue.item(index, "venue"), int(every_venue.item(index, "count")))
+            if index < every_venue.height
+            else ("", 0)
+        )
         numbers[f"venues.top{index + 1}.name"] = name
         numbers[f"venues.top{index + 1}.count"] = count
     return numbers
@@ -211,8 +225,18 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
     connection = connect(project, read_only=True)
     try:
         numbers.update(_corpus_numbers(connection))
-        numbers.update(_citation_numbers(connection))
-        numbers.update(_venue_numbers(connection))
+        # A bare `Corpus(connection)` -- no `.open(project, ...)` -- is
+        # deliberate and safe here: both delegated calls below pass
+        # `stage=PrismaStage.RAW` (see `_citation_numbers`/`_venue_numbers`),
+        # which `Corpus.records`/`Corpus.venues` answer straight from Layer 1
+        # without ever reaching `_prisma_stage_record_ids`, the one code path
+        # that needs a project-bound `Corpus` to resolve `criteria.yaml` and
+        # the decision log. Reusing this connection (rather than opening a
+        # second one via `Corpus.open`) also keeps every number in this
+        # function reading one instant of the store.
+        corpus = Corpus(connection)
+        numbers.update(_citation_numbers(corpus))
+        numbers.update(_venue_numbers(corpus))
     finally:
         connection.close()
 

@@ -213,6 +213,18 @@ follow_imports_for_stubs = true
 module = ["pandas"]
 ignore_missing_imports = true
 
+# networkx ships no inline type information, and `types-networkx` is not in §2.4's
+# closed dependency list -- the same judgement as pandas above, scoped to the one
+# module that imports it (`bibliometrics/network.py`'s Louvain clustering, §2.4
+# "graphs"). networkx.Graph/add_weighted_edges_from/louvain_communities calls are
+# therefore untyped at the call site; every value this module derives from them
+# (edge weights, community ids) is immediately narrowed back into an explicitly
+# typed dict/DataFrame before it reaches an AnalysisResult, so this costs no real
+# safety in the code that actually gets checked.
+[[tool.mypy.overrides]]
+module = ["networkx", "networkx.*"]
+ignore_missing_imports = true
+
 # Panel ships no type information for its widget constructors, so every
 # `pn.widgets.Button(...)` is a call to an untyped function under --strict.
 # Scoped to `panel.*` alone: the screening view's own signatures, view model and

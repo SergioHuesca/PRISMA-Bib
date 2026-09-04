@@ -92,3 +92,17 @@ S06-AC1 = "Resolver chain is unit-tested with each resolver failing in turn."
 S06-AC2 = "A 403 on resolver 1 provably reaches resolver 3 in tests."
 S06-AC3 = "Coverage report renders and shows per-publisher counts."
 S06-AC4 = "No code path can write an INACCESSIBLE decision event."
+
+# --- Stage 7 -- Bibliometrics engine (BUILD_PLAN.md lines 1180-1256) -------
+#
+# Implemented after Stage 10 and alongside Stage 6 (ADR 0015 moved Stages
+# 6-9 behind 10; §7 of EXECUTION_PLAN permits 6/7/8 concurrently), which is
+# why this section sits after Stage 6 above rather than between Stage 4 and
+# Stage 10 -- this file's sections follow implementation order, not
+# BUILD_PLAN's stage numbering (see the Stage 6 section's own note).
+
+S07-AC1 = "Every function returns AnalysisResult; none returns a bare number or dataframe."
+S07-AC2 = "CAGR on a synthetic series with known growth returns the analytic answer to 1e-9."
+S07-AC3 = "h-index verified against a hand-computed fixture."
+S07-AC4 = "Changing min_occurrence changes params and therefore the caption."
+S07-AC5 = "Recomputation on an unchanged store is bit-identical."
