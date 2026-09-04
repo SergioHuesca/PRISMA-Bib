@@ -66,6 +66,19 @@ The §3.3 exception taxonomy.
       show_source: true
       members_order: source
 
+## asjc
+
+The checked-in ASJC table mapping a four-digit subject-area code to its four-letter
+grouping. Layer 1 stores Scopus's `@code`; `criteria.yaml` declares the grouping, and
+comparing them raw makes the subject-area filter *invert* rather than under-match —
+[ADR 0017](../architecture/adr/0017-subject-areas-match-by-asjc-grouping.md).
+
+::: prismabib.asjc
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ## countries
 
 The checked-in ISO 3166-1 alpha-3 mapping table. An unmapped string is preserved verbatim
@@ -163,6 +176,19 @@ actually resolves to. Takes no API key; `UNPAYWALL_EMAIL` is a terms-of-use cont
 address, not a credential.
 
 ::: prismabib.sources.unpaywall
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### sources.crossref
+
+A DOI → publisher-declared text-and-data-mining link lookup (ADR 0020), keyless like
+`sources.unpaywall` above and modelled closely on it. Reuses `UNPAYWALL_EMAIL` as
+Crossref's own `mailto` "polite pool" courtesy parameter rather than declaring a second
+credential for the same terms-of-use purpose.
+
+::: prismabib.sources.crossref
     options:
       show_root_heading: true
       show_source: true
@@ -354,6 +380,19 @@ Elsevier skew visible in the output rather than hidden in the method. See
 ### fulltext.run
 
 ::: prismabib.fulltext.run
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.assist
+
+Assisted manual fetch (ADR 0020 Decision 4): identification and filing, the testable half
+of `scripts/fetch_assist.py`'s interactive driver -- see that script's own module
+docstring for why it, unlike this module, is deliberately outside `mypy --strict` and the
+`fulltext` coverage gate and so has no section of its own here.
+
+::: prismabib.fulltext.assist
     options:
       show_root_heading: true
       show_source: true

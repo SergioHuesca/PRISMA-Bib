@@ -1,14 +1,20 @@
 """Integration tests for ``prismabib.fulltext.run`` -- what ``prismabib fulltext`` calls.
 
 Real DuckDB (a store built the normal way, via ``build_store``), real
-filesystem, no network: ``Settings`` here carries no
+filesystem, no *credentialed* network: ``Settings`` here carries no
 ``ELSEVIER_SD_API_KEY``/``UNPAYWALL_EMAIL``, so
 :func:`~prismabib.fulltext.resolve.default_chain` degrades to
-:class:`~prismabib.fulltext.resolve.ManualDropResolver` alone (see that
-function's own docstring) -- exactly the scenario a researcher with no
-Elsevier entitlement and no wish to fetch open-access copies actually has,
-and it lets this module's *orchestration* (targeting, resumability,
-budget, persistence) be tested without mocking any HTTP boundary at all.
+:class:`~prismabib.fulltext.resolve.CrossrefTdmResolver` (unconditional --
+Crossref needs no credential, ADR 0020) and
+:class:`~prismabib.fulltext.resolve.ManualDropResolver` -- exactly the
+scenario a researcher with no Elsevier entitlement and no wish to fetch
+open-access copies actually has, and it lets this module's *orchestration*
+(targeting, resumability, budget, persistence) be tested without mocking any
+HTTP boundary **except** Crossref's own keyless lookup, which the
+module-scoped :func:`_crossref_reports_nothing` fixture answers identically
+for every DOI (``message.link`` absent -- Crossref's own measured majority
+case, ADR 0020: 23 of 29 records on the corpus it measured) so this file's
+actual subject stays unaffected by real network behaviour.
 
 **ADR 0019 Decision 0.** ``run_fulltext_resolution`` writes Layer 0 only.
 Every test below that wants to see ``fulltext_assets``/``fulltext_sections``
@@ -18,11 +24,14 @@ the same two-step shape already established for ``prismabib enrich``.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import httpx
 import pytest
+import respx
 
 from prismabib.capture.layout import is_sealed
 from prismabib.config import Settings
@@ -32,6 +41,7 @@ from prismabib.fulltext.resolve import manual_drop_path
 from prismabib.fulltext.run import run_fulltext_resolution
 from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
+from prismabib.sources.crossref import CrossrefTdmClient
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
 from prismabib.store.load import build_store
@@ -40,6 +50,36 @@ from tests.fixtures.pdf_builder import make_minimal_pdf
 from tests.store_helpers import make_entry, write_sealed_run
 
 _STARTED_AT = datetime(2025, 1, 1, tzinfo=UTC)
+
+_CROSSREF_LOOKUP_PREFIX = CrossrefTdmClient.LOOKUP_ENDPOINT_TEMPLATE.rsplit("/", 1)[0] + "/"
+
+
+@pytest.fixture(autouse=True)
+def _crossref_reports_nothing() -> Iterator[None]:
+    """Answer every Crossref lookup with "no text-mining link", so this file stays no-network.
+
+    ``default_chain`` now always constructs a :class:`~prismabib.fulltext.resolve.CrossrefTdmResolver`
+    (Crossref needs no credential -- ADR 0020), so every call into
+    ``run_fulltext_resolution``/``capture_fulltext`` in this module makes one
+    real HTTP request per DOI unless intercepted. Mocking it here, once,
+    keeps every individual test focused on what it actually tests
+    (targeting, resumability, budget, persistence) rather than repeating an
+    unrelated mock in each one.
+    """
+    with respx.mock:
+        # HTTP 200 with no `message.link` -- Crossref *knows* the DOI and
+        # simply names no text-mining link for it, the actual majority case
+        # this fixture claims to model. HTTP 404 ("Crossref knows nothing
+        # about this DOI at all") short-circuits `CrossrefTdmClient.lookup`
+        # before `tdm_links` is ever reached and so answers a different
+        # question than the one this fixture's own docstring states --
+        # `tests/integration/fulltext/test_resolve.py`'s
+        # `_NO_TDM_LINKS_RESPONSE` models the real case correctly; this
+        # mirrors it.
+        respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(
+            return_value=httpx.Response(200, json={"message": {}})
+        )
+        yield
 
 
 def _settings() -> Settings:
@@ -133,14 +173,19 @@ def test_run__resolve_then_rebuild__loads_assets_and_sections_from_layer0(
     try:
         rows = connection.execute(
             "SELECT record_id, resolver_name, media_type, entitled FROM fulltext_assets "
-            "ORDER BY record_id"
+            "ORDER BY record_id, resolver_name"
         ).fetchall()
         section_count = connection.execute("SELECT count(*) FROM fulltext_sections").fetchone()
     finally:
         connection.close()
 
+    # One row per resolver *attempt*, not per asset (ADR 0019): `crossref_tdm`
+    # ran too (it needs no credential, ADR 0020) and reported "no text-mining
+    # link" (`entitled=NULL`) before `manual` produced the actual asset.
     assert rows == [
+        (record_a, "crossref_tdm", None, None),
         (record_a, "manual", "pdf", True),
+        (record_b, "crossref_tdm", None, None),
         (record_b, "manual", "pdf", True),
     ]
     # A page with a text layer produces one (non-low-confidence) section row.
@@ -156,7 +201,7 @@ def test_run__resolve_then_rebuild__loads_assets_and_sections_from_layer0(
     try:
         rows_again = connection.execute(
             "SELECT record_id, resolver_name, media_type, entitled FROM fulltext_assets "
-            "ORDER BY record_id"
+            "ORDER BY record_id, resolver_name"
         ).fetchall()
     finally:
         connection.close()

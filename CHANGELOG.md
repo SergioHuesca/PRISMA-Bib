@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] — 2026-09-04
+
+### Added
+
+- **A Crossref text-mining resolver**, second in the chain (ScienceDirect → Crossref TDM →
+  open access → manual drop). Crossref's free, keyless API exposes publisher-declared
+  text-mining links; TDM yields the publisher's own full text — the version of record —
+  whereas an open-access copy may legitimately be an author preprint. Only bytes that sniff as
+  a PDF are accepted, and a TDM link whose host a dedicated resolver already covers is skipped,
+  so an Elsevier record is not refused twice for one cause and the coverage table does not
+  report two entitlement gaps where there is one. See
+  [ADR 0020](docs/architecture/adr/0020-crossref-tdm-and-assisted-manual-fetch.md).
+
+  **Measured yield is small and was known in advance:** 23 of the 29 unresolved records on the
+  first real corpus carry no text-mining link at all. It added exactly the 3 predicted. The
+  capability is built for future corpora weighted toward Springer, Wiley or Elsevier; the ADR
+  records that plainly so nobody re-derives an optimistic number.
+
+- **Assisted manual fetching** — `src/prismabib/fulltext/assist.py` plus
+  `scripts/fetch_assist.py`. Opens a batch of DOI links in the operator's browser, watches
+  their download directory, identifies each PDF (DOI on page one, else title token containment
+  with a margin over the runner-up) and files it under the exact name `ManualDropResolver`
+  expects.
+
+  **It automates the filing, never the retrieval.** Every fetch stays human-initiated and
+  one-to-one — the script opens tabs and files what arrives. That boundary is deliberate:
+  automating the access itself is systematic downloading under most publishers' terms, and the
+  consequence of that falls on an institution's whole IP range.
+
+  **Ambiguity prompts and never guesses.** Measured against the six PDFs already fetched, DOI
+  matching identified 2 and title containment 5, and the sixth was correctly refused — two
+  near-identical titles, runner-up at 0.92. A wrong match is silent, durable, and produces a
+  review whose full-text assessment was performed on the wrong paper.
+
+  Not a CLI command: `cli.py` states that it is the non-interactive half of the tool and that
+  "decisions are human events, and a CLI is the wrong place to make them". The logic that
+  carries the risk lives in `src/` under `mypy --strict` and the coverage gate; only the
+  interactive driver sits in `scripts/`, beside the existing hand-fetch tool.
+
+### Changed
+
+- **`prismabib fulltext` now reaches the network even with no credentials configured.**
+  Crossref needs no key, so unlike every other resolver it cannot degrade out of the chain
+  when a credential is absent. A project with an empty `.env` previously made no request at
+  all. Accepted — a keyless lookup for publisher-declared full text is most useful to an
+  operator with no subscriptions — but recorded in ADR 0020 as a real behaviour change, along
+  with the fact that running the chain fully offline is no longer possible without an explicit
+  switch.
+
 ## [0.16.1] — 2026-09-03
 
 ### Fixed
