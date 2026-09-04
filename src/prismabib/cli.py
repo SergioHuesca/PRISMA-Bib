@@ -749,9 +749,20 @@ def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
             _echo(f"    {resolver_name:<24} {count:>10,}")
 
     if summary.refused_by_resolver:
-        _echo("\n  refused (entitlement gap -- NOT an absent paper), by resolver:")
+        # Layer 0's raw count: how often each resolver said no. Whether a
+        # given refusal counts as *that publisher's* entitlement gap is
+        # derived at build time (ADR 0021 Decision 1b), so this number is an
+        # upper bound on the gap and the label must not call it one -- a
+        # ScienceDirect 403 on an IEEE paper is counted here and is not an
+        # entitlement gap for anyone.
+        _echo("\n  refused by the resolver -- NOT an absent paper -- by resolver:")
         for resolver_name, count in sorted(summary.refused_by_resolver.items()):
             _echo(f"    {resolver_name:<24} {count:>10,}")
+        _echo(
+            "    (an upper bound: how many of these are a publisher's actual\n"
+            "     entitlement gap is attributed by `prismabib build`, and reported\n"
+            "     by the coverage tables)"
+        )
 
     if summary.unresolved_record_ids:
         _echo(

@@ -152,11 +152,20 @@ inherits that skew silently unless it is checked against the coverage report fir
 Two hard rules exist specifically to keep that skew from becoming invisible bias rather
 than a stated, measured one:
 
-- **A ScienceDirect refusal (HTTP 403) is recorded as an entitlement gap, `entitled=false`,
-  and the chain moves on** — it is never conflated with "this paper does not exist" (which
-  is `entitled=NULL`, e.g. a genuine HTTP 404 or no OA location found). Collapsing the two
+- **A refusal (HTTP 403) is recorded as an entitlement gap, `entitled=false`, and the chain
+  moves on** — it is never conflated with "this paper does not exist" (which is
+  `entitled=NULL`, e.g. a genuine HTTP 404 or no OA location found). Collapsing the two
   would make an institution's subscription gaps look like a property of the literature.
-- **No record is ever marked `INACCESSIBLE` automatically.** Exhausting all three resolvers
+
+  The gap is attributed to a **publisher**, not merely to a resolver. ScienceDirect serves
+  only Elsevier's content, so an unentitled Elsevier key refuses every DOI it is handed,
+  including papers ScienceDirect never held. Counting an IEEE paper's ScienceDirect 403 as
+  an entitlement gap would state "we were refused this IEEE paper" when IEEE was never
+  asked, so a refusal counts against a publisher only when the refusing resolver could have
+  served that publisher; otherwise it is recorded `NULL`. Where the publisher cannot be
+  identified from the DOI at all, the refusal is `NULL` too — under-reporting a gap is an
+  omission, over-reporting one is a false statement.
+- **No record is ever marked `INACCESSIBLE` automatically.** Exhausting the resolver chain
   is a fact about this run, not a verdict; only a human, during full-text screening and
   after confirming no institutional route exists, may log that decision
   (enforced by a static check over the whole codebase, not merely by convention).

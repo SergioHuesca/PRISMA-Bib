@@ -40,6 +40,14 @@ _CROSSREF_ENDPOINT = CrossrefTdmClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)
 _UNPAYWALL_ENDPOINT = UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_DOI)
 _OA_PDF_URL = "https://oa-host.example.org/paper.pdf"
 
+#: An Elsevier-registrant DOI, used only where a ScienceDirect refusal has to
+#: be a *genuine* entitlement gap (ADR 0021 Decision 1) -- distinct from
+#: `_DOI` above, whose whole point is that it is IEEE's, not Elsevier's.
+_ELSEVIER_DOI = "10.1016/j.example.2026.100001"
+_ELSEVIER_SD_ENDPOINT = ScienceDirectClient.ARTICLE_ENDPOINT_TEMPLATE.format(doi=_ELSEVIER_DOI)
+_ELSEVIER_CROSSREF_ENDPOINT = CrossrefTdmClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_ELSEVIER_DOI)
+_ELSEVIER_UNPAYWALL_ENDPOINT = UnpaywallClient.LOOKUP_ENDPOINT_TEMPLATE.format(doi=_ELSEVIER_DOI)
+
 _FAST_RATE_LIMITER_KWARGS = {"rate": 1000.0}
 
 _MINIMAL_PDF = b"%PDF-1.4\n%%EOF"
@@ -82,15 +90,90 @@ def _unpaywall_response(pdf_url: str = _OA_PDF_URL) -> dict[str, object]:
 
 @pytest.mark.integration
 @pytest.mark.acceptance("S06-AC2")
-def test_chain__sciencedirect_403__reaches_manual_drop_resolver(tmp_path: Path) -> None:
-    """The central anti-bias test.
+def test_chain__sciencedirect_403_on_an_elsevier_record__reaches_manual_drop_resolver(
+    tmp_path: Path,
+) -> None:
+    """The central anti-bias test, genuine-gap half (ADR 0021 Decision 1).
 
     A ScienceDirect 403 must not stop the chain, and it must not be
     conflated with "no full text exists": resolver 3 (manual drop) has to
     be reached, and the *ScienceDirect* attempt specifically has to be
-    recorded with ``entitled=False``.
+    recorded with ``entitled=False`` -- which it is entitled to be here,
+    since ``_ELSEVIER_DOI`` really is Elsevier's, so this really is the
+    entitlement gap the coverage table exists to report. See
+    ``test_chain__sciencedirect_403_on_a_non_elsevier_record__is_not_an_entitlement_question``
+    immediately below for the case ADR 0021 exists to fix -- the same 403
+    on a record ScienceDirect could never have served in the first place.
     """
     project = Project.init("sd-403-demo", title="SD 403 Demo", root=tmp_path)
+    manual_drop_path(project.fulltext_dir, _RECORD_ID).parent.mkdir(parents=True)
+    manual_drop_path(project.fulltext_dir, _RECORD_ID).write_bytes(_MINIMAL_PDF)
+
+    with respx.mock:
+        sd_route = respx.get(_ELSEVIER_SD_ENDPOINT).mock(
+            return_value=httpx.Response(403, json={"service-error": {}})
+        )
+        crossref_route = respx.get(_ELSEVIER_CROSSREF_ENDPOINT).mock(
+            return_value=httpx.Response(200, json=_NO_TDM_LINKS_RESPONSE)
+        )
+        oa_route = respx.get(_ELSEVIER_UNPAYWALL_ENDPOINT).mock(return_value=httpx.Response(404))
+
+        resolvers = _chain(project.fulltext_dir, _settings())
+        asset, attempts = resolve_fulltext(
+            record_id=_RECORD_ID, doi=_ELSEVIER_DOI, resolvers=resolvers
+        )
+
+    assert sd_route.call_count == 1
+    assert crossref_route.call_count == 1
+    assert oa_route.call_count == 1
+
+    # Resolver 4 was reached and produced the asset.
+    assert asset is not None
+    assert asset.resolver_name == "manual"
+
+    by_resolver = {attempt.resolver_name: attempt for attempt in attempts}
+    assert set(by_resolver) == {"sciencedirect", "crossref_tdm", "openaccess", "manual"}
+
+    # The anti-bias assertion: a 403 for a record ScienceDirect really could
+    # have served records entitled=False, never a bare "unavailable"
+    # collapsed together with a genuine 404.
+    assert by_resolver["sciencedirect"].entitled is False
+    assert by_resolver["sciencedirect"].media_type is None
+    assert by_resolver["sciencedirect"].content is None
+
+    # No TDM link at all is "not an entitlement question" -- NULL, not False.
+    assert by_resolver["crossref_tdm"].entitled is None
+
+    # Unpaywall's 404 is "not an entitlement question" -- NULL, not False.
+    assert by_resolver["openaccess"].entitled is None
+
+    assert by_resolver["manual"].entitled is True
+    assert by_resolver["manual"].content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S06-AC2")
+def test_chain__sciencedirect_403_on_a_non_elsevier_record__is_not_an_entitlement_question(
+    tmp_path: Path,
+) -> None:
+    """The central anti-bias test, ADR 0021's own worked example.
+
+    An unentitled Elsevier key 403s *every* DOI ScienceDirect is asked
+    about, including ``_DOI`` here -- an IEEE-registrant DOI ScienceDirect
+    could never have served regardless of any key.
+
+    What this level asserts is that the chain **continues past it** and the
+    manual drop still wins -- the anti-bias behaviour S06-AC2 names. Layer 0
+    records the raw ``entitled=False`` here, because that is the fact that
+    happened; whether it counts against IEEE is derived in Layer 1 (ADR 0021
+    Decision 1b) and asserted in
+    ``tests/integration/fulltext/test_entitlement_attribution.py``. Decision 3
+    holds either way: the attempt is never skipped, only the recording
+    changes.
+    """
+    project = Project.init(
+        "sd-403-non-elsevier-demo", title="SD 403 Non-Elsevier Demo", root=tmp_path
+    )
     manual_drop_path(project.fulltext_dir, _RECORD_ID).parent.mkdir(parents=True)
     manual_drop_path(project.fulltext_dir, _RECORD_ID).write_bytes(_MINIMAL_PDF)
 
@@ -106,31 +189,19 @@ def test_chain__sciencedirect_403__reaches_manual_drop_resolver(tmp_path: Path) 
         resolvers = _chain(project.fulltext_dir, _settings())
         asset, attempts = resolve_fulltext(record_id=_RECORD_ID, doi=_DOI, resolvers=resolvers)
 
+    # The attempt was still made -- ScienceDirect really was called, quota
+    # really was spent -- and the chain really did continue past it.
     assert sd_route.call_count == 1
     assert crossref_route.call_count == 1
     assert oa_route.call_count == 1
-
-    # Resolver 4 was reached and produced the asset.
     assert asset is not None
     assert asset.resolver_name == "manual"
 
     by_resolver = {attempt.resolver_name: attempt for attempt in attempts}
-    assert set(by_resolver) == {"sciencedirect", "crossref_tdm", "openaccess", "manual"}
-
-    # The anti-bias assertion: a 403 records entitled=False, never a bare
-    # "unavailable" collapsed together with a genuine 404.
+    # Layer 0's raw fact: refused. The publisher attribution happens on load.
     assert by_resolver["sciencedirect"].entitled is False
     assert by_resolver["sciencedirect"].media_type is None
     assert by_resolver["sciencedirect"].content is None
-
-    # No TDM link at all is "not an entitlement question" -- NULL, not False.
-    assert by_resolver["crossref_tdm"].entitled is None
-
-    # Unpaywall's 404 is "not an entitlement question" -- NULL, not False.
-    assert by_resolver["openaccess"].entitled is None
-
-    assert by_resolver["manual"].entitled is True
-    assert by_resolver["manual"].content == _MINIMAL_PDF
 
 
 @pytest.mark.integration

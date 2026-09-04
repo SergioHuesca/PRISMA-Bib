@@ -14,9 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from prismabib.errors import UpstreamError
+from prismabib.errors import EntitlementError, UpstreamError
 from prismabib.fulltext.capture import (
     ATTEMPTS_FILENAME,
+    CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT,
     RUNS_DIRNAME,
     already_resolved_record_ids,
     capture_fulltext,
@@ -27,6 +28,54 @@ from tests.unit.fulltext.test_resolve import _asset, _StubResolver
 
 _RECORD_A = "scopus:2-s2.0-85100000101"
 _RECORD_B = "scopus:2-s2.0-85100000102"
+
+
+def _record_ids(count: int, *, prefix: str = "scopus:2-s2.0-8520000") -> list[str]:
+    """``count`` record ids that sort in the order generated -- lowest index first."""
+    return [f"{prefix}{index:04d}" for index in range(count)]
+
+
+def _elsevier_dois(record_ids: list[str]) -> dict[str, str | None]:
+    """An Elsevier DOI per record id, so a ScienceDirect refusal is a *genuine* refusal.
+
+    Load-bearing, not decoration: the breaker applies ADR 0021 Decision 1's attribution
+    rule itself rather than reading Layer 0's raw ``entitled`` (which is ``False`` for
+    every 403). Swap these for `_ieee_dois` and the same refusals stop counting -- which
+    is exactly what `..._could_not_serve__never_trip_the_breaker` below asserts.
+    """
+    return {record_id: f"10.1016/j.example.{index}" for index, record_id in enumerate(record_ids)}
+
+
+def _ieee_dois(record_ids: list[str]) -> dict[str, str | None]:
+    """An IEEE DOI per record id: ScienceDirect could never have served any of them, so its
+    403s are refusals of *nothing* and must not accumulate toward the breaker.
+    """
+    return {record_id: f"10.1109/EXAMPLE.{index}" for index, record_id in enumerate(record_ids)}
+
+
+class _AlwaysRefusesScienceDirect:
+    """A ``FullTextResolver`` stub that refuses every record unconditionally."""
+
+    name = "sciencedirect"
+
+    def resolve(self, *, record_id: str, doi: str | None) -> object:
+        del record_id, doi
+        raise EntitlementError("no entitlement")
+
+
+class _ResolvesOneThenRefuses:
+    """Resolves exactly one record id and refuses every other one it is asked about."""
+
+    name = "sciencedirect"
+
+    def __init__(self, resolved_record_id: str) -> None:
+        self._resolved_record_id = resolved_record_id
+
+    def resolve(self, *, record_id: str, doi: str | None) -> object:
+        del doi
+        if record_id == self._resolved_record_id:
+            return _asset("sciencedirect", record_id)
+        raise EntitlementError("no entitlement")
 
 
 def _project(tmp_path: Path, slug: str = "capture-demo") -> Project:
@@ -141,9 +190,14 @@ def test_capture__mid_chain_failure__persists_prior_attempts_and_continues_to_ne
     Record A: resolver 1 refuses (entitled=False), resolver 2 raises
     ``UpstreamError`` -- the whole chain for A aborts, but the refusal is
     still durably recorded and record B is still attempted.
-    """
-    from prismabib.errors import EntitlementError
 
+    Both records carry an Elsevier DOI, so the resolver named
+    ``"sciencedirect"`` refusing them is a genuine entitlement gap
+    (ADR 0021 Decision 1) and ``entitled=False`` is the correct recording --
+    this test is about mid-chain-failure persistence, not about publisher
+    attribution, so the DOI is chosen to keep that the only thing that
+    varies.
+    """
     project = _project(tmp_path)
 
     class _ChainByRecord:
@@ -173,7 +227,10 @@ def test_capture__mid_chain_failure__persists_prior_attempts_and_continues_to_ne
     outcome = capture_fulltext(
         project,
         pending_ids=[_RECORD_A, _RECORD_B],
-        doi_by_record_id={_RECORD_A: None, _RECORD_B: None},
+        doi_by_record_id={
+            _RECORD_A: "10.1016/j.example.2026.100101",
+            _RECORD_B: "10.1016/j.example.2026.100102",
+        },
         resolvers=chain.resolvers(),
     )
 
@@ -202,6 +259,195 @@ def test_capture__mid_chain_failure__persists_prior_attempts_and_continues_to_ne
 
     record_b_rows = [row for row in rows if row["record_id"] == _RECORD_B]
     assert any(row["entitled"] is True for row in record_b_rows)
+
+
+@pytest.mark.integration
+def test_capture__consecutive_refusals_reach_the_limit__raises_and_leaves_the_run_unsealed(
+    tmp_path: Path,
+) -> None:
+    """ADR 0021 Decision 4: an unentitled resolver is detected, not run to exhaustion.
+
+    `CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT` consecutive refusals from one
+    resolver that has resolved nothing trips the breaker. The triggering
+    record's attempt is not durably written and the run is not sealed, so a
+    later, differently-credentialed call resumes at that same record.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 2)
+    doi_by_record_id = _elsevier_dois(record_ids)
+
+    with pytest.raises(EntitlementError, match="sciencedirect"):
+        capture_fulltext(
+            project,
+            pending_ids=record_ids,
+            doi_by_record_id=doi_by_record_id,
+            resolvers=[_AlwaysRefusesScienceDirect()],
+        )
+
+    run_dirs = [
+        entry for entry in (project.fulltext_dir / RUNS_DIRNAME).iterdir() if entry.is_dir()
+    ]
+    (run_dir,) = run_dirs
+    assert not (run_dir / "manifest.json").is_file(), "the run must not seal on a tripped breaker"
+
+    rows = [
+        json.loads(line)
+        for line in (run_dir / ATTEMPTS_FILENAME).read_text(encoding="utf-8").splitlines()
+    ]
+    # The record that tripped the breaker is discarded, not merely
+    # unsealed: only the LIMIT-1 records processed *before* it are on disk.
+    assert len(rows) == CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT - 1
+    assert all(row["entitled"] is False for row in rows)
+
+
+@pytest.mark.integration
+def test_capture__refusals_it_could_not_serve__never_trip_the_breaker(tmp_path: Path) -> None:
+    """ADR 0021 Decision 4: the breaker counts *genuine* refusals, not raw 403s.
+
+    An unentitled ScienceDirect key 403s every DOI it is handed, including papers
+    ScienceDirect never held. Counting Layer 0's raw `entitled=False` would abort this
+    run on record 10 and never attempt records 10-11 with *any* resolver -- Crossref TDM
+    and open access included, since the chain never reaches them. That is a false
+    positive that stops retrieval for a user whose key is fine and whose corpus simply
+    is not Elsevier's, which is the shape ADR 0021's Context measured: 33 of 35 records
+    not Elsevier's.
+
+    The counterpart of `..._reach_the_limit__raises_and_leaves_the_run_unsealed`: same
+    resolver, same refusal count, only the DOIs differ.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 2)
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=record_ids,
+        doi_by_record_id=_ieee_dois(record_ids),
+        resolvers=[_AlwaysRefusesScienceDirect()],
+    )
+
+    assert outcome.sealed, "the run must seal: nothing here is a genuine refusal"
+    assert outcome.attempted == len(record_ids)
+    assert outcome.resolved == 0
+    (run_dir,) = sealed_fulltext_run_dirs(project.fulltext_dir)
+    rows = [
+        json.loads(line)
+        for line in (run_dir / ATTEMPTS_FILENAME).read_text(encoding="utf-8").splitlines()
+    ]
+    # Every record was attempted, and every attempt is on disk: nothing was
+    # discarded, because nothing tripped.
+    assert len(rows) == len(record_ids)
+    # Layer 0 still records the raw fact -- `False`, not `None` (Decision 1b).
+    # The breaker's disagreement with this value is the whole point.
+    assert all(row["entitled"] is False for row in rows)
+
+
+@pytest.mark.integration
+def test_capture__unservable_refusals_between_genuine_ones__do_not_reset_the_counter(
+    tmp_path: Path,
+) -> None:
+    """A non-attributable refusal is neutral: it neither counts nor clears the count.
+
+    An unentitled key refuses every record it is asked about, so the IEEE papers between
+    two Elsevier ones say nothing about the credential either way. Were they to *reset*
+    the counter, the breaker would sit un-armed on exactly the corpus shape (Elsevier a
+    minority, scattered) that motivated a consecutive counter over a first-record probe.
+
+    Here every third record is Elsevier's, so no `LIMIT` genuine refusals are ever
+    adjacent -- and the breaker must still trip.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT * 3 + 3)
+    doi_by_record_id: dict[str, str | None] = {
+        record_id: (f"10.1016/j.example.{index}" if index % 3 == 0 else f"10.1109/EX.{index}")
+        for index, record_id in enumerate(record_ids)
+    }
+    elsevier_count = sum(1 for index in range(len(record_ids)) if index % 3 == 0)
+    # The fixture must be able to reach the limit at all, or this asserts nothing.
+    assert elsevier_count >= CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT
+
+    with pytest.raises(EntitlementError, match="sciencedirect"):
+        capture_fulltext(
+            project,
+            pending_ids=record_ids,
+            doi_by_record_id=doi_by_record_id,
+            resolvers=[_AlwaysRefusesScienceDirect()],
+        )
+
+
+@pytest.mark.integration
+def test_capture__a_single_refusal__does_not_trip_the_breaker(tmp_path: Path) -> None:
+    """The negative case a threshold of one would fail: one embargoed record is not a symptom."""
+    project = _project(tmp_path)
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=[_RECORD_A],
+        doi_by_record_id={_RECORD_A: "10.1016/j.example.0"},
+        resolvers=[_AlwaysRefusesScienceDirect()],
+    )
+
+    assert outcome.sealed is True
+    assert outcome.refused_by_resolver == {"sciencedirect": 1}
+
+
+@pytest.mark.integration
+def test_capture__resolver_has_resolved_something__breaker_never_trips(tmp_path: Path) -> None:
+    """A resolver that has resolved even one record cannot be the unentitled-key symptom."""
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 5)
+    doi_by_record_id = _elsevier_dois(record_ids)
+    resolver = _ResolvesOneThenRefuses(resolved_record_id=record_ids[0])
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=record_ids,
+        doi_by_record_id=doi_by_record_id,
+        resolvers=[resolver],
+    )
+
+    assert outcome.sealed is True
+    assert outcome.resolved_by_resolver == {"sciencedirect": 1}
+    assert outcome.refused_by_resolver == {"sciencedirect": len(record_ids) - 1}
+
+
+@pytest.mark.integration
+def test_capture__resumed_run_with_prior_work__does_not_re_arm_the_breaker(tmp_path: Path) -> None:
+    """ADR 0021 Decision 4's own resumption guard.
+
+    The first call resolves one record and stops (budget-bounded); the
+    second call resumes the *same* run and refuses more than
+    `CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT` records in a row from the same
+    resolver. It must not trip: the guard is `state.resolved_by_resolver`,
+    which is persisted in `progress.json` and survives the resume -- not a
+    same-call-only counter that would forget the first call's success.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 4)
+    doi_by_record_id = _elsevier_dois(record_ids)
+    # `capture_fulltext` sorts `pending_ids`, so `record_ids[0]` (already the
+    # lexicographically smallest, by construction) is what a `budget=1` first
+    # call actually attempts.
+    resolver = _ResolvesOneThenRefuses(resolved_record_id=record_ids[0])
+
+    first = capture_fulltext(
+        project,
+        pending_ids=record_ids,
+        doi_by_record_id=doi_by_record_id,
+        resolvers=[resolver],
+        budget=1,
+    )
+    assert first.sealed is False
+    assert first.resolved_by_resolver == {"sciencedirect": 1}
+
+    second = capture_fulltext(
+        project,
+        pending_ids=record_ids,
+        doi_by_record_id=doi_by_record_id,
+        resolvers=[resolver],
+    )
+
+    assert second.sealed is True
+    assert second.refused_by_resolver == {"sciencedirect": len(record_ids) - 1}
 
 
 def _write_run(fulltext_dir: Path, run_id: str, record_id: str, *, sealed: bool) -> None:

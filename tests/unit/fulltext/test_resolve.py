@@ -21,6 +21,7 @@ from prismabib.errors import EntitlementError, UpstreamError
 from prismabib.fulltext.resolve import (
     FullTextAsset,
     FullTextResolutionError,
+    _refusal_entitled,
     manual_drop_path,
     resolve_fulltext,
 )
@@ -142,6 +143,95 @@ def test_chain__entitlement_refusal_then_success__records_refusal_and_resolves()
     assert by_resolver["sciencedirect"].entitled is False
     assert by_resolver["sciencedirect"].content is None
     assert by_resolver["manual"].entitled is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("doi", "expected"),
+    [
+        pytest.param("10.1016/j.example.2026.100001", False, id="elsevier-genuine-gap"),
+        pytest.param("10.1109/tpami.2026.100001", None, id="ieee-never-held-by-sciencedirect"),
+        pytest.param(None, None, id="no-doi-cannot-substantiate"),
+        pytest.param("10.9999/unmapped.example", None, id="unmapped-prefix-cannot-substantiate"),
+    ],
+)
+def test_refusal_entitled__constrained_resolver__attributes_only_its_own_publisher(
+    doi: str | None, expected: bool | None
+) -> None:
+    """ADR 0021 Decisions 1 and 2, on the function that decides it.
+
+    Asserted here rather than through `resolve_fulltext` because that is no
+    longer where the decision is made. Layer 0 records the raw refusal; Layer 1
+    derives what it counts against (Decision 1b), which is what lets a rebuild
+    repair runs sealed under the old unconditional rule.
+
+    A ScienceDirect 403 for an IEEE DOI is not an entitlement question about
+    IEEE -- ScienceDirect never held it and IEEE was never asked. An
+    unidentifiable publisher records `None` for the asymmetric reason
+    Decision 2 gives: over-reporting is an active false statement in a methods
+    section, under-reporting only an omission.
+    """
+    assert _refusal_entitled(resolver_name="sciencedirect", doi=doi) is expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "resolver_name",
+    [
+        pytest.param("crossref_tdm", id="crossref-tdm"),
+        pytest.param("openaccess", id="open-access"),
+        pytest.param("manual", id="manual-drop"),
+    ],
+)
+def test_refusal_entitled__unconstrained_resolver__always_a_genuine_gap(
+    resolver_name: str,
+) -> None:
+    """An unconstrained resolver's refusal is an entitlement question about any record.
+
+    A Crossref text-mining link, an open-access location and a local file can
+    each belong to any publisher, so ADR 0019's original unconditional rule
+    still holds for these three -- including for a record whose publisher
+    cannot be identified at all.
+    """
+    assert _refusal_entitled(resolver_name=resolver_name, doi=None) is False
+    assert _refusal_entitled(resolver_name=resolver_name, doi="10.1109/x") is False
+
+
+@pytest.mark.unit
+def test_resolve_fulltext__refusal__records_the_raw_fact_in_layer_0() -> None:
+    """Layer 0 records "this resolver was refused", never the interpretation.
+
+    An IEEE record refused by ScienceDirect is `entitled=False` *here* --
+    deliberately, because that is the fact that happened. Deriving at capture
+    time was the first attempt and repaired nothing: the corpus that exposed
+    the defect already held its refusals in sealed runs.
+    """
+    refused = _StubResolver(name="sciencedirect", raises=EntitlementError("no entitlement"))
+
+    _asset_unused, attempts = resolve_fulltext(
+        record_id="scopus:2-s2.0-85100000021",
+        doi="10.1109/tpami.2026.100001",
+        resolvers=[refused],
+    )
+
+    assert attempts[0].entitled is False
+
+
+@pytest.mark.unit
+def test_chain__crossref_tdm_refusal__unconstrained__always_records_false() -> None:
+    """ADR 0021 Decision 1's unconstrained row: a Crossref TDM 403 records ``entitled=False``
+    regardless of the record's publisher, because a TDM link is a publisher-declared link for
+    *this* record -- unlike ScienceDirect, which can only ever be Elsevier's own API.
+    """
+    record_id = "scopus:2-s2.0-85100000024"
+    refused = _StubResolver(name="crossref_tdm", raises=EntitlementError("no entitlement"))
+
+    _asset_unused, attempts = resolve_fulltext(
+        record_id=record_id, doi="10.1109/tpami.2026.100001", resolvers=[refused]
+    )
+
+    assert attempts[0].resolver_name == "crossref_tdm"
+    assert attempts[0].entitled is False
 
 
 @pytest.mark.unit

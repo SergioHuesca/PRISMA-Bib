@@ -73,6 +73,34 @@ nothing here can tell without asking. Within one still-open run, a resumed
 call picks up a matching unsealed run directory by its target-set digest
 (:func:`_find_resumable_run`), exactly the pattern
 :func:`prismabib.capture.enrich._find_resumable_run` already established.
+
+**A consecutive-refusal breaker, not a first-record probe (ADR 0021 Decision 4).**
+``capture/enrich.py`` aborts a fresh run on a 403 for the first record it
+attempts, because an unentitled Abstract Retrieval key 403s every request and
+that shape costs one call to learn rather than a whole weekly quota. That
+shape does not transfer here: a ScienceDirect 403 for a non-Elsevier record
+is not a refusal of *this* record's publisher at all (ADR 0021 Decision 1),
+so on a corpus where Elsevier is a minority the first record attempted is
+very often not Elsevier, carries no information about the key either way,
+and an unentitled key would spend its whole run before anything noticed.
+
+The robust form is a threshold on **consecutive genuine refusals from one
+resolver, with nothing yet resolved by that resolver in this run** (see
+:data:`CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT`) -- "genuine" meaning
+:func:`~prismabib.fulltext.resolve._refusal_entitled` attributes the refusal
+to the record's own publisher, *not* merely that Layer 0 recorded
+``entitled=False``, which it does for every refusal (ADR 0021 Decision 1b).
+Counting Layer 0's raw value instead would abort a run for a user whose key
+is fine but whose corpus is not that resolver's publisher's --
+counted per resolver, because the chain tries every resolver for every
+record (ADR 0021 Decision 3: the attempt is never skipped on a publisher
+mismatch) and an unentitled ScienceDirect key says nothing about Crossref
+TDM's or open access's own entitlement. Tripping it raises an
+:class:`~prismabib.errors.EntitlementError` naming the resolver, exactly as
+``enrich.py``'s breaker does, and leaves the run unsealed: the triggering
+record's attempts are not written, so a later, differently-credentialed call
+resumes at the same record rather than at one already (wrongly) recorded as
+refused.
 """
 
 from __future__ import annotations
@@ -96,10 +124,13 @@ from prismabib.capture.layout import (
     new_run_id,
 )
 from prismabib.capture.manifest import FullTextRunManifest
+from prismabib.errors import EntitlementError
 from prismabib.fulltext.resolve import (
+    SCIENCEDIRECT,
     FullTextAttempt,
     FullTextResolutionError,
     FullTextResolver,
+    _refusal_entitled,
     resolve_fulltext,
 )
 
@@ -127,6 +158,89 @@ ATTEMPTS_FILENAME = "attempts.jsonl"
 #: The unsealed run's resumption sidecar. Deleted on seal; never hashed -- same
 #: convention as :data:`prismabib.capture.enrich.PROGRESS_FILENAME`.
 PROGRESS_FILENAME = "progress.json"
+
+#: How many *consecutive* genuine refusals (``entitled=False``) from one
+#: resolver, with that resolver having resolved nothing yet in this run, are
+#: treated as evidence that the resolver's own credential is unentitled
+#: rather than that a run of records happen to be individually embargoed
+#: (ADR 0021 Decision 4).
+#:
+#: Modelled on :data:`prismabib.capture.enrich.CONSECUTIVE_NOT_FOUND_LIMIT`,
+#: not on that module's first-record entitlement probe: a ScienceDirect
+#: refusal is only a *genuine* refusal when the record actually is
+#: Elsevier's (ADR 0021 Decision 1), so on a corpus where Elsevier is a
+#: minority the first record attempted is very often not Elsevier and a
+#: first-record probe would sit un-armed for most of a run -- or trip on
+#: whichever record happened to be first, which says nothing about the key.
+#: Counting *consecutive* genuine refusals survives both: an unentitled key
+#: refuses every Elsevier record it is asked about regardless of how many
+#: non-Elsevier records fall between them, because a non-attributable
+#: refusal is neutral -- it neither increments this counter nor resets it
+#: (see the loop below) -- while ten in a row from records
+#: that really are that resolver's publisher is not a corpus, it is a
+#: symptom -- the same "ten survives one genuinely embargoed record at the
+#: head of a run" reasoning ``CONSECUTIVE_NOT_FOUND_LIMIT``'s own docstring
+#: gives, applied to a refusal instead of a withdrawal.
+CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT = 10
+
+
+#: Which environment variable a breaker-tripping resolver's credential lives
+#: in, named so the error message below can point at exactly the setting to
+#: check rather than "your credentials" -- the same specificity
+#: :func:`prismabib.capture.enrich._abstract_endpoint_refusing_error` gives
+#: for ``SCOPUS_INSTTOKEN``. Only :data:`~prismabib.fulltext.resolve.SCIENCEDIRECT`
+#: is present: it is the only publisher-constrained resolver
+#: (:data:`~prismabib.fulltext.resolve._PUBLISHER_CONSTRAINED_RESOLVERS`),
+#: which is what makes a genuine, attributable refusal from it possible in
+#: the first place -- an unconstrained resolver's refusal is attributed
+#: unconditionally, so this breaker can in principle still trip for one, and
+#: the message below degrades to a generic hint rather than KeyError-ing on
+#: a name this table does not know.
+_RESOLVER_CREDENTIAL_HINTS: dict[str, str] = {
+    SCIENCEDIRECT: "ELSEVIER_SD_API_KEY",
+}
+
+
+def _entitlement_breaker_error(
+    *, resolver_name: str, consecutive_refusals: int
+) -> EntitlementError:
+    """Build the message for a run whose one resolver refuses every record it is asked about.
+
+    Args:
+        resolver_name: The resolver that tripped the breaker.
+        consecutive_refusals: How many consecutive genuine refusals from
+            this resolver were observed before the breaker fired.
+
+    Returns:
+        An :class:`~prismabib.errors.EntitlementError` naming the resolver
+        and what to do, mirroring
+        :func:`prismabib.capture.enrich._abstract_endpoint_refusing_error`'s
+        discipline: name the specific credential, not just "something is
+        wrong", and say what was *not* written so the reader is not left
+        wondering whether a manifest now claims something false.
+    """
+    credential_hint = _RESOLVER_CREDENTIAL_HINTS.get(
+        resolver_name, "the credential this resolver reads"
+    )
+    return EntitlementError(
+        f"The {resolver_name!r} resolver refused {consecutive_refusals} records in a row, "
+        "and has not resolved a single one in this run -- the signature of a key that is "
+        "not entitled to this resolver's content, not of that many records happening to be "
+        "individually unavailable.\n"
+        "\n"
+        "What to do:\n"
+        f"  1. Check {credential_hint} against your institution's actual entitlement.\n"
+        "  2. Run from your institution's network, which is often required for an\n"
+        "     API key to be recognised as entitled at all.\n"
+        "  3. Without that entitlement, this resolver will refuse every record it is asked\n"
+        "     about; the chain still tries every other resolver for each one, so removing\n"
+        "     (or leaving unset) the credential lets the run proceed without wasting\n"
+        "     further quota on refusals it cannot avoid.\n"
+        "\n"
+        "Nothing from the record that tripped this was written, and the run was not sealed, "
+        "so a later, differently-credentialed call resumes at that same record rather than "
+        "at one already recorded as refused."
+    )
 
 
 class _FullTextProgress(BaseModel):
@@ -511,6 +625,13 @@ def capture_fulltext(
         A :class:`FullTextCaptureOutcome` describing this call's contribution.
 
     Raises:
+        EntitlementError: When one resolver has refused
+            :data:`CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT` records in a row
+            and resolved none of them in this run -- the signature of an
+            unentitled credential (ADR 0021 Decision 4; see
+            :func:`_entitlement_breaker_error`). Raised without writing the
+            triggering record's attempts and without sealing the run, so a
+            later, differently-credentialed call resumes at that record.
         SealedRunError: Only if an internal invariant is violated (a resumed
             run directory turns out to already be sealed); unreachable through
             this function's own code paths.
@@ -559,6 +680,14 @@ def capture_fulltext(
     call_refused_by_resolver: dict[str, int] = {}
     call_unresolved: list[str] = []
     call_failed: list[str] = []
+    #: Consecutive genuine refusals (``entitled=False``), per resolver, since
+    #: the last non-refusal attempt from that same resolver -- reset to 0 on
+    #: any other outcome for that resolver, never on an outcome for a
+    #: different one. Local to this call, not part of `_FullTextProgress`:
+    #: the guard against re-arming on a resumed run is
+    #: `state.resolved_by_resolver`, which *is* persisted, not this counter.
+    #: See CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT.
+    consecutive_refused_by_resolver: dict[str, int] = {}
 
     while state.records_done < len(state.pending_record_ids):
         if budget is not None and call_attempted >= budget:
@@ -578,6 +707,66 @@ def capture_fulltext(
             outcome_is_failure = False
 
         for attempt in attempts:
+            # The breaker counts *genuine* refusals, which is not the same
+            # thing as `attempt.entitled is False` (ADR 0021 Decision 1b:
+            # Layer 0 records the raw fact, and only Layer 1 attributes it to
+            # a publisher). Reading Layer 0's value here would abort a run for
+            # a user whose ScienceDirect key is perfectly good but whose first
+            # ten records are IEEE's -- a false positive that stops retrieval
+            # for every *later* resolver too, Crossref TDM and open access
+            # included, since the chain never reaches them. So the same
+            # derivation the store applies is applied here, to the same
+            # (resolver, DOI) pair.
+            attributed = (
+                _refusal_entitled(resolver_name=attempt.resolver_name, doi=doi)
+                if attempt.entitled is False
+                else None
+            )
+            if attempt.entitled is False and attributed is False:
+                # Checked *before* anything below writes a single byte for
+                # this attempt: a resolver's attempts always carry `content`
+                # only when `entitled=True` (resolve.py never populates it
+                # otherwise), so no asset has been written yet for this
+                # record when the breaker can possibly trip -- discarding it
+                # here costs one call, not a corrupted attempts.jsonl.
+                consecutive_refused_by_resolver[attempt.resolver_name] = (
+                    consecutive_refused_by_resolver.get(attempt.resolver_name, 0) + 1
+                )
+                if (
+                    state.resolved_by_resolver.get(attempt.resolver_name, 0) == 0
+                    and consecutive_refused_by_resolver[attempt.resolver_name]
+                    >= CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT
+                ):
+                    logger.warning(
+                        "fulltext.capture.entitlement_breaker_tripped",
+                        run_id=run_id,
+                        resolver=attempt.resolver_name,
+                        consecutive_refusals=consecutive_refused_by_resolver[attempt.resolver_name],
+                    )
+                    raise _entitlement_breaker_error(
+                        resolver_name=attempt.resolver_name,
+                        consecutive_refusals=consecutive_refused_by_resolver[attempt.resolver_name],
+                    )
+            elif attempt.entitled is False:
+                # A refusal this resolver's publisher constraint says is not
+                # about this record: it is *neutral*, neither incrementing
+                # the counter nor resetting it. An unentitled ScienceDirect
+                # key refuses every record it is asked about, so the IEEE
+                # papers between two Elsevier ones say nothing either way --
+                # letting them reset the counter would leave the breaker
+                # un-armed on exactly the corpus shape (Elsevier a minority)
+                # that motivated a consecutive counter over a first-record
+                # probe in the first place.
+                pass
+            else:
+                # Any other outcome from this resolver -- resolved, or "not
+                # an entitlement question" (HTTP 404, no OA location, no
+                # manual file) -- breaks its own run of refusals. A record
+                # embargoed for reasons unrelated to the key must not
+                # accumulate toward a breaker meant to detect the key
+                # itself.
+                consecutive_refused_by_resolver[attempt.resolver_name] = 0
+
             asset_file = (
                 _write_asset(run_dir, content=attempt.content, media_type=attempt.media_type)
                 if attempt.content is not None and attempt.media_type is not None
@@ -672,6 +861,7 @@ def capture_fulltext(
 __all__ = [
     "ASSETS_DIRNAME",
     "ATTEMPTS_FILENAME",
+    "CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT",
     "PROGRESS_FILENAME",
     "RUNS_DIRNAME",
     "FullTextCaptureOutcome",

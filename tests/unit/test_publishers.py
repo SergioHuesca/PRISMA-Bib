@@ -85,6 +85,13 @@ _ALL_PREFIX_CASES = [
     pytest.param("10.1137", "SIAM", id="siam"),
     pytest.param("10.2200", "Morgan & Claypool", id="morgan-and-claypool"),
     pytest.param("10.1142", "World Scientific", id="world-scientific"),
+    # Added against a real corpus (Issue #36) -- transcribed from the DOI
+    # Foundation's public prefix registry independently of the table under
+    # test, per this file's own guard below.
+    pytest.param("10.1117", "SPIE", id="spie"),
+    pytest.param("10.1541", "IEEJ", id="ieej"),
+    pytest.param("10.2478", "Sciendo", id="sciendo"),
+    pytest.param("10.5220", "SciTePress", id="scitepress"),
 ]
 
 
@@ -150,4 +157,19 @@ def test_publisher_from_doi__unparseable_doi__preserved_never_guessed() -> None:
     value, matched = publisher_from_doi("not-a-doi-at-all")
 
     assert value == "not-a-doi-at-all"
+    assert matched is False
+
+
+@pytest.mark.unit
+def test_publisher_from_doi__shared_conference_prefix__stays_unmapped() -> None:
+    """``10.23919`` is deliberately absent, not merely not yet added (Issue #36).
+
+    It is a shared conference-proceedings prefix used by several distinct
+    organising bodies rather than one publisher, and this table's own rule
+    is to extend by adding an entry, never by inferring one -- see the
+    comment beside ``_PREFIX_TO_PUBLISHER``.
+    """
+    value, matched = publisher_from_doi("10.23919/example.2026.100001")
+
+    assert value == "10.23919"
     assert matched is False

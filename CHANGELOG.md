@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] — 2026-09-04
+
+### Fixed
+
+- **The coverage table claimed refusals that never happened.** It read
+  `IEEE | 17 records | 0 resolved | 17 refused` — which in a methods section says *we were
+  denied 17 IEEE papers*. We never asked IEEE: ScienceDirect, Elsevier's API, refused, and it
+  never held them. `Nature Portfolio | 1 refused` was worse — that record is in *Scientific
+  Reports*, fully open access, and was in fact resolved from it. Closes #36.
+
+  A refusal is now recorded as an entitlement gap **only when the refusing resolver could have
+  served that record's publisher**. ScienceDirect is Elsevier-only by construction; Crossref
+  TDM, open access and the manual drop are not constrained, so a refusal from one of them *is*
+  an entitlement question about whatever record it was asked about.
+  [ADR 0021](docs/architecture/adr/0021-entitlement-refusals-are-attributed-to-a-publisher.md)
+  — no fifth status, no schema change: `NULL` already meant "not an entitlement question".
+
+  **An unidentifiable publisher records `NULL`, never `false`.** The asymmetry is deliberate:
+  over-reporting is an active false statement in a methods section, under-reporting only an
+  omission from a limitations paragraph.
+
+  **The attribution is derived in Layer 1, not stored in Layer 0** — which is what makes the
+  fix reach data that already exists. Applying it at capture time corrected new attempts and
+  left every sealed run alone, so the corpus that exposed the defect still read "IEEE: 5
+  refused" afterwards; re-resolving to repair a *label* would re-spend a weekly quota. Layer 0
+  keeps recording the raw fact (this resolver was refused) and `prismabib build --rebuild` now
+  re-interprets every historical run at no cost. Measured on the real corpus: ScienceDirect
+  refusals 11 → 2, exactly the two Elsevier records, with IEEE (5 → 0), Springer (3 → 0) and
+  Nature Portfolio (1 → 0) no longer charged for a refusal from an API that never held their
+  papers. ACM's single Crossref TDM refusal stays, correctly — that resolver is unconstrained.
+
+- **An unentitled key is now detected early.** A consecutive-refusal breaker aborts once N
+  genuine refusals come from one resolver that has resolved nothing — the robust form of
+  `enrich.py`'s first-record probe, which does not transfer here: under the rule above a
+  ScienceDirect 403 on a non-Elsevier record is not a refusal at all, so a first-record probe
+  would sit un-armed on a corpus where Elsevier is a minority. "Genuine" means the breaker
+  applies the attribution rule itself rather than reading Layer 0's raw `entitled`: counting
+  raw refusals would abort the whole chain — Crossref TDM and open access included — for a
+  user whose key is fine but whose first records are another publisher's.
+
+### Added
+
+- Four DOI registrant prefixes seen in a real corpus: `10.1117` SPIE, `10.1541` IEEJ,
+  `10.2478` Sciendo, `10.5220` SciTePress. `10.23919` is left unmapped with a comment — it is a
+  shared conference-proceedings prefix used by several organising bodies, and a table that
+  guesses is worse than one that says it does not know.
+
 ## [0.17.0] — 2026-09-04
 
 ### Added

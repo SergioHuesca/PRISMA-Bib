@@ -180,6 +180,7 @@ from prismabib.countries import normalise_country
 from prismabib.errors import StoreError, ValidationError
 from prismabib.fulltext.capture import sealed_fulltext_run_dirs
 from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
+from prismabib.fulltext.resolve import _refusal_entitled
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
@@ -448,6 +449,12 @@ class _Accumulator:
     subject_areas: set[tuple[str, str]] = field(default_factory=set)
     citation_snapshots: dict[tuple[str, datetime], int] = field(default_factory=dict)
     seen_record_ids: set[str] = field(default_factory=set)
+    #: ``record_id -> doi`` for every record loaded, so the full-text
+    #: loader can attribute a refusal to a publisher (ADR 0021 Decision
+    #: 1b). Layer 0 records the raw 403; which publisher it counts
+    #: against is derived here, so a rebuild re-interprets runs sealed
+    #: before that ADR without re-fetching anything.
+    doi_by_record_id: dict[str, str | None] = field(default_factory=dict)
     #: ``(query, record_id)`` pairs already counted toward `identified`.
     #:
     #: A *set of pairs*, not a record -> first-query mapping. The mapping was
@@ -1344,6 +1351,7 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                     )
                 continue
             acc.seen_record_ids.add(record_id)
+            acc.doi_by_record_id[record_id] = record.doi
             acc.counted_query_records.add((manifest.query, record_id))
 
             venue_id = _venue_id_from_entry(entry, record.venue)
@@ -1690,7 +1698,20 @@ def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
                 media_type if isinstance(media_type, str) else None,
                 asset_path,
                 retrieved_at,
-                entitled if isinstance(entitled, bool) else None,
+                # Derived, never copied through. Layer 0's `entitled=false` is
+                # the raw fact "this resolver was refused (403)"; Layer 1's is
+                # the interpretation "refused, and it counts against this
+                # publisher" (ADR 0021 Decision 1b). Deriving it here is what
+                # lets `build --rebuild` correct runs sealed before that ADR --
+                # a corpus already holds refusals recorded under the old
+                # unconditional rule, and re-resolving to repair a *label*
+                # would re-spend a weekly quota.
+                _refusal_entitled(
+                    resolver_name=resolver_name,
+                    doi=acc.doi_by_record_id.get(record_id),
+                )
+                if entitled is False
+                else (entitled if isinstance(entitled, bool) else None),
             )
 
             if asset_path is not None:

@@ -17,6 +17,18 @@ not an entitlement question at all) rather than collapsing the latter two
 into one "failed" count that would erase exactly the distinction ADR 0019
 exists to preserve.
 
+Both columns read Layer 1's ``entitled``, which is the *attributed* value
+(ADR 0021 Decision 1b), not Layer 0's raw one. One consequence is worth
+stating because it is not obvious from the column names: a refusal the
+attribution rejects -- a ScienceDirect 403 on an IEEE paper -- lands in
+*not found*, alongside the HTTP 404s. That is the intended reading
+("ScienceDirect genuinely never held this paper"), but it does mean this
+table's *not found* is not a synonym for "the server answered 404", and a
+resolver whose credential is unentitled will show most of its work there
+rather than under *refused*. The per-publisher table
+(:func:`coverage_by_publisher_table`) is where an entitlement gap is meant
+to be read off.
+
 **Why publisher comes from the DOI, not from ``resolver_name``.** See
 :mod:`prismabib.publishers`'s module docstring: deriving publisher from the
 resolver that succeeded is circular and makes every resolved paper Elsevier
