@@ -39,19 +39,21 @@ sketch and plural in reality.
 ```python
 @dataclass(frozen=True)
 class Provenance:
-    corpus_size: int                      # n, after `stage` filtering
-    stage: PrismaStage                    # which PRISMA set the number is over
-    retrieved_at: datetime | None         # max(runs.started_at): the corpus's own as-at date
-    run_ids: tuple[str, ...]              # every sealed search run contributing, sorted
-    criteria_versions: tuple[str, ...]    # distinct, sorted
-    citation_snapshot: datetime | None    # None unless this analysis read citations
-    citation_snapshot_is_uniform: bool    # False when records disagree on retrieved_at
+    corpus_size: int  # n, after `stage` filtering
+    stage: PrismaStage  # which PRISMA set the number is over
+    retrieved_at: datetime | None  # max(runs.started_at): the corpus's own as-at date
+    run_ids: tuple[str, ...]  # every sealed search run contributing, sorted
+    criteria_versions: tuple[str, ...]  # distinct, sorted
+    citation_snapshot: datetime | None  # None unless this analysis read citations
+    citation_snapshot_is_uniform: bool  # False when records disagree on retrieved_at
+
 
 @dataclass(frozen=True)
 class AnalysisResult:
     data: pl.DataFrame
     params: Mapping[str, Any]
     provenance: Provenance
+
     def caption(self) -> str: ...
 ```
 
