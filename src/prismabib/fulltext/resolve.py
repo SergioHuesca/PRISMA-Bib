@@ -12,12 +12,21 @@ under-represented rather than un-fetched.
 
 1. :class:`ScienceDirectResolver` -- entitled Elsevier content, XML via
    Article Retrieval.
-2. :class:`OpenAccessResolver` -- DOI -> OA location (Unpaywall), PDF fetch,
+2. :class:`CrossrefTdmResolver` -- publisher-declared text-and-data-mining
+   links from Crossref's free, keyless API, accepted only when the
+   downloaded bytes actually sniff as a PDF
+   (:func:`~prismabib.sources.unpaywall.looks_like_pdf`) and the link's host
+   is not one a dedicated resolver already covers (``api.elsevier.com``,
+   which :class:`ScienceDirectResolver` already tried one position earlier
+   -- ADR 0020 Decision 3). Second, not last: a TDM link is the publisher's
+   own version of record, which a review should prefer over an author
+   preprint when both are available (ADR 0020 Decision 1).
+3. :class:`OpenAccessResolver` -- DOI -> OA location (Unpaywall), PDF fetch,
    verified to actually be a PDF (:func:`~prismabib.sources.unpaywall.looks_like_pdf`)
    before it is accepted -- a bare HTTP 200 is not enough, since Unpaywall's
    fallback location is routinely an HTML landing page.
-3. :class:`ManualDropResolver` -- ``projects/<slug>/fulltext/manual/<record_id>.pdf``.
-4. None of the above -> :func:`resolve_fulltext` returns ``(None, attempts)``.
+4. :class:`ManualDropResolver` -- ``projects/<slug>/fulltext/manual/<record_id>.pdf``.
+5. None of the above -> :func:`resolve_fulltext` returns ``(None, attempts)``.
    That is a candidate for a human to mark ``INACCESSIBLE`` during
    full-text screening (BUILD_PLAN, ADR 0019 hard rule 2) -- **never**
    something this module, or anything it calls, writes on its own. See
@@ -118,6 +127,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
+from urllib.parse import urlparse
 
 import structlog
 
@@ -125,6 +135,7 @@ from prismabib.capture.layout import CACHE_DIRNAME
 from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import ConfigError, EntitlementError, PrismabibError
 from prismabib.sources.cache import HttpCache
+from prismabib.sources.crossref import CrossrefTdmClient, tdm_links
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.sciencedirect import ArticleNotFoundError, ScienceDirectClient
 from prismabib.sources.unpaywall import (
@@ -138,12 +149,23 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-#: The three resolver names, in chain order. Also the closed vocabulary of
+#: The four resolver names, in chain order. Also the closed vocabulary of
 #: ``fulltext_assets.resolver_name`` and of :mod:`prismabib.fulltext.coverage`'s
 #: "by resolver" grouping.
 SCIENCEDIRECT = "sciencedirect"
+CROSSREF_TDM = "crossref_tdm"
 OPENACCESS = "openaccess"
 MANUAL = "manual"
+
+#: TDM link hosts a dedicated resolver already covers, so
+#: :class:`CrossrefTdmResolver` skips them rather than issuing a second,
+#: redundant request (ADR 0020 Decision 3). ``api.elsevier.com`` is
+#: ScienceDirect's own host: :class:`ScienceDirectResolver` has already tried
+#: it one position earlier in the chain, and fetching it again here would
+#: refuse the same record twice for one underlying cause -- inflating
+#: :mod:`prismabib.fulltext.coverage`'s entitlement-gap count, precisely the
+#: number ADR 0019 exists to keep honest.
+_TDM_HOSTS_ALREADY_COVERED: frozenset[str] = frozenset({"api.elsevier.com"})
 
 #: The relative path (under ``project.fulltext_dir``) where a reviewer drops a
 #: PDF they obtained through their own institutional access. An operator
@@ -473,6 +495,101 @@ class ScienceDirectResolver:
 
 
 @dataclass
+class CrossrefTdmResolver:
+    """Publisher-declared text-mining links from Crossref, verified to be a PDF.
+
+    Second in the chain (ADR 0020 Decision 1): a TDM link is the publisher's
+    own version of record, which a review should prefer over an author
+    preprint (:class:`OpenAccessResolver`'s Unpaywall result) when both are
+    available.
+
+    Args:
+        crossref_client: The :class:`~prismabib.sources.crossref.CrossrefTdmClient`
+            to use.
+        name: Fixed at :data:`CROSSREF_TDM`.
+    """
+
+    crossref_client: CrossrefTdmClient
+    name: str = CROSSREF_TDM
+
+    def resolve(self, *, record_id: str, doi: str | None) -> FullTextAsset | None:
+        """See :meth:`FullTextResolver.resolve`.
+
+        Tries every ``text-mining``-intended link Crossref names for this
+        DOI, in the order Crossref returned them, skipping any whose host a
+        dedicated resolver already covers
+        (:data:`_TDM_HOSTS_ALREADY_COVERED` -- ADR 0020 Decision 3) without
+        issuing a request to it at all.
+
+        Raises:
+            EntitlementError: When a TDM link's host refuses the download
+                with HTTP 403 -- propagates untranslated so
+                :func:`resolve_fulltext` can record ``entitled=False`` and
+                continue to the next resolver (ADR 0019's unchanged 403
+                rule, restated by ADR 0020). Unlike
+                :class:`OpenAccessResolver`, which never raises this (a
+                public OA copy carries no entitlement concept), a TDM link
+                points at a publisher's own licensed text-mining endpoint --
+                the same shape as :class:`ScienceDirectResolver`'s 403, just
+                reached through Crossref's link list instead of a direct
+                Article Retrieval call.
+        """
+        if not doi:
+            return None
+        response = self.crossref_client.lookup(doi)
+        if response is None:
+            return None
+        for link in tdm_links(response):
+            host = urlparse(link.url).hostname
+            if host is not None and host.casefold() in _TDM_HOSTS_ALREADY_COVERED:
+                logger.info(
+                    "fulltext.resolver.crossref_tdm.host_already_covered",
+                    record_id=record_id,
+                    host=host,
+                )
+                continue
+            try:
+                content, content_type = self.crossref_client.fetch_bytes(link.url)
+            except EntitlementError:
+                # Propagates untranslated -- see the docstring above. A
+                # refusal here is a fact about this resolver's entitlement,
+                # not about one candidate link, so it is not swallowed and
+                # retried against the next link the way a soft failure is
+                # below.
+                raise
+            except Exception as exc:  # noqa: BLE001 -- see OpenAccessResolver's identical comment
+                # One candidate link failing (a dead host, a malformed URL, a
+                # transient non-5xx error already exhausted by the client's
+                # own retry policy) says nothing about the next one, and
+                # costs only that candidate -- exactly
+                # `OpenAccessResolver.resolve`'s per-candidate scope, for the
+                # identical reason: anything escaping here reaches
+                # `resolve_fulltext`'s outer handler, which abandons the
+                # whole chain for this record.
+                logger.info(
+                    "fulltext.resolver.crossref_tdm.candidate_failed",
+                    record_id=record_id,
+                    error=str(exc),
+                )
+                continue
+            if not looks_like_pdf(content, content_type):
+                logger.info(
+                    "fulltext.resolver.crossref_tdm.not_a_pdf",
+                    record_id=record_id,
+                    content_type=content_type,
+                )
+                continue
+            return FullTextAsset(
+                record_id=record_id,
+                resolver_name=self.name,
+                media_type="pdf",
+                content=content,
+                retrieved_at=datetime.now(UTC),
+            )
+        return None
+
+
+@dataclass
 class OpenAccessResolver:
     """DOI -> open-access location (Unpaywall) -> PDF fetch, verified to be a PDF.
 
@@ -619,13 +736,15 @@ class ManualDropResolver:
 def default_chain(
     project: Project, settings: Settings | FullTextSettings | None = None
 ) -> Iterator[tuple[FullTextResolver, ...]]:
-    """Build BUILD_PLAN's standard three-resolver chain for one project.
+    """Build the standard four-resolver chain for one project (ADR 0020).
 
     Degrades gracefully rather than refusing outright: a researcher with no
-    Elsevier entitlement at all still gets open access and manual drop, and
-    one with no ``UNPAYWALL_EMAIL`` set still gets ScienceDirect and manual
-    drop. :class:`ManualDropResolver` is unconditional -- it needs no
-    credential and costs no network call to construct.
+    Elsevier entitlement at all still gets Crossref TDM, open access and
+    manual drop, and one with no ``UNPAYWALL_EMAIL`` set still gets
+    ScienceDirect, Crossref TDM (anonymously -- see
+    :class:`~prismabib.sources.crossref.CrossrefTdmClient`) and manual drop.
+    :class:`CrossrefTdmResolver` and :class:`ManualDropResolver` are both
+    unconditional: neither needs a credential to construct.
 
     Args:
         project: The project resolvers read the manual drop-box under
@@ -639,8 +758,9 @@ def default_chain(
             the note below for why not :class:`~prismabib.config.Settings`.
 
     Yields:
-        The chain, in BUILD_PLAN order (ScienceDirect, open access, manual
-        drop, omitting whichever of the first two lack their credential).
+        The chain, in ADR 0020 order (ScienceDirect, Crossref TDM, open
+        access, manual drop, omitting ScienceDirect when its credential is
+        absent).
 
     Note:
         When ``settings`` is omitted this reads
@@ -656,7 +776,7 @@ def default_chain(
         settings if settings is not None else FullTextSettings()
     )
     resolvers: list[FullTextResolver] = []
-    closers: list[ScienceDirectClient | UnpaywallClient] = []
+    closers: list[ScienceDirectClient | CrossrefTdmClient | UnpaywallClient] = []
     cache_dir = project.fulltext_dir / CACHE_DIRNAME
 
     try:
@@ -670,6 +790,18 @@ def default_chain(
     else:
         closers.append(sd_client)
         resolvers.append(ScienceDirectResolver(client=sd_client))
+
+    # `CrossrefTdmClient` never raises `ConfigError` -- Crossref needs no
+    # credential at all (ADR 0020) -- so, unlike the two clients above, this
+    # one is constructed unconditionally, exactly like `ManualDropResolver`
+    # below.
+    crossref_client = CrossrefTdmClient(
+        resolved_settings,
+        rate_limiter=RateLimiter(),
+        cache=HttpCache(cache_dir),
+    )
+    closers.append(crossref_client)
+    resolvers.append(CrossrefTdmResolver(crossref_client=crossref_client))
 
     try:
         oa_client = UnpaywallClient(
@@ -693,10 +825,12 @@ def default_chain(
 
 
 __all__ = [
+    "CROSSREF_TDM",
     "MANUAL",
     "MANUAL_DROP_DIRNAME",
     "OPENACCESS",
     "SCIENCEDIRECT",
+    "CrossrefTdmResolver",
     "FullTextAsset",
     "FullTextAttempt",
     "FullTextResolutionError",

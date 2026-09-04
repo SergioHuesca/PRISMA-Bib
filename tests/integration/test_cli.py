@@ -31,6 +31,7 @@ from typer.testing import CliRunner
 
 from prismabib.cli import app
 from prismabib.project import Project
+from prismabib.sources.crossref import CrossrefTdmClient
 from prismabib.store.load import build_store
 from tests.prisma_helpers import (
     CorpusSpec,
@@ -42,6 +43,24 @@ from tests.prisma_helpers import (
 )
 
 runner = CliRunner()
+
+#: `default_chain` now always constructs a
+#: `~prismabib.fulltext.resolve.CrossrefTdmResolver` (Crossref needs no
+#: credential -- ADR 0020), so every `fulltext` CLI invocation below makes one
+#: real HTTP request per DOI unless intercepted -- even with
+#: `ELSEVIER_SD_API_KEY`/`UNPAYWALL_EMAIL` both cleared, the "no network
+#: needed" premise several tests below state in their own comments no longer
+#: holds for Crossref specifically. `_mock_crossref_reports_nothing` (call
+#: inside an active `respx.mock` context) answers every DOI identically with
+#: "no text-mining link" -- Crossref's own measured majority case (ADR 0020:
+#: 23 of 29 records on the corpus it measured).
+_CROSSREF_LOOKUP_PREFIX = CrossrefTdmClient.LOOKUP_ENDPOINT_TEMPLATE.rsplit("/", 1)[0] + "/"
+
+
+def _mock_crossref_reports_nothing() -> None:
+    """Register a catch-all route answering every Crossref lookup with "no text-mining link"."""
+    respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(return_value=httpx.Response(404))
+
 
 _SEARCH_URL = "https://api.elsevier.com/content/search/scopus"
 
@@ -347,9 +366,12 @@ def test_cli_fulltext__manual_drop__resolves_and_reports_a_sealed_layer0_run(
     drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
 
     # No ELSEVIER_SD_API_KEY/UNPAYWALL_EMAIL in the test environment: the chain
-    # degrades to ManualDropResolver alone (see `default_chain`'s docstring),
-    # so this needs no network mock at all.
-    result = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+    # degrades to CrossrefTdmResolver (unconditional -- ADR 0020) and
+    # ManualDropResolver alone (see `default_chain`'s docstring), so only
+    # Crossref's own keyless lookup needs a network mock.
+    with respx.mock:
+        _mock_crossref_reports_nothing()
+        result = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
 
     assert result.exit_code == 0
     # `resolve_fulltext` catches `Exception` so one record's failure costs one
@@ -385,9 +407,11 @@ def test_cli_fulltext__budget_of_zero_records__reports_unsealed(
         drop_path.parent.mkdir(parents=True, exist_ok=True)
         drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
 
-    result = runner.invoke(
-        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
-    )
+    with respx.mock:
+        _mock_crossref_reports_nothing()
+        result = runner.invoke(
+            app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+        )
 
     assert result.exit_code == 0
     # `resolve_fulltext` catches `Exception` so one record's failure costs one
@@ -658,11 +682,13 @@ def test_cli_fulltext__resumed_run_finds_nothing_new__still_reports_the_running_
     drop_path.parent.mkdir(parents=True, exist_ok=True)
     drop_path.write_bytes(b"%PDF-1.4\n%%EOF")
 
-    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
-    assert first.exit_code == 0, first.output
-    assert "unexpected error mid-chain" not in first.stdout
+    with respx.mock:
+        _mock_crossref_reports_nothing()
+        first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+        assert first.exit_code == 0, first.output
+        assert "unexpected error mid-chain" not in first.stdout
 
-    second = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+        second = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
 
     assert second.exit_code == 0, second.output
     assert "unexpected error mid-chain" not in second.stdout
@@ -712,9 +738,11 @@ def test_cli_fulltext__budget_capped_first_run__does_not_claim_records_already_h
     # coincide and this test would pass with the defect present.
     assert sought > 1, "fixture cannot distinguish measured from derived"
 
-    result = runner.invoke(
-        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
-    )
+    with respx.mock:
+        _mock_crossref_reports_nothing()
+        result = runner.invoke(
+            app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+        )
 
     assert result.exit_code == 0, result.output
     # Nothing has ever been resolved for this project.
@@ -754,10 +782,14 @@ def test_cli_fulltext__resumed_budget_run__the_running_total_moves(
         drop.parent.mkdir(parents=True, exist_ok=True)
         drop.write_bytes(b"%PDF-1.4\n%%EOF")
 
-    first = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"])
-    second = runner.invoke(
-        app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
-    )
+    with respx.mock:
+        _mock_crossref_reports_nothing()
+        first = runner.invoke(
+            app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+        )
+        second = runner.invoke(
+            app, ["fulltext", project.slug, "--root", str(tmp_path), "--budget", "1"]
+        )
 
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
