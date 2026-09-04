@@ -32,13 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused" afterwards; re-resolving to repair a *label* would re-spend a weekly quota. Layer 0
   keeps recording the raw fact (this resolver was refused) and `prismabib build --rebuild` now
   re-interprets every historical run at no cost. Measured on the real corpus: ScienceDirect
-  refusals 35 → 2, exactly the two Elsevier records, with IEEE and Nature Portfolio at 0.
+  refusals 11 → 2, exactly the two Elsevier records, with IEEE (5 → 0), Springer (3 → 0) and
+  Nature Portfolio (1 → 0) no longer charged for a refusal from an API that never held their
+  papers. ACM's single Crossref TDM refusal stays, correctly — that resolver is unconstrained.
 
 - **An unentitled key is now detected early.** A consecutive-refusal breaker aborts once N
   genuine refusals come from one resolver that has resolved nothing — the robust form of
   `enrich.py`'s first-record probe, which does not transfer here: under the rule above a
   ScienceDirect 403 on a non-Elsevier record is not a refusal at all, so a first-record probe
-  would sit un-armed on a corpus where Elsevier is a minority.
+  would sit un-armed on a corpus where Elsevier is a minority. "Genuine" means the breaker
+  applies the attribution rule itself rather than reading Layer 0's raw `entitled`: counting
+  raw refusals would abort the whole chain — Crossref TDM and open access included — for a
+  user whose key is fine but whose first records are another publisher's.
 
 ### Added
 

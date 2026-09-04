@@ -151,19 +151,49 @@ when accompanied by prose is the wrong number.
 
 ## Consequences
 
-1. **The by-publisher table stops claiming refusals that never happened.** On the measured
-   corpus, IEEE's 17, Springer's 5 and Nature Portfolio's 1 become `NULL` — not resolved, not
-   refused, simply not reachable by the resolvers available.
-2. **Elsevier's genuine gap still shows.** An unentitled key still records `entitled = false`
-   for Elsevier records, which is the true and useful statement: *this reviewer lacks Elsevier
-   access*.
+1. **The by-publisher table stops claiming refusals that never happened.** Measured on the
+   corpus as it stands today — not the first run quoted in Context, which has since been
+   added to — the ScienceDirect refusals surviving deduplication are attributed like this:
+
+   | Publisher | Records | Resolved | Refused (before) | Refused (after) |
+   | --- | --- | --- | --- | --- |
+   | IEEE | 17 | 5 | 5 | **0** |
+   | Springer | 5 | 3 | 3 | **0** |
+   | Nature Portfolio | 1 | 1 | 1 | **0** |
+   | Elsevier | 2 | 0 | 2 | **2** |
+   | ACM | 1 | 0 | 1 | **1** |
+
+   ScienceDirect's own row goes from 11 refusals to 2. The first three publishers' refusals
+   become `NULL` — not an entitlement question, because the only resolver that refused them
+   could never have served them. Note that these are *not* the Context table's numbers: that
+   table is the first run, before any record had been resolved at all, and its **Refused**
+   column happened to equal its **Records** column because nothing had succeeded yet. Reading
+   17 as "IEEE's refusals" today would repeat, in this ADR, exactly the column confusion the
+   ADR exists to fix.
+2. **Elsevier's genuine gap still shows, and ACM's.** An unentitled key still records
+   `entitled = false` for Elsevier records, which is the true and useful statement: *this
+   reviewer lacks Elsevier access*. ACM's single refusal comes from Crossref TDM, which is
+   unconstrained, so it is attributed unconditionally and is equally genuine.
 3. **No published PRISMA number moves.** `entitled` feeds only the coverage tables; the flow
    counts come from the decision log and Layer 1.
-5. **A rebuild repairs an existing corpus.** Because the attribution is derived rather than
+4. **A rebuild repairs an existing corpus.** Because the attribution is derived rather than
    stored, `prismabib build --rebuild` corrects runs sealed before this ADR without
    re-fetching anything.
-4. **An unentitled key now surfaces early** rather than after a full corpus, via the
+5. **An unentitled key now surfaces early** rather than after a full corpus, via the
    consecutive-refusal breaker.
+6. **A resolver's *Not found* column now absorbs its unattributable refusals.** In
+   `coverage_by_resolver_table`, a ScienceDirect 403 on an IEEE paper is neither resolved nor
+   refused, so it counts as *not found* alongside the genuine 404s. That is the intended
+   reading — ScienceDirect really never held the paper — but it means an unentitled key shows
+   most of its work in that column, and the per-publisher table is where a gap should be read
+   off. Stated in `coverage.py`'s module docstring rather than left for a reader to infer.
+7. **This corpus's Layer 0 is mixed, harmlessly.** Runs sealed during the first,
+   capture-time attempt at Decision 1 recorded `entitled: null` where Decision 1b says the
+   raw fact `false` belongs. The derivation maps `null → null` and `false → NULL` for the
+   same non-attributable case, so Layer 1 is identical either way; only Layer 0's ability to
+   distinguish "never asked" from "refused, not attributable" is lost for those runs. No
+   action is taken: rewriting a sealed run to repair it would break the immutability that
+   makes the rebuild trustworthy in the first place.
 
 ## Constraints
 
@@ -174,7 +204,10 @@ when accompanied by prose is the wrong number.
 - An unidentifiable publisher records `NULL`, never `false`.
 - The attempt is still made; only the recording changes.
 - The breaker counts **consecutive genuine refusals with nothing resolved by that resolver**,
-  and cannot fire on a single embargoed article.
+  and cannot fire on a single embargoed article. "Genuine" is the derived value, not Layer 0's
+  raw one: the breaker applies the Decision 1 rule itself rather than reading `entitled` off
+  the attempt. A refusal the rule does not attribute is *neutral* — it neither increments the
+  counter nor resets it, since it carries no information about the credential either way.
 
 ## Related decisions
 

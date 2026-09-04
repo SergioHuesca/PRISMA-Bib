@@ -107,7 +107,17 @@ CREATE TABLE record_subject_area_coverage (
 -- no asset yet must still be recorded, because `entitled = false` (an entitlement
 -- gap) is exactly what the Stage 6 coverage table needs to tell apart from
 -- `entitled IS NULL` (no open-access copy, no manual drop, HTTP 404) -- conflating
--- the two is the corpus bias this stage exists to prevent. `path`/`media_type` are
+-- the two is the corpus bias this stage exists to prevent.
+--
+-- `entitled` here does NOT mean the same thing as `entitled` in Layer 0's
+-- `attempts.jsonl` (ADR 0021 Decision 1b). Layer 0 records the raw fact: this
+-- resolver was refused, `false`, always. This column records the *attribution*:
+-- `false` only when the refusing resolver could have served the record's own
+-- publisher, and `NULL` when it could not (a ScienceDirect 403 on an IEEE paper
+-- -- ScienceDirect never held it and IEEE was never asked) or when the publisher
+-- cannot be identified at all. The derivation happens in `store/load.py`, which
+-- is what lets `build --rebuild` correct runs sealed under the older,
+-- unconditional rule without re-fetching anything. `path`/`media_type` are
 -- NULL when an attempt yielded no asset; a resolver is never re-attempted for a
 -- record that already has a *resolved* attempt in a sealed Layer 0 run --
 -- resumption reads `fulltext/runs/<run_id>/attempts.jsonl`, not this table,

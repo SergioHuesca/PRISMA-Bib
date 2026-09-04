@@ -50,17 +50,24 @@ entitlement question" (HTTP 404, no OA location, a non-PDF response, no
 manual file present) -- which is the three-valued distinction ADR 0019
 requires the coverage table to be able to draw.
 
-**Recording a refusal is not unconditional (ADR 0021, amending ADR 0019).**
-An :class:`~prismabib.errors.EntitlementError` from resolver *N* is recorded
-as one :class:`FullTextAttempt` with ``entitled=`` :func:`_refusal_entitled`'s
-result, not always ``False``. Some resolvers -- today, only
-:class:`ScienceDirectResolver` -- can only ever serve one publisher's
-content, and a refusal from one of them is an entitlement gap only when the
-record actually is that publisher's: an unentitled Elsevier key 403s *every*
-DOI before it has looked at it, and recording an IEEE paper's ScienceDirect
-403 as ``entitled=False`` claims "we were refused this IEEE paper" when
-ScienceDirect never held it and IEEE was never asked. See
-:data:`_PUBLISHER_CONSTRAINED_RESOLVERS` and :func:`_refusal_entitled`.
+**A refusal is recorded here as a raw fact, and attributed elsewhere (ADR
+0021, amending ADR 0019).** An :class:`~prismabib.errors.EntitlementError`
+from resolver *N* is always recorded as one :class:`FullTextAttempt` with
+``entitled=False`` -- Layer 0 states that this resolver said no, and nothing
+more. Whether that refusal is an entitlement gap *for the record's own
+publisher* is an interpretation of the fact, and it is derived in Layer 1 by
+:mod:`prismabib.store.load` (ADR 0021 Decision 1b). It has to be: some
+resolvers -- today, only :class:`ScienceDirectResolver` -- can only ever
+serve one publisher's content, an unentitled Elsevier key 403s *every* DOI
+before it has looked at it, and recording an IEEE paper's ScienceDirect 403
+as that paper's entitlement gap claims "we were refused this IEEE paper"
+when ScienceDirect never held it and IEEE was never asked. Deriving rather
+than storing is what lets ``prismabib build --rebuild`` repair runs sealed
+under the old rule, at no quota cost. See
+:data:`_PUBLISHER_CONSTRAINED_RESOLVERS` and :func:`_refusal_entitled` for
+the rule itself; the only two callers are the store's loader and
+:mod:`prismabib.fulltext.capture`'s consecutive-refusal breaker, which must
+count genuine refusals rather than raw ones.
 
 **A non-entitlement failure mid-chain must not discard what was already
 learned, or abort the whole run.** Before this module caught only
@@ -322,22 +329,23 @@ class FullTextAttempt:
             asset. Mirrors :attr:`FullTextAsset.content` -- not yet placed
             anywhere on disk.
         retrieved_at: When the attempt was made (success or not).
-        entitled: The three-valued column ADR 0019 requires:
+        entitled: The three-valued column ADR 0019 requires -- in its
+            **Layer 0** sense, which is not the same as the Layer 1 column
+            of the same name (ADR 0021 Decision 1b):
 
             - ``True`` -- an asset was obtained.
             - ``False`` -- the resolver was refused
-              (:class:`~prismabib.errors.EntitlementError`) *and* the
-              refusal was a genuine entitlement gap about this record --
-              either the resolver is not publisher-constrained, or it is and
-              the record's own publisher matches what it serves (ADR 0021
-              Decision 1, :func:`_refusal_entitled`).
+              (:class:`~prismabib.errors.EntitlementError`). That is all it
+              means here. It does *not* assert that the refusal counts
+              against the record's own publisher: a ScienceDirect 403 for an
+              IEEE paper is recorded ``False`` on this object too. The
+              attribution is applied by :mod:`prismabib.store.load` when
+              this row is folded into ``fulltext_assets``, where ``False``
+              carries the stronger meaning "refused, *and* it counts against
+              this publisher".
             - ``None`` -- not an entitlement question: no asset and no
-              (attributable) refusal either -- HTTP 404, no OA location, a
-              response that came back 200 but was not actually a PDF, no
-              manual file, *or* a publisher-constrained resolver's refusal on
-              a record it could never have served in the first place (a
-              ScienceDirect 403 for an IEEE paper) or could not identify the
-              publisher of at all (ADR 0021 Decisions 1-2).
+              refusal -- HTTP 404, no OA location, a response that came back
+              200 but was not actually a PDF, no manual file.
     """
 
     record_id: str
@@ -421,10 +429,11 @@ class FullTextResolver(Protocol):
                 :class:`OpenAccessResolver` or :class:`ManualDropResolver`,
                 which have no entitlement concept). Caught only by
                 :func:`resolve_fulltext`, never by a resolver itself and
-                never re-raised as anything else. Recorded as
-                ``entitled=False`` only when this resolver could plausibly
-                have served the record's own publisher -- see
-                :func:`_refusal_entitled` (ADR 0021).
+                never re-raised as anything else. Recorded on the Layer 0
+                attempt as ``entitled=False`` unconditionally; whether it is
+                an entitlement gap for the record's own publisher is derived
+                later -- see :func:`_refusal_entitled` (ADR 0021 Decision
+                1b).
         """
         ...
 

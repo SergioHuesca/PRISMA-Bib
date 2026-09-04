@@ -78,16 +78,20 @@ call picks up a matching unsealed run directory by its target-set digest
 ``capture/enrich.py`` aborts a fresh run on a 403 for the first record it
 attempts, because an unentitled Abstract Retrieval key 403s every request and
 that shape costs one call to learn rather than a whole weekly quota. That
-shape does not transfer here: under ADR 0021 Decision 1, a ScienceDirect 403
-for a non-Elsevier record is recorded ``entitled=None``, not ``False`` -- it
-is not a refusal of *this* record's publisher at all -- so on a corpus where
-Elsevier is a minority the first record attempted is very often not Elsevier,
-never trips a first-record probe, and an unentitled key would spend its
-whole run before anything noticed.
+shape does not transfer here: a ScienceDirect 403 for a non-Elsevier record
+is not a refusal of *this* record's publisher at all (ADR 0021 Decision 1),
+so on a corpus where Elsevier is a minority the first record attempted is
+very often not Elsevier, carries no information about the key either way,
+and an unentitled key would spend its whole run before anything noticed.
 
-The robust form is a threshold on **consecutive genuine refusals
-(``entitled=False``) from one resolver, with nothing yet resolved by that
-resolver in this run** (see :data:`CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT`) --
+The robust form is a threshold on **consecutive genuine refusals from one
+resolver, with nothing yet resolved by that resolver in this run** (see
+:data:`CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT`) -- "genuine" meaning
+:func:`~prismabib.fulltext.resolve._refusal_entitled` attributes the refusal
+to the record's own publisher, *not* merely that Layer 0 recorded
+``entitled=False``, which it does for every refusal (ADR 0021 Decision 1b).
+Counting Layer 0's raw value instead would abort a run for a user whose key
+is fine but whose corpus is not that resolver's publisher's --
 counted per resolver, because the chain tries every resolver for every
 record (ADR 0021 Decision 3: the attempt is never skipped on a publisher
 mismatch) and an unentitled ScienceDirect key says nothing about Crossref
@@ -126,6 +130,7 @@ from prismabib.fulltext.resolve import (
     FullTextAttempt,
     FullTextResolutionError,
     FullTextResolver,
+    _refusal_entitled,
     resolve_fulltext,
 )
 
@@ -161,17 +166,17 @@ PROGRESS_FILENAME = "progress.json"
 #: (ADR 0021 Decision 4).
 #:
 #: Modelled on :data:`prismabib.capture.enrich.CONSECUTIVE_NOT_FOUND_LIMIT`,
-#: not on that module's first-record entitlement probe: under ADR 0021
-#: Decision 1 a ScienceDirect refusal is only ever recorded ``entitled=False``
-#: when the record actually is Elsevier's, so on a corpus where Elsevier is a
+#: not on that module's first-record entitlement probe: a ScienceDirect
+#: refusal is only a *genuine* refusal when the record actually is
+#: Elsevier's (ADR 0021 Decision 1), so on a corpus where Elsevier is a
 #: minority the first record attempted is very often not Elsevier and a
 #: first-record probe would sit un-armed for most of a run -- or trip on
 #: whichever record happened to be first, which says nothing about the key.
 #: Counting *consecutive* genuine refusals survives both: an unentitled key
 #: refuses every Elsevier record it is asked about regardless of how many
-#: non-Elsevier records fall between them (each of those records the
-#: resolver refuses is `entitled=None`, not a "refusal" this counter
-#: increments at all -- see the loop below), while ten in a row from records
+#: non-Elsevier records fall between them, because a non-attributable
+#: refusal is neutral -- it neither increments this counter nor resets it
+#: (see the loop below) -- while ten in a row from records
 #: that really are that resolver's publisher is not a corpus, it is a
 #: symptom -- the same "ten survives one genuinely embargoed record at the
 #: head of a run" reasoning ``CONSECUTIVE_NOT_FOUND_LIMIT``'s own docstring
@@ -187,10 +192,10 @@ CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT = 10
 #: is present: it is the only publisher-constrained resolver
 #: (:data:`~prismabib.fulltext.resolve._PUBLISHER_CONSTRAINED_RESOLVERS`),
 #: which is what makes a genuine, attributable refusal from it possible in
-#: the first place -- an unconstrained resolver's refusal is recorded
-#: ``entitled=False`` unconditionally, so this breaker can in principle still
-#: trip for one, and the message below degrades to a generic hint rather
-#: than KeyError-ing on a name this table does not know.
+#: the first place -- an unconstrained resolver's refusal is attributed
+#: unconditionally, so this breaker can in principle still trip for one, and
+#: the message below degrades to a generic hint rather than KeyError-ing on
+#: a name this table does not know.
 _RESOLVER_CREDENTIAL_HINTS: dict[str, str] = {
     SCIENCEDIRECT: "ELSEVIER_SD_API_KEY",
 }
@@ -702,7 +707,22 @@ def capture_fulltext(
             outcome_is_failure = False
 
         for attempt in attempts:
-            if attempt.entitled is False:
+            # The breaker counts *genuine* refusals, which is not the same
+            # thing as `attempt.entitled is False` (ADR 0021 Decision 1b:
+            # Layer 0 records the raw fact, and only Layer 1 attributes it to
+            # a publisher). Reading Layer 0's value here would abort a run for
+            # a user whose ScienceDirect key is perfectly good but whose first
+            # ten records are IEEE's -- a false positive that stops retrieval
+            # for every *later* resolver too, Crossref TDM and open access
+            # included, since the chain never reaches them. So the same
+            # derivation the store applies is applied here, to the same
+            # (resolver, DOI) pair.
+            attributed = (
+                _refusal_entitled(resolver_name=attempt.resolver_name, doi=doi)
+                if attempt.entitled is False
+                else None
+            )
+            if attempt.entitled is False and attributed is False:
                 # Checked *before* anything below writes a single byte for
                 # this attempt: a resolver's attempts always carry `content`
                 # only when `entitled=True` (resolve.py never populates it
@@ -727,12 +747,24 @@ def capture_fulltext(
                         resolver_name=attempt.resolver_name,
                         consecutive_refusals=consecutive_refused_by_resolver[attempt.resolver_name],
                     )
+            elif attempt.entitled is False:
+                # A refusal this resolver's publisher constraint says is not
+                # about this record: it is *neutral*, neither incrementing
+                # the counter nor resetting it. An unentitled ScienceDirect
+                # key refuses every record it is asked about, so the IEEE
+                # papers between two Elsevier ones say nothing either way --
+                # letting them reset the counter would leave the breaker
+                # un-armed on exactly the corpus shape (Elsevier a minority)
+                # that motivated a consecutive counter over a first-record
+                # probe in the first place.
+                pass
             else:
                 # Any other outcome from this resolver -- resolved, or "not
-                # an entitlement question" -- breaks its own run of
-                # refusals. A record embargoed for reasons unrelated to the
-                # key must not accumulate toward a breaker meant to detect
-                # the key itself.
+                # an entitlement question" (HTTP 404, no OA location, no
+                # manual file) -- breaks its own run of refusals. A record
+                # embargoed for reasons unrelated to the key must not
+                # accumulate toward a breaker meant to detect the key
+                # itself.
                 consecutive_refused_by_resolver[attempt.resolver_name] = 0
 
             asset_file = (

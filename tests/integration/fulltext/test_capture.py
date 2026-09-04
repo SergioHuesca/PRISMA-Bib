@@ -36,11 +36,21 @@ def _record_ids(count: int, *, prefix: str = "scopus:2-s2.0-8520000") -> list[st
 
 
 def _elsevier_dois(record_ids: list[str]) -> dict[str, str | None]:
-    """An Elsevier DOI per record id, so a ScienceDirect refusal is genuinely ``entitled=False``
-    (ADR 0021 Decision 1) -- these breaker tests are about the *count*, not the attribution,
-    so the DOI is fixed to keep only one thing varying.
+    """An Elsevier DOI per record id, so a ScienceDirect refusal is a *genuine* refusal.
+
+    Load-bearing, not decoration: the breaker applies ADR 0021 Decision 1's attribution
+    rule itself rather than reading Layer 0's raw ``entitled`` (which is ``False`` for
+    every 403). Swap these for `_ieee_dois` and the same refusals stop counting -- which
+    is exactly what `..._could_not_serve__never_trip_the_breaker` below asserts.
     """
     return {record_id: f"10.1016/j.example.{index}" for index, record_id in enumerate(record_ids)}
+
+
+def _ieee_dois(record_ids: list[str]) -> dict[str, str | None]:
+    """An IEEE DOI per record id: ScienceDirect could never have served any of them, so its
+    403s are refusals of *nothing* and must not accumulate toward the breaker.
+    """
+    return {record_id: f"10.1109/EXAMPLE.{index}" for index, record_id in enumerate(record_ids)}
 
 
 class _AlwaysRefusesScienceDirect:
@@ -288,6 +298,80 @@ def test_capture__consecutive_refusals_reach_the_limit__raises_and_leaves_the_ru
     # unsealed: only the LIMIT-1 records processed *before* it are on disk.
     assert len(rows) == CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT - 1
     assert all(row["entitled"] is False for row in rows)
+
+
+@pytest.mark.integration
+def test_capture__refusals_it_could_not_serve__never_trip_the_breaker(tmp_path: Path) -> None:
+    """ADR 0021 Decision 4: the breaker counts *genuine* refusals, not raw 403s.
+
+    An unentitled ScienceDirect key 403s every DOI it is handed, including papers
+    ScienceDirect never held. Counting Layer 0's raw `entitled=False` would abort this
+    run on record 10 and never attempt records 10-11 with *any* resolver -- Crossref TDM
+    and open access included, since the chain never reaches them. That is a false
+    positive that stops retrieval for a user whose key is fine and whose corpus simply
+    is not Elsevier's, which is the shape ADR 0021's Context measured: 33 of 35 records
+    not Elsevier's.
+
+    The counterpart of `..._reach_the_limit__raises_and_leaves_the_run_unsealed`: same
+    resolver, same refusal count, only the DOIs differ.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 2)
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=record_ids,
+        doi_by_record_id=_ieee_dois(record_ids),
+        resolvers=[_AlwaysRefusesScienceDirect()],
+    )
+
+    assert outcome.sealed, "the run must seal: nothing here is a genuine refusal"
+    assert outcome.attempted == len(record_ids)
+    assert outcome.resolved == 0
+    (run_dir,) = sealed_fulltext_run_dirs(project.fulltext_dir)
+    rows = [
+        json.loads(line)
+        for line in (run_dir / ATTEMPTS_FILENAME).read_text(encoding="utf-8").splitlines()
+    ]
+    # Every record was attempted, and every attempt is on disk: nothing was
+    # discarded, because nothing tripped.
+    assert len(rows) == len(record_ids)
+    # Layer 0 still records the raw fact -- `False`, not `None` (Decision 1b).
+    # The breaker's disagreement with this value is the whole point.
+    assert all(row["entitled"] is False for row in rows)
+
+
+@pytest.mark.integration
+def test_capture__unservable_refusals_between_genuine_ones__do_not_reset_the_counter(
+    tmp_path: Path,
+) -> None:
+    """A non-attributable refusal is neutral: it neither counts nor clears the count.
+
+    An unentitled key refuses every record it is asked about, so the IEEE papers between
+    two Elsevier ones say nothing about the credential either way. Were they to *reset*
+    the counter, the breaker would sit un-armed on exactly the corpus shape (Elsevier a
+    minority, scattered) that motivated a consecutive counter over a first-record probe.
+
+    Here every third record is Elsevier's, so no `LIMIT` genuine refusals are ever
+    adjacent -- and the breaker must still trip.
+    """
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT * 3 + 3)
+    doi_by_record_id: dict[str, str | None] = {
+        record_id: (f"10.1016/j.example.{index}" if index % 3 == 0 else f"10.1109/EX.{index}")
+        for index, record_id in enumerate(record_ids)
+    }
+    elsevier_count = sum(1 for index in range(len(record_ids)) if index % 3 == 0)
+    # The fixture must be able to reach the limit at all, or this asserts nothing.
+    assert elsevier_count >= CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT
+
+    with pytest.raises(EntitlementError, match="sciencedirect"):
+        capture_fulltext(
+            project,
+            pending_ids=record_ids,
+            doi_by_record_id=doi_by_record_id,
+            resolvers=[_AlwaysRefusesScienceDirect()],
+        )
 
 
 @pytest.mark.integration
