@@ -26,8 +26,11 @@ import io
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from prismabib.bibliometrics.venues import top_venues
 from prismabib.report.numbers import TOP_N
+from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
+from prismabib.store.load import Corpus
 
 if TYPE_CHECKING:
     import duckdb
@@ -200,7 +203,7 @@ def eligibility_criteria_table(project: Project) -> Table:
 
 
 def top_venues_table(connection: duckdb.DuckDBPyConnection) -> Table:
-    """The most frequent publication venues.
+    """The most frequent publication venues, after name normalisation.
 
     Args:
         connection: An open, read-only Layer 1 connection.
@@ -209,39 +212,29 @@ def top_venues_table(connection: duckdb.DuckDBPyConnection) -> Table:
         Venue, type and record count, ordered by count then name so the
         ordering is total and does not depend on the engine's tie-breaking.
     """
-    # Grouped by name alone, matching `numbers._venue_numbers`. Grouping by
-    # `(name, venue_type)` splits one venue into several rows whenever Scopus
-    # indexes it under more than one `prism:aggregationType` -- so this table
-    # would show "Robotics & Automation, journal, 56" and "..., conference, 40"
-    # beside a `{{venues.top1.count}}` of 96 in the prose. Two definitions of
-    # "a venue" inside one export bundle is the drift this stage exists to
-    # prevent, and `citation_statistics_table` already avoids it by reading
-    # `numbers` rather than re-querying.
+    # ADR 0022 Decision 5: delegates to `bibliometrics.venues.top_venues`
+    # (over `PrismaStage.RAW`, this table's historical scope -- it has never
+    # filtered by PRISMA stage) rather than grouping by exact `v.name`
+    # itself, and matches `numbers._venue_numbers`'s own re-pointing to the
+    # same function -- so this table and `{{venues.top1.count}}` can never
+    # disagree about what "a venue" is. `citation_statistics_table` already
+    # avoids the equivalent drift for citations by reading `numbers` rather
+    # than re-querying; this is the same principle one query earlier.
     #
-    # `venue_type` is then reported per name: the single type when there is
-    # one, "mixed" when Scopus disagrees with itself. Naming the disagreement
-    # is more useful to a reader than silently picking one of the two.
-    rows = connection.execute(
-        """
-        SELECT
-          v.name,
-          CASE
-            WHEN count(DISTINCT COALESCE(v.venue_type, '')) > 1 THEN 'mixed'
-            ELSE COALESCE(min(v.venue_type), '')
-          END AS venue_type,
-          count(*) AS n
-        FROM records r JOIN venues v ON r.venue_id = v.venue_id
-        GROUP BY v.name
-        ORDER BY n DESC, v.name ASC
-        LIMIT ?
-        """,
-        [TOP_N],
-    ).fetchall()
+    # `venue_type` is reported per normalised group: the single type when
+    # every raw variant agrees, "mixed" when Scopus disagrees with itself.
+    # Naming the disagreement is more useful to a reader than silently
+    # picking one of the two -- see `bibliometrics/venues.py::_group_venues`.
+    corpus = Corpus(connection)
+    result = top_venues(corpus, stage=PrismaStage.RAW, top_n=TOP_N)
     return Table(
         slug="top_venues",
         caption=f"Top {TOP_N} venues by record count",
         columns=("Venue", "Type", "Records"),
-        rows=tuple((name, venue_type, int(count)) for name, venue_type, count in rows),
+        rows=tuple(
+            (row["venue"], row["venue_type"], int(row["count"]))
+            for row in result.data.iter_rows(named=True)
+        ),
     )
 
 

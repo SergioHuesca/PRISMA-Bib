@@ -7,6 +7,7 @@
 # (BUILD_PLAN §3.6.2, line 434)
 docs/methodology/**                @SergioHuesca
 src/prismabib/prisma/**            @SergioHuesca
+src/prismabib/bibliometrics/**     @SergioHuesca
 
 # Stage 4 extends this file to cover taxonomy and taxonomy rules.
 # See: BUILD_PLAN §8, "Deferred work", and EXECUTION_PLAN stage roster.

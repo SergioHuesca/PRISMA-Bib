@@ -1,0 +1,39 @@
+# Default keyword stopword list (ADR 0022 Decision 6, BUILD_PLAN Stage 7).
+#
+# Data, not code: prismabib.bibliometrics.keywords holds no stopword literal
+# of its own (test_stopwords__come_from_project_data_not_source scans the
+# module source for these terms).
+#
+# To use a different list, pass `stopwords_path=` to keyword_frequency /
+# keyword_evolution. It replaces this list entirely rather than merging with
+# it, so an override is never silently incomplete. There is deliberately no
+# path this package resolves on a project's behalf: `bibliometrics/`
+# receives a Corpus and never a Project (ADR 0022 Decisions 6 and 9), so
+# where a project keeps its list is the caller's convention to fix.
+#
+# One term per line, case-insensitive; a line starting with '#' is a comment.
+# These are generic bibliometric noise terms that survive author-keyword
+# extraction without describing the paper's actual subject -- BUILD_PLAN's
+# own examples ("human", "learning", "network", "article") plus terms
+# observed in practice.
+human
+humans
+article
+learning
+network
+networks
+paper
+study
+research
+method
+methods
+model
+models
+analysis
+approach
+system
+systems
+algorithm
+algorithms
+review
+survey

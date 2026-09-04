@@ -2326,7 +2326,11 @@ class Corpus:
     rather than issuing raw SQL against
     :func:`prismabib.store.db.connect` directly, so the PRISMA-stage
     semantics of :meth:`records`/:meth:`keywords` have exactly one
-    implementation.
+    implementation. :meth:`venues`, :meth:`affiliations` and :meth:`authors`
+    (ADR 0022 Decision 9, Stage 7) extend that same one-implementation
+    guarantee to the three other tables Stage 7's ``bibliometrics/`` package
+    needs: same delegation to :meth:`_prisma_stage_record_ids`, same total
+    ordering, same return of a :class:`polars.DataFrame`.
     """
 
     def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
@@ -2480,6 +2484,27 @@ class Corpus:
         # crash inside the frozen `Corpus` contract.
         return pl.DataFrame(rows, schema=columns, orient="row", infer_schema_length=None)
 
+    def _runs(self) -> pl.DataFrame:
+        """Every row of ``runs``, unfiltered by PRISMA stage.
+
+        Private, and deliberately not a fourth public accessor. ``runs`` is
+        a Layer 0 provenance catalogue with no per-record membership, so
+        there is nothing for :meth:`_prisma_stage_record_ids` to answer and
+        a ``stage`` parameter would be meaningless on it -- which is exactly
+        why ADR 0022 Decision 9's "``Corpus`` is three methods wider" stays
+        true of the *public* contract.
+
+        It lives here rather than in :mod:`prismabib.bibliometrics.base`
+        (its only caller) so that the connection this class owns is not
+        reached into from another package.
+
+        Returns:
+            ``run_id``, ``started_at``, ``criteria_version``; unordered,
+            since every caller aggregates (max, distinct, filter) rather
+            than reading row order.
+        """
+        return self._query("SELECT run_id, started_at, criteria_version FROM runs")
+
     def records(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
         """Return the ``records`` table for one named PRISMA set.
 
@@ -2591,6 +2616,120 @@ class Corpus:
         # timezone-aware -- lands exactly on the boundary, so the comparison flips
         # from "everything" to "nothing" purely on the reader's location.
         return self._query(sql, [_as_naive_utc(at)])
+
+    def venues(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        """Return one venue row per record, for one named PRISMA set.
+
+        Added by ADR 0022 Decision 9 for Stage 7's ``bibliometrics/venues.py``,
+        which needs the raw venue name and type alongside every record it
+        counts -- the delegation to :meth:`_prisma_stage_record_ids` follows
+        :meth:`records`/:meth:`keywords` exactly, so "the corpus" cannot
+        drift between a venue count and a record count.
+
+        Args:
+            stage: See :meth:`records`; the same delegation applies.
+
+        Returns:
+            One row per record with a matching ``venues`` row --
+            ``record_id``, ``venue_id``, ``name``, ``issn``, ``eissn``,
+            ``venue_type``, ``abbreviation`` -- ordered by ``record_id``. A
+            record whose ``venue_id`` matches no ``venues`` row (unobserved
+            in practice; every loaded entry carries a Scopus ``source-id``)
+            is simply absent, matching ``report/tables.py::top_venues_table``'s
+            existing ``JOIN`` (not ``LEFT JOIN``).
+
+        Raises:
+            StoreError: See :meth:`records`.
+            ConfigError: See :meth:`_prisma_stage_record_ids`.
+            LogError: See :meth:`_prisma_stage_record_ids`.
+        """
+        select = (
+            "SELECT r.record_id, v.venue_id, v.name, v.issn, v.eissn, v.venue_type, "
+            "v.abbreviation FROM records r JOIN venues v ON r.venue_id = v.venue_id"
+        )
+        if stage is PrismaStage.RAW:
+            return self._query(f"{select} ORDER BY r.record_id")
+        record_ids = self._prisma_stage_record_ids(stage)
+        return self._query(
+            f"{select} WHERE r.record_id = ANY(?) ORDER BY r.record_id", [sorted(record_ids)]
+        )
+
+    def affiliations(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        """Return one affiliation row per (record, affiliation), for one named PRISMA set.
+
+        Added by ADR 0022 Decision 9 for ``bibliometrics/geography.py``, which
+        needs every affiliation a record carries (a record can carry several,
+        which is exactly what ``full``/``fractional`` country-counting counts
+        over). Fans out through ``record_affiliations`` the same way
+        :meth:`keywords` fans out through ``record_keywords``.
+
+        Args:
+            stage: See :meth:`records`; the same delegation applies.
+
+        Returns:
+            ``record_id``, ``afid``, ``name``, ``city``, ``country_iso3``,
+            one row per (record, affiliation), ordered by ``record_id``
+            then ``afid`` -- a total order, since ``afid`` is the
+            ``affiliations`` primary key. A record with no
+            ``record_affiliations`` row (no affiliation data at all) is
+            simply absent; :mod:`prismabib.bibliometrics.geography` is what
+            buckets that as ``"UNK"``, not this accessor -- the same
+            division of labour as :meth:`citations` returning "unknown as
+            of" as absence rather than as a sentinel row.
+
+        Raises:
+            StoreError: See :meth:`records`.
+            ConfigError: See :meth:`_prisma_stage_record_ids`.
+            LogError: See :meth:`_prisma_stage_record_ids`.
+        """
+        select = (
+            "SELECT ra.record_id, a.afid, a.name, a.city, a.country_iso3 "
+            "FROM record_affiliations ra JOIN affiliations a ON a.afid = ra.afid"
+        )
+        if stage is PrismaStage.RAW:
+            return self._query(f"{select} ORDER BY ra.record_id, a.afid")
+        record_ids = self._prisma_stage_record_ids(stage)
+        return self._query(
+            f"{select} WHERE ra.record_id = ANY(?) ORDER BY ra.record_id, a.afid",
+            [sorted(record_ids)],
+        )
+
+    def authors(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        """Return one author row per (record, author), for one named PRISMA set.
+
+        Added by ADR 0022 Decision 9 for ``bibliometrics/network.py``'s
+        co-authorship graph. Fans out through ``record_authors`` the same
+        way :meth:`keywords` fans out through ``record_keywords``.
+
+        Args:
+            stage: See :meth:`records`; the same delegation applies.
+
+        Returns:
+            ``record_id``, ``author_id``, ``surname``, ``given_name``,
+            ``position``, one row per (record, author), ordered by
+            ``record_id``, then ``position`` (a paper's byline order), then
+            ``author_id`` as a final tie-break so the ordering is total even
+            if two authors on one record were ever loaded at the same
+            position. An author with no stable Scopus ``author_id`` (the
+            ``dc:creator``-only fallback documented at
+            ``store/load.py::_authors_from_entry``) has no
+            ``record_authors`` row at all and is simply absent here, exactly
+            as it is absent from ``authors``/``record_authors`` today.
+
+        Raises:
+            StoreError: See :meth:`records`.
+            ConfigError: See :meth:`_prisma_stage_record_ids`.
+            LogError: See :meth:`_prisma_stage_record_ids`.
+        """
+        select = (
+            "SELECT ra.record_id, ra.author_id, a.surname, a.given_name, ra.position "
+            "FROM record_authors ra JOIN authors a ON a.author_id = ra.author_id"
+        )
+        order = "ORDER BY ra.record_id, ra.position, ra.author_id"
+        if stage is PrismaStage.RAW:
+            return self._query(f"{select} {order}")
+        record_ids = self._prisma_stage_record_ids(stage)
+        return self._query(f"{select} WHERE ra.record_id = ANY(?) {order}", [sorted(record_ids)])
 
 
 __all__ = ["Corpus", "StoreStats", "build_store"]

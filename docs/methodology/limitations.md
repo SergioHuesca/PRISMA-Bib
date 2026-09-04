@@ -195,24 +195,61 @@ Multi-reviewer adjudication is already implemented conservatively (any `exclude`
 any `unsure`, `include` only if unanimous among those who logged a decision), but nothing
 *enforces* double screening; that is a workflow concern the UI will own.
 
-## No analysis layer
+## A venue count is a count of venue *name strings*
 
-**Not built yet** (Layer 3, Stages 6–10). None of this exists:
+`venues.total`, and the grouping behind the top-venues table, count **distinct normalised
+venue names**. Normalisation is deliberately conservative — casefold, collapse whitespace,
+strip a leading `The`, strip a trailing parenthetical *only when it is purely a year*, unify
+`&` and `and` — because a rule that merges on similarity can invent a venue that published
+papers it did not, which is worse than reporting one venue twice.
 
-- bibliometrics — growth curves, citation percentiles, h-index, geographic and venue
-  analysis, keyword co-occurrence and co-authorship networks;
+The consequence, measured on the reference corpus: **a recurring conference appears once per
+edition.**
+
+```
+Proceedings 2017 IEEE Winter Conference on Applications of Computer Vision Workshops WACVW 2017
+Proceedings 2020 IEEE Winter Conference on Applications of Computer Vision Workshops WACVW 2020
+Proceedings 2024 IEEE Winter Conference on Applications of Computer Vision Workshops WACVW 2024
+```
+
+Three names, one workshop. Fifteen such groups span 21 of that corpus's 769 names, and no
+normalisation rule fires on a single one of them — the difference is a *year*, not
+formatting. So `venues.total = 769` should be read as "769 distinct venue name strings", not
+"769 venues". Folding editions would give 746, a 3% change that leaves the top-ten table
+byte-identical.
+
+**Do not silently re-fold this yourself before quoting the number.** Whether WACV 2020 and
+WACV 2024 are one venue is a methodological choice: for "which venues does this literature
+appear in?" they are, and for "where was this specific paper published?" they are not. State
+which you mean. A declared normalisation mode, with the unit of count named in the figure
+caption, is the planned resolution; until it exists, the honest citation is the name-string
+count with this paragraph beside it.
+
+The same caution applies to venue **type**: where Scopus indexes one venue under more than
+one `prism:aggregationType`, the type is reported as `mixed` rather than resolved to one.
+
+## No taxonomy, dashboard or export layer
+
+**Bibliometrics now exist** (Stage 7): annual counts and CAGR, geographic counting with a
+declared `full`/`fractional` method, venue and venue-type analysis, citation statistics
+including h-index, keyword frequency and evolution, and keyword co-occurrence and
+co-authorship networks with VOSviewer export. Every one returns an `AnalysisResult` carrying
+the parameters that produced it and a generated caption, so a figure cannot drift from its
+own number.
+
+Still absent (Layer 3, Stages 8–9):
+
 - the taxonomy coder (`prismabib code`) and its versioned rule files;
-- figures, LaTeX tables, and the SVG PRISMA flow diagram;
-- the Panel dashboard;
-- exports (`prismabib export`) — CSV/Parquet/JSON with provenance metadata.
+- figures, LaTeX tables, and the Panel dashboard.
 
-`prismabib code` and `prismabib export` are **absent from the CLI**, not stubbed. An absent
-command fails with "No such command", which is honest; a stub that accepts its arguments and
-does nothing is indistinguishable from a working one in a shell script or a methods section.
+`prismabib code` is **absent from the CLI**, not stubbed. An absent command fails with "No
+such command", which is honest; a stub that accepts its arguments and does nothing is
+indistinguishable from a working one in a shell script or a methods section.
 
-What you *can* do today is query Layer 1 directly through `Corpus` (`records`, `keywords`,
-`citations`), which returns polars DataFrames for any `PrismaStage`, and compute your own
-analysis from there. Numbers derived that way are your responsibility, not the store's.
+Bibliometrics are likewise library-only for now: there is no CLI command that emits them, so
+they are reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle.
+Numbers you derive by querying Layer 1 yourself, rather than through those functions, carry
+no provenance and no caption — and are your responsibility, not the store's.
 
 ## Data-source properties that will not change
 
