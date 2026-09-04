@@ -168,6 +168,19 @@ address, not a credential.
       show_source: true
       members_order: source
 
+### sources.crossref
+
+A DOI → publisher-declared text-and-data-mining link lookup (ADR 0020), keyless like
+`sources.unpaywall` above and modelled closely on it. Reuses `UNPAYWALL_EMAIL` as
+Crossref's own `mailto` "polite pool" courtesy parameter rather than declaring a second
+credential for the same terms-of-use purpose.
+
+::: prismabib.sources.crossref
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ## capture
 
 Layer 0 — raw capture. Immutable JSONL plus a hashed run manifest; nothing downstream may
@@ -354,6 +367,19 @@ Elsevier skew visible in the output rather than hidden in the method. See
 ### fulltext.run
 
 ::: prismabib.fulltext.run
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### fulltext.assist
+
+Assisted manual fetch (ADR 0020 Decision 4): identification and filing, the testable half
+of `scripts/fetch_assist.py`'s interactive driver -- see that script's own module
+docstring for why it, unlike this module, is deliberately outside `mypy --strict` and the
+`fulltext` coverage gate and so has no section of its own here.
+
+::: prismabib.fulltext.assist
     options:
       show_root_heading: true
       show_source: true

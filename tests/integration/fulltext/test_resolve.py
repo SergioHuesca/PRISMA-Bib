@@ -633,3 +633,91 @@ def test_crossref_tdm__403__entitled_false_and_chain_continues_to_next_resolver(
     # The chain did continue: openaccess and manual were both still reached.
     assert by_resolver["openaccess"].entitled is None
     assert by_resolver["manual"].entitled is None
+
+
+@pytest.mark.integration
+def test_default_chain__order__is_sciencedirect_tdm_openaccess_manual(tmp_path: Path) -> None:
+    """ADR 0020 Decision 1's chain order, asserted on `default_chain` itself.
+
+    Moving `CrossrefTdmResolver` from second to third left the entire suite
+    green: `_chain()` in this module restates the order by hand, so it agrees
+    with itself no matter what `default_chain` does.
+
+    The position is load-bearing rather than cosmetic. TDM yields the
+    publisher's own full text -- the version of record -- while an
+    open-access copy may legitimately be an author preprint, and a review that
+    can cite the published version should prefer it. Demoting TDM below open
+    access silently changes which version a corpus is assessed from.
+
+    Names are written out literally, not read from the resolver constants,
+    so renaming a constant cannot make this agree with itself either.
+    """
+    project = Project.init("chain-order", title="Chain order", root=tmp_path)
+
+    with default_chain(project, _settings()) as chain:
+        assert [resolver.name for resolver in chain] == [
+            "sciencedirect",
+            "crossref_tdm",
+            "openaccess",
+            "manual",
+        ]
+
+
+@pytest.mark.integration
+def test_crossref_tdm__first_link_host_is_unreachable__the_next_link_is_tried() -> None:
+    """A dead host costs that link, not the record.
+
+    `OpenAccessResolver`'s identical per-candidate branch was itself the fix for
+    a blocking defect: a dead mirror aborted the whole chain and the reviewer's
+    hand-fetched PDF was silently ignored. The copy in this resolver had two
+    uncovered lines and no test at all, so the same defect could return here
+    without anything noticing.
+
+    `httpx.ConnectError` is not an `UpstreamError`; escaping would reach
+    `resolve_fulltext`'s outer handler and abandon the record.
+    """
+    dead_url = "https://dead.example.org/x.pdf"
+    good_url = "https://link.springer.com/content/pdf/10.1007/x.pdf"
+    with respx.mock:
+        respx.get(_CROSSREF_ENDPOINT).mock(
+            return_value=httpx.Response(
+                200,
+                json=_tdm_response(
+                    {"URL": dead_url, "intended-application": "text-mining"},
+                    {"URL": good_url, "intended-application": "text-mining"},
+                ),
+            )
+        )
+        respx.get(dead_url).mock(side_effect=httpx.ConnectError("host is down"))
+        respx.get(good_url).mock(
+            return_value=httpx.Response(
+                200, headers={"content-type": "application/pdf"}, content=_MINIMAL_PDF
+            )
+        )
+        client = CrossrefTdmClient(
+            _settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS)
+        )
+        with client:
+            asset = CrossrefTdmResolver(crossref_client=client).resolve(
+                record_id=_RECORD_ID, doi=_DOI
+            )
+
+    assert asset is not None
+    assert asset.content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+def test_crossref_tdm__record_without_a_doi__is_skipped_with_no_request() -> None:
+    """No DOI means no Crossref lookup at all -- an uncovered branch before this."""
+    with respx.mock:
+        route = respx.get(url__startswith="https://api.crossref.org/")
+        client = CrossrefTdmClient(
+            _settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS)
+        )
+        with client:
+            asset = CrossrefTdmResolver(crossref_client=client).resolve(
+                record_id=_RECORD_ID, doi=None
+            )
+
+    assert asset is None
+    assert route.call_count == 0

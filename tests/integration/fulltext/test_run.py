@@ -67,7 +67,18 @@ def _crossref_reports_nothing() -> Iterator[None]:
     unrelated mock in each one.
     """
     with respx.mock:
-        respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(return_value=httpx.Response(404))
+        # HTTP 200 with no `message.link` -- Crossref *knows* the DOI and
+        # simply names no text-mining link for it, the actual majority case
+        # this fixture claims to model. HTTP 404 ("Crossref knows nothing
+        # about this DOI at all") short-circuits `CrossrefTdmClient.lookup`
+        # before `tdm_links` is ever reached and so answers a different
+        # question than the one this fixture's own docstring states --
+        # `tests/integration/fulltext/test_resolve.py`'s
+        # `_NO_TDM_LINKS_RESPONSE` models the real case correctly; this
+        # mirrors it.
+        respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(
+            return_value=httpx.Response(200, json={"message": {}})
+        )
         yield
 
 

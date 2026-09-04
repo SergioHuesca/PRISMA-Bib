@@ -65,15 +65,18 @@ logger = structlog.get_logger(__name__)
 #: `webbrowser.open_new_tab` spawns a subprocess and never touches the
 #: sockets `pytest-socket` intercepts, so nothing except an explicit
 #: injection at this call site can stop a forgetful test from launching a
-#: real browser (ADR 0020 Constraints). This module never calls
-#: `webbrowser.open_new_tab` directly anywhere except as this default.
+#: real browser (ADR 0020 Constraints). `run` declares no default for its
+#: `opener` parameter for exactly this reason -- a default here would be the
+#: one place this module could call `webbrowser.open_new_tab` without a
+#: caller having to say so, and `main` is the only place that actually does.
 BrowserOpener = Callable[[str], bool]
 
 #: A download that has not finished yet, in the shapes this project's own
 #: measurement named: Chrome/Edge's `.crdownload`, Firefox's `.part`, and the
-#: generic `.tmp` several download managers use. A file carrying one of these
-#: as its *final* suffix is not yet a candidate PDF, no matter what the rest
-#: of its name looks like.
+#: generic `.tmp` several download managers use. `_looks_like_a_finished_pdf`
+#: checks every suffix in a candidate's name against this set, not merely the
+#: final one, so a marker left anywhere in the name -- not only where a
+#: browser conventionally appends it -- still marks the file as unfinished.
 _PARTIAL_SUFFIXES = frozenset({".crdownload", ".part", ".tmp"})
 
 _DEFAULT_POLL_INTERVAL = 1.0
@@ -87,19 +90,32 @@ def _looks_like_a_finished_pdf(path: Path) -> bool:
         path: A candidate file under the watched download directory.
 
     Returns:
-        ``True`` iff ``path`` is a regular file whose suffix is ``.pdf``
-        (case-insensitive) and not one of :data:`_PARTIAL_SUFFIXES` --
-        a browser renames ``paper.pdf.crdownload``/``paper.pdf.part`` to
-        ``paper.pdf`` only once the download completes, so this is "not
-        still downloading", not yet "finished downloading": callers still
-        wait for the size to stabilise (:func:`_wait_until_stable`) before
-        treating it as ready, since the rename itself is not atomic with the
-        last bytes landing on disk on every filesystem.
+        ``True`` iff ``path`` is a regular file whose final suffix is
+        ``.pdf`` (case-insensitive) and no suffix anywhere in its name --
+        checked against :data:`_PARTIAL_SUFFIXES`, not merely the final one
+        -- marks it as a still-downloading temporary file.
+
+        A browser renames ``paper.pdf.crdownload``/``paper.pdf.part`` to
+        ``paper.pdf`` only once the download completes, so "final suffix is
+        ``.pdf``" already excludes the in-progress name on its own -- but
+        checking every suffix, not just the last, is what makes
+        :data:`_PARTIAL_SUFFIXES` load-bearing rather than a check the final-
+        suffix comparison had already made redundant: a download manager
+        that keeps the partial marker in the *middle* of the name while
+        appending the real extension last (``paper.crdownload.pdf``, a shape
+        some resumable downloaders use) would slip past a final-suffix-only
+        check even though it is still, in fact, unfinished. Either way,
+        callers still wait for the size to stabilise
+        (:func:`_poll_for_new_pdfs`'s stability tracking) before treating a
+        candidate as ready, since a rename is not atomic with the last bytes
+        landing on disk on every filesystem.
     """
     if not path.is_file():
         return False
-    suffix = path.suffix.casefold()
-    return suffix == ".pdf" and suffix not in _PARTIAL_SUFFIXES
+    suffixes = {suffix.casefold() for suffix in path.suffixes}
+    if suffixes & _PARTIAL_SUFFIXES:
+        return False
+    return path.suffix.casefold() == ".pdf"
 
 
 def _poll_for_new_pdfs(
@@ -249,7 +265,7 @@ def run(
     batch_size: int,
     download_dir: Path,
     poll_timeout: float,
-    opener: BrowserOpener = webbrowser.open_new_tab,
+    opener: BrowserOpener,
     prompt: Callable[[str], str] = input,
 ) -> None:
     """Run one assisted-fetch session.
@@ -261,10 +277,17 @@ def run(
         download_dir: The operator's browser download directory to watch.
         poll_timeout: How long to wait for downloads to appear and
             stabilise, in seconds, after opening every tab.
-        opener: Opens one URL in the operator's browser. Defaults to
-            :func:`webbrowser.open_new_tab` -- **never** call that function
-            directly anywhere else in this module; every real invocation
-            must go through this injectable seam (ADR 0020 Constraints).
+        opener: Opens one URL in the operator's browser. **Never** call
+            :func:`webbrowser.open_new_tab` (or anything else that launches
+            a real browser) directly anywhere else in this module -- every
+            real invocation must go through this injectable seam (ADR 0020
+            Constraints). Deliberately has **no default**: a default value
+            of :func:`webbrowser.open_new_tab` here would mean a test that
+            forgot to inject an opener launched a real browser instead of
+            failing with a ``TypeError`` at the call site -- see
+            :data:`BrowserOpener`'s own docstring, and :func:`main`, the
+            only place in this module that actually passes
+            :func:`webbrowser.open_new_tab`.
         prompt: Reads one line of operator input. Defaults to the builtin
             ``input``.
 
@@ -303,6 +326,23 @@ def run(
 
     print(f"Fetching {len(candidates)} of {len(missing)} still-missing records this session.\n")
 
+    # Snapshotted *before* any tab is opened, and with the identical predicate
+    # `_poll_for_new_pdfs` itself uses to decide "finished PDF" -- both
+    # BLOCKING fixes for the same underlying hazard. `glob("*.pdf")` here
+    # while polling used `_looks_like_a_finished_pdf` (case-insensitive) used
+    # to mean a pre-existing `Something.PDF` was absent from this baseline on
+    # POSIX and then showed up as "new" the moment polling started, so a
+    # stale download from an unrelated earlier session could be filed as this
+    # batch's result. Snapshotting before opening any tab (rather than after,
+    # as this used to) closes the other half of the same race: a download
+    # that finishes in the gap between opening the first tab and this
+    # snapshot would otherwise have been silently absorbed into the baseline
+    # and never offered to `_poll_for_new_pdfs` at all.
+    download_dir.mkdir(parents=True, exist_ok=True)
+    already_seen = frozenset(
+        path for path in download_dir.glob("*") if _looks_like_a_finished_pdf(path)
+    )
+
     opened = 0
     for candidate in candidates:
         if not candidate.doi:
@@ -317,15 +357,14 @@ def run(
         print("\nNo record in this batch has a DOI to open. Nothing more this script can do.")
         return
 
-    download_dir.mkdir(parents=True, exist_ok=True)
-    already_seen = frozenset(
-        path for path in download_dir.glob("*.pdf") if _looks_like_a_finished_pdf(path)
-    )
     print(f"\nWatching {download_dir} for up to {poll_timeout:.0f}s. Save each PDF when it opens.")
 
-    new_pdfs = _poll_for_new_pdfs(
-        download_dir, already_seen, expected=len(candidates), timeout=poll_timeout
-    )
+    # `expected=opened`, not `len(candidates)`: a candidate with no DOI never
+    # got a tab opened for it above and can never plausibly produce a
+    # download this session, so counting it here only made a batch containing
+    # any DOI-less record wait out the full `poll_timeout` for downloads that
+    # were never coming.
+    new_pdfs = _poll_for_new_pdfs(download_dir, already_seen, expected=opened, timeout=poll_timeout)
 
     remaining = list(candidates)
     filed: list[tuple[str, Path]] = []
@@ -406,6 +445,12 @@ def main() -> None:
             batch_size=args.batch,
             download_dir=args.downloads,
             poll_timeout=args.poll_timeout,
+            # The one real invocation `run`'s own docstring and
+            # `BrowserOpener`'s docstring both point to: `run` takes no
+            # default for `opener`, precisely so that passing it is a choice
+            # made here, in the open, rather than an implicit fallback a
+            # forgetful caller (or test) never has to think about.
+            opener=webbrowser.open_new_tab,
         )
     except PrismabibError as error:
         # Same contract `fulltext_missing.py` holds itself to
@@ -414,6 +459,18 @@ def main() -> None:
         # ordinary operator situations, not bugs worth a traceback.
         print(f"prismabib: {error}", file=sys.stderr)
         raise SystemExit(1) from error
+    except (EOFError, KeyboardInterrupt):
+        # Both are ordinary operator situations for an interactive driver,
+        # not bugs: `EOFError` is `_prompt_for_match`'s `input()` hitting a
+        # closed/non-tty stdin (Ctrl-D), and `KeyboardInterrupt` is the
+        # operator giving up mid-poll (Ctrl-C) -- the 600-second default
+        # `--poll-timeout` makes that a realistic thing to do. Neither is a
+        # `PrismabibError`, so without this they escaped the block above and
+        # exited with a raw traceback, against the same "ordinary operator
+        # situation, not a bug worth a traceback" contract the block above
+        # already holds itself to.
+        print("\nprismabib: interrupted; nothing further filed this session.", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

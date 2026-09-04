@@ -50,7 +50,9 @@ step this module exists to stop a human from getting wrong.
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,11 +141,22 @@ class Identification:
             ``None`` when there was no second candidate (a DOI match, or a
             title comparison against a single-candidate batch).
         runner_up_score: The runner-up's score, ``0.0`` when there is none.
-        margin: ``score - runner_up_score``. The quantity ADR 0020 requires a
-            threshold on, not ``score`` alone -- a title that merely clears
-            the containment bar while a near-identical rival clears it
-            almost as well is exactly the ambiguity a bare containment check
-            would miss.
+        margin: ``score - runner_up_score`` when title containment had a
+            second candidate to compare against; ``1.0`` for a DOI match
+            (unambiguous by construction, so no rival is needed); and,
+            deliberately, ``0.0`` -- never the bare ``score`` -- when title
+            containment had **no** second candidate at all. The quantity
+            ADR 0020 requires a threshold on, not ``score`` alone: title
+            containment measures "are these words on the page", not "is
+            this that paper" -- a references section contains whole titles
+            verbatim, and a page merely citing a title can still score
+            highly against it. The margin is what tells those apart (a
+            near-identical rival pulls a wrong match's score down), and with
+            no rival to compare against there is no defence, so a
+            single-candidate batch is forced to ``margin=0.0`` and can never
+            clear :data:`_MARGIN_THRESHOLD` by title alone -- a deliberate
+            design decision (ADR 0020 Decision 5), not a derived quantity
+            that happens to come out low.
         confident: Whether this match may be filed without asking a human.
             ``True`` only for a DOI match, or a title match whose ``score``
             and ``margin`` both clear their thresholds. **Never** set by
@@ -263,7 +276,13 @@ def identify_pdf(page_one_text: str, candidates: Sequence[Candidate]) -> Identif
         input order (stable sort): the top scorer is ``record_id``, the
         second is the runner-up, and ``confident`` requires **both**
         ``score >= 0.80`` and ``margin >= 0.25`` (ADR 0020's measured
-        thresholds). With zero candidates, returns ``method="none"``,
+        thresholds). **A single-candidate batch can never be confident by
+        title alone**, however high its score: with no second candidate to
+        compare against, :attr:`Identification.margin` is forced to
+        ``0.0`` rather than collapsing to ``score`` (ADR 0020 Decision 5 --
+        see :attr:`Identification.margin`'s own docstring). A DOI match is
+        the one exception, above, since it needs no rival to be
+        unambiguous. With zero candidates, returns ``method="none"``,
         ``record_id=None``, ``confident=False``.
     """
     if not candidates:
@@ -308,11 +327,20 @@ def identify_pdf(page_one_text: str, candidates: Sequence[Candidate]) -> Identif
     if len(scored) > 1:
         runner_up_candidate, runner_up_score = scored[1]
         runner_up_record_id: str | None = runner_up_candidate.record_id
+        margin = best_score - runner_up_score
     else:
+        # No second candidate to measure a margin against. Title containment
+        # alone cannot tell "this page is that paper" apart from "this page
+        # merely names that title" (a references section contains whole
+        # titles verbatim), and the margin over a rival is the only defence
+        # against that -- with nothing to compare against, there is no
+        # defence, so this is forced to 0.0 rather than left to collapse to
+        # `best_score` (which is what let a lone candidate be filed
+        # unattended before this fix: BLOCKING, ADR 0020 Decision 5).
         runner_up_record_id = None
         runner_up_score = 0.0
+        margin = 0.0
 
-    margin = best_score - runner_up_score
     confident = best_score >= _CONTAINMENT_THRESHOLD and margin >= _MARGIN_THRESHOLD
     return Identification(
         record_id=best_candidate.record_id,
@@ -367,13 +395,30 @@ def file_manual_drop(fulltext_dir: Path, record_id: str, source: Path) -> Path:
             is refused at filing time rather than silently accepted and only
             discovered as "zero sections extracted" much later.
         OSError: Propagates from the filesystem (e.g. ``source`` does not
-            exist, or is not readable) -- an operator-visible failure with
-            no domain-specific translation this module can usefully add.
+            exist, or is not readable, or the destination volume is full) --
+            an operator-visible failure with no domain-specific translation
+            this module can usefully add. Whatever the cause, it never
+            leaves a partial file at ``destination`` -- see below.
 
     This copies ``source``'s bytes; it never moves or deletes it. The
     downloaded file may still be exactly where the operator's browser put
     it, in their own Downloads directory, and this function has no business
     deciding they are done with it.
+
+    The copy itself is written to a sibling temporary file first and moved
+    into place with :func:`os.replace`, never written to ``destination``
+    directly. ``os.replace`` is atomic on the same filesystem (and
+    ``destination``'s parent is exactly where the temporary file is
+    created), so a reader -- :class:`~prismabib.fulltext.resolve.ManualDropResolver`,
+    concurrently polling the same directory -- can only ever see either no
+    file or the complete one, never a partial write. That matters because an
+    interrupt (Ctrl-C during the operator-facing driver's 600-second poll)
+    or a full disk landing mid-write on a plain in-place ``write_bytes``
+    would otherwise leave a truncated PDF at exactly the path
+    :meth:`ManualDropResolver.resolve` reads and would happily accept as
+    that record's full text (``media_type="pdf"``) forever -- and re-filing
+    would then refuse, since a drop already "exists", with no way for the
+    driver to ever repair it.
     """
     destination = manual_drop_path(fulltext_dir, record_id)
     if destination.exists():
@@ -390,7 +435,22 @@ def file_manual_drop(fulltext_dir: Path, record_id: str, source: Path) -> Path:
         )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(content)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=destination.parent, prefix=f"{destination.stem}.", suffix=".part"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as tmp_file:
+            tmp_file.write(content)
+        os.replace(tmp_path, destination)
+    except BaseException:
+        # `KeyboardInterrupt` counts, deliberately: an operator hitting
+        # Ctrl-C mid-write is exactly the interrupt this atomic-write
+        # discipline exists to survive without leaving wreckage at
+        # `destination`. `missing_ok=True` because the interrupt may have
+        # landed before `tmp_path` was ever created.
+        tmp_path.unlink(missing_ok=True)
+        raise
     return destination
 
 

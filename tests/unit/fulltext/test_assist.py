@@ -253,3 +253,100 @@ def test_file_manual_drop__then_manual_drop_resolver__resolves_it(tmp_path: Path
     assert asset is not None
     assert asset.content == _MINIMAL_PDF
     assert asset.record_id == _RECORD_A
+
+
+@pytest.mark.unit
+def test_identify_pdf__one_candidate_left__is_never_confident_by_title_alone() -> None:
+    """A lone candidate has no rival, so it has no margin, so it must ask.
+
+    This was the blocking defect. With one candidate the runner-up score was
+    hard-set to ``0.0`` and the margin became the score itself, so the margin
+    test collapsed entirely into the containment test. A *different* paper's
+    page one, and a page merely **citing** the title, both filed confidently.
+
+    It is not an edge case: `run()` drops each filed record from the candidate
+    set, so the **last** paper of every session is a batch of one.
+
+    Title containment measures "are these words on this page", not "is this
+    that paper" -- a references section carries whole titles verbatim. The
+    margin over a rival is the only thing separating those two readings, so
+    with no rival there is nothing to lean on.
+    """
+    candidates = [
+        Candidate(record_id=_RECORD_A, title="Fine-grained activity recognition", doi=None)
+    ]
+
+    result = identify_pdf("Fine-grained activity recognition in baseball videos", candidates)
+
+    # Perfect containment -- and still not confident, because nothing rivals it.
+    assert result.score == 1.0
+    assert result.runner_up_record_id is None
+    assert result.margin == 0.0
+    assert result.confident is False
+
+
+@pytest.mark.unit
+def test_identify_pdf__one_candidate_matched_by_doi__is_still_confident() -> None:
+    """A DOI is an exact identifier, not a similarity score, so it needs no rival.
+
+    The lone-candidate rule above must not disable DOI matching: refusing
+    there would prompt on every single-record batch for no gain in safety.
+    """
+    doi = "10.1109/tvcg.2017.2745181"
+    candidates = [Candidate(record_id=_RECORD_A, title="Something Else Entirely", doi=doi)]
+
+    result = identify_pdf(f"Some heading\nhttps://doi.org/{doi}\nAbstract...", candidates)
+
+    assert result.method == "doi"
+    assert result.record_id == _RECORD_A
+    assert result.confident is True
+
+
+@pytest.mark.unit
+def test_identify_pdf__containment_just_below_the_threshold__is_not_confident() -> None:
+    """Pins `_CONTAINMENT_THRESHOLD` itself, not merely a value comfortably past it.
+
+    Lowering the constant from 0.80 to 0.70 left the whole suite green: the
+    fixtures bracketed containment only to `(0.6, 1.0]`, so the number ADR 0020
+    calls the defence was free to drift downward -- the harmful direction.
+
+    Four title tokens, three present: 0.75, which must fail an 0.80 bar.
+    """
+    candidates = [
+        Candidate(record_id=_RECORD_A, title="Alpha Beta Gamma Delta", doi=None),
+        Candidate(record_id=_RECORD_B, title="Zeta Eta Theta Iota", doi=None),
+    ]
+
+    result = identify_pdf("Alpha Beta Gamma unrelated words here", candidates)
+
+    assert result.score == 0.75
+    assert result.confident is False
+
+
+@pytest.mark.unit
+def test_identify_pdf__margin_just_below_the_threshold__is_not_confident() -> None:
+    """Pins `_MARGIN_THRESHOLD` itself.
+
+    Lowering it from 0.25 to 0.20 also left the suite green, and the obvious
+    fixture cannot catch that: a 1.00/0.80 pair yields 0.19999... in binary
+    floating point, so it fails a 0.20 bar too and discriminates nothing.
+
+    This lands the margin **strictly between** the two: best 1.00 (5 of 5),
+    runner-up 7 of 9 = 0.777..., margin 0.222... -- above 0.20, below 0.25.
+    """
+    candidates = [
+        Candidate(record_id=_RECORD_A, title="Alpha Beta Gamma Delta Epsilon", doi=None),
+        Candidate(
+            record_id=_RECORD_B,
+            title="Alpha Beta Gamma Delta Epsilon Zeta Eta Theta Iota",
+            doi=None,
+        ),
+    ]
+
+    result = identify_pdf("Alpha Beta Gamma Delta Epsilon Zeta Eta", candidates)
+
+    assert result.score == 1.0
+    assert result.runner_up_score == pytest.approx(7 / 9)
+    assert result.margin == pytest.approx(2 / 9)
+    assert 0.20 < result.margin < 0.25, "fixture must discriminate the two thresholds"
+    assert result.confident is False

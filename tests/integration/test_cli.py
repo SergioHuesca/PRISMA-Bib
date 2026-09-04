@@ -58,8 +58,17 @@ _CROSSREF_LOOKUP_PREFIX = CrossrefTdmClient.LOOKUP_ENDPOINT_TEMPLATE.rsplit("/",
 
 
 def _mock_crossref_reports_nothing() -> None:
-    """Register a catch-all route answering every Crossref lookup with "no text-mining link"."""
-    respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(return_value=httpx.Response(404))
+    """Register a catch-all route answering every Crossref lookup with "no text-mining link".
+
+    HTTP **200 with an empty ``message``**, not 404. A 404 short-circuits
+    `CrossrefTdmClient.lookup` before `tdm_links` is ever reached, so a fixture
+    that used one would name a path it never took: "Crossref knows this DOI and
+    lists no text-mining link" is the measured majority case (23 of 29), and it
+    is a different code path from "Crossref has never heard of this DOI".
+    """
+    respx.get(url__startswith=_CROSSREF_LOOKUP_PREFIX).mock(
+        return_value=httpx.Response(200, json={"message": {}})
+    )
 
 
 _SEARCH_URL = "https://api.elsevier.com/content/search/scopus"

@@ -334,10 +334,13 @@ class FullTextResolver(Protocol):
         Raises:
             EntitlementError: When this resolver was refused access it
                 would otherwise be able to use (BUILD_PLAN hard rule 1;
-                currently only meaningful for :class:`ScienceDirectResolver`,
-                whose underlying client raises this on HTTP 403). Caught
-                only by :func:`resolve_fulltext`, never by a resolver
-                itself and never re-raised as anything else.
+                meaningful for :class:`ScienceDirectResolver` and
+                :class:`CrossrefTdmResolver`, whose underlying clients both
+                raise this on HTTP 403 -- never for
+                :class:`OpenAccessResolver` or :class:`ManualDropResolver`,
+                which have no entitlement concept). Caught only by
+                :func:`resolve_fulltext`, never by a resolver itself and
+                never re-raised as anything else.
         """
         ...
 
@@ -521,24 +524,41 @@ class CrossrefTdmResolver:
         (:data:`_TDM_HOSTS_ALREADY_COVERED` -- ADR 0020 Decision 3) without
         issuing a request to it at all.
 
+        A refusal is per-candidate, exactly like :class:`OpenAccessResolver`'s
+        per-candidate handling of its own location list (a prior BLOCKING
+        fix): one link's HTTP 403 says nothing about the next one -- a
+        record can carry TDM links from more than one publisher host (e.g. a
+        co-published work, or a link Crossref records against a prior
+        publisher), and a 403 from the first must not discard a PDF the
+        second would have served. This resolver remembers that a refusal
+        happened and keeps trying the remaining links, raising
+        :class:`~prismabib.errors.EntitlementError` only after the whole
+        list is exhausted with nothing resolved -- so a record with
+        ``[refused, succeeds]`` still resolves, and a record with
+        ``[refused, refused]`` (or a single refused link) still records the
+        entitlement gap ADR 0019's coverage table needs.
+
         Raises:
-            EntitlementError: When a TDM link's host refuses the download
-                with HTTP 403 -- propagates untranslated so
-                :func:`resolve_fulltext` can record ``entitled=False`` and
-                continue to the next resolver (ADR 0019's unchanged 403
-                rule, restated by ADR 0020). Unlike
-                :class:`OpenAccessResolver`, which never raises this (a
-                public OA copy carries no entitlement concept), a TDM link
-                points at a publisher's own licensed text-mining endpoint --
-                the same shape as :class:`ScienceDirectResolver`'s 403, just
-                reached through Crossref's link list instead of a direct
-                Article Retrieval call.
+            EntitlementError: When at least one TDM link's host refused the
+                download with HTTP 403 and no link -- refused, skipped as an
+                already-covered host, or simply absent -- produced a PDF.
+                Propagates untranslated so :func:`resolve_fulltext` can
+                record ``entitled=False`` and continue to the next resolver
+                (ADR 0019's unchanged 403 rule, restated by ADR 0020).
+                Unlike :class:`OpenAccessResolver`, which never raises this
+                (a public OA copy carries no entitlement concept), a TDM
+                link points at a publisher's own licensed text-mining
+                endpoint -- the same shape as
+                :class:`ScienceDirectResolver`'s 403, just reached through
+                Crossref's link list, and now through potentially several of
+                them, instead of a single direct Article Retrieval call.
         """
         if not doi:
             return None
         response = self.crossref_client.lookup(doi)
         if response is None:
             return None
+        any_link_refused = False
         for link in tdm_links(response):
             host = urlparse(link.url).hostname
             if host is not None and host.casefold() in _TDM_HOSTS_ALREADY_COVERED:
@@ -550,13 +570,22 @@ class CrossrefTdmResolver:
                 continue
             try:
                 content, content_type = self.crossref_client.fetch_bytes(link.url)
-            except EntitlementError:
-                # Propagates untranslated -- see the docstring above. A
-                # refusal here is a fact about this resolver's entitlement,
-                # not about one candidate link, so it is not swallowed and
-                # retried against the next link the way a soft failure is
-                # below.
-                raise
+            except EntitlementError as exc:
+                # Per-candidate, not re-raised here -- see the docstring
+                # above. One link's refusal costs that link; the next one
+                # (a different publisher host on the same DOI) may still
+                # resolve. Remembered so this resolver can still raise once
+                # the whole list is exhausted with nothing found, exactly
+                # the three-valued distinction ADR 0019's coverage table
+                # needs: "refused" must not be reported as "not found"
+                # merely because a later candidate happened to fail too.
+                any_link_refused = True
+                logger.info(
+                    "fulltext.resolver.crossref_tdm.candidate_refused",
+                    record_id=record_id,
+                    error=str(exc),
+                )
+                continue
             except Exception as exc:  # noqa: BLE001 -- see OpenAccessResolver's identical comment
                 # One candidate link failing (a dead host, a malformed URL, a
                 # transient non-5xx error already exhausted by the client's
@@ -585,6 +614,12 @@ class CrossrefTdmResolver:
                 media_type="pdf",
                 content=content,
                 retrieved_at=datetime.now(UTC),
+            )
+        if any_link_refused:
+            raise EntitlementError(
+                f"every text-mining link tried for {record_id!r} that this resolver "
+                "attempted was refused (HTTP 403); recorded as an entitlement gap "
+                "rather than an absent paper (ADR 0019, ADR 0020)."
             )
         return None
 
@@ -759,8 +794,12 @@ def default_chain(
 
     Yields:
         The chain, in ADR 0020 order (ScienceDirect, Crossref TDM, open
-        access, manual drop, omitting ScienceDirect when its credential is
-        absent).
+        access, manual drop), omitting :class:`ScienceDirectResolver` when
+        ``ELSEVIER_SD_API_KEY`` is absent and omitting
+        :class:`OpenAccessResolver` the same way when ``UNPAYWALL_EMAIL`` is
+        absent -- both drop out of the chain via the identical
+        ``ConfigError``-degradation path below, and neither absence removes
+        any other resolver.
 
     Note:
         When ``settings`` is omitted this reads
