@@ -105,6 +105,7 @@ nav:
           - "ADR 0018: abstract runs load into Layer 1": architecture/adr/0018-abstract-runs-in-layer-1.md
           - "ADR 0019: full-text resolution and coverage": architecture/adr/0019-fulltext-resolution-and-coverage.md
           - "ADR 0020: Crossref TDM and assisted manual fetch": architecture/adr/0020-crossref-tdm-and-assisted-manual-fetch.md
+          - "ADR 0021: entitlement refusals are attributed to a publisher": architecture/adr/0021-entitlement-refusals-are-attributed-to-a-publisher.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md

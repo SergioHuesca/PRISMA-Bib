@@ -85,6 +85,24 @@ _PREFIX_TO_PUBLISHER: Final[dict[str, str]] = {
     "10.1137": "SIAM",
     "10.2200": "Morgan & Claypool",
     "10.1142": "World Scientific",
+    # Added against a real corpus (Issue #36): a `Baseball-CVPR` run carried
+    # DOIs under all four of these prefixes, unmapped, rendering as raw
+    # registrant numbers in a coverage table destined for a thesis appendix.
+    "10.1117": "SPIE",
+    "10.1541": "IEEJ",
+    "10.2478": "Sciendo",
+    "10.5220": "SciTePress",
+    # 10.23919 is deliberately absent, not merely not-yet-added. It is a
+    # shared conference-proceedings prefix: DOI.org's public prefix registry
+    # lists it against a Crossref member used on behalf of several distinct
+    # conference organising bodies (IEEE-affiliated and independent alike)
+    # rather than one publisher, and papers minted under it in the wild carry
+    # imprints (VDE, IFIP, EDA Publishing, and others depending on the
+    # conference) that do not agree with each other. `publishers.py`'s own
+    # rule is "extend by adding an entry, never by inferring one" -- a prefix
+    # this table cannot attribute to a single registrant is returned as a
+    # miss (see `publisher_from_doi`) rather than guessed at, exactly like
+    # any other unmapped prefix.
 }
 
 #: The label used for a record that carries no DOI at all. Distinct from any
