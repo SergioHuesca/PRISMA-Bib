@@ -313,6 +313,71 @@ def _default_project_toml(slug: str, title: str) -> str:
     )
 
 
+_DEFAULT_GITIGNORE = """\
+# Deny everything, then allow only the protocol and the decision record.
+#
+# An allowlist, not a denylist, and deliberately so. `raw/` holds verbatim
+# Scopus API responses: that content is licensed and must never leave this
+# machine, and a denylist fails open -- one directory nobody thought of and a
+# `git add -A` publishes 261 MB of Elsevier's data. This way, a file is
+# untracked unless someone wrote a rule for it.
+#
+# `store/` and `exports/` are excluded for a different reason: they are build
+# artefacts, reconstructible from Layer 0 by `prismabib build --rebuild` and
+# `prismabib export`. Committing a derived number would create a second,
+# staler source of truth for figures that must come from the store.
+*
+
+# The eligibility protocol. This is the whole point of the repository:
+# `engine.replay()` resolves a historical `criteria.version` from git history
+# alone, so an amendment that is not committed cannot be replayed and the
+# decisions logged under it stop being reconstructible.
+!criteria.yaml
+
+# The search that produced the corpus.
+!project.toml
+
+# The append-only decision log and its tamper-detection sidecar -- the
+# irreplaceable human labour in this project.
+!decisions/
+!decisions/*.jsonl
+!decisions/*.sha256
+
+# The taxonomy rules, which are authored rather than derived.
+!taxonomy/
+!taxonomy/rules/
+!taxonomy/rules/**
+
+# The declared dimensions -- the closed category set that every rule file and
+# every override event is validated against. Untracked, the override log would
+# commit to categories whose definition has no git history.
+!taxonomy/dimensions.yaml
+
+# The append-only taxonomy override log and its sidecar (ADR 0023
+# Consequence 2). A rule-coded assignment is recomputed for free by
+# re-running the coder; a human override is not -- it is the one taxonomy
+# artefact this stage produces that cannot be regenerated, so it gets the
+# same allowlist treatment as `decisions/` above, in the same style.
+!taxonomy/taxonomy_overrides.jsonl
+!taxonomy/taxonomy_overrides.jsonl.sha256
+
+!.gitignore
+"""
+
+
+def _default_gitignore() -> str:
+    """Render the default per-project ``.gitignore`` content written by :meth:`Project.init`.
+
+    Returns:
+        The allowlist-style ``.gitignore`` text (BUILD_PLAN §2.5): everything
+        under a project directory is denied by default, and only the
+        methodology surface -- ``criteria.yaml``, ``project.toml``, the
+        decision log, the taxonomy rules, and the taxonomy override log
+        (ADR 0023 Consequence 2) -- is allowed back in.
+    """
+    return _DEFAULT_GITIGNORE
+
+
 def _resolve_projects_root(root: Path | None) -> Path:
     """Resolve the projects root directory that ``<slug>`` is created under.
 
@@ -407,6 +472,10 @@ class Project:
 
         decisions_jsonl_path = project_root / "decisions" / "decisions.jsonl"
         decisions_jsonl_path.touch(exist_ok=True)
+
+        gitignore_path = project_root / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text(_default_gitignore(), encoding="utf-8")
 
         return cls(slug=slug, root=project_root)
 
@@ -554,6 +623,55 @@ class Project:
             The path, created by :meth:`Project.init`.
         """
         return self.root / "fulltext"
+
+    @property
+    def taxonomy_dimensions_path(self) -> Path:
+        """Where this project declares its taxonomy dimensions, ``<root>/taxonomy/dimensions.yaml``.
+
+        Per-project data, unlike ``criteria.yaml`` (ADR 0023 Decision 2), so
+        :meth:`Project.init` does not populate a default here -- there is no
+        sensible default dimension set, and :func:`prismabib.taxonomy.schema.load_dimensions`
+        raises :class:`~prismabib.errors.ConfigError` naming this path when it
+        is missing, exactly as :attr:`criteria` does for ``criteria.yaml``.
+
+        Returns:
+            The path. Allowlisted in the project's own ``.gitignore``
+            alongside ``criteria.yaml``: it is methodology, not derived data.
+        """
+        return self.root / "taxonomy" / "dimensions.yaml"
+
+    @property
+    def taxonomy_rules_dir(self) -> Path:
+        """Where this project's versioned taxonomy rule files live, ``<root>/taxonomy/rules``.
+
+        One YAML file per dimension (BUILD_PLAN §Stage 8:
+        ``taxonomy/rules/<dimension>.yaml``), created empty by
+        :meth:`Project.init`.
+
+        Returns:
+            The path.
+        """
+        return self.root / "taxonomy" / "rules"
+
+    @property
+    def taxonomy_overrides_path(self) -> Path:
+        """The append-only taxonomy override log, ``<root>/taxonomy/taxonomy_overrides.jsonl``.
+
+        ADR 0023 Consequence 2: the one taxonomy artefact this stage produces
+        that cannot be recomputed from ``(corpus, rule files)`` alone, so it
+        gets the same append-only, checksum-sidecar treatment as
+        :attr:`decisions_path` (via :class:`~prismabib.prisma.log.AppendOnlyLog`,
+        reused rather than reimplemented) and the same ``.gitignore``
+        allowlisting.
+
+        Returns:
+            The path. Not created by :meth:`Project.init` -- like
+            ``decisions.jsonl``, it comes into existence on the first
+            :meth:`~prismabib.taxonomy.overrides.OverrideLog.append`, which
+            (like :class:`~prismabib.prisma.log.DecisionLog`) creates its
+            parent directory and the file itself with ``O_CREAT`` if needed.
+        """
+        return self.root / "taxonomy" / "taxonomy_overrides.jsonl"
 
 
 def _criteria_config_error(path: Path, exc: PydanticValidationError) -> ConfigError:

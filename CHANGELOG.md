@@ -5,6 +5,130 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The taxonomy engine** (BUILD_PLAN Stage 8): `src/prismabib/taxonomy/` — `schema.py`
+  (per-project dimension declarations, `CountingUnit`), `rules.py` (the YAML regex DSL, every
+  defect raising at load rather than at match time), `coder.py` (a pure function of corpus,
+  rules and overrides), `overrides.py` (the append-only human-override log), `review.py` (the
+  priority queue, the coverage report and the audit agreement rate).
+
+  **Assignments are computed, never stored** (ADR 0023 Decision 1). ADR 0018 fixed the rule
+  that any Layer 1 table must be a function of Layer 0, and an assignment is a function of
+  Layer 1 *and the rule files*, which live in the project's own repository on their own
+  cadence. A `taxonomy_assignments` table would therefore be one `build --rebuild` could not
+  reproduce. Deterministic, idempotent, and "overrides survive a rule-version bump" are
+  properties of a pure function rather than invariants a store must maintain.
+
+  **An override carries the complete category set for a `(record, dimension)` and replaces the
+  rules' output for it** (ADR 0023 Decision 3, amending ADR 0005's singular sketch). A reviewer
+  who overrides has read the paper; leaving a rule-assigned `cnn` beside a human `transformer`
+  dilutes the judgement with the noise they were asked to correct. `categories: []` — "a human
+  looked and nothing applies" — is a state the singular form could not express at all, and is
+  kept distinct from "nobody looked" everywhere a distribution is produced.
+
+  **Distributions carry three buckets**, a category, `reviewed_none` and `uncoded`, and then
+  sum to exactly `|C|` (Decisions 4 and 4b). A distribution that silently omits the records
+  nothing fired on overstates every category's share — the same argument as Stage 7's
+  geography `UNK` bucket. Both bucket names are refused as categories by the schema loader.
+
+### Fixed
+
+- **The audit agreement rate could never be computed.** Not "was wrong" — was permanently
+  `None`, for every corpus, with no reviewing pattern that escaped it. The review queue
+  excluded pairs a human had already reviewed (correct for a work list) and the audit sample
+  was drawn from that same pool, so every sampled record was by construction one with no
+  override; the rate looked up overrides that could not exist. Reviewing a sampled record
+  removed it from the pool and the next run re-drew a different sample.
+
+  This is the number ADR 0005 designates as the *sole* validator of rule content. ADR 0023
+  Decision 5b separates the two roles: the audit sample is a **designated set**, stable across
+  reviewing progress and a function of `(project, dimension, rule version, corpus)` — exactly
+  what the seed already digested — while the queue presents its outstanding members as work.
+
+  The second half was worse: the coder drops a rule row once an override stands, so "what did
+  the rules say?" returned the empty set for exactly the records being judged. Ten reviewers
+  unanimously *agreeing* with the rules would have read as **0% agreement**. Superseded rule
+  assignments are now retained, which also gives the queue a source for "what the rules
+  currently say" about a record already reviewed once.
+
+- **`confidence` affected nothing.** It was a field a rule author could set to anything,
+  including `0.0`, that no code path consumed, while a single corpus-wide agreement rate
+  averaged every firing rule — moving whenever the *mix* of categories in a corpus moved and no
+  rule had changed. Agreement is now also reported per confidence band (Decision 5c), with a
+  record placed by the weakest confidence among its assigned categories. Filtering the pool by
+  a threshold was the obvious alternative and is backwards: it leaves the rules whose author
+  already expects them to be wrong permanently unaudited.
+
+- **`taxonomy/dimensions.yaml` and the override log were untracked**, in the project template
+  and in the existing project. `dimensions.yaml` is the closed category set every rule file and
+  every override event validates against; untracked, the override log commits to categories
+  whose definition has no history, so a replay recovers which category a reviewer chose but not
+  what the dimension declared at the time. The template's `if not exists` guard by design never
+  reaches an existing project, so `projects/Baseball-CVPR/.gitignore` is updated directly.
+  Verified afterwards that `raw/`, `store/`, `exports/` and `fulltext/` remain denied.
+
+- **An override naming a category the schema does not declare was counted into existence.**
+  `OverrideLog.append` validates against the schema and so does the rule loader, but
+  `OverrideLog.load()` deliberately does not — re-validating an append-only log on read would
+  let a schema edit retroactively corrupt a reviewer's past verdict. So `distribution()`'s
+  `counts.get(category, 0) + 1` invented a bucket outside the closed set. The worst case is a
+  log written before this release, when `uncoded` was still a legal category name: the count
+  landed in the *real* `uncoded` bucket, the sum still equalled `|C|` so the counting guard saw
+  nothing, and `build_coverage_report` reported the same record as human-coded. Two views of
+  one record, contradictory, no error. Now refused where the number is produced.
+
+- **The `INACCESSIBLE` guard's module exemption was too wide, twice over.** Waiving the whole
+  scan for a log-owning module let `AppendOnlyLog(model=DecisionEvent)`, `append_event(...)` and
+  the full `append(...)` signature pass unflagged inside `taxonomy/overrides.py` — the first of
+  which ADR 0024 Decision 3 says is refused *outside* `prisma/log.py`, in the PR landing that
+  ADR. The waiver now applies to the `write_event` rule alone, and its narrowness is asserted
+  rather than claimed in a comment: three revisions of this guard each moved the hole instead of
+  closing it, because nothing tested what the exemption let through. `write_event` is also
+  matched on the bare attribute name now, which closes `store = log._store;
+  store.write_event(e)` — an alias every receiver-shaped version of the rule missed.
+
+- **The audit sample's confidence-band placement was asserted by nothing.** ADR 0023 Decision
+  5c says a record is placed by the *weakest* confidence among its assigned categories, so a
+  record coded partly by a `0.6` rule is not laundered into the high band. The test fixture
+  declared no `confidence` at all — every category defaulted to `1.0`, every record landed in
+  one band, and `min`, `max` and "first category wins" were indistinguishable. Injecting
+  `min` → `max` left the whole taxonomy suite green, while the test's own docstring claimed a
+  fixture property (`supervised` at 0.9) that was never true of any file.
+
+- **Two rule files covering one dimension silently last-wins.** Everything downstream keys on
+  the dimension id, so the second file replaced the first's seed and designated sample while
+  the queue accumulated the union of both draws: a reviewer audits records the agreement rate
+  never measures, and the recorded seed cannot regenerate the sample beside it. Refused now.
+
+### Changed
+
+- **`prisma/log.py`'s durability mechanics are extracted into one `AppendOnlyLog`**, composed
+  by both `DecisionLog` and the new `OverrideLog` (ADR 0024). Verified byte-identical: same log
+  and sidecar bytes, same syscall order, byte-identical Windows byte-range locking, and it
+  reads the reference project's real 842-event log with its sidecar validating.
+
+  Two things land with it, because the extraction is what made them necessary:
+
+  **The write ordering is now tested.** Injection showed it was protected by nothing — writing
+  the sidecar before the data fsync left all 282 prisma and taxonomy tests green, as did
+  deleting the data fsync outright. The ordering is the whole crash-safety argument: a machine
+  losing power between the two comes back with a checksum attesting to bytes that were never
+  written, and the next load reports tampering on a log nobody touched.
+
+  **The INACCESSIBLE guard covers the surface extraction opened.** `log._store.write_event()`
+  wrote a loadable, fsynced, sidecar-valid `INACCESSIBLE` decision while skipping
+  `_validate_business_rules`, as did constructing `AppendOnlyLog(model=DecisionEvent)` — public
+  API. Neither needed obfuscation, unlike the evasions the guard already documented. Both are
+  now refused, with planted-violation tests, while a class writing to the store it owns is
+  still allowed.
+
+  Three `LogError` messages had become less specific — including one that dropped "screening"
+  from a sentence ADR 0010 quotes as the log's defining property. Restored by naming the log
+  through the composing class.
+
 ## [0.19.0] — 2026-09-04
 
 ### Added

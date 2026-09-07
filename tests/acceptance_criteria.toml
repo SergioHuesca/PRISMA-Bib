@@ -106,3 +106,11 @@ S07-AC2 = "CAGR on a synthetic series with known growth returns the analytic ans
 S07-AC3 = "h-index verified against a hand-computed fixture."
 S07-AC4 = "Changing min_occurrence changes params and therefore the caption."
 S07-AC5 = "Recomputation on an unchanged store is bit-identical."
+
+# --- Stage 8 -- Taxonomy engine (BUILD_PLAN.md lines 1247-1340) -----------
+
+S08-AC1 = "Rule files validate against a schema; a malformed regex fails loudly at load, not at match time."
+S08-AC2 = "Coding is deterministic and idempotent."
+S08-AC3 = "Human overrides survive a rule-version bump and re-run -- verified by test."
+S08-AC4 = "Coverage report: % of corpus coded per dimension, % by rule vs human, audit agreement rate."
+S08-AC5 = "A multi_label: false dimension with counting_unit: papers is asserted to sum to |C|; the assertion fails loudly on a deliberately over-assigned fixture."

@@ -195,7 +195,14 @@ def test_resolve_criteria__repository_with_no_commits_at_all__raises_naming_the_
 def test_resolve_criteria__criteria_yaml_never_committed__raises(project: Project) -> None:
     run_git(project.root, "init", "--quiet", "--initial-branch=main")
     (project.root / "README.md").write_text("unrelated\n", encoding="utf-8")
-    run_git(project.root, "add", "README.md")
+    # `-f`: `Project.init` now writes a project-local `.gitignore` (ADR 0023
+    # Consequence 2 -- see `project.py::_default_gitignore`) that denies
+    # everything except the methodology surface, and `README.md` is
+    # deliberately *not* on that allowlist -- it stands in for "a commit that
+    # has nothing to do with criteria.yaml", which is the whole point of this
+    # fixture. Forcing the add is exactly what the top-level `.gitignore`'s
+    # own comment recommends for tracking something outside the allowlist.
+    run_git(project.root, "add", "-f", "README.md")
     run_git(project.root, "commit", "--quiet", "--message", "unrelated")
 
     with pytest.raises(ConfigError, match="has no git history"):

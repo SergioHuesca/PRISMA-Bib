@@ -88,6 +88,35 @@ _DECISIONLOG_APPEND_KEYWORDS = frozenset({"stage", "record_id", "reviewer", "dec
 #: the implementation, not a second write path around it.
 _DECISIONLOG_MODULE_RELATIVE_PATH = "prisma/log.py"
 
+#: Modules permitted to call ``write_event`` on a log's writer -- the ones
+#: that *own* an append-only log and therefore own its validation contract.
+#:
+#: **Only the ``write_event`` rule is waived here.** Every other rule
+#: (``append_event``, the ``append(...)`` signature,
+#: ``AppendOnlyLog(model=DecisionEvent)``) still applies inside these
+#: modules. That distinction is the whole point and it took three attempts
+#: to get right:
+#:
+#: 1. The first version did not see ``_store.write_event`` or
+#:    ``AppendOnlyLog(model=DecisionEvent)`` at all -- the surface ADR 0024's
+#:    extraction opened.
+#: 2. The second exempted any ``self._store`` receiver, so
+#:    ``overrides.py``'s one legitimate call would pass. That created a
+#:    *better* bypass than either shape it guarded: ``class
+#:    Sneaky(DecisionLog)`` inherits ``_store`` already bound to
+#:    ``decisions.jsonl``, spells ``self._store``, and was caught before the
+#:    carve-out.
+#: 3. The third skipped these modules from the *entire* scan, which let
+#:    ``AppendOnlyLog(model=DecisionEvent)`` and ``append_event`` through in
+#:    ``overrides.py`` -- exactly what ADR 0024 Decision 3 says is refused
+#:    "outside ``log.py``", in the PR landing that ADR.
+#:
+#: Each fix moved the hole rather than closing it, which is why the
+#: narrowness is now asserted by
+#: ``test_decisionlog_write_scan__exemption_waives_only_the_write_event_rule``
+#: instead of claimed in a comment.
+_WRITE_EVENT_EXEMPT_RELATIVE_PATHS = frozenset({"prisma/log.py", "taxonomy/overrides.py"})
+
 
 def _source_files() -> list[Path]:
     """Every ``.py`` file under ``src/prismabib``, in a stable order."""
@@ -122,7 +151,7 @@ def _reason_code_inaccessible_lines(tree: ast.AST) -> list[int]:
     return offenders
 
 
-def _decisionlog_write_lines(tree: ast.AST) -> list[int]:
+def _decisionlog_write_lines(tree: ast.AST, *, waive_write_event: bool = False) -> list[int]:
     """Line numbers of every call in ``tree`` that looks like a ``DecisionLog`` write.
 
     Args:
@@ -133,24 +162,112 @@ def _decisionlog_write_lines(tree: ast.AST) -> list[int]:
         attribute named ``append_event`` (a name no other class in this
         codebase defines, so any call site naming it is calling
         :meth:`~prismabib.prisma.log.DecisionLog.append_event`), or a call to
-        an attribute named ``append`` whose keyword arguments are a superset
+        ``append`` whose keyword arguments are a superset
         of :data:`_DECISIONLOG_APPEND_KEYWORDS` -- the signature no ordinary
         ``list``/``set``/``dict`` mutation can match, since none of those
-        accepts keyword arguments at all. See the module docstring for what
-        this scope does and does not prove.
+        accepts keyword arguments at all.
+
+        Also matches the two shapes ADR 0024 Decision 3 closed, which reach
+        ``decisions.jsonl`` **without** passing
+        :meth:`~prismabib.prisma.log.DecisionLog._validate_business_rules`:
+        any ``.write_event(...)`` call on a ``_store`` attribute, and any
+        construction of ``AppendOnlyLog`` with ``model=DecisionEvent``.
+        Extracting the shared writer made both of these one attribute access
+        away from a validated-looking, fsynced, sidecar-updated
+        ``INACCESSIBLE`` event -- and unlike the evasions the module
+        docstring already enumerates, neither requires any obfuscation.
+        See the module docstring for what this scope does and does not prove.
     """
     offenders: list[int] = []
+    decision_event_names = _decision_event_names(tree)
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        if not isinstance(node, ast.Call):
+            continue
+        if _is_decision_event_log_construction(node, decision_event_names):
+            offenders.append(node.lineno)
+            continue
+        if not isinstance(node.func, ast.Attribute):
             continue
         attr = node.func.attr
         if attr == "append_event":
+            offenders.append(node.lineno)
+        elif attr == "write_event" and not waive_write_event:
+            # The bare attribute name, with no condition on the receiver.
+            # `write_event` is defined once in the whole tree and has two
+            # call sites, so matching the name costs no false positives --
+            # and it closes `store = log._store; store.write_event(e)`,
+            # which every receiver-shaped rule missed.
             offenders.append(node.lineno)
         elif attr == "append":
             keyword_names = {keyword.arg for keyword in node.keywords}
             if keyword_names >= _DECISIONLOG_APPEND_KEYWORDS:
                 offenders.append(node.lineno)
     return offenders
+
+
+def _decision_event_names(tree: ast.AST) -> frozenset[str]:
+    """Every local name in ``tree`` that refers to ``DecisionEvent``.
+
+    Args:
+        tree: A parsed module.
+
+    Returns:
+        ``{"DecisionEvent"}`` plus any ``as`` alias the module bound it to.
+        Resolving the alias at the import is what closes
+        ``from ... import DecisionEvent as DE`` -- after which the call site
+        is ``model=DE`` and no amount of looking at the call alone can tell
+        what it means. The same technique the wall-clock scan uses for
+        ``from datetime import datetime as dt``.
+    """
+    names = {_DECISION_EVENT_CLASS}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        names.update(
+            alias.asname or alias.name
+            for alias in node.names
+            if alias.name == _DECISION_EVENT_CLASS
+        )
+    return frozenset(names)
+
+
+def _is_decision_event_log_construction(node: ast.Call, names: frozenset[str]) -> bool:
+    """Whether ``node`` constructs an ``AppendOnlyLog`` over ``DecisionEvent``.
+
+    Args:
+        node: Any call node.
+
+    Returns:
+        ``True`` for ``AppendOnlyLog(..., model=DecisionEvent, ...)``.
+        ``AppendOnlyLog`` is public API, so this is not a private-attribute
+        reach-through: without this rule, a module can build its own writer
+        over the decision-event model and append to ``decisions.jsonl`` with
+        every durability guarantee and no business-rule validation at all.
+    """
+    name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+    if name != _SHARED_LOG_CLASS:
+        return False
+    # Matches the bare name, a dotted `events.DecisionEvent`, and any local
+    # `as` alias `names` resolved from the module's imports. The first
+    # version matched only the bare name; the other two spellings are not
+    # evasions, they are how a module that imports the package rather than
+    # the symbol, or that renames on import, would naturally write it.
+    return any(
+        keyword.arg == "model"
+        and (
+            ast.unparse(keyword.value).rsplit(".", maxsplit=1)[-1] in names
+            or ast.unparse(keyword.value) in names
+        )
+        for keyword in node.keywords
+    )
+
+
+#: The shared append-only writer's class name (ADR 0024).
+_SHARED_LOG_CLASS = "AppendOnlyLog"
+
+#: The decision-event model name; constructing the writer over it is what
+#: makes such a writer a decision-log writer.
+_DECISION_EVENT_CLASS = "DecisionEvent"
 
 
 def _is_exempt(relative: Path) -> bool:
@@ -202,10 +319,21 @@ def test_decisionlog_write__no_code_path_calls_it_outside_screening_or_cli() -> 
         # `DecisionLog.append`'s own `self.append_event(event)` was reported as a
         # violation. Green on Linux, red on the `full-windows` job -- the
         # machine-dependence class CLAUDE.md names, in the guard itself.
-        if _is_exempt(relative) or relative.as_posix() == _DECISIONLOG_MODULE_RELATIVE_PATH:
+        if _is_exempt(relative):
+            continue
+        posix = relative.as_posix()
+        if posix == _DECISIONLOG_MODULE_RELATIVE_PATH:
+            # `prisma/log.py` alone is skipped outright: it *defines*
+            # `append_event`, `write_event` and the `AppendOnlyLog` the other
+            # rules name, so every rule matches its own implementation.
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        lines = _decisionlog_write_lines(tree)
+        # A waiver for one rule, not a pass for the module: `overrides.py`
+        # legitimately calls `write_event` on the log it owns, and must
+        # still be scanned for every other way of writing a decision.
+        lines = _decisionlog_write_lines(
+            tree, waive_write_event=posix in _WRITE_EVENT_EXEMPT_RELATIVE_PATHS
+        )
         if lines:
             offenders[str(relative)] = lines
 
@@ -274,3 +402,148 @@ def test_decisionlog_write__ordinary_list_append__is_not_flagged() -> None:
     """
     ordinary = "def f(items):\n    items.append(1)\n    items.append(x=1)\n"
     assert _decisionlog_write_lines(ast.parse(ordinary)) == []
+
+
+#: Every shape that reaches `decisions.jsonl` without passing
+#: `DecisionLog._validate_business_rules`, as source the guard must reject.
+#:
+#: Both rows below were **live bypasses** when ADR 0024's extraction landed:
+#: each one wrote a loadable, fsynced, sidecar-valid `INACCESSIBLE` decision
+#: event, and the guard as written saw neither. Unlike the evasions this
+#: module's own docstring enumerates -- constant indirection, concatenation,
+#: `**kwargs` -- neither needs any obfuscation. They are the obvious thing a
+#: future author reaches for, which is why they are pinned here rather than
+#: only fixed.
+_PLANTED_WRITE_BYPASSES = [
+    (
+        "store-reach-through",
+        "def f(log, event):\n    log._store.write_event(event)\n",
+    ),
+    (
+        "subclass-inherits-the-store",
+        (
+            "class Sneaky(DecisionLog):\n"
+            "    def go(self, event):\n"
+            "        self._store.write_event(event)\n"
+        ),
+    ),
+    (
+        "dotted-model",
+        "def f(path):\n    AppendOnlyLog(path, model=events.DecisionEvent).write_event(e)\n",
+    ),
+    (
+        "aliased-model",
+        (
+            "from prismabib.prisma.events import DecisionEvent as DE\n"
+            "def f(path):\n"
+            "    AppendOnlyLog(path, model=DE).write_event(e)\n"
+        ),
+    ),
+    (
+        "own-writer-over-decision-event",
+        (
+            "def f(path):\n"
+            "    writer = AppendOnlyLog(path, model=DecisionEvent, noun='decision')\n"
+            "    writer.write_event(event)\n"
+        ),
+    ),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("label", "source"),
+    _PLANTED_WRITE_BYPASSES,
+    ids=[label for label, _ in _PLANTED_WRITE_BYPASSES],
+)
+def test_decisionlog_write_scan__detects_a_planted_bypass(label: str, source: str) -> None:
+    """The scan is not vacuous: every unvalidated write path must be caught.
+
+    Without this table the guard proves only that it catches the spelling
+    that existed when it was written, which is a guard against the past.
+    """
+    assert _decisionlog_write_lines(ast.parse(source)), label
+
+
+@pytest.mark.unit
+def test_decisionlog_write_scan__flags_self_store_too__permission_is_by_module() -> None:
+    """`self._store.write_event(...)` is a hit; the two modules that own a log are exempted.
+
+    Scoping the rule to non-`self` receivers instead was wrong, and made
+    things worse than not having the rule: a three-line
+    `class Sneaky(DecisionLog)` inherits `_store` already bound to
+    `decisions.jsonl` with `model=DecisionEvent`, spells `self._store`, and
+    writes an unvalidated `INACCESSIBLE` decision -- a better bypass than
+    either shape the guard was extended to catch, and one the pre-scoping
+    version caught.
+
+    Permission comes from `_LOG_OWNING_MODULE_RELATIVE_PATHS`, which is two
+    entries long, so exactly two lines in the codebase may make this call.
+    """
+    own_store = "class L:\n    def append(self, event):\n        self._store.write_event(event)\n"
+    subclass = (
+        "class Sneaky(DecisionLog):\n"
+        "    def go(self, event):\n"
+        "        self._store.write_event(event)\n"
+    )
+
+    assert _decisionlog_write_lines(ast.parse(own_store)), "self._store is not special-cased"
+    assert _decisionlog_write_lines(ast.parse(subclass)), "the subclass bypass must be caught"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [
+        (
+            "own-writer-over-decision-event",
+            "def f(path):\n    AppendOnlyLog(path, model=DecisionEvent).write_event(e)\n",
+        ),
+        ("append-event", "def f(log, event):\n    log.append_event(event)\n"),
+        (
+            "append-signature",
+            (
+                "def f(log):\n"
+                "    log.append(record_id='r', stage=s, decision='exclude', "
+                "reviewer='a', criteria_version='1.0.0', reason_code='INACCESSIBLE')\n"
+            ),
+        ),
+    ],
+    ids=["model-decision-event", "append-event", "append-signature"],
+)
+def test_decisionlog_write_scan__exemption_waives_only_the_write_event_rule(
+    label: str, source: str
+) -> None:
+    """A module that owns a log is still scanned for every *other* decision write.
+
+    The narrowness assertion three revisions of this guard did not have,
+    and the reason each revision's hole was found by review rather than by
+    the suite.
+
+    The previous revision skipped `taxonomy/overrides.py` from the whole
+    scan, so `AppendOnlyLog(model=DecisionEvent)`, `append_event(...)` and
+    the full `append(...)` signature all passed unflagged there — in the PR
+    landing the ADR whose Decision 3 says the first of those is refused
+    *outside* `prisma/log.py`. The scenario is not contrived: `overrides.py`
+    is the other reviewer-facing log, already holds a `Project` and an
+    `AppendOnlyLog`, and is where "mark inaccessible while triaging
+    taxonomy" would naturally be written.
+
+    `waive_write_event=True` is what those modules get; everything below
+    must still be caught under it.
+    """
+    assert _decisionlog_write_lines(ast.parse(source), waive_write_event=True), label
+
+
+@pytest.mark.unit
+def test_decisionlog_write_scan__the_waiver__permits_exactly_the_write_event_call() -> None:
+    """The waiver's positive half: the one line each owning module needs, and nothing more."""
+    owned_call = "class L:\n    def append(self, event):\n        self._store.write_event(event)\n"
+
+    assert _decisionlog_write_lines(ast.parse(owned_call), waive_write_event=True) == []
+    # ...and without the waiver, that same line is a violation -- including
+    # through an alias, which every receiver-shaped version of this rule
+    # missed.
+    assert _decisionlog_write_lines(ast.parse(owned_call))
+    aliased = "def f(log, event):\n    store = log._store\n    store.write_event(event)\n"
+    assert _decisionlog_write_lines(ast.parse(aliased))
