@@ -88,6 +88,23 @@ _DECISIONLOG_APPEND_KEYWORDS = frozenset({"stage", "record_id", "reviewer", "dec
 #: the implementation, not a second write path around it.
 _DECISIONLOG_MODULE_RELATIVE_PATH = "prisma/log.py"
 
+#: The modules permitted to call ``self._store.write_event(...)`` -- the two
+#: that *own* an append-only log and therefore own its validation contract.
+#:
+#: Keyed on the module, deliberately, not on how the receiver is spelled. An
+#: earlier version of this rule exempted any ``self._store`` receiver so that
+#: ``overrides.py``'s single legitimate call would pass, and that carve-out
+#: created a better bypass than either shape it was guarding: a three-line
+#: ``class Sneaky(DecisionLog)`` inherits ``_store`` already bound to
+#: ``decisions.jsonl`` with ``model=DecisionEvent``, spells ``self._store``,
+#: and writes an unvalidated ``INACCESSIBLE`` decision. Before the carve-out
+#: that source was caught.
+#:
+#: The right key is the thing that actually confers the right -- owning the
+#: log in that module -- and it is strictly narrower: this list has two
+#: entries, so exactly two lines in the codebase are permitted.
+_LOG_OWNING_MODULE_RELATIVE_PATHS = frozenset({"prisma/log.py", "taxonomy/overrides.py"})
+
 
 def _source_files() -> list[Path]:
     """Every ``.py`` file under ``src/prismabib``, in a stable order."""
@@ -150,10 +167,11 @@ def _decisionlog_write_lines(tree: ast.AST) -> list[int]:
         See the module docstring for what this scope does and does not prove.
     """
     offenders: list[int] = []
+    decision_event_names = _decision_event_names(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if _is_decision_event_log_construction(node):
+        if _is_decision_event_log_construction(node, decision_event_names):
             offenders.append(node.lineno)
             continue
         if not isinstance(node.func, ast.Attribute):
@@ -171,30 +189,56 @@ def _decisionlog_write_lines(tree: ast.AST) -> list[int]:
 
 
 def _receiver_is_private_store(func: ast.Attribute) -> bool:
-    """Whether a ``.write_event`` call's receiver is a ``_store`` attribute.
+    r"""Whether a ``.write_event`` call's receiver is a ``_store`` attribute.
 
     Args:
         func: The call's ``func`` node, already known to be an
             :class:`ast.Attribute` named ``write_event``.
 
     Returns:
-        ``True`` for ``other._store.write_event(...)`` -- a reach *into*
-        another object's writer. Deliberately not ``self._store...``: a
-        class writing to the store it owns is the class that also owns the
-        validation contract for it, which is how both ``DecisionLog`` and
-        ``OverrideLog`` legitimately call their shared writer. What this
-        catches is a *third party* borrowing someone else's durability
-        machinery to append an event that machinery never validated, which
-        before ADR 0024 meant reimplementing locking and checksums by hand
-        and now means one attribute access.
+        ``True`` for any ``....\_store.write_event(...)``, however the
+        receiver is spelled -- ``self``, a subclass's ``self``, a local, a
+        parameter. The permission to make that call is granted by
+        :data:`_LOG_OWNING_MODULE_RELATIVE_PATHS`, i.e. by *which module* the
+        call is in, not by the receiver's name; see that constant for why
+        scoping on ``self`` was wrong.
+
+        What this catches is code borrowing a log's durability machinery to
+        append an event that machinery never validated -- which before ADR
+        0024 meant reimplementing locking and checksums by hand, and now
+        means one attribute access.
     """
     receiver = func.value
-    if not isinstance(receiver, ast.Attribute) or receiver.attr != _PRIVATE_STORE_ATTRIBUTE:
-        return False
-    return not (isinstance(receiver.value, ast.Name) and receiver.value.id == "self")
+    return isinstance(receiver, ast.Attribute) and receiver.attr == _PRIVATE_STORE_ATTRIBUTE
 
 
-def _is_decision_event_log_construction(node: ast.Call) -> bool:
+def _decision_event_names(tree: ast.AST) -> frozenset[str]:
+    """Every local name in ``tree`` that refers to ``DecisionEvent``.
+
+    Args:
+        tree: A parsed module.
+
+    Returns:
+        ``{"DecisionEvent"}`` plus any ``as`` alias the module bound it to.
+        Resolving the alias at the import is what closes
+        ``from ... import DecisionEvent as DE`` -- after which the call site
+        is ``model=DE`` and no amount of looking at the call alone can tell
+        what it means. The same technique the wall-clock scan uses for
+        ``from datetime import datetime as dt``.
+    """
+    names = {_DECISION_EVENT_CLASS}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        names.update(
+            alias.asname or alias.name
+            for alias in node.names
+            if alias.name == _DECISION_EVENT_CLASS
+        )
+    return frozenset(names)
+
+
+def _is_decision_event_log_construction(node: ast.Call, names: frozenset[str]) -> bool:
     """Whether ``node`` constructs an ``AppendOnlyLog`` over ``DecisionEvent``.
 
     Args:
@@ -210,10 +254,17 @@ def _is_decision_event_log_construction(node: ast.Call) -> bool:
     name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
     if name != _SHARED_LOG_CLASS:
         return False
+    # Matches the bare name, a dotted `events.DecisionEvent`, and any local
+    # `as` alias `names` resolved from the module's imports. The first
+    # version matched only the bare name; the other two spellings are not
+    # evasions, they are how a module that imports the package rather than
+    # the symbol, or that renames on import, would naturally write it.
     return any(
         keyword.arg == "model"
-        and isinstance(keyword.value, ast.Name)
-        and keyword.value.id == _DECISION_EVENT_CLASS
+        and (
+            ast.unparse(keyword.value).rsplit(".", maxsplit=1)[-1] in names
+            or ast.unparse(keyword.value) in names
+        )
         for keyword in node.keywords
     )
 
@@ -279,7 +330,7 @@ def test_decisionlog_write__no_code_path_calls_it_outside_screening_or_cli() -> 
         # `DecisionLog.append`'s own `self.append_event(event)` was reported as a
         # violation. Green on Linux, red on the `full-windows` job -- the
         # machine-dependence class CLAUDE.md names, in the guard itself.
-        if _is_exempt(relative) or relative.as_posix() == _DECISIONLOG_MODULE_RELATIVE_PATH:
+        if _is_exempt(relative) or relative.as_posix() in _LOG_OWNING_MODULE_RELATIVE_PATHS:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         lines = _decisionlog_write_lines(tree)
@@ -369,6 +420,26 @@ _PLANTED_WRITE_BYPASSES = [
         "def f(log, event):\n    log._store.write_event(event)\n",
     ),
     (
+        "subclass-inherits-the-store",
+        (
+            "class Sneaky(DecisionLog):\n"
+            "    def go(self, event):\n"
+            "        self._store.write_event(event)\n"
+        ),
+    ),
+    (
+        "dotted-model",
+        "def f(path):\n    AppendOnlyLog(path, model=events.DecisionEvent).write_event(e)\n",
+    ),
+    (
+        "aliased-model",
+        (
+            "from prismabib.prisma.events import DecisionEvent as DE\n"
+            "def f(path):\n"
+            "    AppendOnlyLog(path, model=DE).write_event(e)\n"
+        ),
+    ),
+    (
         "own-writer-over-decision-event",
         (
             "def f(path):\n"
@@ -395,15 +466,26 @@ def test_decisionlog_write_scan__detects_a_planted_bypass(label: str, source: st
 
 
 @pytest.mark.unit
-def test_decisionlog_write_scan__permits_a_class_writing_to_its_own_store() -> None:
-    """The rule is about reaching into *another* object's writer, not about `write_event`.
+def test_decisionlog_write_scan__flags_self_store_too__permission_is_by_module() -> None:
+    """`self._store.write_event(...)` is a hit; the two modules that own a log are exempted.
 
-    `DecisionLog` and `OverrideLog` both call `self._store.write_event(...)`
-    legitimately -- a class writing to the store it owns is the class that
-    owns the validation contract for it. A guard that also refused this
-    would have to be exempted away in the very modules it exists to
-    protect, which is how a guard stops being obeyed.
+    Scoping the rule to non-`self` receivers instead was wrong, and made
+    things worse than not having the rule: a three-line
+    `class Sneaky(DecisionLog)` inherits `_store` already bound to
+    `decisions.jsonl` with `model=DecisionEvent`, spells `self._store`, and
+    writes an unvalidated `INACCESSIBLE` decision -- a better bypass than
+    either shape the guard was extended to catch, and one the pre-scoping
+    version caught.
+
+    Permission comes from `_LOG_OWNING_MODULE_RELATIVE_PATHS`, which is two
+    entries long, so exactly two lines in the codebase may make this call.
     """
-    source = "class L:\n    def append(self, event):\n        self._store.write_event(event)\n"
+    own_store = "class L:\n    def append(self, event):\n        self._store.write_event(event)\n"
+    subclass = (
+        "class Sneaky(DecisionLog):\n"
+        "    def go(self, event):\n"
+        "        self._store.write_event(event)\n"
+    )
 
-    assert _decisionlog_write_lines(ast.parse(source)) == []
+    assert _decisionlog_write_lines(ast.parse(own_store)), "self._store is not special-cased"
+    assert _decisionlog_write_lines(ast.parse(subclass)), "the subclass bypass must be caught"

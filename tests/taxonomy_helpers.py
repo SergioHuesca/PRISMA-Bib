@@ -110,6 +110,19 @@ def build_taxonomy_project(
 #: single-label dimension (``learning_paradigm``) and one multi-label
 #: dimension (``architecture``) -- BUILD_PLAN's own reference shape, trimmed
 #: to a handful of categories per dimension so fixtures stay readable.
+#: The same dimensions, with `learning_paradigm` multi-label -- so a record
+#: can carry two categories at different declared confidences and the
+#: confidence-band placement rule (ADR 0023 Decision 5c) is observable.
+MULTI_LABEL_DIMENSIONS_YAML = """\
+dimensions:
+  - id: learning_paradigm
+    multi_label: true
+    categories: [supervised, unsupervised, self_supervised]
+  - id: architecture
+    multi_label: true
+    categories: [cnn, transformer, gan]
+"""
+
 TEST_DIMENSIONS_YAML = """\
 dimensions:
   - id: learning_paradigm
@@ -175,6 +188,32 @@ def load_rule_files(
 #: *particular* regex matches a *particular* string, only that the engine's
 #: load/fold/count machinery behaves correctly around whatever a rule
 #: produces).
+#: Three categories at three different declared confidences, so a test can
+#: tell `min`, `max` and "first category wins" apart when placing a record
+#: into a confidence band (ADR 0023 Decision 5c).
+#:
+#: `LEARNING_PARADIGM_RULES_V1` declares no `confidence` at all, so every
+#: category there defaults to 1.0 -- which makes those four placement rules
+#: indistinguishable, and left the banding rule asserted by nothing.
+LEARNING_PARADIGM_RULES_GRADED_CONFIDENCE = """\
+version: 1.0.0
+dimension: learning_paradigm
+counting_unit: papers
+categories:
+  - id: supervised
+    any:
+      - {field: title, pattern: 'AlphaMarker'}
+    confidence: 0.95
+  - id: unsupervised
+    any:
+      - {field: title, pattern: 'BetaMarker'}
+    confidence: 0.6
+  - id: self_supervised
+    any:
+      - {field: title, pattern: 'GammaMarker'}
+    confidence: 0.8
+"""
+
 LEARNING_PARADIGM_RULES_V1 = """\
 version: 1.0.0
 dimension: learning_paradigm
@@ -274,10 +313,12 @@ categories:
 
 __all__ = [
     "ARCHITECTURE_RULES_V1",
+    "LEARNING_PARADIGM_RULES_GRADED_CONFIDENCE",
     "LEARNING_PARADIGM_RULES_INDEX_KEYWORDS",
     "LEARNING_PARADIGM_RULES_OVER_ASSIGNED",
     "LEARNING_PARADIGM_RULES_V1",
     "LEARNING_PARADIGM_RULES_V2",
+    "MULTI_LABEL_DIMENSIONS_YAML",
     "TAXONOMY_RUN_ID",
     "TAXONOMY_RUN_STARTED_AT",
     "TEST_DIMENSIONS_YAML",

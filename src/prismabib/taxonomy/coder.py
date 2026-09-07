@@ -554,6 +554,7 @@ def distribution(
     counts: dict[str, int] = dict.fromkeys(dimension.categories, 0)
     counts["uncoded"] = 0
     counts["reviewed_none"] = 0
+    declared = frozenset(dimension.categories)
 
     for record_id in result.record_ids:
         categories = effective.get(record_id, ())
@@ -576,7 +577,39 @@ def distribution(
             )
             # pragma: no mutate end
         for category in categories:
-            counts[category] = counts.get(category, 0) + 1
+            if category not in declared:
+                # Against `dimension.categories`, NOT against `counts`:
+                # `counts` is seeded with the two reserved bucket keys as
+                # well, so an override naming `uncoded` would find its key
+                # present and be counted into the real `uncoded` bucket --
+                # the worst version of this defect, and the one a log
+                # written before this release actually produces.
+                #
+                # Reachable only through an override event, because both the
+                # rule-file loader and `OverrideLog.append` validate against
+                # the schema. `OverrideLog.load()` deliberately does not: an
+                # append-only log is a historical record, and re-validating it
+                # on read would make a schema edit retroactively corrupt a
+                # reviewer's past verdict. So the drift surfaces here, where
+                # the number is produced, rather than being counted.
+                #
+                # Two ways an ordinary project reaches it: a category removed
+                # or renamed in `dimensions.yaml` after someone overrode into
+                # it, and -- for this release specifically -- a log written
+                # before `uncoded`/`reviewed_none` became reserved names. Left
+                # unchecked it is the Decision 4b failure exactly: the total
+                # still equals |C|, so the counting guard sees nothing, while
+                # `build_coverage_report` calls the record human-coded and this
+                # function files it under `uncoded`.
+                raise ValidationError(
+                    f"record {record_id!r} carries category {category!r} in dimension "
+                    f"{dimension_id!r}, which the schema does not declare "
+                    f"(declared: {sorted(dimension.categories)}). A human override named "
+                    "it, and dimensions.yaml has since changed or the override predates a "
+                    "reserved name. Re-declare the category, or append a corrected "
+                    "override -- the log is append-only and is not edited."
+                )
+            counts[category] += 1
 
     return Distribution(
         dimension=dimension_id,

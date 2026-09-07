@@ -332,3 +332,60 @@ def test_distribution__three_buckets__are_never_merged(tmp_path: Path) -> None:
     assert counts["uncoded"] == 1
     # ...and the whole point of the three-way split: the sum still closes.
     assert sum(counts.values()) == len(result.record_ids) == 4
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("planted", "why"),
+    [
+        ("uncoded", "a log written before `uncoded` became a reserved name"),
+        ("category_removed_from_schema", "a category dropped from dimensions.yaml since"),
+    ],
+    ids=["reserved-bucket-name", "undeclared-category"],
+)
+def test_distribution__override_naming_an_undeclared_category__raises(
+    tmp_path: Path, planted: str, why: str
+) -> None:
+    """A category the schema does not declare must not be counted into existence.
+
+    `OverrideLog.append` validates against the schema and the rule loader
+    validates against it too, but `OverrideLog.load()` deliberately does
+    not -- an append-only log is a historical record, and re-validating on
+    read would let a schema edit retroactively corrupt a reviewer's past
+    verdict. So a `counts.get(category, 0) + 1` here silently invented a
+    bucket outside the closed set.
+
+    The reserved-name row is not hypothetical: this release makes `uncoded`
+    a reserved name, so any log written before it is exactly this case. And
+    it was the worst version of it -- the count landed in the real `uncoded`
+    bucket, the sum still equalled `|C|` so the counting guard saw nothing,
+    and `build_coverage_report` reported the same record as human-coded.
+    Two views of one record, contradictory, no error.
+
+    The events are constructed directly rather than appended through the
+    log, because `append` is the path that (correctly) refuses them.
+    """
+    records = [TaxonomyRecordSpec(number=1, title="Plain, no marker")]
+    project = build_taxonomy_project(tmp_path, records, slug=f"und{len(planted)}")
+    include_everything(project)
+    write_dimensions(project)
+    write_rule_file(project, "learning_paradigm", LEARNING_PARADIGM_RULES_V1)
+    schema = load_dimensions(project)
+    (rule_file,) = load_rule_files(project, schema, "learning_paradigm")
+    corpus = open_corpus(project)
+    record_id = min(code(corpus, [rule_file], []).record_ids)
+
+    legacy = OverrideEvent(
+        event_id="ov0000000000000000000000001",
+        project=project.slug,
+        record_id=record_id,
+        dimension="learning_paradigm",
+        categories=(planted,),
+        reviewer="alice",
+        reason=why,
+        ts=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    result = code(corpus, [rule_file], [legacy])
+
+    with pytest.raises(ValidationError, match="which the schema does not declare"):
+        distribution(result, schema, rule_file.dimension, rule_file.counting_unit)

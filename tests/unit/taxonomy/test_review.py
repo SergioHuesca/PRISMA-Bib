@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from prismabib.errors import ConfigError
 from prismabib.stage import PrismaStage
 from prismabib.taxonomy.coder import CodingResult
 from prismabib.taxonomy.overrides import OverrideEvent, fold_override_events
@@ -36,8 +37,8 @@ _SCHEMA = TaxonomySchema.model_validate(
 )
 
 
-def _rule_file(tmp_path, version: str = "1.0.0"):
-    path = tmp_path / "learning_paradigm.yaml"
+def _rule_file(tmp_path, version: str = "1.0.0", name: str = "learning_paradigm"):
+    path = tmp_path / f"{name}.yaml"
     path.write_text(
         f"""\
 version: {version}
@@ -351,3 +352,32 @@ def test_review_queue__empty_input__is_the_empty_queue(tmp_path) -> None:
         audit_seeds={"learning_paradigm": queue.audit_seeds["learning_paradigm"]},
         audit_samples={"learning_paradigm": ()},
     )
+
+
+@pytest.mark.unit
+def test_review_queue__two_rule_files_for_one_dimension__is_refused(tmp_path) -> None:
+    """Last-wins here is silent and produces two mutually inconsistent numbers.
+
+    Everything downstream keys on `dimension.id`: the second file overwrites
+    the first's seed and designated sample, while `entries` accumulates the
+    union of both draws. So the queue asks a reviewer to audit records the
+    agreement rate never measures, and the recorded seed cannot regenerate
+    the sample printed beside it -- the one property ADR 0023 Decision 5
+    records the seed for.
+
+    Unreachable today only because `rules.py` has no directory loader. The
+    obvious Stage 11 one reaches it the first time an `architecture.old.yaml`
+    is left beside `architecture.yaml`.
+    """
+    first = _rule_file(tmp_path, name="a")
+    second = _rule_file(tmp_path, name="b")
+    result = CodingResult(
+        stage=PrismaStage.INCLUDED,
+        record_ids=(),
+        assignments=(),
+        field_diagnostics=(),
+        human_reviewed=frozenset(),
+    )
+
+    with pytest.raises(ConfigError, match="more than one rule file covers the same dimension"):
+        build_review_queue(result, _SCHEMA, [first, second], project_slug="p")

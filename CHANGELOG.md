@@ -70,6 +70,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reaches an existing project, so `projects/Baseball-CVPR/.gitignore` is updated directly.
   Verified afterwards that `raw/`, `store/`, `exports/` and `fulltext/` remain denied.
 
+- **An override naming a category the schema does not declare was counted into existence.**
+  `OverrideLog.append` validates against the schema and so does the rule loader, but
+  `OverrideLog.load()` deliberately does not — re-validating an append-only log on read would
+  let a schema edit retroactively corrupt a reviewer's past verdict. So `distribution()`'s
+  `counts.get(category, 0) + 1` invented a bucket outside the closed set. The worst case is a
+  log written before this release, when `uncoded` was still a legal category name: the count
+  landed in the *real* `uncoded` bucket, the sum still equalled `|C|` so the counting guard saw
+  nothing, and `build_coverage_report` reported the same record as human-coded. Two views of
+  one record, contradictory, no error. Now refused where the number is produced.
+
+- **The audit sample's confidence-band placement was asserted by nothing.** ADR 0023 Decision
+  5c says a record is placed by the *weakest* confidence among its assigned categories, so a
+  record coded partly by a `0.6` rule is not laundered into the high band. The test fixture
+  declared no `confidence` at all — every category defaulted to `1.0`, every record landed in
+  one band, and `min`, `max` and "first category wins" were indistinguishable. Injecting
+  `min` → `max` left the whole taxonomy suite green, while the test's own docstring claimed a
+  fixture property (`supervised` at 0.9) that was never true of any file.
+
+- **Two rule files covering one dimension silently last-wins.** Everything downstream keys on
+  the dimension id, so the second file replaced the first's seed and designated sample while
+  the queue accumulated the union of both draws: a reviewer audits records the agreement rate
+  never measures, and the recorded seed cannot regenerate the sample beside it. Refused now.
+
 ### Changed
 
 - **`prisma/log.py`'s durability mechanics are extracted into one `AppendOnlyLog`**, composed

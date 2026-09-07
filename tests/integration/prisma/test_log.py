@@ -477,6 +477,30 @@ def test_log__non_empty_log_with_no_sidecar__raises(project: Project) -> None:
 
 
 @pytest.mark.integration
+def test_log__missing_sidecar__names_DecisionLog_as_the_writer(project: Project) -> None:
+    """The missing-sidecar message names the writer, not "its own writer".
+
+    The third phrase ADR 0024 Decision 4 restores. Same reasoning as the
+    truncated-line test above: it went generic during extraction, nothing
+    asserted it, so nothing failed.
+    """
+    log = open_log(project)
+    log.append(
+        record_id=RECORDS[0].record_id,
+        stage=PrismaStage.TITLE_ABSTRACT,
+        decision="include",
+        reviewer="alice",
+        criteria_version=CRITERIA.version,
+    )
+    sidecar_path(project).unlink()
+
+    with pytest.raises(LogError, match="missing checksum sidecar") as caught:
+        log.load()
+
+    assert "outside DecisionLog" in str(caught.value)
+
+
+@pytest.mark.integration
 def test_log__blank_sidecar__raises_checksum_mismatch(project: Project) -> None:
     log = open_log(project)
     log.append(
@@ -1524,3 +1548,46 @@ def test_log__nested_locked_sections__raise_instead_of_deadlocking(project: Proj
     assert refused_promptly, "nesting the decision log's lock blocked instead of raising"
     assert "not re-entrant" in outcome[0]
     assert log.load() == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("phrase", "why"),
+    [
+        ("human screening labour", "ADR 0010 quotes this as the log's defining property"),
+        ("partial screening decision", "the reader must know what kind of event was lost"),
+        ("the UI or DecisionLog.append", "the recovery hint must name a real entry point"),
+    ],
+    ids=["labour", "event-description", "recovery-hint"],
+)
+def test_log__truncated_line_recovery__names_the_decision_log_specifically(
+    project: Project, phrase: str, why: str
+) -> None:
+    """The recovery narrative is decision-specific, and that is now asserted.
+
+    These three phrases went generic when `prisma/log.py`'s mechanics were
+    extracted into a writer shared with the taxonomy override log (ADR 0024
+    Decision 4) -- "human labour" for "human screening labour", among
+    others. Nothing failed, because no test and no document asserted any of
+    them, which is exactly why the drift happened and why review caught it
+    rather than the suite.
+
+    Restoring them without pinning them leaves the mechanism intact: the
+    next refactor with the same signature is green again. A diagnostic is
+    read by a person in trouble, and it is worth as much as its
+    specificity.
+    """
+    log = open_log(project)
+    log.append(
+        record_id=RECORDS[0].record_id,
+        stage=PrismaStage.TITLE_ABSTRACT,
+        decision="include",
+        reviewer="alice",
+        criteria_version=CRITERIA.version,
+    )
+    append_raw_bytes(project, b'{"partial": ')
+
+    with pytest.raises(LogError, match="truncated final line") as caught:
+        log.load()
+
+    assert phrase in str(caught.value), why

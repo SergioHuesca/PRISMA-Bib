@@ -197,7 +197,9 @@ queue = build_review_queue(result, schema, [rule_file], project_slug=project.slu
 
 1. **Uncoded** — no rule fired for the dimension.
 2. **Conflicting** — more than one category fired in a `multi_label: false` dimension.
-3. **Audit sample** — a seeded, reproducible 10% of the confidently rule-coded remainder.
+3. **Audit sample** — a seeded, reproducible sample of every unambiguously rule-coded record,
+   reviewed or not: at least 10%, rounded up. Not the *remainder* — see below for why the
+   designated set and the work list are different things.
 
 A record you have already overridden for a dimension — even with `categories: []` — is never
 re-queued for it; your verdict already stands.

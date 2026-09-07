@@ -93,28 +93,39 @@ def _trace(monkeypatch: pytest.MonkeyPatch, log_name: str) -> list[str]:
 
 
 def _assert_durable_before_attested(events: list[str], label: str) -> None:
-    """Assert the one ordering property crash-safety rests on.
+    """Assert the exact syscall sequence one append must produce.
 
     Args:
         events: A :func:`_trace` result for exactly one append.
         label: Which log, for the failure message.
-    """
-    assert "write:data" in events, f"{label}: no data write was traced at all"
-    assert "fsync:data" in events, f"{label}: the data write was never fsynced"
-    assert "replace:sidecar" in events, f"{label}: the sidecar was never atomically replaced"
 
-    data_durable = events.index("fsync:data")
-    assert events.index("write:data") < data_durable, f"{label}: data fsynced before it was written"
-    assert data_durable < events.index("replace:sidecar"), (
-        f"{label}: the sidecar was published before the data it vouches for was durable -- "
-        "a crash between the two leaves a checksum attesting to bytes that were never written, "
-        "and the next load() reports tampering on a log nobody touched. Order was: {events}"
-    ).format(events=events)
-    assert (
-        events.index("write:sidecar")
-        < events.index("fsync:sidecar")
-        < events.index("replace:sidecar")
-    ), f"{label}: the sidecar temp file was published before it was itself durable"
+    Asserts the whole **sequence**, not orderings between first
+    occurrences. An earlier version used `events.index(...)`, which returns
+    the first match and therefore constrained only the first `write:data`:
+    splitting the append into two writes with the fsync between them --
+
+        os.write(fd, line[:half]); os.fsync(fd); os.write(fd, line[half:])
+
+    -- left that version green, and 303 tests around it green, while the
+    appended event was only half durable at fsync time. That is precisely
+    the crash window this file exists to close, and the file content and
+    checksum both end up correct, so nothing downstream notices. A future
+    author converting the single `os.write` into a short-write-safe loop
+    (this module already has `_read_all` in that shape) lands in it.
+    """
+    expected = [
+        "write:data",
+        "fsync:data",
+        "write:sidecar",
+        "fsync:sidecar",
+        "replace:sidecar",
+    ]
+    assert events == expected, (
+        f"{label}: the append's syscall sequence was {events}, expected {expected}. "
+        "The data must be durable before the sidecar that vouches for it is published: a "
+        "crash between the two leaves a checksum attesting to bytes that were never "
+        "written, and the next load() reports tampering on a log nobody touched."
+    )
 
 
 @pytest.mark.integration

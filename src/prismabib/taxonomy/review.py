@@ -7,9 +7,10 @@ those, in priority order:
 1. **Uncoded** -- no rule fired for a required dimension.
 2. **Conflicting** -- more than one category fired in a
    ``multi_label: false`` dimension.
-3. **Audit sample** -- a seeded, reproducible 10% of the remaining,
-   confidently rule-coded records, which is the *only* way to estimate rule
-   precision (ADR 0023 Decision 5).
+3. **Audit sample** -- a seeded, reproducible sample of every unambiguously
+   rule-coded record, reviewed or not: at least 10%, rounded up. This is the
+   *only* way to estimate rule precision (ADR 0023 Decision 5), and it is a
+   designated set rather than a slice of the work list above (Decision 5b).
 
 A record a human has already reviewed for a dimension (an override event
 exists, even one asserting ``categories: ()``) is never re-queued for that
@@ -35,6 +36,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
+from prismabib.errors import ConfigError
 from prismabib.project import Project
 from prismabib.taxonomy.coder import CodingResult, FieldDiagnostic
 from prismabib.taxonomy.overrides import OverrideEvent, OverrideFoldKey, fold_override_events
@@ -131,6 +133,44 @@ def audit_sample_seed(
     return int(digest[:16], 16)
 
 
+def _refuse_duplicate_dimensions(rule_files: Sequence[CompiledRuleFile]) -> None:
+    """Refuse two rule files covering one dimension, rather than silently last-wins.
+
+    Args:
+        rule_files: The compiled rule files about to be queued.
+
+    Raises:
+        ConfigError: If any dimension is covered more than once.
+
+    Everything downstream is keyed on ``dimension.id``, so a second file for
+    one dimension overwrites the first's seed and designated sample while
+    the *queue* accumulates the union of both draws. A reviewer is then
+    asked to audit records the agreement rate does not measure, the recorded
+    seed cannot regenerate the sample it sits beside -- which is the whole
+    point of recording it (ADR 0023 Decision 5) -- and the coverage report
+    emits two rows carrying the same dimension id with confidences read out
+    of the wrong file.
+
+    Nothing forbids the input today because ``rules.py`` has no directory
+    loader; the natural Stage 11 one (``glob("*.yaml")``) reaches it the
+    first time someone leaves an ``architecture.old.yaml`` beside
+    ``architecture.yaml``.
+    """
+    by_dimension: dict[str, list[str]] = {}
+    for rule_file in rule_files:
+        by_dimension.setdefault(rule_file.dimension, []).append(str(rule_file.path))
+    duplicated = {
+        dimension: sorted(paths) for dimension, paths in by_dimension.items() if len(paths) > 1
+    }
+    if duplicated:
+        raise ConfigError(
+            f"more than one rule file covers the same dimension: {duplicated}. "
+            "One file per dimension: the audit seed, the designated sample and the coverage "
+            "row are all keyed on the dimension, so a second file silently replaces the "
+            "first's sample while the queue shows the union of both."
+        )
+
+
 def build_review_queue(
     result: CodingResult,
     schema: TaxonomySchema,
@@ -184,6 +224,7 @@ def build_review_queue(
     audit_seeds: dict[str, int] = {}
     audit_samples: dict[str, tuple[str, ...]] = {}
 
+    _refuse_duplicate_dimensions(rule_files)
     for rule_file in sorted(rule_files, key=lambda rf: (rf.dimension, rf.version, str(rf.path))):
         dimension = schema.dimension(rule_file.dimension)
         effective = result.effective_categories(dimension.id)
@@ -218,12 +259,17 @@ def build_review_queue(
             record_ids=result.record_ids,
         )
         audit_seeds[dimension.id] = seed
-        # `math.ceil`, not `round`: banker's rounding gives 0 for a
-        # 5-record pool at 10% and 2 for a 15-record pool, so a caption
-        # reading "a 10% audit sample" would be wrong in both directions.
-        # Ceiling also guarantees a non-empty sample wherever a pool
-        # exists at all, which is what makes the rate reachable on a
-        # small corpus.
+        # `math.ceil`, not `round`. The reason is one-directional and the
+        # first version of this comment overstated it: `round(1.5) == 2` and
+        # `ceil(1.5) == 2`, so a 15-record pool is unaffected. What ceiling
+        # fixes is banker's rounding taking a small pool to *zero* -- a
+        # 5-record pool at 10% samples 0 under `round` -- which makes the
+        # agreement rate unreachable on exactly the corpora where a reviewer
+        # most needs to know whether the rules work.
+        #
+        # The cost, stated because a caption must not claim otherwise: the
+        # sample is "at least 10%, rounded up", never below. A pool of 1 is
+        # audited entirely. `audit_fraction=0.0` still samples nothing.
         sample_size = math.ceil(len(audit_pool) * audit_fraction)
         sampled: list[str] = []
         if sample_size:

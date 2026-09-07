@@ -17,7 +17,9 @@ from prismabib.taxonomy.schema import load_dimensions
 from tests.bibliometrics_helpers import include_everything, open_corpus
 from tests.conftest import SeededIdFactory
 from tests.taxonomy_helpers import (
+    LEARNING_PARADIGM_RULES_GRADED_CONFIDENCE,
     LEARNING_PARADIGM_RULES_V1,
+    MULTI_LABEL_DIMENSIONS_YAML,
     TaxonomyRecordSpec,
     build_taxonomy_project,
     load_rule_files,
@@ -275,32 +277,52 @@ def test_coverage_report__distinguishes_reviewed_none_from_uncoded(tmp_path: Pat
 
 @pytest.mark.integration
 def test_audit__agreement__is_reported_per_confidence_band(tmp_path: Path) -> None:
-    """`confidence` must affect something (ADR 0023 Decision 5c).
+    """`confidence` must affect something, and the *weakest* one must place the record.
 
-    Before this it was a field a rule author could set to anything --
-    including `0.0` -- that no code path consumed, while the single
-    corpus-wide rate averaged a 0.6 rule and a 0.95 rule together. That
-    number moves whenever the *mix* of categories in a corpus moves, with no
-    rule having changed, which is not what "audit agreement rate" is read to
-    mean in a methods section.
+    ADR 0023 Decision 5c. Before it, `confidence` was a field a rule author
+    could set to anything -- including `0.0` -- that no code path consumed,
+    while the single corpus-wide rate averaged a 0.6 rule and a 0.95 rule
+    together. That number moves whenever the mix of categories in a corpus
+    moves with no rule having changed, which is not what "audit agreement
+    rate" is read to mean in a methods section.
 
-    The fixture makes the bands disagree with each other on purpose: the
-    reviewer agrees with every high-confidence assignment and with none of
-    the low-confidence ones. A single rate would report 0.5 and hide
-    precisely the thing worth knowing -- that the weak rule is the one
-    failing.
+    **The fixture has to carry three different confidences or this test
+    proves nothing.** The first version used `LEARNING_PARADIGM_RULES_V1`,
+    which declares no `confidence` at all -- so every category defaulted to
+    1.0, every record landed in one band, and `min`, `max` and "first
+    category wins" were indistinguishable. Injecting `min` -> `max` left the
+    whole taxonomy suite green. Its docstring meanwhile claimed
+    "`supervised` is declared at 0.9", which was never true of any file.
+
+    Here `supervised` is 0.95 and `unsupervised` is 0.6, and the
+    multi-marker records carry both -- so a record's band is decided by
+    which of the two rules places it. `min` puts them in `low`; `max` would
+    put them in `high`.
     """
-    project, schema, rule_file, corpus = _audit_workflow_project(tmp_path, slug="bands")
+    records = [
+        TaxonomyRecordSpec(number=index, title=f"A AlphaMarker BetaMarker study {index}")
+        for index in range(1, 21)
+    ]
+    project = build_taxonomy_project(tmp_path, records, slug="bands")
+    include_everything(project)
+    write_dimensions(project, MULTI_LABEL_DIMENSIONS_YAML)
+    write_rule_file(project, "learning_paradigm", LEARNING_PARADIGM_RULES_GRADED_CONFIDENCE)
+    schema = load_dimensions(project)
+    (rule_file,) = load_rule_files(project, schema, "learning_paradigm")
+    corpus = open_corpus(project)
     override_log = OverrideLog(project, id_factory=SeededIdFactory(seed=0, prefix="ov"))
-    first_pass = code(corpus, [rule_file], [])
-    queue = build_review_queue(first_pass, schema, [rule_file], project_slug=project.slug)
+
+    queue = build_review_queue(
+        code(corpus, [rule_file], []), schema, [rule_file], project_slug=project.slug
+    )
     designated = queue.audit_samples["learning_paradigm"]
+    assert designated, "fixture must designate at least one record"
 
     for record_id in designated:
         override_log.append(
             record_id=record_id,
             dimension="learning_paradigm",
-            categories=("supervised",),
+            categories=("supervised", "unsupervised"),  # agrees with both rules
             reviewer="alice",
             reason="agrees",
             schema=schema,
@@ -313,13 +335,14 @@ def test_audit__agreement__is_reported_per_confidence_band(tmp_path: Path) -> No
 
     (coverage,) = report.dimensions
     bands = coverage.audit_agreement_by_band
-    # Every band label is always present, so a caption can state "no
-    # evidence in this band" rather than omitting it and implying none was
-    # sought.
+    # Every band label is always present, so a caption can say "no evidence
+    # in this band" rather than omitting it and implying none was sought.
     assert set(bands) == {label for label, _, _ in CONFIDENCE_BANDS}
-    # `supervised` is declared at 0.9 in the test rules, so every judged
-    # record lands in the high band and the others report None -- not 0.0,
-    # which would read as "audited and disagreed".
-    assert bands["high (>=0.85)"] == pytest.approx(1.0)
+    # Both categories fired, so the record is only as trustworthy as the
+    # 0.6 rule -- reporting it in `high` would launder the weakest evidence
+    # through the strongest. This is the assertion `max` fails.
+    assert bands["low (<0.7)"] == pytest.approx(1.0)
+    assert bands["high (>=0.85)"] is None
     assert bands["medium (0.7-0.85)"] is None
-    assert bands["low (<0.7)"] is None
+    # The headline rate partitions the same judged set.
+    assert coverage.audit_agreement_rate == pytest.approx(1.0)
