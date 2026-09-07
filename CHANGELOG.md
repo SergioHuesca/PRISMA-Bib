@@ -80,6 +80,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing, and `build_coverage_report` reported the same record as human-coded. Two views of
   one record, contradictory, no error. Now refused where the number is produced.
 
+- **The `INACCESSIBLE` guard's module exemption was too wide, twice over.** Waiving the whole
+  scan for a log-owning module let `AppendOnlyLog(model=DecisionEvent)`, `append_event(...)` and
+  the full `append(...)` signature pass unflagged inside `taxonomy/overrides.py` — the first of
+  which ADR 0024 Decision 3 says is refused *outside* `prisma/log.py`, in the PR landing that
+  ADR. The waiver now applies to the `write_event` rule alone, and its narrowness is asserted
+  rather than claimed in a comment: three revisions of this guard each moved the hole instead of
+  closing it, because nothing tested what the exemption let through. `write_event` is also
+  matched on the bare attribute name now, which closes `store = log._store;
+  store.write_event(e)` — an alias every receiver-shaped version of the rule missed.
+
 - **The audit sample's confidence-band placement was asserted by nothing.** ADR 0023 Decision
   5c says a record is placed by the *weakest* confidence among its assigned categories, so a
   record coded partly by a `0.6` rule is not laundered into the high band. The test fixture
