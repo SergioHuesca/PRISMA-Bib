@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import hashlib
+import itertools
 import json
 import os
 import random
@@ -48,6 +49,15 @@ from prismabib.prisma.log import (
 )
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
+from tests.append_only_log_conformance import (
+    LogUnderTest,
+    append_only_log__append__is_fsynced_and_checksummed,
+    append_only_log__duplicate_event_id_inside_the_file__raises,
+    append_only_log__hand_edited_file__raises_log_error_on_load,
+    append_only_log__is_appended_not_edited,
+    append_only_log__truncated_final_line__raises_with_line_number,
+    append_only_log__unknown_schema_version__raises,
+)
 from tests.conftest import SeededIdFactory
 from tests.prisma_helpers import (
     CorpusSpec,
@@ -750,6 +760,75 @@ def test_log__truncated_final_line__message_is_recoverable_not_just_diagnostic(
         log.load()
 
     assert required_phrase in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# The shared append-only conformance suite (BUILD_PLAN Stage 8: reused for
+# taxonomy/overrides.py::OverrideLog in tests/integration/taxonomy/test_overrides.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def decision_log_under_test(project: Project) -> LogUnderTest:
+    """Adapt :class:`DecisionLog` to ``tests.append_only_log_conformance``'s shared suite."""
+    log = open_log(project)
+    counter = itertools.count()
+
+    def append_one() -> DecisionEvent:
+        index = next(counter)
+        return log.append(
+            stage=PrismaStage.TITLE_ABSTRACT,
+            record_id=RECORDS[index % len(RECORDS)].record_id,
+            reviewer=f"shared-suite-reviewer-{index}",
+            decision="include",
+        )
+
+    return LogUnderTest(
+        path=log.path,
+        append_one=append_one,
+        load=log.load,
+        event_id_of=lambda event: event.event_id,
+    )
+
+
+@pytest.mark.integration
+def test_log__shared_suite__append_is_fsynced_and_checksummed(
+    decision_log_under_test: LogUnderTest,
+) -> None:
+    append_only_log__append__is_fsynced_and_checksummed(decision_log_under_test)
+
+
+@pytest.mark.integration
+def test_log__shared_suite__is_appended_not_edited(decision_log_under_test: LogUnderTest) -> None:
+    append_only_log__is_appended_not_edited(decision_log_under_test)
+
+
+@pytest.mark.integration
+def test_log__shared_suite__hand_edited_file__raises_log_error_on_load(
+    decision_log_under_test: LogUnderTest,
+) -> None:
+    append_only_log__hand_edited_file__raises_log_error_on_load(decision_log_under_test)
+
+
+@pytest.mark.integration
+def test_log__shared_suite__truncated_final_line__raises_with_line_number(
+    decision_log_under_test: LogUnderTest,
+) -> None:
+    append_only_log__truncated_final_line__raises_with_line_number(decision_log_under_test)
+
+
+@pytest.mark.integration
+def test_log__shared_suite__duplicate_event_id_inside_the_file__raises(
+    decision_log_under_test: LogUnderTest,
+) -> None:
+    append_only_log__duplicate_event_id_inside_the_file__raises(decision_log_under_test)
+
+
+@pytest.mark.integration
+def test_log__shared_suite__unknown_schema_version__raises(
+    decision_log_under_test: LogUnderTest,
+) -> None:
+    append_only_log__unknown_schema_version__raises(decision_log_under_test)
 
 
 # ---------------------------------------------------------------------------

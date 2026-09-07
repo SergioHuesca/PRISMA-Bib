@@ -24,6 +24,7 @@ from prismabib.errors import ValidationError
 from prismabib.prisma.flow import FlowCounts
 from prismabib.project import Criteria
 from prismabib.query import build_query
+from prismabib.taxonomy.rules import RuleFile
 
 DOCS = Path(__file__).parent.parent.parent / "docs"
 
@@ -64,10 +65,20 @@ def test_docs__toml_examples__parse_and_render(page: Path) -> None:
         )
 
 
+#: Two complete-file YAML schemas a doc page might show, both carrying a
+#: top-level `version:` (the tell this test keys on). Stage 8 introduced the
+#: second: a taxonomy rule file's `version:` is a rule-file version, not a
+#: `criteria.yaml` one, and validating it against `Criteria` fails for
+#: reasons that have nothing to do with whether the example is correct --
+#: `write-taxonomy-rules.md`'s own rule-file example is what surfaced this.
+#: Tried in order; a block is skipped only if *neither* schema accepts it.
+_COMPLETE_FILE_SCHEMAS = (("criteria.yaml", Criteria), ("taxonomy rule file", RuleFile))
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("page", sorted((DOCS / "how-to").glob("*.md")), ids=lambda p: p.name)
 def test_docs__complete_criteria_examples__validate(page: Path) -> None:
-    """A YAML block that looks like a whole `criteria.yaml` must be one.
+    """A YAML block that looks like a whole `criteria.yaml` or rule file must be one.
 
     Judged by the presence of `version:`, which is what makes a block read as
     a complete file rather than an excerpt. Excerpts are skipped -- they are
@@ -79,14 +90,22 @@ def test_docs__complete_criteria_examples__validate(page: Path) -> None:
         parsed = yaml.safe_load(block)
         if not isinstance(parsed, dict) or "version" not in parsed:
             continue
-        try:
-            Criteria.model_validate(parsed)
-        except PydanticValidationError as exc:  # pragma: no cover - failure path
-            missing = ", ".join(str(error["loc"][0]) for error in exc.errors())
+        errors_by_schema: dict[str, PydanticValidationError] = {}
+        for schema_name, model in _COMPLETE_FILE_SCHEMAS:
+            try:
+                model.model_validate(parsed)
+                break
+            except PydanticValidationError as exc:  # pragma: no cover - failure path
+                errors_by_schema[schema_name] = exc
+        else:
+            details = "; ".join(
+                f"as {name}, missing/invalid {', '.join(str(e['loc'][0]) for e in exc.errors())}"
+                for name, exc in errors_by_schema.items()
+            )
             pytest.fail(
                 f"{page.name} yaml block {index} carries `version:` so it reads as a complete "
-                f"criteria.yaml, but pasting it is rejected: missing {missing}. Either complete "
-                "it or drop `version:` and say in the text that it is an excerpt."
+                f"file, but pasting it validates against neither known schema ({details}). "
+                "Either complete it or drop `version:` and say in the text that it is an excerpt."
             )
 
 

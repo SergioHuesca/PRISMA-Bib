@@ -133,24 +133,101 @@ def _decisionlog_write_lines(tree: ast.AST) -> list[int]:
         attribute named ``append_event`` (a name no other class in this
         codebase defines, so any call site naming it is calling
         :meth:`~prismabib.prisma.log.DecisionLog.append_event`), or a call to
-        an attribute named ``append`` whose keyword arguments are a superset
+        ``append`` whose keyword arguments are a superset
         of :data:`_DECISIONLOG_APPEND_KEYWORDS` -- the signature no ordinary
         ``list``/``set``/``dict`` mutation can match, since none of those
-        accepts keyword arguments at all. See the module docstring for what
-        this scope does and does not prove.
+        accepts keyword arguments at all.
+
+        Also matches the two shapes ADR 0024 Decision 3 closed, which reach
+        ``decisions.jsonl`` **without** passing
+        :meth:`~prismabib.prisma.log.DecisionLog._validate_business_rules`:
+        any ``.write_event(...)`` call on a ``_store`` attribute, and any
+        construction of ``AppendOnlyLog`` with ``model=DecisionEvent``.
+        Extracting the shared writer made both of these one attribute access
+        away from a validated-looking, fsynced, sidecar-updated
+        ``INACCESSIBLE`` event -- and unlike the evasions the module
+        docstring already enumerates, neither requires any obfuscation.
+        See the module docstring for what this scope does and does not prove.
     """
     offenders: list[int] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        if not isinstance(node, ast.Call):
+            continue
+        if _is_decision_event_log_construction(node):
+            offenders.append(node.lineno)
+            continue
+        if not isinstance(node.func, ast.Attribute):
             continue
         attr = node.func.attr
-        if attr == "append_event":
+        if attr == "append_event" or (
+            attr == "write_event" and _receiver_is_private_store(node.func)
+        ):
             offenders.append(node.lineno)
         elif attr == "append":
             keyword_names = {keyword.arg for keyword in node.keywords}
             if keyword_names >= _DECISIONLOG_APPEND_KEYWORDS:
                 offenders.append(node.lineno)
     return offenders
+
+
+def _receiver_is_private_store(func: ast.Attribute) -> bool:
+    """Whether a ``.write_event`` call's receiver is a ``_store`` attribute.
+
+    Args:
+        func: The call's ``func`` node, already known to be an
+            :class:`ast.Attribute` named ``write_event``.
+
+    Returns:
+        ``True`` for ``other._store.write_event(...)`` -- a reach *into*
+        another object's writer. Deliberately not ``self._store...``: a
+        class writing to the store it owns is the class that also owns the
+        validation contract for it, which is how both ``DecisionLog`` and
+        ``OverrideLog`` legitimately call their shared writer. What this
+        catches is a *third party* borrowing someone else's durability
+        machinery to append an event that machinery never validated, which
+        before ADR 0024 meant reimplementing locking and checksums by hand
+        and now means one attribute access.
+    """
+    receiver = func.value
+    if not isinstance(receiver, ast.Attribute) or receiver.attr != _PRIVATE_STORE_ATTRIBUTE:
+        return False
+    return not (isinstance(receiver.value, ast.Name) and receiver.value.id == "self")
+
+
+def _is_decision_event_log_construction(node: ast.Call) -> bool:
+    """Whether ``node`` constructs an ``AppendOnlyLog`` over ``DecisionEvent``.
+
+    Args:
+        node: Any call node.
+
+    Returns:
+        ``True`` for ``AppendOnlyLog(..., model=DecisionEvent, ...)``.
+        ``AppendOnlyLog`` is public API, so this is not a private-attribute
+        reach-through: without this rule, a module can build its own writer
+        over the decision-event model and append to ``decisions.jsonl`` with
+        every durability guarantee and no business-rule validation at all.
+    """
+    name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+    if name != _SHARED_LOG_CLASS:
+        return False
+    return any(
+        keyword.arg == "model"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == _DECISION_EVENT_CLASS
+        for keyword in node.keywords
+    )
+
+
+#: The attribute name holding a log's shared :class:`AppendOnlyLog` writer.
+#: A ``.write_event`` call on it bypasses ``_validate_business_rules``.
+_PRIVATE_STORE_ATTRIBUTE = "_store"
+
+#: The shared append-only writer's class name (ADR 0024).
+_SHARED_LOG_CLASS = "AppendOnlyLog"
+
+#: The decision-event model name; constructing the writer over it is what
+#: makes such a writer a decision-log writer.
+_DECISION_EVENT_CLASS = "DecisionEvent"
 
 
 def _is_exempt(relative: Path) -> bool:
@@ -274,3 +351,59 @@ def test_decisionlog_write__ordinary_list_append__is_not_flagged() -> None:
     """
     ordinary = "def f(items):\n    items.append(1)\n    items.append(x=1)\n"
     assert _decisionlog_write_lines(ast.parse(ordinary)) == []
+
+
+#: Every shape that reaches `decisions.jsonl` without passing
+#: `DecisionLog._validate_business_rules`, as source the guard must reject.
+#:
+#: Both rows below were **live bypasses** when ADR 0024's extraction landed:
+#: each one wrote a loadable, fsynced, sidecar-valid `INACCESSIBLE` decision
+#: event, and the guard as written saw neither. Unlike the evasions this
+#: module's own docstring enumerates -- constant indirection, concatenation,
+#: `**kwargs` -- neither needs any obfuscation. They are the obvious thing a
+#: future author reaches for, which is why they are pinned here rather than
+#: only fixed.
+_PLANTED_WRITE_BYPASSES = [
+    (
+        "store-reach-through",
+        "def f(log, event):\n    log._store.write_event(event)\n",
+    ),
+    (
+        "own-writer-over-decision-event",
+        (
+            "def f(path):\n"
+            "    writer = AppendOnlyLog(path, model=DecisionEvent, noun='decision')\n"
+            "    writer.write_event(event)\n"
+        ),
+    ),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("label", "source"),
+    _PLANTED_WRITE_BYPASSES,
+    ids=[label for label, _ in _PLANTED_WRITE_BYPASSES],
+)
+def test_decisionlog_write_scan__detects_a_planted_bypass(label: str, source: str) -> None:
+    """The scan is not vacuous: every unvalidated write path must be caught.
+
+    Without this table the guard proves only that it catches the spelling
+    that existed when it was written, which is a guard against the past.
+    """
+    assert _decisionlog_write_lines(ast.parse(source)), label
+
+
+@pytest.mark.unit
+def test_decisionlog_write_scan__permits_a_class_writing_to_its_own_store() -> None:
+    """The rule is about reaching into *another* object's writer, not about `write_event`.
+
+    `DecisionLog` and `OverrideLog` both call `self._store.write_event(...)`
+    legitimately -- a class writing to the store it owns is the class that
+    owns the validation contract for it. A guard that also refused this
+    would have to be exempted away in the very modules it exists to
+    protect, which is how a guard stops being obeyed.
+    """
+    source = "class L:\n    def append(self, event):\n        self._store.write_event(event)\n"
+
+    assert _decisionlog_write_lines(ast.parse(source)) == []

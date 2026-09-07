@@ -18,7 +18,6 @@ simulate the outside world tampering with a log, not a patched
 from __future__ import annotations
 
 import errno
-import hashlib
 import os
 import shutil
 import subprocess
@@ -32,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from prismabib.project import Project
+from tests import log_bytes_helpers
 from tests.store_helpers import REFERENCE_PROJECT_DIR, make_entry, write_sealed_run
 
 if TYPE_CHECKING:
@@ -460,13 +460,12 @@ def commit_criteria(project: Project, criteria: CriteriaSpec, message: str) -> N
 
 def sidecar_path(project: Project) -> Path:
     """The ``decisions.jsonl.sha256`` sidecar path for ``project``."""
-    path = project.decisions_path
-    return path.with_name(path.name + ".sha256")
+    return log_bytes_helpers.sidecar_path_for(project.decisions_path)
 
 
 def read_log_bytes(project: Project) -> bytes:
     """The current raw bytes of ``project``'s ``decisions.jsonl``."""
-    return project.decisions_path.read_bytes()
+    return log_bytes_helpers.read_bytes(project.decisions_path)
 
 
 def overwrite_log_bytes(project: Project, content: bytes) -> None:
@@ -476,7 +475,7 @@ def overwrite_log_bytes(project: Project, content: bytes) -> None:
         project: The project whose log to overwrite.
         content: The exact bytes to write.
     """
-    project.decisions_path.write_bytes(content)
+    log_bytes_helpers.overwrite_bytes(project.decisions_path, content)
 
 
 def append_raw_bytes(project: Project, content: bytes) -> None:
@@ -487,8 +486,7 @@ def append_raw_bytes(project: Project, content: bytes) -> None:
         content: The exact bytes to append -- a partial line, a whole line,
             or several.
     """
-    with project.decisions_path.open("ab") as handle:
-        handle.write(content)
+    log_bytes_helpers.append_raw_bytes(project.decisions_path, content)
 
 
 def rewrite_sidecar(project: Project, content: bytes | None = None) -> None:
@@ -502,15 +500,12 @@ def rewrite_sidecar(project: Project, content: bytes | None = None) -> None:
             the checksum guard in order to assert a later, different rule
             (an unknown ``schema_version``, a duplicate ``event_id``).
     """
-    payload = read_log_bytes(project) if content is None else content
-    digest = hashlib.sha256(payload).hexdigest()
-    sidecar_path(project).write_text(f"{digest}  {project.decisions_path.name}\n", encoding="utf-8")
+    log_bytes_helpers.rewrite_sidecar(project.decisions_path, content)
 
 
 def sidecar_matches_log(project: Project) -> bool:
     """Whether the sidecar's recorded digest matches the log's current bytes."""
-    recorded = sidecar_path(project).read_text(encoding="utf-8").split(maxsplit=1)[0]
-    return recorded == hashlib.sha256(read_log_bytes(project)).hexdigest()
+    return log_bytes_helpers.sidecar_matches(project.decisions_path)
 
 
 # ---------------------------------------------------------------------------

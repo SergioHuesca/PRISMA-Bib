@@ -123,6 +123,7 @@ def test_cli_init__fresh_slug__creates_the_section_2_3_skeleton(tmp_path: Path) 
     root = tmp_path / "demo"
     assert result.exit_code == 0
     assert sorted(path.name for path in root.iterdir()) == [
+        ".gitignore",
         "criteria.yaml",
         "decisions",
         "exports",

@@ -363,19 +363,21 @@ fail_under = 90
 # `_identified_count` return 0 -- the PRISMA diagram's "records identified"
 # silently becoming zero, with the gate no longer able to report it.
 source_paths = ["src/prismabib"]
-# Add "src/prismabib/taxonomy/*" here at Stage 8, when that package exists — BUILD_PLAN
-# line 580 names it as in scope. Naming it before it exists only makes the run fail.
-only_mutate = ["src/prismabib/prisma/*"]
-# Mutants are only worth generating for code the PRISMA suite exercises, and the whole
-# test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read repository
-# files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part of the
-# copied tree. Restricting selection to the prisma tests keeps the run honest and fast.
+# "src/prismabib/taxonomy/*" added at Stage 8 (BUILD_PLAN line 580 names it as in scope).
+only_mutate = ["src/prismabib/prisma/*", "src/prismabib/taxonomy/*"]
+# Mutants are only worth generating for code the PRISMA/taxonomy suites exercise, and the
+# whole test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read
+# repository files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part
+# of the copied tree. Restricting selection to those suites keeps the run honest and fast.
 # A mutant killed *only* by a test outside this selection is reported as survived, which
 # errs toward more work, not less.
 pytest_add_cli_args_test_selection = [
     "tests/unit/prisma",
     "tests/integration/prisma",
     "tests/property/test_engine_invariants.py",
+    "tests/unit/taxonomy",
+    "tests/integration/taxonomy",
+    "tests/golden/taxonomy",
 ]
 
 [tool.pytest.ini_options]

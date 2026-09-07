@@ -111,13 +111,14 @@ import random
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Literal, Protocol
+from typing import Generic, Literal, Protocol, TypeVar
 
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from prismabib.errors import LogError, ValidationError
@@ -523,14 +524,496 @@ def fold_events(events: Iterable[DecisionEvent]) -> dict[FoldKey, DecisionEvent]
     return latest
 
 
+TEvent = TypeVar("TEvent", bound=BaseModel)
+
+
+class AppendOnlyLog(Generic[TEvent]):
+    """The append-only, checksum-guarded, crash-safe JSONL machinery ADR 0002 defines.
+
+    Factored out of what was originally :class:`DecisionLog`'s own
+    implementation so that a *second* Layer-2-shaped log -- Stage 8's
+    taxonomy override log (:class:`~prismabib.taxonomy.overrides.OverrideLog`,
+    ADR 0023 Consequence 2) -- gets the exact same locking, per-write
+    ``fsync``, checksum-sidecar and crash-safety guarantees by construction,
+    rather than a second, parallel implementation that could quietly drift
+    from this one. :class:`DecisionLog` now *composes* an instance of this
+    class (see its own docstring) rather than implementing the mechanics
+    itself; every invariant this docstring used to state about
+    ``decisions.jsonl`` specifically now applies to any file this class
+    manages, decision log or override log alike.
+
+    **Rules this class enforces**, generalised from the module docstring's
+    numbered list: append-only, fsynced per write, checksum-guarded (1);
+    an unknown ``schema_version`` raises (4); a truncated final line raises,
+    naming the line number (5); a duplicate ``event_id`` raises (6);
+    appends are line-atomic under two open handles (7); a reversal is a new
+    event, never an edit (8). Rules 2 and 3 of that list -- the
+    ``(stage, record_id, reviewer)`` fold key and the ``reason_code``
+    business rule -- are specific to screening decisions and stay on
+    :class:`DecisionLog`; this class knows nothing about either.
+
+    Generic over the event's frozen Pydantic model (``TEvent``). The model
+    itself is opaque to this class beyond ``model_validate``/
+    ``model_dump_json`` (inherited from :class:`~pydantic.BaseModel`, hence
+    the ``bound=BaseModel``) -- reading and writing one event's ``event_id``
+    is done through the injected ``event_id`` accessor rather than assumed
+    as an attribute, so this class does not need a tighter ``Protocol``
+    bound to type-check under ``mypy --strict``.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        model: type[TEvent],
+        current_schema_version: int,
+        event_id: Callable[[TEvent], str],
+        noun: str,
+        event_description: str,
+        recovery_hint: str,
+        writer_name: str,
+        labour: str,
+        backend: _LockBackend | None = None,
+    ) -> None:
+        """Open an append-only log bound to ``path``.
+
+        Args:
+            path: The JSONL file this log reads from and appends to.
+            model: The event's Pydantic model. ``model.model_validate(payload)``
+                turns one parsed JSON line into a ``TEvent``.
+            current_schema_version: The only ``schema_version`` this log
+                accepts while reading; any other value raises
+                :class:`~prismabib.errors.LogError` naming the line (BUILD_PLAN:
+                forward compatibility fails loudly, never silently).
+            event_id: Reads one event's ``event_id``.
+            noun: The singular, lowercase name of one event, used in short
+                structural messages -- ``"decision"``, ``"override"``.
+            event_description: A longer, human-readable phrase for the same
+                event, used only in the truncated-final-line recovery
+                narrative -- ``"screening decision"``, ``"taxonomy
+                override"``.
+            recovery_hint: How a human re-logs an event after recovering from
+                a truncated final line, e.g. ``"the UI or DecisionLog.append"``.
+            backend: The lock backend. Defaults to the process-wide
+                :data:`_LOCK_BACKEND`, selected once per platform at import.
+        """
+        self._path = path
+        self._checksum_path = path.with_name(path.name + ".sha256")
+        self._model = model
+        self._current_schema_version = current_schema_version
+        self._event_id = event_id
+        self._noun = noun
+        self._event_description = event_description
+        self._recovery_hint = recovery_hint
+        # Named by the composing class rather than generic, because
+        # extraction quietly made three messages *less* specific than the
+        # ones ADR 0002 and ADR 0010 quote (ADR 0024 Decision 4). No test
+        # asserted them, which is why review caught it and the suite did
+        # not -- a diagnostic is read by a person in trouble, and "outside
+        # its own writer" tells that person less than "outside DecisionLog".
+        self._writer_name = writer_name
+        self._labour = labour
+        self._backend: _LockBackend = backend if backend is not None else _LOCK_BACKEND
+        self._lock_held = False
+
+    @property
+    def path(self) -> Path:
+        """The JSONL path this log reads and appends to."""
+        return self._path
+
+    @property
+    def checksum_path(self) -> Path:
+        """The ``.sha256`` sidecar path this log maintains."""
+        return self._checksum_path
+
+    # -- reading -----------------------------------------------------------
+
+    def load(self) -> list[TEvent]:
+        """Read and validate every event currently in the log.
+
+        Returns:
+            Every event, in file order (oldest first).
+
+        Raises:
+            LogError: If the checksum sidecar does not match the file's
+                confirmed content, the final line is truncated, any line
+                declares an unknown ``schema_version``, any line fails to
+                parse as a well-formed ``TEvent``, or the same ``event_id``
+                appears twice.
+        """
+        with self._locked("shared") as fd:
+            _confirmed, events = self._verify_and_load_locked(fd)
+        return events
+
+    # -- writing -------------------------------------------------------------
+
+    def write_event(self, event: TEvent) -> None:
+        """Append an already-constructed, already-validated event.
+
+        Named ``write_event`` rather than ``append``/``append_event`` on
+        purpose: those two names are what ``tests/unit/test_inaccessible_ast.py``
+        AST-scans for, by bare attribute name, to prove no code outside
+        ``screening/``/``cli.py`` can write a *screening decision* -- a scan
+        that cannot tell one class's ``.append_event(...)`` from another's.
+        Reusing either name here would make every caller of this class (in
+        particular :class:`~prismabib.taxonomy.overrides.OverrideLog`, which
+        is legitimately called from outside that exempt set) trip a guard
+        meant for a different write path entirely.
+
+        Args:
+            event: The event to append. Any business-rule validation
+                (``DecisionLog``'s ``reason_code`` check, an override's
+                dimension/category check) is the caller's responsibility --
+                this method enforces only the append-only log's own
+                invariants.
+
+        Raises:
+            LogError: If ``event.event_id`` (via the injected accessor)
+                already exists in the log (a replayed append or ULID
+                collision), or if the existing log fails any of
+                :meth:`load`'s checks.
+        """
+        with self._locked("exclusive") as fd:
+            confirmed, existing = self._verify_and_load_locked(fd)
+            new_id = self._event_id(event)
+            if new_id in {self._event_id(existing_event) for existing_event in existing}:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+                raise LogError(
+                    f"{self._path}: duplicate event_id {new_id!r} -- already present "
+                    f"in the {self._noun} log (replayed append or ULID collision)"
+                )
+                # pragma: no mutate end
+            line_bytes = (event.model_dump_json() + "\n").encode("utf-8")
+            os.lseek(fd, 0, os.SEEK_END)
+            os.write(fd, line_bytes)
+            os.fsync(fd)
+            self._write_checksum_sidecar(confirmed + line_bytes)
+
+    # -- locking and low-level I/O --------------------------------------------
+
+    @contextmanager
+    def _locked(self, kind: LockKind) -> Iterator[int]:
+        """Open :attr:`path`, hold a lock on it, and yield its file descriptor.
+
+        The parent directory is created and the file opened read/write with
+        ``O_CREAT``, so this class works even before
+        :meth:`~prismabib.project.Project.init` has run. Creating the
+        directory is not redundant with ``init``: git cannot store an empty
+        directory, so a project cloned with ``track_decisions = false``
+        (§2.5 line 291) arrives without ``decisions/``, and the first
+        screening decision would otherwise die on ``FileNotFoundError`` --
+        and the analogous case holds for a taxonomy override log cloned
+        before ``taxonomy/`` has ever held a file.
+
+        ``O_BINARY`` is what keeps the file's bytes LF-terminated on
+        Windows; see the module docstring. It is ``0`` on POSIX.
+
+        **This is not re-entrant.** Each call opens a *new* descriptor, so a
+        nested call would ask the OS for a second, conflicting lock on the
+        same file from the same thread -- which blocks forever on POSIX and
+        fails on Windows. Nothing in this class nests today; the guard makes
+        sure that stays true and reports it as an error rather than a hang.
+
+        Args:
+            kind: ``"shared"`` for a read (allows concurrent readers,
+                excludes writers -- except on Windows, which has no shared
+                mode and takes an exclusive lock instead) or ``"exclusive"``
+                for a write. Held for the caller's entire critical section,
+                so a concurrent reader can never observe a write
+                half-applied, and two concurrent writers can never
+                interleave.
+
+        Yields:
+            The open file descriptor, positioned at its start.
+
+        Raises:
+            LogError: If this log is already inside a locked section, or if
+                the lock cannot be taken.
+        """
+        if self._lock_held:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+            raise LogError(
+                f"{self._path}: the {self._noun}-log lock is not re-entrant -- a "
+                f"{kind} lock was requested while it already holds one. "
+                "One lock per critical section."
+            )
+            # pragma: no mutate end
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(self._path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
+        self._lock_held = True
+        try:
+            self._backend.acquire(fd, kind, self._path)
+            try:
+                yield fd
+            finally:
+                self._backend.release(fd)
+        finally:
+            self._lock_held = False
+            os.close(fd)
+
+    def _read_all(self, fd: int) -> bytes:
+        """Read an open file descriptor's entire content from its current position.
+
+        Args:
+            fd: An open file descriptor, positioned wherever the caller
+                wants reading to start (:meth:`_verify_and_load_locked`
+                seeks to the start first).
+
+        Returns:
+            Every byte read until EOF.
+        """
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(fd, _READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _split_confirmed(raw: bytes) -> tuple[bytes, bytes]:
+        """Split raw file bytes into complete lines and a trailing partial line.
+
+        Args:
+            raw: The file's full current content.
+
+        Returns:
+            ``(confirmed, fragment)``: ``confirmed`` is every complete,
+            newline-terminated line (``raw`` unchanged if it is empty or
+            already ends with ``\\n``); ``fragment`` is whatever bytes
+            follow the last ``\\n``, or ``b""`` if there is nothing
+            unterminated.
+        """
+        if not raw or raw.endswith(b"\n"):
+            return raw, b""
+        split_at = raw.rfind(b"\n") + 1
+        return raw[:split_at], raw[split_at:]
+
+    def _verify_checksum_bytes(self, confirmed: bytes) -> None:
+        """Verify ``confirmed`` against the checksum sidecar.
+
+        Args:
+            confirmed: The file's complete-lines-only content (see
+                :meth:`_split_confirmed`).
+
+        Raises:
+            LogError: If the sidecar is missing while ``confirmed`` is
+                non-empty (an unprotected, untrusted log), or if its
+                recorded digest does not match ``confirmed``'s actual
+                SHA-256.
+        """
+        expected = hashlib.sha256(confirmed).hexdigest()
+        if not self._checksum_path.is_file():
+            if confirmed:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+                raise LogError(
+                    f"missing checksum sidecar {self._checksum_path} for a non-empty "
+                    f"{self._noun} log -- {self._path} may have been created or edited "
+                    f"outside {self._writer_name}"
+                )
+                # pragma: no mutate end
+            return
+        recorded_text = self._checksum_path.read_text(encoding="utf-8").strip()
+        recorded = recorded_text.split(maxsplit=1)[0] if recorded_text else ""
+        if recorded == expected:
+            return
+
+        # Before calling it tampering, check whether the sidecar describes a *prefix*
+        # of the current file. That is the signature of a crash between the durable
+        # append and the sidecar rewrite -- the one unavoidable window in this
+        # two-step write -- and it is not hand-editing.
+        #
+        # The distinction is worth the code. This file holds irreplaceable human
+        # judgement (screening decisions, or taxonomy overrides) that cannot be
+        # regenerated: a reviewer who loses power partway through 1,500 records and is
+        # then told the log "may have been edited by hand" has been told something
+        # false about their own work, and the plausible response to that message is to
+        # distrust and discard it. Both cases still RAISE -- the log is genuinely
+        # inconsistent either way and a human must look -- but the diagnosis names what
+        # actually happened.
+        uncovered = self._lines_after_checksummed_prefix(confirmed, recorded)
+        if uncovered is not None:
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+            raise LogError(
+                f"{self._path} has {uncovered} {self._noun} line(s) not covered by the "
+                f"checksum sidecar {self._checksum_path}. The sidecar matches this "
+                "file's earlier content exactly, which is what an interrupted append "
+                "looks like (the line reached disk; the sidecar rewrite did not) -- "
+                f"not hand-editing. Inspect the trailing line(s); if they are {self._noun}s "
+                "you intended, the log is intact and only the sidecar needs rewriting."
+            )
+            # pragma: no mutate end
+
+        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+        raise LogError(
+            f"checksum mismatch for {self._path}: sidecar {self._checksum_path} records "
+            f"{recorded!r}, but content hashes to {expected!r} -- {self._path.name} may "
+            "have been edited by hand"
+        )
+        # pragma: no mutate end
+
+    def _lines_after_checksummed_prefix(self, confirmed: bytes, recorded: str) -> int | None:
+        """How many trailing lines lie beyond the prefix the sidecar checksums.
+
+        Args:
+            confirmed: The file's complete-lines-only content.
+            recorded: The digest the sidecar records.
+
+        Returns:
+            The number of whole lines present in ``confirmed`` but not covered by
+            ``recorded``, when ``recorded`` matches some line-aligned prefix of
+            ``confirmed``; otherwise ``None``, meaning the sidecar does not describe
+            any prefix of this file and the difference is not an interrupted append.
+        """
+        lines = confirmed.splitlines(keepends=True)
+        prefix = b""
+        for index, line in enumerate(lines):
+            if hashlib.sha256(prefix).hexdigest() == recorded:
+                return len(lines) - index
+            prefix += line
+        return None
+
+    def _write_checksum_sidecar(self, content: bytes) -> None:
+        """Atomically rewrite the checksum sidecar to describe ``content``.
+
+        Writes to a temporary file in the same directory, ``fsync``s it,
+        then ``os.replace``s it over :attr:`checksum_path` -- a reader can
+        therefore only ever see the old sidecar or the fully-written new
+        one, never a partial one.
+
+        The sidecar's own bytes are written binary for the same reason the
+        log's are: its one line must be exactly what ``sha256sum`` writes,
+        or ``sha256sum --check`` on it stops being a thing a reviewer can
+        run.
+
+        Args:
+            content: The exact bytes the sidecar should describe -- the
+                log's full content after the append that triggered this
+                call.
+        """
+        digest = hashlib.sha256(content).hexdigest()
+        payload = f"{digest}  {self._path.name}\n".encode()
+        tmp_path = self._checksum_path.with_name(self._checksum_path.name + ".tmp")
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _O_BINARY, 0o644)
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp_path, self._checksum_path)
+
+    def _parse_events(self, confirmed: bytes) -> list[TEvent]:
+        """Parse every complete line of ``confirmed`` into a validated event.
+
+        Args:
+            confirmed: The file's complete-lines-only content, already
+                checksum-verified by the caller.
+
+        Returns:
+            One ``TEvent`` per line, in file order.
+
+        Raises:
+            LogError: If any line declares a ``schema_version`` other than
+                the one this log was opened with, fails to parse as valid
+                JSON, fails ``TEvent`` validation, or repeats an
+                ``event_id`` already seen earlier in the file.
+        """
+        events: list[TEvent] = []
+        seen_ids: set[str] = set()
+        lines = confirmed.decode("utf-8").split("\n")[:-1]
+        for line_number, raw_line in enumerate(lines, start=1):
+            try:
+                payload = json.loads(raw_line)
+            except json.JSONDecodeError as exc:
+                raise LogError(f"{self._path}:{line_number}: malformed JSON: {exc}") from exc
+            schema_version = payload.get("schema_version")
+            if schema_version != self._current_schema_version:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+                raise LogError(
+                    f"{self._path}:{line_number}: unknown schema_version "
+                    f"{schema_version!r} (expected {self._current_schema_version})"
+                )
+                # pragma: no mutate end
+            try:
+                event = self._model.model_validate(payload)
+            except PydanticValidationError as exc:
+                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+                raise LogError(
+                    f"{self._path}:{line_number}: malformed {self._noun} event: {exc}"
+                ) from exc
+                # pragma: no mutate end
+            event_id = self._event_id(event)
+            if event_id in seen_ids:
+                raise LogError(f"{self._path}:{line_number}: duplicate event_id {event_id!r}")
+            seen_ids.add(event_id)
+            events.append(event)
+        return events
+
+    def _verify_and_load_locked(self, fd: int) -> tuple[bytes, list[TEvent]]:
+        """Read, checksum-verify, and parse the file behind an already-held lock.
+
+        Args:
+            fd: An open file descriptor for :attr:`path`, with the
+                caller already holding the appropriate ``flock``.
+
+        Returns:
+            ``(confirmed, events)`` -- the file's checksum-verified,
+            complete-lines-only content and its parsed events, in file
+            order. Callers that are about to append reuse ``confirmed`` as
+            the prefix for the new checksum.
+
+        Raises:
+            LogError: If the checksum does not match, any event fails
+                validation, a duplicate ``event_id`` is found, or the
+                file's final line is truncated (no terminating ``\\n``).
+        """
+        os.lseek(fd, 0, os.SEEK_SET)
+        raw = self._read_all(fd)
+        confirmed, fragment = self._split_confirmed(raw)
+        self._verify_checksum_bytes(confirmed)
+        events = self._parse_events(confirmed)
+        if fragment:
+            line_number = confirmed.count(b"\n") + 1
+            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
+            raise LogError(
+                f"{self._path}: truncated final line at line {line_number} "
+                f"({len(fragment)} byte(s) with no terminating newline) -- the process "
+                "likely crashed mid-write.\n"
+                "\n"
+                "Every complete line before this one is intact and verified against the "
+                f"checksum sidecar, so no {self._event_description} has been lost except "
+                "possibly the last one, which never finished being written.\n"
+                "\n"
+                "To recover:\n"
+                f"  1. Look at the trailing {len(fragment)} byte(s) of {self._path} and "
+                f"decide whether that partial {self._event_description} is one you want to keep.\n"
+                "  2. Delete the incomplete final line, leaving the file ending in a "
+                "newline. Do not edit any earlier line -- they are checksummed.\n"
+                f"  3. Regenerate the sidecar: sha256sum {self._path.name} > "
+                f"{self._checksum_path.name} (run it in {self._path.parent}).\n"
+                f"  4. Re-log that {self._event_description} through {self._recovery_hint} "
+                "if you wanted to keep it.\n"
+                "\n"
+                f"Back the file up before step 2 -- it is the record of {self._labour} "
+                "labour, and nothing else can reconstruct it."
+            )
+            # pragma: no mutate end
+        return confirmed, events
+
+
 class DecisionLog:
     """The append-only, checksum-guarded ``decisions.jsonl`` for one project.
 
     See the module docstring for the full set of invariants this class
-    enforces. Every public method that touches the file takes the
-    appropriate ``flock`` for its whole read-or-write critical section, so
-    two ``DecisionLog`` instances -- in one process or two -- never
-    interleave.
+    enforces -- now implemented by the generic :class:`AppendOnlyLog` this
+    class composes (see that class's own docstring). What stays here is
+    what is specific to a *screening decision*: the
+    ``(stage, record_id, reviewer)`` fold key (:func:`fold_events`) and the
+    ``reason_code``/``criteria.yaml`` business rule
+    (:meth:`_validate_business_rules`). Every public method that touches the
+    file takes the appropriate ``flock`` for its whole read-or-write
+    critical section (via :attr:`_store`), so two ``DecisionLog`` instances
+    -- in one process or two -- never interleave.
     """
 
     def __init__(self, project: Project, *, id_factory: IdFactory | None = None) -> None:
@@ -551,20 +1034,27 @@ class DecisionLog:
         self._id_factory: IdFactory = (
             id_factory if id_factory is not None else MonotonicUlidFactory()
         )
-        self._path = project.decisions_path
-        self._checksum_path = self._path.with_name(self._path.name + ".sha256")
-        self._backend: _LockBackend = _LOCK_BACKEND
-        self._lock_held = False
+        self._store: AppendOnlyLog[DecisionEvent] = AppendOnlyLog(
+            project.decisions_path,
+            model=DecisionEvent,
+            current_schema_version=CURRENT_SCHEMA_VERSION,
+            event_id=lambda event: event.event_id,
+            noun="decision",
+            event_description="screening decision",
+            recovery_hint="the UI or DecisionLog.append",
+            writer_name="DecisionLog",
+            labour="human screening",
+        )
 
     @property
     def path(self) -> Path:
         """The ``decisions.jsonl`` path this log reads and appends to."""
-        return self._path
+        return self._store.path
 
     @property
     def checksum_path(self) -> Path:
         """The ``decisions.jsonl.sha256`` sidecar path this log maintains."""
-        return self._checksum_path
+        return self._store.checksum_path
 
     # -- reading -----------------------------------------------------------
 
@@ -582,9 +1072,7 @@ class DecisionLog:
                 parse as a well-formed :class:`~prismabib.prisma.events.DecisionEvent`,
                 or the same ``event_id`` appears twice.
         """
-        with self._locked("shared") as fd:
-            _confirmed, events = self._verify_and_load_locked(fd)
-        return events
+        return self._store.load()
 
     def fold(self) -> dict[FoldKey, DecisionEvent]:
         """Load the log and fold it into current per-key membership.
@@ -684,20 +1172,24 @@ class DecisionLog:
                 any of :meth:`load`'s checks.
         """
         self._validate_business_rules(event)
-        with self._locked("exclusive") as fd:
-            confirmed, existing = self._verify_and_load_locked(fd)
-            if event.event_id in {existing_event.event_id for existing_event in existing}:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise LogError(
-                    f"{self._path}: duplicate event_id {event.event_id!r} -- already present "
-                    "in the decision log (replayed append or ULID collision)"
-                )
-                # pragma: no mutate end
-            line_bytes = (event.model_dump_json() + "\n").encode("utf-8")
-            os.lseek(fd, 0, os.SEEK_END)
-            os.write(fd, line_bytes)
-            os.fsync(fd)
-            self._write_checksum_sidecar(confirmed + line_bytes)
+        self._store.write_event(event)
+
+    def _locked(self, kind: LockKind) -> AbstractContextManager[int]:
+        """Forward to the underlying :class:`AppendOnlyLog`'s critical section.
+
+        Kept as a method on :class:`DecisionLog` -- rather than requiring
+        every caller to reach through :attr:`_store` -- because it is
+        exercised directly by ``tests/integration/prisma/test_log.py``'s
+        nested-lock reentrancy test, which predates this class's
+        composition-based refactor and is unchanged by it.
+
+        Args:
+            kind: ``"shared"`` or ``"exclusive"``.
+
+        Returns:
+            The context manager :meth:`AppendOnlyLog._locked` produces.
+        """
+        return self._store._locked(kind)
 
     # -- business rules ------------------------------------------------------
 
@@ -756,315 +1248,5 @@ class DecisionLog:
         )
         return frozenset(codes)
 
-    # -- locking and low-level I/O --------------------------------------------
 
-    @contextmanager
-    def _locked(self, kind: LockKind) -> Iterator[int]:
-        """Open :attr:`_path`, hold a lock on it, and yield its file descriptor.
-
-        The parent directory is created and the file opened read/write with
-        ``O_CREAT``, so a :class:`DecisionLog` works even before
-        :meth:`~prismabib.project.Project.init` has run. Creating the
-        directory is not redundant with ``init``: git cannot store an empty
-        directory, so a project cloned with ``track_decisions = false``
-        (§2.5 line 291) arrives without ``decisions/``, and the first
-        screening decision would otherwise die on ``FileNotFoundError``.
-
-        ``O_BINARY`` is what keeps the file's bytes LF-terminated on
-        Windows; see the module docstring. It is ``0`` on POSIX.
-
-        **This is not re-entrant.** Each call opens a *new* descriptor, so a
-        nested call would ask the OS for a second, conflicting lock on the
-        same file from the same thread -- which blocks forever on POSIX and
-        fails on Windows. Nothing in this class nests today; the guard makes
-        sure that stays true and reports it as an error rather than a hang.
-
-        Args:
-            kind: ``"shared"`` for a read (allows concurrent readers,
-                excludes writers -- except on Windows, which has no shared
-                mode and takes an exclusive lock instead) or ``"exclusive"``
-                for a write. Held for the caller's entire critical section,
-                so a concurrent reader can never observe a write
-                half-applied, and two concurrent writers can never
-                interleave.
-
-        Yields:
-            The open file descriptor, positioned at its start.
-
-        Raises:
-            LogError: If this :class:`DecisionLog` is already inside a
-                locked section, or if the lock cannot be taken.
-        """
-        if self._lock_held:
-            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-            raise LogError(
-                f"{self._path}: DecisionLog._locked is not re-entrant -- a "
-                f"{kind} lock was requested while this log already holds one. "
-                "One lock per critical section."
-            )
-            # pragma: no mutate end
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self._path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
-        self._lock_held = True
-        try:
-            self._backend.acquire(fd, kind, self._path)
-            try:
-                yield fd
-            finally:
-                self._backend.release(fd)
-        finally:
-            self._lock_held = False
-            os.close(fd)
-
-    def _read_all(self, fd: int) -> bytes:
-        """Read an open file descriptor's entire content from its current position.
-
-        Args:
-            fd: An open file descriptor, positioned wherever the caller
-                wants reading to start (:meth:`_verify_and_load_locked`
-                seeks to the start first).
-
-        Returns:
-            Every byte read until EOF.
-        """
-        chunks: list[bytes] = []
-        while True:
-            chunk = os.read(fd, _READ_CHUNK_SIZE)
-            if not chunk:
-                break
-            chunks.append(chunk)
-        return b"".join(chunks)
-
-    @staticmethod
-    def _split_confirmed(raw: bytes) -> tuple[bytes, bytes]:
-        """Split raw file bytes into complete lines and a trailing partial line.
-
-        Args:
-            raw: The file's full current content.
-
-        Returns:
-            ``(confirmed, fragment)``: ``confirmed`` is every complete,
-            newline-terminated line (``raw`` unchanged if it is empty or
-            already ends with ``\\n``); ``fragment`` is whatever bytes
-            follow the last ``\\n``, or ``b""`` if there is nothing
-            unterminated.
-        """
-        if not raw or raw.endswith(b"\n"):
-            return raw, b""
-        split_at = raw.rfind(b"\n") + 1
-        return raw[:split_at], raw[split_at:]
-
-    def _verify_checksum_bytes(self, confirmed: bytes) -> None:
-        """Verify ``confirmed`` against the checksum sidecar.
-
-        Args:
-            confirmed: The file's complete-lines-only content (see
-                :meth:`_split_confirmed`).
-
-        Raises:
-            LogError: If the sidecar is missing while ``confirmed`` is
-                non-empty (an unprotected, untrusted log), or if its
-                recorded digest does not match ``confirmed``'s actual
-                SHA-256.
-        """
-        expected = hashlib.sha256(confirmed).hexdigest()
-        if not self._checksum_path.is_file():
-            if confirmed:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise LogError(
-                    f"missing checksum sidecar {self._checksum_path} for a non-empty "
-                    f"decision log -- {self._path} may have been created or edited "
-                    "outside DecisionLog"
-                )
-                # pragma: no mutate end
-            return
-        recorded_text = self._checksum_path.read_text(encoding="utf-8").strip()
-        recorded = recorded_text.split(maxsplit=1)[0] if recorded_text else ""
-        if recorded == expected:
-            return
-
-        # Before calling it tampering, check whether the sidecar describes a *prefix*
-        # of the current file. That is the signature of a crash between the durable
-        # append and the sidecar rewrite -- the one unavoidable window in this
-        # two-step write -- and it is not hand-editing.
-        #
-        # The distinction is worth the code. This file holds screening decisions that
-        # cannot be regenerated: a reviewer who loses power partway through 1,500
-        # records and is then told the log "may have been edited by hand" has been
-        # told something false about their own work, and the plausible response to
-        # that message is to distrust and discard it. Both cases still RAISE -- the
-        # log is genuinely inconsistent either way and a human must look -- but the
-        # diagnosis names what actually happened.
-        uncovered = self._lines_after_checksummed_prefix(confirmed, recorded)
-        if uncovered is not None:
-            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-            raise LogError(
-                f"{self._path} has {uncovered} decision line(s) not covered by the "
-                f"checksum sidecar {self._checksum_path}. The sidecar matches this "
-                "file's earlier content exactly, which is what an interrupted append "
-                "looks like (the line reached disk; the sidecar rewrite did not) -- "
-                "not hand-editing. Inspect the trailing line(s); if they are decisions "
-                "you intended, the log is intact and only the sidecar needs rewriting."
-            )
-            # pragma: no mutate end
-
-        # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-        raise LogError(
-            f"checksum mismatch for {self._path}: sidecar {self._checksum_path} records "
-            f"{recorded!r}, but content hashes to {expected!r} -- decisions.jsonl may "
-            "have been edited by hand"
-        )
-        # pragma: no mutate end
-
-    def _lines_after_checksummed_prefix(self, confirmed: bytes, recorded: str) -> int | None:
-        """How many trailing lines lie beyond the prefix the sidecar checksums.
-
-        Args:
-            confirmed: The file's complete-lines-only content.
-            recorded: The digest the sidecar records.
-
-        Returns:
-            The number of whole lines present in ``confirmed`` but not covered by
-            ``recorded``, when ``recorded`` matches some line-aligned prefix of
-            ``confirmed``; otherwise ``None``, meaning the sidecar does not describe
-            any prefix of this file and the difference is not an interrupted append.
-        """
-        lines = confirmed.splitlines(keepends=True)
-        prefix = b""
-        for index, line in enumerate(lines):
-            if hashlib.sha256(prefix).hexdigest() == recorded:
-                return len(lines) - index
-            prefix += line
-        return None
-
-    def _write_checksum_sidecar(self, content: bytes) -> None:
-        """Atomically rewrite the checksum sidecar to describe ``content``.
-
-        Writes to a temporary file in the same directory, ``fsync``s it,
-        then ``os.replace``s it over :attr:`_checksum_path` -- a reader can
-        therefore only ever see the old sidecar or the fully-written new
-        one, never a partial one.
-
-        The sidecar's own bytes are written binary for the same reason the
-        log's are: its one line must be exactly what ``sha256sum`` writes,
-        or ``sha256sum --check`` on it stops being a thing a reviewer can
-        run.
-
-        Args:
-            content: The exact bytes the sidecar should describe -- the
-                decision log's full content after the append that
-                triggered this call.
-        """
-        digest = hashlib.sha256(content).hexdigest()
-        payload = f"{digest}  {self._path.name}\n".encode()
-        tmp_path = self._checksum_path.with_name(self._checksum_path.name + ".tmp")
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _O_BINARY, 0o644)
-        try:
-            os.write(fd, payload)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp_path, self._checksum_path)
-
-    def _parse_events(self, confirmed: bytes) -> list[DecisionEvent]:
-        """Parse every complete line of ``confirmed`` into a validated event.
-
-        Args:
-            confirmed: The file's complete-lines-only content, already
-                checksum-verified by the caller.
-
-        Returns:
-            One :class:`~prismabib.prisma.events.DecisionEvent` per line,
-            in file order.
-
-        Raises:
-            LogError: If any line declares a ``schema_version`` other than
-                :data:`~prismabib.prisma.events.CURRENT_SCHEMA_VERSION`,
-                fails to parse as valid JSON, fails
-                :class:`~prismabib.prisma.events.DecisionEvent` validation,
-                or repeats an ``event_id`` already seen earlier in the
-                file.
-        """
-        events: list[DecisionEvent] = []
-        seen_ids: set[str] = set()
-        lines = confirmed.decode("utf-8").split("\n")[:-1]
-        for line_number, raw_line in enumerate(lines, start=1):
-            try:
-                payload = json.loads(raw_line)
-            except json.JSONDecodeError as exc:
-                raise LogError(f"{self._path}:{line_number}: malformed JSON: {exc}") from exc
-            schema_version = payload.get("schema_version")
-            if schema_version != CURRENT_SCHEMA_VERSION:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise LogError(
-                    f"{self._path}:{line_number}: unknown schema_version "
-                    f"{schema_version!r} (expected {CURRENT_SCHEMA_VERSION})"
-                )
-                # pragma: no mutate end
-            try:
-                event = DecisionEvent.model_validate(payload)
-            except PydanticValidationError as exc:
-                # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-                raise LogError(
-                    f"{self._path}:{line_number}: malformed decision event: {exc}"
-                ) from exc
-                # pragma: no mutate end
-            if event.event_id in seen_ids:
-                raise LogError(f"{self._path}:{line_number}: duplicate event_id {event.event_id!r}")
-            seen_ids.add(event.event_id)
-            events.append(event)
-        return events
-
-    def _verify_and_load_locked(self, fd: int) -> tuple[bytes, list[DecisionEvent]]:
-        """Read, checksum-verify, and parse the file behind an already-held lock.
-
-        Args:
-            fd: An open file descriptor for :attr:`_path`, with the
-                caller already holding the appropriate ``flock``.
-
-        Returns:
-            ``(confirmed, events)`` -- the file's checksum-verified,
-            complete-lines-only content and its parsed events, in file
-            order. Callers that are about to append reuse ``confirmed`` as
-            the prefix for the new checksum.
-
-        Raises:
-            LogError: If the checksum does not match, any event fails
-                validation, a duplicate ``event_id`` is found, or the
-                file's final line is truncated (no terminating ``\\n``).
-        """
-        os.lseek(fd, 0, os.SEEK_SET)
-        raw = self._read_all(fd)
-        confirmed, fragment = self._split_confirmed(raw)
-        self._verify_checksum_bytes(confirmed)
-        events = self._parse_events(confirmed)
-        if fragment:
-            line_number = confirmed.count(b"\n") + 1
-            # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
-            raise LogError(
-                f"{self._path}: truncated final line at line {line_number} "
-                f"({len(fragment)} byte(s) with no terminating newline) -- the process "
-                "likely crashed mid-write.\n"
-                "\n"
-                "Every complete line before this one is intact and verified against the "
-                "checksum sidecar, so no screening decision has been lost except "
-                "possibly the last one, which never finished being written.\n"
-                "\n"
-                "To recover:\n"
-                f"  1. Look at the trailing {len(fragment)} byte(s) of {self._path} and "
-                "decide whether that partial decision is one you want to keep.\n"
-                "  2. Delete the incomplete final line, leaving the file ending in a "
-                "newline. Do not edit any earlier line -- they are checksummed.\n"
-                f"  3. Regenerate the sidecar: sha256sum {self._path.name} > "
-                f"{self._checksum_path.name} (run it in {self._path.parent}).\n"
-                "  4. Re-log that decision through the UI or DecisionLog.append if you "
-                "wanted to keep it.\n"
-                "\n"
-                "Back the file up before step 2 -- it is the record of human screening "
-                "labour and nothing else can reconstruct it."
-            )
-            # pragma: no mutate end
-        return confirmed, events
-
-
-__all__ = ["DecisionLog", "FoldKey", "fold_events"]
+__all__ = ["AppendOnlyLog", "DecisionLog", "FoldKey", "fold_events"]
