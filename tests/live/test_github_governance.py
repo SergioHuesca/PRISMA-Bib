@@ -29,6 +29,7 @@ import re
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -65,8 +66,41 @@ def _origin_slug() -> str:
 REPO = _origin_slug()
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run a `git`/`gh` command from the repository root, never raising."""
+#: A git author/committer identity for the one test that writes an object.
+#:
+#: `git commit-tree` refuses with "Author identity unknown" when neither
+#: `user.email` nor `user.name` is configured, which is every clean CI
+#: container -- and passes locally only because a developer machine has a
+#: global identity. That is the machine-dependence class CLAUDE.md names:
+#: green here, red on the nightly, and the failure says nothing about the
+#: governance rule the test exists to check.
+#:
+#: Supplied through the environment rather than `git config`, deliberately.
+#: A `--global` write would mutate the runner's configuration for every
+#: later step, and a local write would dirty the working copy this suite
+#: also asserts is clean.
+_GIT_IDENTITY_ENV = {
+    "GIT_AUTHOR_NAME": "prismabib governance probe",
+    "GIT_AUTHOR_EMAIL": "governance-probe@invalid",
+    "GIT_COMMITTER_NAME": "prismabib governance probe",
+    "GIT_COMMITTER_EMAIL": "governance-probe@invalid",
+}
+
+
+def _run(*args: str, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a `git`/`gh` command from the repository root, never raising.
+
+    Args:
+        args: The command and its arguments.
+        env: Extra environment variables, merged over the inherited
+            environment. Merged rather than replacing it, because `git` and
+            `gh` both need `PATH`, `HOME` and the runner's credentials to
+            work at all.
+
+    Returns:
+        The completed process, with `check=False` so a caller asserts on
+        the return code itself.
+    """
     return subprocess.run(
         args,
         cwd=REPO_ROOT,
@@ -74,6 +108,7 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
         timeout=120,
+        env={**os.environ, **env} if env else None,
     )
 
 
@@ -126,11 +161,18 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
 
 @pytest.mark.acceptance("S00-AC1")
 def test_repository__origin_remote__points_at_github_with_main_pushed() -> None:
-    remote = _run("git", "remote", "-v")
+    remote = _run("git", "remote", "get-url", "origin")
     local_main = _run("git", "rev-parse", "refs/heads/main")
     remote_main = _run("git", "rev-parse", "refs/remotes/origin/main")
 
-    assert f"origin\thttps://github.com/{REPO}.git (fetch)" in remote.stdout
+    # Compare the *remote*, not one spelling of it. The `.git` suffix is
+    # optional in a GitHub clone URL and `actions/checkout` omits it, so
+    # asserting on `origin\thttps://github.com/<repo>.git (fetch)` failed
+    # every nightly while the remote was correct -- a test pinning a
+    # cosmetic difference between two machines, which is what it exists to
+    # rule out for the repository, not to reproduce for itself.
+    assert remote.returncode == 0, remote.stderr
+    assert remote.stdout.strip().removesuffix(".git") == f"https://github.com/{REPO}"
     assert local_main.stdout.strip() == remote_main.stdout.strip()
 
 
@@ -301,6 +343,7 @@ def test_main_branch__direct_push__is_rejected_by_branch_protection() -> None:
         "refs/remotes/origin/main",
         "-m",
         "test: direct-push governance probe (expected to be rejected)",
+        env=_GIT_IDENTITY_ENV,
     )
     assert commit_tree.returncode == 0, commit_tree.stderr
     commit = commit_tree.stdout.strip()
