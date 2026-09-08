@@ -278,17 +278,30 @@ def build_provenance(
     else:
         run_ids = ()
 
-    if run_ids and runs.height:
-        relevant = runs.filter(pl.col("run_id").is_in(run_ids))
-        criteria_versions = tuple(
+    # Narrowed to the contributing runs when there are any, and falling back
+    # to *every* run in the store when there are none.
+    #
+    # The fallback is the point. `run_ids` is empty whenever the stage set is
+    # empty -- which is the state a corpus is in before screening has run, and
+    # therefore the first state a reader sees. Without it, every caption over
+    # an empty set silently dropped its criteria version, so the number most
+    # in need of provenance was the one that carried none, and S09-AC2 ("every
+    # caption contains n, criteria version, and the snapshot date") failed on
+    # exactly that corpus. Reporting the store's criteria versions there is
+    # also simply true: which protocol the runs were captured under is a fact
+    # about the corpus, not about how many records survived screening.
+    relevant = runs.filter(pl.col("run_id").is_in(run_ids)) if run_ids else runs
+    criteria_versions = (
+        tuple(
             sorted(
                 value
                 for value in relevant.get_column("criteria_version").unique().to_list()
                 if value is not None
             )
         )
-    else:
-        criteria_versions = ()
+        if runs.height
+        else ()
+    )
 
     citation_snapshot: datetime | None = None
     citation_snapshot_is_uniform = True

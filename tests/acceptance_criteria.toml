@@ -114,3 +114,11 @@ S08-AC2 = "Coding is deterministic and idempotent."
 S08-AC3 = "Human overrides survive a rule-version bump and re-run -- verified by test."
 S08-AC4 = "Coverage report: % of corpus coded per dimension, % by rule vs human, audit agreement rate."
 S08-AC5 = "A multi_label: false dimension with counting_unit: papers is asserted to sum to |C|; the assertion fails loudly on a deliberately over-assigned fixture."
+
+# --- Stage 9 -- Visualisation and dashboard (BUILD_PLAN.md lines 1341-1408) -
+
+S09-AC1 = "Every figure renders inline in a notebook and in the served dashboard."
+S09-AC2 = "Every figure's caption is auto-generated and contains n, criteria version, and citation-snapshot date where applicable."
+S09-AC3 = "Static export at 300 dpi produces legible labels at single-column journal width."
+S09-AC4 = "Dashboard responds to a filter change in < 1 s on the reference corpus."
+S09-AC5 = "Dark and light rendering both legible."

@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The visualisation layer** (BUILD_PLAN Stage 9): `src/prismabib/viz/` — `theme.py` (one
+  validated palette for Plotly and Matplotlib, CIEDE2000, a Machado–Oliveira–Fernandes
+  deuteranopia simulation, WCAG contrast, the 300 dpi legibility formula), `figures.py` (all
+  nine required figures, each returning a Plotly and a Matplotlib figure), `dashboard.py` (the
+  Panel dashboard, nine tabs over one `Corpus` handle).
+
+  **Figures compute nothing** (ADR 0025 Decision 1), enforced by an AST scan over every `viz/`
+  module except `theme.py` — whose arithmetic is over palette constants, never over
+  `AnalysisResult.data`. That exemption is one file wide and asserted rather than described.
+
+  **The engines moved to make it possible.** Four figures could not be drawn from what Stages 7
+  and 8 returned: `network.py`'s `data` is now long-format with node rows carrying frequency and
+  cluster; taxonomy gained `AnalysisResult`-returning distribution and evolution functions (the
+  latter existed nowhere); and `citations.citation_distribution` was added because every
+  existing citation function returns an aggregate and a histogram needs per-record values.
+
+  **Cluster colour is top-three plus "Other", and the caption says how many were folded.** The
+  validated palette clears its all-pairs gate for three slots, and a network is an all-pairs
+  form. Measured on the reference corpus: the drawn keyword graph has 6 communities, the
+  co-authorship graph 16. Sixteen near-equal clusters cannot be told apart by colour under any
+  palette, so the figure says "3 of 16 communities shown; 13 folded to Other" rather than
+  implying structure it cannot show.
+
+### Fixed
+
+- **Captions dropped the criteria version on exactly the corpus state a reader sees first.**
+  `build_provenance` derived `criteria_versions` from the runs contributing to the *stage set*,
+  so an unscreened corpus — every corpus, before screening — produced an empty tuple and every
+  caption shipped without it. S09-AC2 requires it. The golden claiming that criterion ran at
+  `RAW`, a fixture that could not reach the branch, and a unit test asserted the omission was
+  correct. Provenance now falls back to the store's own runs: which protocol a corpus was
+  captured under is a fact about the corpus, not about how many records survived screening.
+
+- **The arithmetic guard scanned one file and permitted `len()` unconditionally.** A review
+  demonstrated two derived numbers computed inside a figure body and rendered into a caption,
+  with the whole suite green. Seventeen aggregation spellings passed — `statistics.mean`,
+  `functools.reduce`, `operator.truediv`, `math.fsum`, polars' `cum_sum`, `numpy.divide`,
+  `sorted(xs)[-1]`, `len(<comprehension>)`. The scan now globs the package, pins each of those
+  spellings, and whitelists the two `len()` call sites the exemption was actually written for.
+  `dashboard.py`'s own `min(years)`/`max(years)` — a second definition of the corpus's year
+  range, derived in the view layer — was caught by the widened scope.
+
+- **The dashboard's consistency guarantee was a comment.**
+  `test_dashboard__filter_change__all_tabs_read_the_same_corpus_handle` recorded the handle from
+  its own loop, so it compared `self._corpus is self._corpus` nine times; a tab injected with a
+  private `Corpus` left the suite green. And `_load_taxonomy` really did open its own handle,
+  ignoring one a caller supplied. The handle is now recorded where a tab reads it.
+
+- **A filter change updated one tab of nine.** `apply_filters` refreshed the single pane
+  `Trends` registered, leaving six tabs showing pre-filter data — and S09-AC4's <1 s budget was
+  measured against that one redraw rather than the filter change the criterion describes.
+
+- **The Plotly network figure never stated the cluster fold.** It reached Matplotlib only, and
+  the dashboard and notebook both render Plotly — so the surface a reviewer actually looks at
+  painted three colours over sixteen communities and said nothing.
+
+- **The taxonomy tabs hardcoded `PAPERS`** instead of each rule file's declared `counting_unit`,
+  captioning a multi-label dimension "counting_unit=papers" while its counts summed past the
+  paper count.
+
 ## [0.20.0] — 2026-09-07
 
 ### Added

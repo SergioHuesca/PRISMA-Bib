@@ -19,6 +19,10 @@ command in this stage, and none of the five modules below imports
   ``decisions.jsonl`` uses).
 - :mod:`prismabib.taxonomy.review` -- the review priority queue and the
   coverage/audit report.
+- :mod:`prismabib.taxonomy.analysis` -- ``distribution``/evolution results
+  reshaped as :class:`~prismabib.bibliometrics.base.AnalysisResult`, for
+  ``viz/figures.py`` (ADR 0025 Decision 2; BUILD_PLAN §Stage 9 figures 7
+  and 8).
 """
 
 from __future__ import annotations

@@ -11,6 +11,19 @@ these are exactly the functions that read citations.
 ``report/numbers.py::_citation_numbers`` delegates to
 :func:`citation_statistics` rather than re-querying ``citation_snapshots``
 itself -- see that module for the re-pointing.
+
+**A fourth engine gap, found while wiring Stage 9's figures (ADR 0025).**
+The ADR names three engine contracts that had to move for the figure layer
+to draw without computing (network's node rows, taxonomy's
+``AnalysisResult``-returning functions, taxonomy evolution). BUILD_PLAN
+figure 6 -- *"citation distribution (log-scale histogram + top-N bar)"* --
+is a fourth: neither function above returns a per-record citation count,
+only aggregates (:func:`citation_statistics`) or a per-year mean
+(:func:`citations_by_year`). A histogram needs the individual values.
+:func:`citation_distribution` is that missing per-record frame, added here
+for the same reason the ADR gives for the other three: the alternative is
+`viz/figures.py` reaching back into ``Corpus`` itself, which is exactly the
+computing-in-the-figure-layer defect Stage 9's AST scan exists to catch.
 """
 
 from __future__ import annotations
@@ -186,4 +199,58 @@ def citations_by_year(
     return AnalysisResult(data=data, params={}, provenance=provenance)
 
 
-__all__ = ["citation_statistics", "citations_by_year"]
+_EMPTY_DISTRIBUTION_SCHEMA = {"record_id": pl.Utf8, "title": pl.Utf8, "cited_by_count": pl.Int64}
+
+
+def citation_distribution(
+    corpus: Corpus,
+    *,
+    stage: PrismaStage = PrismaStage.INCLUDED,
+    at: datetime | None = None,
+    top_n: int = 20,
+) -> AnalysisResult:
+    """Every record's citation count, for the histogram and top-N bar figure 6 draws.
+
+    See this module's docstring ("A fourth engine gap") for why this
+    function exists: :func:`citation_statistics` only ever returns
+    aggregates, and a distribution needs the individual values.
+
+    Args:
+        corpus: The corpus to read.
+        stage: Which PRISMA-flow set to read.
+        at: Forwarded to :meth:`~prismabib.store.load.Corpus.citations`;
+            ``None`` uses the latest snapshot per record.
+        top_n: Recorded in ``params`` (and therefore the caption) for the
+            top-N-bar panel; ``data`` itself is never truncated to it -- a
+            histogram needs every record with a snapshot, and slicing
+            ``data.head(top_n)`` for the bar panel is the figure's own row
+            selection, not a computation, over data this function already
+            sorted.
+
+    Returns:
+        An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
+        ``data`` is ``record_id``, ``title``, ``cited_by_count``, sorted by
+        ``cited_by_count`` descending then ``record_id`` ascending (a total
+        order). Only records with a citation snapshot appear -- see
+        :func:`citation_statistics`'s docstring for the same judgement made
+        there; the corpus's own size is still ``n`` in the caption via
+        ``provenance.corpus_size``, independent of how many rows this
+        carries.
+    """
+    records, citations = _citations_for_stage(corpus, stage=stage, at=at)
+
+    if records.height == 0 or citations.height == 0:
+        data = pl.DataFrame(schema=_EMPTY_DISTRIBUTION_SCHEMA)
+    else:
+        data = (
+            records.select(["record_id", "title"])
+            .join(citations.select(["record_id", "cited_by_count"]), on="record_id", how="inner")
+            .sort(["cited_by_count", "record_id"], descending=[True, False])
+            .with_columns(pl.col("cited_by_count").cast(pl.Int64))
+        )
+
+    provenance = build_provenance(corpus, stage=stage, records=records, citations=citations)
+    return AnalysisResult(data=data, params={"top_n": top_n}, provenance=provenance)
+
+
+__all__ = ["citation_distribution", "citation_statistics", "citations_by_year"]

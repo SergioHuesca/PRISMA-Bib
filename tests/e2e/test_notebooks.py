@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "projects" / "reference"
 
 NOTEBOOK = Path(__file__).parent.parent.parent / "notebooks" / "01_screen_title_abstract.ipynb"
+DASHBOARD_NOTEBOOK = Path(__file__).parent.parent.parent / "notebooks" / "05_dashboard.ipynb"
 
 
 @pytest.fixture
@@ -76,5 +77,28 @@ def test_notebook__01_screen_title_abstract__executes(projects_root: Path) -> No
     outputs = [output for cell in notebook.cells for output in cell.get("outputs", [])]
     assert [output for output in outputs if output.get("output_type") == "error"] == []
     assert any("screening reference" in str(output) for output in outputs), (
+        "the notebook opened no project"
+    )
+
+
+@pytest.mark.e2e
+@pytest.mark.notebook
+@pytest.mark.acceptance("S09-AC1")
+def test_notebook__05_dashboard__executes(projects_root: Path) -> None:
+    """Every cell runs against the reference project, with no Scopus key.
+
+    Claims S09-AC1 ("every figure renders inline in a notebook") together
+    with ``test_figures__every_function__renders_both_backends`` -- that
+    test proves each figure function renders in isolation; this one proves
+    the dashboard actually constructs inside a real notebook kernel, not
+    just under pytest's own process.
+    """
+    notebook = nbformat.read(DASHBOARD_NOTEBOOK, as_version=4)
+
+    NotebookClient(notebook, timeout=120, kernel_name="python3").execute()
+
+    outputs = [output for cell in notebook.cells for output in cell.get("outputs", [])]
+    assert [output for output in outputs if output.get("output_type") == "error"] == []
+    assert any("dashboard for reference" in str(output) for output in outputs), (
         "the notebook opened no project"
     )

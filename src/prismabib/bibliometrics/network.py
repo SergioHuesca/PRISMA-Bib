@@ -25,11 +25,35 @@ contract. :func:`_export_vosviewer`, whose own return value is two file
 paths rather than a quantitative finding, is deliberately private -- see
 ``bibliometrics/base.py``'s module docstring for why that is not a deviation
 from ADR 0022's return-type constraint.
+
+**``data`` is long-format with a ``row_kind`` column (ADR 0025 Decision
+2).** BUILD_PLAN figure 5 needs *node size = frequency, edge width =
+co-occurrence, colour = cluster*; before this, ``data`` carried only the
+edge list and the node -> community map lived in ``params``, which is the
+wrong home twice over (``params`` records the knobs that affected the
+number, not a second data channel, and a figure reading a dict out of
+``params`` to size a node is computing with extra steps). So every row is
+either a ``"node"`` row (``id``, ``label``, ``frequency``, ``cluster``,
+``cluster_size`` populated -- the last is how many *drawn* nodes share that
+community, computed here rather than by a figure, since figure 5's colour
+rule (ADR 0025 Decision 4) needs cluster *sizes*, not only membership; the
+edge-only columns ``null``) or an ``"edge"`` row (the
+original five edge columns populated; the node-only columns ``null``) --
+one :class:`~prismabib.bibliometrics.base.AnalysisResult` holds everything
+figure 5 draws, so the single-argument figure contract survives. Node rows
+cover exactly the **drawn** subgraph -- every node id appearing in the
+(already ``top_n``-truncated) edge rows -- not every node the underlying
+graph has: a node with no edge surviving truncation is not on the canvas,
+and a node row for it would size something the figure never places.
+``params["communities"]`` is unchanged and still carries the *untruncated*
+node -> community map, for callers (:func:`_export_vosviewer`) that need
+every node the graph has, not only the drawn ones.
 """
 
 from __future__ import annotations
 
 import itertools
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +65,38 @@ from prismabib.bibliometrics.base import AnalysisResult, build_provenance
 from prismabib.bibliometrics.keywords import _load_stopwords
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
+
+#: Column order every row of ``data`` -- node or edge -- carries, node
+#: columns first (ADR 0025 Decision 2). Declared once so
+#: :func:`_nodes_to_frame`/:func:`_edges_to_frame`/the two public network
+#: functions cannot drift apart on ordering.
+_GRAPH_COLUMNS: tuple[str, ...] = (
+    "row_kind",
+    "id",
+    "label",
+    "frequency",
+    "cluster",
+    "cluster_size",
+    "node_a",
+    "node_a_label",
+    "node_b",
+    "node_b_label",
+    "weight",
+)
+
+_EMPTY_GRAPH_SCHEMA = {
+    "row_kind": pl.Utf8,
+    "id": pl.Utf8,
+    "label": pl.Utf8,
+    "frequency": pl.Int64,
+    "cluster": pl.Int64,
+    "cluster_size": pl.Int64,
+    "node_a": pl.Utf8,
+    "node_a_label": pl.Utf8,
+    "node_b": pl.Utf8,
+    "node_b_label": pl.Utf8,
+    "weight": pl.Int64,
+}
 
 _EMPTY_EDGE_SCHEMA = {
     "node_a": pl.Utf8,
@@ -81,7 +137,7 @@ def _edge_weights(memberships: dict[str, list[str]]) -> dict[tuple[str, str], in
 
 def _cooccurrence_edge_weights(
     keywords: pl.DataFrame, min_occurrence: int
-) -> dict[tuple[str, str], int]:
+) -> tuple[dict[tuple[str, str], int], dict[str, int]]:
     """Edge weights over ``keywords`` (a ``Corpus.keywords(...)``-shaped frame).
 
     Args:
@@ -90,23 +146,33 @@ def _cooccurrence_edge_weights(
             be eligible to form an edge at all.
 
     Returns:
-        See :func:`_edge_weights`.
+        ``(edge_weights, frequency)`` -- see :func:`_edge_weights` for the
+        first; ``frequency`` is ``term_norm -> record count`` for every
+        eligible (``count >= min_occurrence``) term, the node-size figure 5
+        needs (ADR 0025 Decision 2) and exactly the same eligibility test
+        that decided which terms could form an edge at all -- computed once,
+        not re-derived by a figure.
     """
     if keywords.height == 0:
-        return {}
+        return {}, {}
     term_counts = (
         keywords.select(["record_id", "term_norm"])
         .unique()
         .group_by("term_norm")
         .agg(pl.len().alias("count"))
     )
-    eligible = frozenset(
-        term_counts.filter(pl.col("count") >= min_occurrence).get_column("term_norm").to_list()
+    eligible_counts = term_counts.filter(pl.col("count") >= min_occurrence)
+    frequency = dict(
+        zip(
+            eligible_counts.get_column("term_norm").to_list(),
+            eligible_counts.get_column("count").to_list(),
+            strict=True,
+        )
     )
-    if not eligible:
-        return {}
+    if not frequency:
+        return {}, {}
     per_record = (
-        keywords.filter(pl.col("term_norm").is_in(eligible))
+        keywords.filter(pl.col("term_norm").is_in(sorted(frequency)))
         .select(["record_id", "term_norm"])
         .unique()
         .group_by("record_id")
@@ -119,10 +185,12 @@ def _cooccurrence_edge_weights(
             strict=True,
         )
     )
-    return _edge_weights(memberships)
+    return _edge_weights(memberships), frequency
 
 
-def _author_edge_weights(authors: pl.DataFrame, min_occurrence: int) -> dict[tuple[str, str], int]:
+def _author_edge_weights(
+    authors: pl.DataFrame, min_occurrence: int
+) -> tuple[dict[tuple[str, str], int], dict[str, int]]:
     """Edge weights over ``authors`` (a ``Corpus.authors(...)``-shaped frame).
 
     Args:
@@ -131,23 +199,29 @@ def _author_edge_weights(authors: pl.DataFrame, min_occurrence: int) -> dict[tup
             to be eligible to form an edge at all.
 
     Returns:
-        See :func:`_edge_weights`; nodes are ``author_id`` values.
+        ``(edge_weights, frequency)`` -- see :func:`_cooccurrence_edge_weights`;
+        nodes are ``author_id`` values.
     """
     if authors.height == 0:
-        return {}
+        return {}, {}
     author_counts = (
         authors.select(["record_id", "author_id"])
         .unique()
         .group_by("author_id")
         .agg(pl.len().alias("count"))
     )
-    eligible = frozenset(
-        author_counts.filter(pl.col("count") >= min_occurrence).get_column("author_id").to_list()
+    eligible_counts = author_counts.filter(pl.col("count") >= min_occurrence)
+    frequency = dict(
+        zip(
+            eligible_counts.get_column("author_id").to_list(),
+            eligible_counts.get_column("count").to_list(),
+            strict=True,
+        )
     )
-    if not eligible:
-        return {}
+    if not frequency:
+        return {}, {}
     per_record = (
-        authors.filter(pl.col("author_id").is_in(eligible))
+        authors.filter(pl.col("author_id").is_in(sorted(frequency)))
         .select(["record_id", "author_id"])
         .unique()
         .group_by("record_id")
@@ -160,7 +234,7 @@ def _author_edge_weights(authors: pl.DataFrame, min_occurrence: int) -> dict[tup
             strict=True,
         )
     )
-    return _edge_weights(memberships)
+    return _edge_weights(memberships), frequency
 
 
 def _label_communities(
@@ -221,6 +295,115 @@ def _edges_to_frame(
     ).with_columns(pl.col("weight").cast(pl.Int64))
 
 
+def _drawn_node_ids(edges: pl.DataFrame) -> list[str]:
+    """Every node id appearing in ``edges``, sorted -- the drawn subgraph's node set.
+
+    Args:
+        edges: A :func:`_edges_to_frame`-shaped, already ``top_n``-truncated
+            edge frame.
+
+    Returns:
+        The sorted union of ``node_a`` and ``node_b``. Empty for an empty
+        ``edges``.
+    """
+    if edges.height == 0:
+        return []
+    return sorted(
+        set(edges.get_column("node_a").to_list()) | set(edges.get_column("node_b").to_list())
+    )
+
+
+def _nodes_to_frame(
+    edges: pl.DataFrame,
+    labels: Mapping[str, str],
+    frequency: Mapping[str, int],
+    communities: Mapping[str, int],
+) -> pl.DataFrame:
+    """Node rows for exactly the drawn subgraph (ADR 0025 Decision 2).
+
+    Args:
+        edges: The already ``top_n``-truncated edge frame -- what actually
+            gets drawn, so a node row exists only for a node with a
+            surviving edge (see :func:`_drawn_node_ids`).
+        labels: ``node_id -> display label``.
+        frequency: ``node_id -> record count`` for every *eligible* node
+            (a superset of the drawn set) -- see
+            :func:`_cooccurrence_edge_weights`/:func:`_author_edge_weights`.
+        communities: ``node_id -> community_id`` for every node the
+            (untruncated) graph has -- see :func:`_label_communities`.
+
+    Returns:
+        ``row_kind="node"`` rows only, sorted by ``frequency`` descending
+        then ``id`` ascending (a total order), one per drawn node. Also
+        carries ``cluster_size`` -- how many *drawn* nodes share that node's
+        community -- computed here rather than by a figure (ADR 0025
+        Decision 4's "top-3 by size plus Other" colour rule needs it, and a
+        figure counting cluster membership itself is exactly the
+        arithmetic ``viz/figures.py``'s AST scan exists to forbid). Empty
+        (``_EMPTY_GRAPH_SCHEMA``-shaped) when ``edges`` is empty.
+    """
+    node_ids = _drawn_node_ids(edges)
+    if not node_ids:
+        return pl.DataFrame(schema=_EMPTY_GRAPH_SCHEMA)
+    cluster_of = {node_id: communities.get(node_id, -1) for node_id in node_ids}
+    cluster_size: dict[int, int] = {}
+    for cluster_id in cluster_of.values():
+        cluster_size[cluster_id] = cluster_size.get(cluster_id, 0) + 1
+    rows = sorted(
+        (
+            (
+                "node",
+                node_id,
+                labels.get(node_id, node_id),
+                frequency.get(node_id, 0),
+                cluster_of[node_id],
+                cluster_size[cluster_of[node_id]],
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            for node_id in node_ids
+        ),
+        key=lambda row: (-row[3], row[1]),
+    )
+    return pl.DataFrame(rows, schema=_EMPTY_GRAPH_SCHEMA, orient="row")
+
+
+def _graph_frame(
+    edges: pl.DataFrame,
+    labels: Mapping[str, str],
+    frequency: Mapping[str, int],
+    communities: Mapping[str, int],
+) -> pl.DataFrame:
+    """The long-format ``data`` frame both public network functions return.
+
+    Args:
+        edges: See :func:`_nodes_to_frame`.
+        labels: See :func:`_nodes_to_frame`.
+        frequency: See :func:`_nodes_to_frame`.
+        communities: See :func:`_nodes_to_frame`.
+
+    Returns:
+        Node rows (see :func:`_nodes_to_frame`) followed by edge rows,
+        every column of :data:`_GRAPH_COLUMNS` present on every row (``null``
+        where the row's ``row_kind`` does not apply) -- a fixed, total
+        column order, independent of however :meth:`polars.concat` would
+        otherwise order a diagonal concat.
+    """
+    nodes = _nodes_to_frame(edges, labels, frequency, communities)
+    edge_rows = edges.with_columns(
+        pl.lit("edge").alias("row_kind"),
+        pl.lit(None, dtype=pl.Utf8).alias("id"),
+        pl.lit(None, dtype=pl.Utf8).alias("label"),
+        pl.lit(None, dtype=pl.Int64).alias("frequency"),
+        pl.lit(None, dtype=pl.Int64).alias("cluster"),
+        pl.lit(None, dtype=pl.Int64).alias("cluster_size"),
+    )
+    return pl.concat([nodes, edge_rows.select(list(_GRAPH_COLUMNS))], how="vertical")
+
+
 def keyword_cooccurrence_network(
     corpus: Corpus,
     *,
@@ -249,9 +432,13 @@ def keyword_cooccurrence_network(
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
-        ``data`` is the edge list (see :func:`_edges_to_frame`) and whose
-        ``params`` also carries ``"communities"``: ``node_id -> community_id``
-        for every node in the (untruncated) graph -- see
+        ``data`` is long-format with a ``row_kind`` column (ADR 0025
+        Decision 2; see this module's docstring): a ``"node"`` row per
+        drawn keyword (``id``/``label`` the term, ``frequency`` its record
+        count, ``cluster`` its community) followed by an ``"edge"`` row per
+        surviving co-occurrence (see :func:`_edges_to_frame`). ``params``
+        also carries ``"communities"``: ``node_id -> community_id`` for
+        every node in the (untruncated) graph -- see
         :func:`_label_communities`.
     """
     records = corpus.records(stage)
@@ -260,10 +447,11 @@ def keyword_cooccurrence_network(
     if stopwords:
         keywords = keywords.filter(~pl.col("term_norm").is_in(sorted(stopwords)))
 
-    edge_weights = _cooccurrence_edge_weights(keywords, min_occurrence)
+    edge_weights, frequency = _cooccurrence_edge_weights(keywords, min_occurrence)
     communities = _label_communities(edge_weights, resolution=resolution, seed=seed)
     labels = {node: node for node in communities}
-    data = _edges_to_frame(edge_weights, labels, top_n=top_n)
+    edges = _edges_to_frame(edge_weights, labels, top_n=top_n)
+    data = _graph_frame(edges, labels, frequency, communities)
 
     params: dict[str, Any] = {
         "kind": kind,
@@ -299,13 +487,16 @@ def coauthorship_network(
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
-        ``data`` is the edge list (node ids are Scopus ``author_id``
-        values, labels are surnames) and whose ``params`` also carries
-        ``"communities"``.
+        ``data`` is long-format with a ``row_kind`` column (ADR 0025
+        Decision 2; see this module's docstring): a ``"node"`` row per drawn
+        author (node ids are Scopus ``author_id`` values, ``label`` is the
+        surname, ``frequency`` the author's record count, ``cluster`` their
+        community) followed by an ``"edge"`` row per surviving
+        co-authorship. ``params`` also carries ``"communities"``.
     """
     records = corpus.records(stage)
     authors = corpus.authors(stage)
-    edge_weights = _author_edge_weights(authors, min_occurrence)
+    edge_weights, frequency = _author_edge_weights(authors, min_occurrence)
     communities = _label_communities(edge_weights, resolution=resolution, seed=seed)
     labels = (
         dict(
@@ -318,7 +509,8 @@ def coauthorship_network(
         if authors.height
         else {}
     )
-    data = _edges_to_frame(edge_weights, labels, top_n=top_n)
+    edges = _edges_to_frame(edge_weights, labels, top_n=top_n)
+    data = _graph_frame(edges, labels, frequency, communities)
 
     params: dict[str, Any] = {
         "min_occurrence": min_occurrence,
@@ -352,9 +544,22 @@ def _export_vosviewer(result: AnalysisResult, directory: Path) -> tuple[Path, Pa
     communities_raw = result.params.get("communities", {})
     communities: dict[str, int] = communities_raw if isinstance(communities_raw, dict) else {}
 
+    # `data` is long-format since ADR 0025 Decision 2: `row_kind == "edge"`
+    # rows carry the columns this export reads (`node_a`/`node_b`/`weight`);
+    # `row_kind == "node"` rows carry `null` there and would corrupt every
+    # sum below if not excluded first. The export's own node weight is
+    # still derived from summed edge weight, not `data`'s `frequency`
+    # column -- see this function's docstring update below -- so this
+    # format is unchanged by the schema change; only its input is filtered.
+    edges = (
+        result.data.filter(pl.col("row_kind") == "edge")
+        if "row_kind" in result.data.columns
+        else result.data
+    )
+
     node_labels: dict[str, str] = {}
     node_weight: dict[str, int] = {}
-    for row in result.data.iter_rows(named=True):
+    for row in edges.iter_rows(named=True):
         node_labels.setdefault(row["node_a"], row["node_a_label"])
         node_labels.setdefault(row["node_b"], row["node_b_label"])
         node_weight[row["node_a"]] = node_weight.get(row["node_a"], 0) + row["weight"]
@@ -380,7 +585,7 @@ def _export_vosviewer(result: AnalysisResult, directory: Path) -> tuple[Path, Pa
     network_path = directory / "network.txt"
     with network_path.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write("id1\tid2\tweight\n")
-        for row in result.data.sort(["node_a", "node_b"]).iter_rows(named=True):
+        for row in edges.sort(["node_a", "node_b"]).iter_rows(named=True):
             handle.write(
                 f"{node_index[row['node_a']]}\t{node_index[row['node_b']]}\t{row['weight']}\n"
             )

@@ -1,0 +1,6 @@
+n = 2 (raw); corpus as at 2025-06-15; first_incomplete_year=2025. criteria version(s): 1.0.0.
+n = 2 (raw); corpus as at 2025-06-15; method=full. criteria version(s): 1.0.0.
+n = 2 (raw); corpus as at 2025-06-15; top_n=20. criteria version(s): 1.0.0.
+n = 2 (raw); corpus as at 2025-06-15; kind=author, min_occurrence=1. criteria version(s): 1.0.0.
+n = 2 (raw); corpus as at 2025-06-15; kind=author, min_occurrence=1, resolution=1, seed=0, top_n=50. criteria version(s): 1.0.0.
+n = 2 (raw); corpus as at 2025-06-15; citations as at 2025-06-15; top_n=20. criteria version(s): 1.0.0.
