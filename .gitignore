@@ -117,3 +117,9 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# FUSE artefacts from the NTFS mount this project's working copy lives on.
+# When a file is rewritten while another process still holds it open, the
+# driver leaves a `.fuse_hidden*` copy beside it -- and `git add -A` picks
+# it up. One reached a release commit as a stale duplicate of a test file.
+.fuse_hidden*
