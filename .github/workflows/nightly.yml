@@ -98,9 +98,32 @@ jobs:
     name: live
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The governance tests in `tests/live/test_github_governance.py` assert
+    # that GitHub *refuses* privileged operations -- a direct push to a
+    # protected `main`, a merge with a red required check. To assert a
+    # refusal, the token has to be able to attempt the thing being refused,
+    # so this job needs write scope where the other jobs need none.
+    #
+    # Scoped to this job rather than the workflow, and using the built-in
+    # `GITHUB_TOKEN` rather than a PAT. Two properties make that bounded:
+    # `GITHUB_TOKEN` cannot push to a branch protected with
+    # `enforce_admins` -- which is the very thing the test asserts -- and it
+    # expires with the run, so there is no long-lived credential to rotate
+    # or leak. A PAT broad enough to pass these tests would be strictly
+    # worse on both counts.
+    permissions:
+      contents: write # attempt the direct push that must bounce
+      pull-requests: write # open the throwaway PR whose red check must block it
+      actions: read # `gh run list` for the docs/Pages deployment check
+      deployments: read # `gh api` for the `github-pages` deployment
     env:
       SCOPUS_API_KEY: ${{ secrets.SCOPUS_API_KEY }}
       ELSEVIER_SD_API_KEY: ${{ secrets.ELSEVIER_SD_API_KEY }}
+      # `actions/checkout` persists git credentials, so `git fetch`/`push`
+      # already worked -- but the `gh` CLI reads `GH_TOKEN` and got nothing,
+      # failing with "To use GitHub CLI in a GitHub Actions workflow, set
+      # the GH_TOKEN environment variable". Two tests died on that alone.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
