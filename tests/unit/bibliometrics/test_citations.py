@@ -9,7 +9,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from prismabib.bibliometrics.citations import _h_index, citation_statistics, citations_by_year
+from prismabib.bibliometrics.citations import (
+    _h_index,
+    citation_distribution,
+    citation_statistics,
+    citations_by_year,
+)
 from prismabib.stage import PrismaStage
 from tests.bibliometrics_helpers import (
     BibCorpusSpec,
@@ -231,3 +236,47 @@ def test_citations_by_year__single_record__one_row(tmp_path: Path) -> None:
     result = citations_by_year(corpus, stage=PrismaStage.RAW)
 
     assert result.data.to_dicts() == [{"year": 2022, "mean_citations": 7.0, "records": 1}]
+
+
+@pytest.mark.integration
+def test_citation_distribution__sorted_descending__with_titles(tmp_path: Path) -> None:
+    records = [
+        BibRecordSpec(number=1, cited_by_count=5),
+        BibRecordSpec(number=2, cited_by_count=20),
+        BibRecordSpec(number=3, cited_by_count=5),
+    ]
+    project = build_bib_project(tmp_path, BibCorpusSpec(records=records))
+    corpus = open_corpus(project)
+
+    result = citation_distribution(corpus, stage=PrismaStage.RAW, top_n=2)
+
+    assert result.data.to_dicts() == [
+        {
+            "record_id": "scopus:2-s2.0-800000000002",
+            "title": "Synthetic Record 2",
+            "cited_by_count": 20,
+        },
+        {
+            "record_id": "scopus:2-s2.0-800000000001",
+            "title": "Synthetic Record 1",
+            "cited_by_count": 5,
+        },
+        {
+            "record_id": "scopus:2-s2.0-800000000003",
+            "title": "Synthetic Record 3",
+            "cited_by_count": 5,
+        },
+    ]
+    assert result.params["top_n"] == 2
+    assert "top_n=2" in result.caption()
+
+
+@pytest.mark.integration
+def test_citation_distribution__empty_corpus__empty_frame(tmp_path: Path) -> None:
+    project = build_bib_project(tmp_path, BibCorpusSpec(records=[]))
+    corpus = open_corpus(project)
+
+    result = citation_distribution(corpus, stage=PrismaStage.INCLUDED)
+
+    assert result.data.height == 0
+    assert result.data.schema.names() == ["record_id", "title", "cited_by_count"]

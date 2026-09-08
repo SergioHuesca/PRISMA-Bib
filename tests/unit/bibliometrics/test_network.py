@@ -1,9 +1,18 @@
-"""Keyword co-occurrence and co-authorship networks (BUILD_PLAN Stage 7, ADR 0022 Decision 7)."""
+"""Keyword co-occurrence and co-authorship networks (BUILD_PLAN Stage 7, ADR 0022 Decision 7).
+
+ADR 0025 Decision 2: ``data`` is long-format with a ``row_kind`` column
+(``"node"``/``"edge"``), so most assertions here go through
+:func:`_edge_dicts`/:func:`_node_dicts`, which project back down to the
+edge-only/node-only shape the pre-ADR-0025 tests asserted on -- keeping the
+hand-counted fixtures' arithmetic legible while still exercising the real
+schema.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from prismabib.bibliometrics.network import (
@@ -20,6 +29,25 @@ from tests.bibliometrics_helpers import (
     include_everything,
     open_corpus,
 )
+
+
+def _edge_dicts(data: pl.DataFrame) -> list[dict[str, object]]:
+    """``data``'s edge rows, projected down to the five edge columns."""
+    return (
+        data.filter(pl.col("row_kind") == "edge")
+        .select(["node_a", "node_a_label", "node_b", "node_b_label", "weight"])
+        .to_dicts()
+    )
+
+
+def _node_dicts(data: pl.DataFrame) -> list[dict[str, object]]:
+    """``data``'s node rows, projected down to the five node columns."""
+    return (
+        data.filter(pl.col("row_kind") == "node")
+        .select(["id", "label", "frequency", "cluster", "cluster_size"])
+        .to_dicts()
+    )
+
 
 #: Six records, hand-countable by a reader. Keyword co-occurrence, one term
 #: pair per record where both terms are present:
@@ -49,12 +77,38 @@ def test_network__cooccurrence__edge_weight_equals_manual_count(tmp_path: Path) 
 
     result = keyword_cooccurrence_network(corpus, stage=PrismaStage.RAW, min_occurrence=1)
 
-    weights = {(row["node_a"], row["node_b"]): row["weight"] for row in result.data.to_dicts()}
+    weights = {(row["node_a"], row["node_b"]): row["weight"] for row in _edge_dicts(result.data)}
     assert weights == {
         ("baseball", "vision"): 3,
         ("baseball", "robotics"): 2,
         ("robotics", "vision"): 2,
     }
+
+
+@pytest.mark.integration
+def test_network__cooccurrence__node_rows_carry_frequency_and_cluster(tmp_path: Path) -> None:
+    """ADR 0025 Decision 2: node rows exist for exactly the drawn (edge-bearing) node set."""
+    project = build_bib_project(tmp_path, BibCorpusSpec(records=_SIX_RECORD_KEYWORD_FIXTURE))
+    corpus = open_corpus(project)
+
+    result = keyword_cooccurrence_network(corpus, stage=PrismaStage.RAW, min_occurrence=1)
+
+    nodes = {row["id"]: row for row in _node_dicts(result.data)}
+    assert set(nodes) == {"baseball", "vision", "robotics"}
+    # baseball: r1, r2, r3, r5, r6 = 5 records; vision: r1, r2, r4, r6 = 4;
+    # robotics: r3, r4, r6 = 3.
+    assert nodes["baseball"]["frequency"] == 5
+    assert nodes["vision"]["frequency"] == 4
+    assert nodes["robotics"]["frequency"] == 3
+    for row in nodes.values():
+        assert row["cluster"] == result.params["communities"][row["id"]]
+    cluster_of = {row["id"]: row["cluster"] for row in nodes.values()}
+    expected_size = {
+        cluster_id: sum(1 for value in cluster_of.values() if value == cluster_id)
+        for cluster_id in set(cluster_of.values())
+    }
+    for row in nodes.values():
+        assert row["cluster_size"] == expected_size[row["cluster"]]
 
 
 @pytest.mark.integration
@@ -70,10 +124,10 @@ def test_network__cooccurrence__min_occurrence_excludes_a_rare_term(tmp_path: Pa
 
     result = keyword_cooccurrence_network(corpus, stage=PrismaStage.RAW, min_occurrence=2)
 
-    terms = {row["node_a"] for row in result.data.to_dicts()} | {
-        row["node_b"] for row in result.data.to_dicts()
-    }
+    edges = _edge_dicts(result.data)
+    terms = {row["node_a"] for row in edges} | {row["node_b"] for row in edges}
     assert "rare" not in terms
+    assert "rare" not in {row["id"] for row in _node_dicts(result.data)}
     assert result.params["min_occurrence"] == 2
 
 
@@ -127,7 +181,7 @@ def test_coauthorship__hand_counted_shared_papers__matches(tmp_path: Path) -> No
 
     result = coauthorship_network(corpus, stage=PrismaStage.RAW, min_occurrence=1)
 
-    assert result.data.to_dicts() == [
+    assert _edge_dicts(result.data) == [
         {
             "node_a": "A1",
             "node_a_label": "Alpha",
@@ -164,7 +218,7 @@ def test_coauthorship__default_included_stage__hand_computed_value_matches(tmp_p
 
     result = coauthorship_network(corpus, min_occurrence=1)  # default stage=PrismaStage.INCLUDED
 
-    assert result.data.to_dicts() == [
+    assert _edge_dicts(result.data) == [
         {
             "node_a": "A1",
             "node_a_label": "Alpha",

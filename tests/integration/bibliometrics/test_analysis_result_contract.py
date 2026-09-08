@@ -70,7 +70,17 @@ _FUNCTION_IDS = [name for name, _ in _FUNCTIONS]
 #: Pinned exactly, not as a floor -- see
 #: `test_all_analyses__introspective_sweep__enumerates_every_analysis_function`.
 #: Adding an analysis is expected to change this number in the same commit.
-_EXPECTED_ANALYSIS_FUNCTIONS = 12
+# 13 since Stage 9: `citations.citation_distribution` was added because
+# figure 6 needs per-record values and every existing citation function
+# returns an aggregate (ADR 0025 Decision 2's fourth engine gap, found
+# during implementation rather than in the design).
+#
+# `taxonomy.analysis`'s two `AnalysisResult` functions are deliberately NOT
+# in this sweep: it assumes `function(corpus)` is a complete call, and they
+# take a coding result, a schema, a dimension id and a counting unit. They
+# need their own sweep rather than a widened assumption here -- tracked as
+# a follow-up rather than half-done.
+_EXPECTED_ANALYSIS_FUNCTIONS = 13
 
 #: `cagr` is the one function that legitimately raises on an empty corpus
 #: (ADR 0022 Decisions 3 and 10), so the empty-corpus sweep excludes it.

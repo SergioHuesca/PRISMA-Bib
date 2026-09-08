@@ -225,6 +225,16 @@ ignore_missing_imports = true
 module = ["networkx", "networkx.*"]
 ignore_missing_imports = true
 
+# Plotly ships no `py.typed` marker (and no inline stubs), and `plotly-stubs` is not
+# in §2.4's closed dependency list -- the same judgement as pandas/networkx above,
+# scoped to `viz/figures.py`/`viz/dashboard.py`, the only modules that import it.
+# Every Plotly figure returned from `viz/figures.py` is immediately paired with a
+# fully-typed Matplotlib figure in the same `FigurePair` tuple, so this costs no
+# real safety in the code a caller actually type-checks against.
+[[tool.mypy.overrides]]
+module = ["plotly", "plotly.*"]
+ignore_missing_imports = true
+
 # Panel ships no type information for its widget constructors, so every
 # `pn.widgets.Button(...)` is a call to an untyped function under --strict.
 # Scoped to `panel.*` alone: the screening view's own signatures, view model and
@@ -244,6 +254,13 @@ ignore_missing_imports = true
 # the way the rest of the codebase is.
 [[tool.mypy.overrides]]
 module = ["prismabib.screening.ui"]
+disallow_untyped_calls = false
+
+# `viz/dashboard.py` constructs Panel widgets the same way `screening/ui.py` does --
+# see that override above for why `disallow_untyped_calls` has to be exempted at the
+# calling module rather than at `panel` itself.
+[[tool.mypy.overrides]]
+module = ["prismabib.viz.dashboard"]
 disallow_untyped_calls = false
 
 [tool.coverage.run]

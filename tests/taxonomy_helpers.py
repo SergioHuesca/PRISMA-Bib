@@ -40,12 +40,17 @@ class TaxonomyRecordSpec:
             field text), or ``None`` to omit it entirely.
         author_keywords: Raw ``authkeywords`` terms, ``" | "``-joined on
             write -- the coder's ``author_keywords`` field text.
+        year: ``prism:coverDate``'s year -- added for
+            ``tests/unit/taxonomy/test_analysis.py``'s evolution-over-time
+            fixtures, which (unlike the rest of this stage's suite) need
+            control over *when* a record was published, not only its text.
     """
 
     number: int
     title: str = "A Synthetic Study"
     abstract: str | None = "A synthetic abstract."
     author_keywords: tuple[str, ...] = ()
+    year: int = 2020
 
     @property
     def eid(self) -> str:
@@ -62,6 +67,7 @@ class TaxonomyRecordSpec:
         return make_entry(
             eid=self.eid,
             title=self.title,
+            cover_date=f"{self.year}-06-01",
             description=self.abstract,
             authkeywords=" | ".join(self.author_keywords) if self.author_keywords else None,
             source_id=f"{4000000 + self.number}",

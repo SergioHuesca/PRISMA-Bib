@@ -109,6 +109,7 @@ nav:
           - "ADR 0022: the AnalysisResult contract and its provenance": architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md
           - "ADR 0023: taxonomy assignments are derived, and overrides replace a dimension": architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md
           - "ADR 0024: one implementation of append-only durability": architecture/adr/0024-one-implementation-of-append-only-durability.md
+          - "ADR 0025: figures render what the engines computed": architecture/adr/0025-figures-render-what-the-engines-computed.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
@@ -120,6 +121,7 @@ nav:
       - Amend Eligibility Criteria: how-to/amend-eligibility-criteria.md
       - Write Taxonomy Rules: how-to/write-taxonomy-rules.md
       - Refresh Citations: how-to/refresh-citations.md
+      - Figure Gallery: how-to/figure-gallery.md
   - Testing: testing.md
   - API Reference: reference/index.md
 
