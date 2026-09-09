@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`report/tables.py::top_cited_table` ran its own citation query, and had already diverged
+  from the engine.** Its SQL carried no PRISMA-stage filter while
+  `bibliometrics.citations.citation_distribution` respects the stage asked for — so on a corpus
+  whose screening has not run, the exported table listed its most-cited records beside a
+  figure 6 whose bar panel had none. Same bundle, same corpus, no error, and nothing to tell a
+  reader which one answered "the most-cited papers in this review".
+
+  It now delegates, at `PrismaStage.RAW` — the function's historical, unfiltered scope,
+  preserved deliberately: the drift being fixed is *two definitions*, not this table's choice of
+  set. Measured on the reference corpus: rows unchanged, values identical, no golden moved.
+  ([ADR 0022](docs/architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md)
+  Decision 5's principle, applied to the one citation number its original re-pointing missed.)
+
+### Changed
+
+- **`citation_distribution().data` gains a `year` column.** Additive, and it exists so the
+  top-cited table can render the year without a second query over the same rows — which is how
+  the two definitions came apart in the first place. A record with no year reports `0` rather
+  than null, the decision `report/numbers.py` already takes for `corpus.year_min`/`year_max`.
+
 ## [0.21.0] — 2026-09-08
 
 ### Added
