@@ -54,6 +54,7 @@ def test_conftest__id_factory__is_monotonic_and_seeded() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.acceptance("S11-AC2")
 def test_markers__acceptance_report__lists_unclaimed_criteria(pytester: pytest.Pytester) -> None:
     pytester.makeconftest(
         f"""

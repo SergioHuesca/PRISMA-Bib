@@ -122,3 +122,17 @@ S09-AC2 = "Every figure's caption is auto-generated and contains n, criteria ver
 S09-AC3 = "Static export at 300 dpi produces legible labels at single-column journal width."
 S09-AC4 = "Dashboard responds to a filter change in < 1 s on the reference corpus."
 S09-AC5 = "Dark and light rendering both legible."
+
+# --- Stage 11 -- Validation, reproducibility and release (BUILD_PLAN.md) ---
+#
+# AC1's full form is "a clean clone taken from GitHub on a *different
+# machine* reproduces numbers.json". The claiming test asserts the
+# same-process half; the cross-machine half is the `reproducibility` CI job
+# (two runners, Linux and Windows, byte-compared) -- see ADR 0027 Decision 3
+# for why two GitHub runners satisfy that better than two of the
+# maintainer's own machines would.
+
+S11-AC1 = "A clean clone reproduces numbers.json byte-for-byte, modulo an explicit reviewed allowlist of volatile keys."
+S11-AC2 = "Every prior stage's acceptance criteria still pass: the full suite reports zero unclaimed criteria."
+S11-AC3 = "Every public symbol appears in the API reference; docs build strict with no orphan pages."
+S11-AC4 = "Every version tag on the remote has a matching GitHub Release."

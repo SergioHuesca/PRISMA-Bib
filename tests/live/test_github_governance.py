@@ -24,6 +24,7 @@ reports of GitHub-side state that has not happened yet.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -489,4 +490,41 @@ def test_clean_clone__nested_selection__never_re_enables_live_tests() -> None:
 
     assert '"-m", "not live and not benchmark"' in source, (
         "the nested clean-clone suite must exclude `live`, or it runs itself"
+    )
+
+
+@pytest.mark.live
+@pytest.mark.acceptance("S11-AC4")
+def test_every_version_tag__has_a_matching_github_release() -> None:
+    """Every `vX.Y.Z` tag must be published as a Release (BUILD_PLAN Stage 11).
+
+    A tag with no Release means a stage was merged or tagged outside the
+    §3.6 workflow, which must be reconciled before `v1.0.0` -- the tag is
+    what a `manifest.json` SHA is expected to resolve against, and a reader
+    following one to an unpublished tag finds nothing.
+
+    Asserted against the *remote*, not against local tags: a local tag
+    proves only that this machine has one. `git ls-remote --tags` is the
+    canonical list, which is the same reasoning `S00-AC2` applies to clones.
+    """
+    remote_tags = _run("git", "ls-remote", "--tags", "origin")
+    assert remote_tags.returncode == 0, remote_tags.stderr
+
+    tags = sorted(
+        {
+            line.rsplit("refs/tags/", maxsplit=1)[-1].removesuffix("^{}")
+            for line in remote_tags.stdout.splitlines()
+            if "refs/tags/v" in line
+        }
+    )
+    assert tags, "guard the guard: no version tags found on the remote at all"
+
+    published = _run("gh", "release", "list", "--limit", "200", "--json", "tagName")
+    assert published.returncode == 0, published.stderr
+    released = {entry["tagName"] for entry in json.loads(published.stdout)}
+
+    missing = sorted(tag for tag in tags if tag not in released)
+    assert not missing, (
+        f"tags on the remote with no GitHub Release: {missing}. Each means a stage was "
+        "tagged outside the §3.6 workflow; reconcile before v1.0.0."
     )
