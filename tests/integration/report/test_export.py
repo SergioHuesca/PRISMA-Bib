@@ -48,7 +48,16 @@ def test_export__every_figure__has_a_sibling_source_csv(project: Project) -> Non
     """
     result = export_project(project)
 
-    figures = sorted((result.root / "figures").glob("*.svg"))
+    # Every file that is not itself a source CSV, rather than `*.svg`.
+    # Globbing one extension meant a figure written in any other format --
+    # the PNG BUILD_PLAN Stage 10 specifies and ADR 0026 defers -- would
+    # escape S10-AC1 entirely, silently, on the day it was added. The
+    # criterion is about figures, not about SVG.
+    figures = sorted(
+        path
+        for path in (result.root / "figures").iterdir()
+        if path.is_file() and path.suffix != ".csv"
+    )
     assert figures, "the export wrote no figures at all"
     for figure in figures:
         assert figure.with_suffix(".csv").is_file(), f"{figure.name} has no sibling source CSV"
@@ -444,3 +453,53 @@ def test_git_provenance__branch_deleted_upstream__still_reports_true(tmp_path: P
         "documents the staleness limitation; if this starts failing the check became "
         "remote-aware, and the docstring must stop hedging"
     )
+
+
+@pytest.mark.integration
+def test_export__stale_artefact_from_an_earlier_run__does_not_survive(
+    project: Project,
+) -> None:
+    """A table no current code produces must not sit in the bundle looking current.
+
+    Issue #25 §6. Nothing in `exports/` records when each file was written,
+    so a leftover from an older prismabib -- a table since renamed, a figure
+    since removed -- is indistinguishable from the files beside it. Worse,
+    it inherits `manifest.json`'s credibility, which describes the run that
+    just happened.
+
+    The two planted files are the realistic shapes: a renamed table and a
+    figure whose generator was deleted.
+    """
+    export_project(project)
+    stale_table = project.root / "exports" / "tables" / "renamed_since.csv"
+    stale_figure = project.root / "exports" / "figures" / "removed_since.svg"
+    stale_table.write_text("stale,rows\n1,2\n", encoding="utf-8")
+    stale_figure.write_text("<svg/>", encoding="utf-8")
+
+    result = export_project(project)
+
+    assert not stale_table.exists()
+    assert not stale_figure.exists()
+    # ...and the run that removed them still produced its own artefacts, so
+    # the test cannot pass by the export having done nothing at all.
+    assert result.tables and result.figures
+
+
+@pytest.mark.integration
+def test_export__a_researcher_s_own_file_beside_the_bundle__is_left_alone(
+    project: Project,
+) -> None:
+    """Clearing is scoped to what this function writes, not to `exports/`.
+
+    A reviewer may reasonably keep a manuscript or a cover letter next to
+    the generated bundle. Deleting a researcher's own work is not a cost the
+    staleness guarantee is worth, so the sweep covers `figures/` and
+    `tables/` only.
+    """
+    export_project(project)
+    manuscript = project.root / "exports" / "manuscript.md"
+    manuscript.write_text("# Draft\n", encoding="utf-8")
+
+    export_project(project)
+
+    assert manuscript.read_text(encoding="utf-8") == "# Draft\n"

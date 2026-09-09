@@ -110,6 +110,7 @@ nav:
           - "ADR 0023: taxonomy assignments are derived, and overrides replace a dimension": architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md
           - "ADR 0024: one implementation of append-only durability": architecture/adr/0024-one-implementation-of-append-only-durability.md
           - "ADR 0025: figures render what the engines computed": architecture/adr/0025-figures-render-what-the-engines-computed.md
+          - "ADR 0026: figures ship as SVG only": architecture/adr/0026-figures-ship-as-svg-only.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
