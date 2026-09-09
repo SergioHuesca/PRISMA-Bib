@@ -15,7 +15,10 @@ finally `cli.py`, which sits across all of them. Each package's own section rend
 only; its modules follow individually.
 
 **Not yet built** (each arrives with the stage that owns it, and gets a section here then):
-`sources/sciencedirect.py`, `fulltext/`, `taxonomy/`, `bibliometrics/`, `viz/`. `store/schema.sql` never appears here — it is SQL, not a module, and is
+nothing -- every package under `src/prismabib/` now has a section below. This line was
+stale in both directions before Stage 9: it named `fulltext/`, which had had a section
+since Stage 6, while `bibliometrics/`, `taxonomy/` and `viz/` were genuinely missing and
+this sentence was the only record of it. `store/schema.sql` never appears here — it is SQL, not a module, and is
 executed verbatim by `build_store`.
 
 ## prismabib
@@ -421,6 +424,174 @@ PRISMA number — it appends to the log, and `prisma/` folds it.
 ### screening.ui
 
 ::: prismabib.screening.ui
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## bibliometrics
+
+Stage 7: every quantitative finding, computed from the corpus and returned as an
+`AnalysisResult` that carries the parameters which produced it, its provenance, and a
+**generated** caption -- so a figure cannot drift from the number it shows. See
+[ADR 0022](../architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md),
+whose Decision 2 is why a partial publication year is marked wherever it is displayed and
+not only where it is excluded.
+
+::: prismabib.bibliometrics
+    options:
+      show_root_heading: true
+      members: false
+
+### bibliometrics.base
+
+::: prismabib.bibliometrics.base
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.trends
+
+::: prismabib.bibliometrics.trends
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.geography
+
+::: prismabib.bibliometrics.geography
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.venues
+
+::: prismabib.bibliometrics.venues
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.citations
+
+::: prismabib.bibliometrics.citations
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.keywords
+
+::: prismabib.bibliometrics.keywords
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### bibliometrics.network
+
+::: prismabib.bibliometrics.network
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## taxonomy
+
+Stage 8: versioned rule files as data, human overrides as append-only events, and a coverage
+report that states which of the two produced every number. Assignments are *computed*, never
+stored -- a rule file lives in the project's own repository and changes on its own cadence, so
+a Layer 1 table holding them could not be reproduced from Layer 0. See
+[ADR 0023](../architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md)
+and [ADR 0024](../architecture/adr/0024-one-implementation-of-append-only-durability.md).
+
+::: prismabib.taxonomy
+    options:
+      show_root_heading: true
+      members: false
+
+### taxonomy.schema
+
+::: prismabib.taxonomy.schema
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### taxonomy.rules
+
+::: prismabib.taxonomy.rules
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### taxonomy.coder
+
+::: prismabib.taxonomy.coder
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### taxonomy.overrides
+
+::: prismabib.taxonomy.overrides
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### taxonomy.review
+
+::: prismabib.taxonomy.review
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### taxonomy.analysis
+
+::: prismabib.taxonomy.analysis
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+## viz
+
+Stage 9: one validated palette across Plotly and Matplotlib, the nine required figures, and
+the Panel dashboard. **Figure functions compute nothing** -- enforced by an AST scan, because a
+figure that computes is a number with no provenance, no parameters and no caption obligation.
+See [ADR 0025](../architecture/adr/0025-figures-render-what-the-engines-computed.md).
+
+::: prismabib.viz
+    options:
+      show_root_heading: true
+      members: false
+
+### viz.theme
+
+::: prismabib.viz.theme
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### viz.figures
+
+::: prismabib.viz.figures
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
+### viz.dashboard
+
+::: prismabib.viz.dashboard
     options:
       show_root_heading: true
       show_source: true
