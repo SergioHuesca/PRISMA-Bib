@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-04. Amends [ADR 0002](0002-append-only-decision-log.md), which describes
+Accepted — 2026-09-04. Amends [ADR 0002](0002-append-only-decision-log.md), which describes
 `DecisionLog` as *the* implementation of this project's append-only guarantees. It is now one of
 two users of a shared implementation.
 

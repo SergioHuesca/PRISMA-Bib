@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-04. Implements BUILD_PLAN Stage 7. Amends the frozen Stage 3 `Corpus`
+Accepted — 2026-09-04. Implements BUILD_PLAN Stage 7. Amends the frozen Stage 3 `Corpus`
 contract (BUILD_PLAN lines 891-896) by adding three read accessors — see Decision 9 — which is
 a §2.6 deviation and the reason this ADR exists before any code.
 

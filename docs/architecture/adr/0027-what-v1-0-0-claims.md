@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-09. Records three deviations from BUILD_PLAN Stage 11, taken together because
+Accepted — 2026-09-09. Records three deviations from BUILD_PLAN Stage 11, taken together because
 they are one decision: what the `v1.0.0` release asserts about this project.
 
 §2.6 requires an ADR for each. Taking them separately would let a reader assemble a claim from
