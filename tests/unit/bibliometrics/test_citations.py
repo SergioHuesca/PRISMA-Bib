@@ -254,16 +254,19 @@ def test_citation_distribution__sorted_descending__with_titles(tmp_path: Path) -
         {
             "record_id": "scopus:2-s2.0-800000000002",
             "title": "Synthetic Record 2",
+            "year": 2020,
             "cited_by_count": 20,
         },
         {
             "record_id": "scopus:2-s2.0-800000000001",
             "title": "Synthetic Record 1",
+            "year": 2020,
             "cited_by_count": 5,
         },
         {
             "record_id": "scopus:2-s2.0-800000000003",
             "title": "Synthetic Record 3",
+            "year": 2020,
             "cited_by_count": 5,
         },
     ]
@@ -279,4 +282,4 @@ def test_citation_distribution__empty_corpus__empty_frame(tmp_path: Path) -> Non
     result = citation_distribution(corpus, stage=PrismaStage.INCLUDED)
 
     assert result.data.height == 0
-    assert result.data.schema.names() == ["record_id", "title", "cited_by_count"]
+    assert result.data.schema.names() == ["record_id", "title", "year", "cited_by_count"]

@@ -26,6 +26,7 @@ import io
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from prismabib.bibliometrics.citations import citation_distribution
 from prismabib.bibliometrics.venues import top_venues
 from prismabib.report.numbers import TOP_N
 from prismabib.stage import PrismaStage
@@ -248,24 +249,33 @@ def top_cited_table(connection: duckdb.DuckDBPyConnection) -> Table:
         Record id, year, title and citation count. The title is included
         because a table of ids is not something a reader can check.
     """
-    rows = connection.execute(
-        """
-        SELECT r.record_id, COALESCE(r.year, 0), COALESCE(r.title, ''), s.cited_by_count
-        FROM records r JOIN citation_snapshots s ON r.record_id = s.record_id
-        WHERE s.retrieved_at = (
-            SELECT max(retrieved_at) FROM citation_snapshots t WHERE t.record_id = r.record_id
-        )
-        ORDER BY s.cited_by_count DESC, r.record_id ASC
-        LIMIT ?
-        """,
-        [TOP_N],
-    ).fetchall()
+    # ADR 0022 Decision 5's principle, applied to the one citation number its
+    # original re-pointing missed: Stage 10's numbers come from the
+    # bibliometrics engine, not from a second query over the same rows.
+    #
+    # The two had already diverged. This query had no PRISMA-stage filter at
+    # all, while `citation_distribution` respects the stage a caller asks for
+    # -- so on a corpus whose screening has not run, the exported table
+    # listed ten most-cited records beside a figure 6 whose bar panel was
+    # empty. Same bundle, same corpus, no error, and no way for a reader to
+    # tell which one answers "the most-cited papers in this review".
+    #
+    # `PrismaStage.RAW` preserves this function's historical, unfiltered
+    # scope exactly, the way the venue re-pointing did -- the drift being
+    # fixed is *two definitions*, not this table's choice of set.
+    corpus = Corpus(connection)
+    result = citation_distribution(corpus, stage=PrismaStage.RAW, top_n=TOP_N)
     return Table(
         slug="top_cited",
         caption=f"Top {TOP_N} most-cited records",
         columns=("Record", "Year", "Title", "Cited by"),
+        # `head(TOP_N)` here rather than in the engine: `citation_distribution`
+        # deliberately never truncates `data` to `top_n` (its docstring says
+        # so), because the histogram panel needs every record. Selecting rows
+        # off an already-sorted frame is not a computation.
         rows=tuple(
-            (record_id, int(year), title, int(cited)) for record_id, year, title, cited in rows
+            (row["record_id"], int(row["year"]), row["title"], int(row["cited_by_count"]))
+            for row in result.data.head(TOP_N).to_dicts()
         ),
     )
 

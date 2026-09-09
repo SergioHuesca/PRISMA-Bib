@@ -24,9 +24,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from prismabib.bibliometrics.citations import citation_distribution
 from prismabib.report.numbers import numbers_map
-from prismabib.report.tables import build_tables, to_csv
+from prismabib.report.tables import TOP_N, build_tables, to_csv, top_cited_table
+from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
+from prismabib.store.load import Corpus
 from tests.prisma_helpers import CorpusSpec, CriteriaSpec, RecordSpec, build_project
 
 if TYPE_CHECKING:
@@ -134,3 +137,41 @@ def test_bundle__venue_split_across_types__is_one_venue_in_both_places(
     names = [row[0] for row in rows]
     assert len(names) == len(set(names)), f"a venue is split across table rows: {names}"
     assert int(rows[0][2]) == numbers["venues.top1.count"]
+
+
+@pytest.mark.integration
+def test_top_cited_table__agrees_with_the_engine__by_construction(tmp_path: Path) -> None:
+    """One definition of "the most-cited records", not two (ADR 0022 Decision 5).
+
+    This table used to run its own SQL, and it had already diverged from
+    `citation_distribution`: the query carried no PRISMA-stage filter while
+    the engine respects the stage asked for. On a corpus whose screening has
+    not run, the exported table therefore listed records beside a figure 6
+    whose bar panel was empty -- same bundle, same corpus, no error, and
+    nothing to tell a reader which one answered the question.
+
+    Asserted against the engine rather than against a fixed list of records.
+    A literal expectation would pass while both drifted together, which is
+    precisely what a golden cannot see -- and this file exists because one
+    bundle must have one answer.
+    """
+    project = build_project(tmp_path, CORPUS, slug="topcited")
+    connection = connect(project, read_only=True)
+    try:
+        table = top_cited_table(connection)
+    finally:
+        connection.close()
+
+    engine_rows = (
+        citation_distribution(
+            Corpus.open(project, read_only=True), stage=PrismaStage.RAW, top_n=TOP_N
+        )
+        .data.head(TOP_N)
+        .to_dicts()
+    )
+
+    assert table.rows == tuple(
+        (row["record_id"], int(row["year"]), row["title"], int(row["cited_by_count"]))
+        for row in engine_rows
+    )
+    assert table.rows, "guard the guard: an empty table would satisfy the equality vacuously"
