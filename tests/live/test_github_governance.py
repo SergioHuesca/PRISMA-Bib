@@ -171,8 +171,26 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
         contributor_env = {
             key: value for key, value in os.environ.items() if key not in _CREDENTIAL_ENV_VARS
         }
+        # `-m "not benchmark"`, because a timing assertion measured *inside*
+        # a nested pytest process on an already-busy runner measures
+        # contention, not the code. The dedicated `benchmark` job exists to
+        # run these in isolation and passed on the same run this failed:
+        #
+        #   benchmark job          : success
+        #   nested inside this one : "the slowest of 20 decisions took
+        #                             118.4 ms ... over the 100 ms of
+        #                             BUILD_PLAN line 1090"
+        #
+        # No other CI job runs benchmarks bare either -- `full` uses
+        # `-m "not live and not e2e and not benchmark"` -- so this was the
+        # only place a performance budget was asserted under two concurrent
+        # pytest sessions.
+        #
+        # Everything S00-AC2 actually claims is preserved: a clone taken
+        # from GitHub installs and passes. What is dropped is a second,
+        # worse-conditioned measurement of a budget already measured well.
         suite = subprocess.run(
-            ["uv", "run", "pytest"],
+            ["uv", "run", "pytest", "-m", "not benchmark"],
             cwd=target,
             capture_output=True,
             text=True,
