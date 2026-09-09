@@ -111,10 +111,12 @@ nav:
           - "ADR 0024: one implementation of append-only durability": architecture/adr/0024-one-implementation-of-append-only-durability.md
           - "ADR 0025: figures render what the engines computed": architecture/adr/0025-figures-render-what-the-engines-computed.md
           - "ADR 0026: figures ship as SVG only": architecture/adr/0026-figures-ship-as-svg-only.md
+          - "ADR 0027: what v1.0.0 claims": architecture/adr/0027-what-v1-0-0-claims.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
       - Limitations: methodology/limitations.md
+      - Validation: methodology/validation.md
   - How To:
       - Run the Demo: how-to/run-the-demo.md
       - Build a Scopus Query: how-to/build-a-query.md
