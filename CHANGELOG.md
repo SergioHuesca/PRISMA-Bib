@@ -5,7 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-09-09
+
+**This release is of the software, not of a completed review.** `prismabib` is
+feature-complete against its build plan, and every number it exports is reproducible from a
+clean clone on a machine that has never seen this project. It does not claim that a
+systematic review has been carried out with it: the reference corpus `Baseball-CVPR` is
+unscreened, so its `included` count is `0` — the absence of a result, not a result.
+[ADR 0027](docs/architecture/adr/0027-what-v1-0-0-claims.md) states what this version claims
+and what it does not, and `docs/methodology/validation.md` records what was actually
+established.
+
+**One release-checklist item ships unmet and disclosed.** The `live` nightly's Scopus test is
+red from GitHub-hosted runners: the API key is valid, but the institutional entitlement is
+bound to campus IP addresses, and a runner's is not one of them. The same test passes from an
+entitled network and was run there before this release. The documented remedy —
+`X-ELS-Insttoken`, already plumbed at `sources/scopus.py` — is with Elsevier. An undisclosed
+red test would be dishonest; a disclosed one, with its cause and remedy named, is the ordinary
+condition of software that depends on a licensed third-party API.
+
+### Added
+
+- **`numbers.json` is now proven reproducible across machines, not asserted to be**
+  (BUILD_PLAN Stage 11). `scripts/export_reference_numbers.py` runs the reference pipeline and
+  writes the numbers; `scripts/compare_reference_numbers.py` compares what two machines
+  produced. CI runs the export from a clean clone on **ubuntu-latest and windows-latest** and
+  compares the results — first parsed, for a diagnosable message, then **byte-for-byte**,
+  because bytes are the stronger claim and the parsed comparison alone would have missed the
+  defect below. The volatile-key allowlist is **empty**, and the comparison refuses to report
+  success if fewer than two machines reported — a comparison of one machine against itself is
+  the failure this criterion exists to rule out.
+
+  Two GitHub runners rather than two of the maintainer's own machines, deliberately: they
+  differ in OS, filesystem, locale and Python build, which are four of the axes this project
+  has already shipped machine-dependence defects on, and two laptops would share all four.
+  [ADR 0027](docs/architecture/adr/0027-what-v1-0-0-claims.md) Decision 3 states the honest
+  limit — both are GitHub-hosted, so a defect specific to that platform would survive.
+
+- **`docs/methodology/validation.md`** — the corpus, the query, the retrieval date
+  (2026-09-02), the flow counts as they stand, and, in plain words a reader cannot mistake,
+  that screening is incomplete and `included = 0` is therefore not a review result. The
+  reference-review delta BUILD_PLAN asks for is recorded as open work rather than invented.
+
+- **Stage 11's acceptance criteria exist.** `S11-AC1`–`S11-AC4` were never declared, so the
+  acceptance report said "zero unclaimed criteria" over a set that did not include them — true,
+  and meaningless. Three claims land on tests that already existed and were never wired to a
+  criterion. The fourth is new: **every version tag on the remote must have a matching GitHub
+  Release**, asserted against `git ls-remote`, because a local tag proves only that one machine
+  has one, and a reader following a `manifest.json` SHA to an unpublished tag finds nothing.
 
 ### Changed
 
@@ -19,7 +66,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `exports/` itself is deliberately untouched: a reviewer may keep a manuscript or cover letter
   beside the generated bundle, and deleting their own work is not a cost this guarantee is worth.
 
+- **`exports/figures/` ships SVG only, and the acceptance test no longer assumes it**
+  ([ADR 0026](docs/architecture/adr/0026-figures-ship-as-svg-only.md)). BUILD_PLAN Stage 10
+  specifies "SVG/PNG"; raster embeds font rasterisation and library versions, so it is not
+  byte-stable across machines and collides with Stage 11's clean-clone criterion — the same
+  evidence ADR 0025 Decision 8 used to decline pixel comparison. `S10-AC1` previously globbed
+  `*.svg`, so a PNG added later would have escaped the criterion entirely and silently; it now
+  covers every non-CSV file in `figures/`.
+
+- **`citation_distribution().data` gains a `year` column.** Additive, and it exists so the
+  top-cited table can render the year without a second query over the same rows — which is how
+  the two definitions came apart in the first place. A record with no year reports `0` rather
+  than null, the decision `report/numbers.py` already takes for `corpus.year_min`/`year_max`.
+
+- **Every ADR on `main` now reads `Accepted`.** Five described decisions that had shipped and
+  been released while still marked `Proposed` — a reader has no way to tell an in-force decision
+  from a suggestion, and four of the five govern code in this very release. A test now refuses a
+  `Proposed` ADR on `main`: `main` is the merged state, so nothing on it is still a proposal.
+
 ### Fixed
+
+- **The reproducibility harness was not itself reproducible.** `export_reference_numbers.py`
+  wrote `numbers.json` with `write_text` and no `newline=` argument, so the same numbers came
+  out CRLF on Windows and LF on Linux — a byte comparison across the two would have failed for a
+  reason that had nothing to do with the numbers. Found by running it, not by reading it. The
+  shipped artefact was never affected: `report/export.py` has always passed `newline="\n"`.
 
 - **`report/tables.py::top_cited_table` ran its own citation query, and had already diverged
   from the engine.** Its SQL carried no PRISMA-stage filter while
@@ -34,20 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([ADR 0022](docs/architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md)
   Decision 5's principle, applied to the one citation number its original re-pointing missed.)
 
-### Changed
-
-- **`exports/figures/` ships SVG only, and the acceptance test no longer assumes it**
-  ([ADR 0026](docs/architecture/adr/0026-figures-ship-as-svg-only.md)). BUILD_PLAN Stage 10
-  specifies "SVG/PNG"; raster embeds font rasterisation and library versions, so it is not
-  byte-stable across machines and collides with Stage 11's clean-clone criterion — the same
-  evidence ADR 0025 Decision 8 used to decline pixel comparison. `S10-AC1` previously globbed
-  `*.svg`, so a PNG added later would have escaped the criterion entirely and silently; it now
-  covers every non-CSV file in `figures/`.
-
-- **`citation_distribution().data` gains a `year` column.** Additive, and it exists so the
-  top-cited table can render the year without a second query over the same rows — which is how
-  the two definitions came apart in the first place. A record with no year reports `0` rather
-  than null, the decision `report/numbers.py` already takes for `corpus.year_min`/`year_max`.
+- **The changelog's link definitions stopped at `0.12.0`**, so nine release headings resolved to
+  nothing and `[Unreleased]` pointed at a comparison eleven releases stale. A test now requires
+  every heading to have a definition and every definition to span from the release before it.
 
 ## [0.21.0] — 2026-09-08
 
@@ -1425,7 +1485,19 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
-[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.12.0...HEAD
+[1.0.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.21.0...v1.0.0
+[0.21.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.16.1...v0.17.0
+[0.16.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.15.2...v0.16.0
+[0.15.2]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.9.0...v0.10.0
