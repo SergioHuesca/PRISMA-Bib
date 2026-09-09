@@ -282,16 +282,36 @@ jobs:
               return statements, covered, branches, branches_covered
 
           failures = []
+          # Targets that may legitimately aggregate to zero statements because
+          # the stage that owns them has not landed. Empty today: every gated
+          # target is built. Kept as an explicit list rather than inferred, so
+          # a genuinely-unbuilt module costs a deliberate line here and a typo
+          # costs a red build.
+          NOT_BUILT_YET: set[str] = set()
+
           rows = []
           for target, spec in sorted(gates.items()):
               if target == "global":
                   continue
               statements, covered, branches, branches_covered = aggregate(target)
               if statements == 0:
-                  # A module a later stage owns. Not a failure: the gate is declared
-                  # ahead of the code on purpose, so the floor exists on the day the
-                  # module lands rather than being negotiated then.
-                  rows.append(f"| `{target}` | not built yet | — | — |")
+                  # Zero statements means one of two very different things, and
+                  # this branch used to treat both as "a later stage owns it".
+                  # So `src/prismabib/reprot`, a package rename, or a module
+                  # deleted by accident all read as green -- a gate that passes
+                  # precisely when its target has gone missing.
+                  #
+                  # Only a declared-ahead target may aggregate to zero. Anything
+                  # else is a typo or a disappearance, and fails.
+                  if target in NOT_BUILT_YET:
+                      rows.append(f"| `{target}` | not built yet | — | — |")
+                      continue
+                  failures.append(
+                      f"{target}: no statements found. Either the path is wrong (a typo, a "
+                      f"rename, a deleted module) or the target is genuinely unbuilt -- in "
+                      f"which case add it to NOT_BUILT_YET in this workflow, deliberately."
+                  )
+                  rows.append(f"| `{target}` | **NO STATEMENTS** | — | **FAIL** |")
                   continue
               line = 100.0 * covered / statements
               branch = 100.0 * branches_covered / branches if branches else 100.0
@@ -308,12 +328,20 @@ jobs:
                   f"{branch:.2f}% / {branch_gate:.0f}% | {'ok' if ok else '**FAIL**'} |"
               )
 
-          summary = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
-          with summary.open("a") as handle:
-              handle.write("## Per-module coverage gates (BUILD_PLAN §3.7.6)\n\n")
-              handle.write("| target | line / gate | branch / gate | |\n")
-              handle.write("| --- | --- | --- | --- |\n")
-              handle.write("\n".join(rows) + "\n")
+          # `.get`, not `[...]`: read before the failure exit below, so running
+          # this block outside Actions used to die with a KeyError instead of
+          # printing the gate report it exists to print.
+          report = (
+              "## Per-module coverage gates (BUILD_PLAN §3.7.6)\n\n"
+              "| target | line / gate | branch / gate | |\n"
+              "| --- | --- | --- | --- |\n" + "\n".join(rows) + "\n"
+          )
+          summary_path = __import__("os").environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with Path(summary_path).open("a") as handle:
+                  handle.write(report)
+          else:
+              print(report)
 
           for failure in failures:
               print(f"::error::coverage gate breached -- {failure}")

@@ -24,6 +24,7 @@ Three ways that traceability can fail, and what is done about each:
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -280,6 +281,42 @@ def _write(path: Path, text: str) -> Path:
     return path
 
 
+#: Subdirectories of ``exports/`` that this function fully owns, and whose
+#: previous contents are therefore removed before a run.
+#:
+#: Not ``exports/`` itself: a reviewer may reasonably keep a manuscript or a
+#: cover letter beside the generated bundle, and deleting a researcher's own
+#: files is not a cost this guarantee is worth.
+_GENERATED_SUBDIRECTORIES = ("figures", "tables")
+
+
+def _clear_stale_artefacts(root: Path) -> None:
+    """Remove the previous run's generated files before writing this one.
+
+    Args:
+        root: The project's ``exports/`` directory.
+
+    Without this, an artefact from an older prismabib -- a table since
+    renamed, a figure since removed -- survives in the bundle looking
+    exactly as current as the files beside it. Nothing in the bundle says
+    when each file was written, so a researcher shipping ``exports/`` could
+    include a table no version of this code now produces, and a reader has
+    no way to tell.
+
+    That is the §1.4 failure with a directory listing rather than a number:
+    the artefact is plausible, internally consistent, and wrong. `manifest`
+    describes the run that *just* happened, which makes a stale sibling
+    worse than a missing one -- it inherits the manifest's credibility.
+
+    Scoped to the subdirectories this function writes (see
+    :data:`_GENERATED_SUBDIRECTORIES`), never to ``exports/`` itself.
+    """
+    for name in _GENERATED_SUBDIRECTORIES:
+        target = root / name
+        if target.is_dir():
+            shutil.rmtree(target)
+
+
 def export_project(project: Project) -> ExportResult:
     """Write every citable artefact for ``project`` into ``exports/``.
 
@@ -303,6 +340,7 @@ def export_project(project: Project) -> ExportResult:
     counts.assert_consistent()
 
     root = project.root / "exports"
+    _clear_stale_artefacts(root)
     numbers = numbers_map(project, counts=counts)
     manifest = _build_manifest(project, counts)
 

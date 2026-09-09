@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from typing import TYPE_CHECKING
 
 import pytest
 
 from prismabib.bibliometrics.citations import citation_distribution
+from prismabib.report.export import export_project
 from prismabib.report.numbers import numbers_map
 from prismabib.report.tables import TOP_N, build_tables, to_csv, top_cited_table
 from prismabib.stage import PrismaStage
@@ -175,3 +177,35 @@ def test_top_cited_table__agrees_with_the_engine__by_construction(tmp_path: Path
         for row in engine_rows
     )
     assert table.rows, "guard the guard: an empty table would satisfy the equality vacuously"
+
+
+@pytest.mark.integration
+def test_bundle__the_headline_number__agrees_across_all_three_places_it_appears(
+    tmp_path: Path,
+) -> None:
+    """`included` is written three times into one bundle. They must agree.
+
+    Issue #25 §5. `manifest.json` carries `included`, `numbers.json` carries
+    `flow.included`, and the PRISMA diagram renders it into a box -- three
+    copies of the most load-bearing number in the whole artefact, and until
+    now nothing asserted they matched.
+
+    Correct by construction today, since all three derive from one
+    `FlowCounts`. That is exactly when a regression guard is worth writing:
+    afterwards, the divergence is already in a published bundle.
+
+    Parsed out of the rendered SVG rather than taken from `FlowCounts`,
+    because reading the source of truth three times would prove only that
+    the source of truth equals itself -- the shape this project keeps
+    finding in its own tests.
+    """
+    project = build_project(tmp_path, CORPUS, slug="headline")
+    result = export_project(project)
+
+    manifest = json.loads((project.root / "exports" / "manifest.json").read_text(encoding="utf-8"))
+    numbers = json.loads((project.root / "exports" / "numbers.json").read_text(encoding="utf-8"))
+    svg = next(path for path in result.figures if path.suffix == ".svg").read_text(encoding="utf-8")
+
+    included = manifest["included"]
+    assert numbers["flow.included"] == included
+    assert f"n = {included}" in svg, "the diagram must render the same count the manifest records"
