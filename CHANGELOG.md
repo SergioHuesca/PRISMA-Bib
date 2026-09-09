@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`prismabib export` now clears `exports/figures/` and `exports/tables/` before writing.**
+  User-visible: files in those two directories are deleted. Previously an artefact from an older
+  prismabib — a table since renamed, a figure since removed — survived in the bundle looking
+  exactly as current as the files beside it, and inherited `manifest.json`'s credibility, since
+  the manifest describes the run that just happened. A researcher could ship a table the code no
+  longer produces with nothing to reveal it.
+
+  `exports/` itself is deliberately untouched: a reviewer may keep a manuscript or cover letter
+  beside the generated bundle, and deleting their own work is not a cost this guarantee is worth.
+
 ### Fixed
 
 - **`report/tables.py::top_cited_table` ran its own citation query, and had already diverged
@@ -23,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Decision 5's principle, applied to the one citation number its original re-pointing missed.)
 
 ### Changed
+
+- **`exports/figures/` ships SVG only, and the acceptance test no longer assumes it**
+  ([ADR 0026](docs/architecture/adr/0026-figures-ship-as-svg-only.md)). BUILD_PLAN Stage 10
+  specifies "SVG/PNG"; raster embeds font rasterisation and library versions, so it is not
+  byte-stable across machines and collides with Stage 11's clean-clone criterion — the same
+  evidence ADR 0025 Decision 8 used to decline pixel comparison. `S10-AC1` previously globbed
+  `*.svg`, so a PNG added later would have escaped the criterion entirely and silently; it now
+  covers every non-CSV file in `figures/`.
 
 - **`citation_distribution().data` gains a `year` column.** Additive, and it exists so the
   top-cited table can render the year without a second query over the same rows — which is how
