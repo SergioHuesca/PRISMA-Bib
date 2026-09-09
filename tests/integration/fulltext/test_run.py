@@ -83,8 +83,31 @@ def _crossref_reports_nothing() -> Iterator[None]:
 
 
 def _settings() -> Settings:
-    # No ELSEVIER_SD_API_KEY, no UNPAYWALL_EMAIL: only ManualDropResolver runs.
-    return Settings(_env_file=None, scopus_api_key="test-scopus-key")  # pragma: allowlist secret
+    """Settings whose resolver chain is *only* the manual drop, on any machine.
+
+    Each credential is passed explicitly as `None` rather than merely
+    omitted. `_env_file=None` stops `pydantic-settings` reading `.env`, but
+    it does **not** stop it reading `os.environ` -- so on a machine or a CI
+    job where `ELSEVIER_SD_API_KEY` is exported, `ScienceDirectResolver`
+    joined the chain, issued a request `respx` had not mocked, and the
+    record failed before reaching the manual drop these tests stage. Six
+    tests here passed without credentials and failed with them.
+
+    The old comment ("No ELSEVIER_SD_API_KEY ... only ManualDropResolver
+    runs") described the intent correctly and the construction did not
+    achieve it -- the shape this project keeps finding: a stated property
+    nothing enforces.
+
+    Returns:
+        Settings pinned to a single-resolver chain.
+    """
+    return Settings(
+        _env_file=None,
+        scopus_api_key="test-scopus-key",  # pragma: allowlist secret
+        scopus_insttoken=None,
+        elsevier_sd_api_key=None,
+        unpaywall_email=None,
+    )
 
 
 def _build_project_with_two_included_records(tmp_path: Path) -> tuple[Project, str, str]:
@@ -387,3 +410,40 @@ def test_build_store__fulltext_assets_table__stores_no_absolute_path(tmp_path: P
     assert rows, "guard the guard: an empty table would make this vacuously true"
     assert not [cell for cell in cells if str(tmp_path) in cell]
     assert not [cell for cell in cells if cell.startswith(("/", "\\")) or ":\\" in cell]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "credential",
+    ["ELSEVIER_SD_API_KEY", "SCOPUS_INSTTOKEN", "UNPAYWALL_EMAIL"],
+)
+def test_settings__ambient_credentials__do_not_reach_the_resolver_chain(
+    credential: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_settings()` must pin the chain regardless of what the environment exports.
+
+    Six tests in this module used to pass without credentials and fail with
+    them: `_env_file=None` stops `pydantic-settings` reading `.env` but not
+    `os.environ`, so an exported `ELSEVIER_SD_API_KEY` put
+    `ScienceDirectResolver` at the head of the chain, where it issued a
+    request `respx` had not mocked and failed the record before the manual
+    drop these tests stage was ever reached.
+
+    It surfaced only through the nightly, because the `live` job is the one
+    place in CI that exports API keys -- `full`, `fast` and `full-matrix`
+    have always run without them and were always green.
+
+    Parametrised over every credential the chain reads, not just the one
+    that bit: a guard against the specific spelling that failed is a guard
+    against the past.
+
+    `monkeypatch` targets `os.environ`, which is the boundary being tested,
+    never `prismabib.*` (BUILD_PLAN §3.7.3).
+    """
+    monkeypatch.setenv(credential, "ambient-value-that-must-be-ignored")
+
+    settings = _settings()
+
+    assert settings.elsevier_sd_api_key is None
+    assert settings.scopus_insttoken is None
+    assert settings.unpaywall_email is None
