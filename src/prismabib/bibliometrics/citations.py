@@ -199,7 +199,19 @@ def citations_by_year(
     return AnalysisResult(data=data, params={}, provenance=provenance)
 
 
-_EMPTY_DISTRIBUTION_SCHEMA = {"record_id": pl.Utf8, "title": pl.Utf8, "cited_by_count": pl.Int64}
+#: `year` is carried alongside the citation count because
+#: `report/tables.py::top_cited_table` renders it, and that table now reads
+#: this function rather than running its own query (ADR 0022 Decision 5's
+#: principle, applied to the one citation number that re-pointing missed).
+#: The figure layer ignores the column; a table that had to fetch it
+#: separately would be a second query over the same rows, which is how the
+#: two definitions diverged in the first place.
+_EMPTY_DISTRIBUTION_SCHEMA = {
+    "record_id": pl.Utf8,
+    "title": pl.Utf8,
+    "year": pl.Int64,
+    "cited_by_count": pl.Int64,
+}
 
 
 def citation_distribution(
@@ -243,10 +255,18 @@ def citation_distribution(
         data = pl.DataFrame(schema=_EMPTY_DISTRIBUTION_SCHEMA)
     else:
         data = (
-            records.select(["record_id", "title"])
+            records.select(["record_id", "title", "year"])
             .join(citations.select(["record_id", "cited_by_count"]), on="record_id", how="inner")
             .sort(["cited_by_count", "record_id"], descending=[True, False])
-            .with_columns(pl.col("cited_by_count").cast(pl.Int64))
+            .with_columns(
+                pl.col("cited_by_count").cast(pl.Int64),
+                # `0`, not null, for a record with no year: this column is
+                # rendered into a table cell, and `numbers.py` already takes
+                # the same decision for `corpus.year_min`/`year_max` -- "a
+                # manuscript substituting `None` into a sentence is a worse
+                # outcome than one substituting a zero a reader can question."
+                pl.col("year").fill_null(0).cast(pl.Int64),
+            )
         )
 
     provenance = build_provenance(corpus, stage=stage, records=records, citations=citations)
