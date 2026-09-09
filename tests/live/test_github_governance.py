@@ -87,6 +87,15 @@ _GIT_IDENTITY_ENV = {
 }
 
 
+#: Credentials this job exports that a fresh contributor's clone would not
+#: have. Removed from the environment before running the cloned suite, so
+#: `S00-AC2` measures what it claims: that a clone taken from GitHub is
+#: green for someone who has just arrived.
+_CREDENTIAL_ENV_VARS = frozenset(
+    {"SCOPUS_API_KEY", "SCOPUS_INSTTOKEN", "ELSEVIER_SD_API_KEY", "UNPAYWALL_EMAIL"}
+)
+
+
 def _run(*args: str, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a `git`/`gh` command from the repository root, never raising.
 
@@ -147,6 +156,21 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
         # No -m override: this asserts the DEFAULT invocation is green, which is
         # what the criterion says. addopts supplies `-m "not live"`, so this does
         # not recurse into the live suite.
+        # The suite runs *without* this job's API keys, because S00-AC2 is
+        # about a fresh contributor's clone and a fresh contributor has
+        # none. The `live` job exports `SCOPUS_API_KEY` and
+        # `ELSEVIER_SD_API_KEY`, and it is the only job in CI that does --
+        # so a suite inheriting them here is exercising a configuration no
+        # other job, and no new contributor, ever sees.
+        #
+        # That is not hypothetical: it is how six `fulltext/test_run.py`
+        # tests came to fail here while `full`, `fast` and `full-matrix`
+        # stayed green. Those tests are fixed, but scrubbing is the right
+        # scope for this criterion regardless of whether anything currently
+        # depends on it.
+        contributor_env = {
+            key: value for key, value in os.environ.items() if key not in _CREDENTIAL_ENV_VARS
+        }
         suite = subprocess.run(
             ["uv", "run", "pytest"],
             cwd=target,
@@ -154,6 +178,7 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
             text=True,
             check=False,
             timeout=900,
+            env=contributor_env,
         )
 
         assert suite.returncode == 0, suite.stdout + suite.stderr
@@ -287,7 +312,27 @@ def test_pull_request__red_required_check__cannot_be_merged() -> None:
                 text=True,
                 check=False,
                 timeout=120,
+                # The same identity `test_main_branch__direct_push` needs.
+                # This call is a bare `subprocess.run` rather than `_run`,
+                # so the fix that gave that test an identity never reached
+                # here: `commit-tree` returned 128 "Author identity
+                # unknown", `commit` was the empty string, and the failure
+                # only surfaced three steps later as a GitHub API error
+                # about a branch that was never created.
+                env={**os.environ, **_GIT_IDENTITY_ENV},
             ).stdout.strip()
+
+            # Guard the refspec before it is built -- the guard the sibling
+            # test already documents, missing here. An empty left-hand side
+            # turns `<commit>:refs/heads/<branch>` into `:refs/heads/<branch>`,
+            # which is the DELETE-branch refspec. GitHub accepts it (there is
+            # nothing to delete), the push returns 0, and the test sails past
+            # its own assertion to fail later at `gh pr create` with "Head ref
+            # must be a branch" -- a message about the wrong thing entirely.
+            assert commit, (
+                "git commit-tree produced no SHA; pushing an empty refspec would be a "
+                "branch DELETE, not a branch create"
+            )
 
             push = _run("git", "push", "origin", f"{commit}:refs/heads/{branch}")
             assert push.returncode == 0, push.stderr
