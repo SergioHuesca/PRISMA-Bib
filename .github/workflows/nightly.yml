@@ -97,7 +97,24 @@ jobs:
   live:
     name: live
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, not 15. `test_clean_clone__from_github` does a real `git clone`, a
+    # cold `uv sync --all-extras` (plotly, matplotlib, panel, jupyter -- no
+    # warm cache in a fresh clone) and then the whole default suite
+    # single-process, on top of six other live tests that each round-trip to
+    # the GitHub API. Run #23 was cancelled at 15m16s: the wall, not a
+    # failure.
+    #
+    # Note the inner suite's own `subprocess.run(timeout=900)` was *equal* to
+    # the old job budget, so the nested run could consume the entire job on
+    # its own and the job timeout would fire first -- reporting "cancelled",
+    # which says nothing about what was slow. At 30 the inner timeout is
+    # genuinely bounded inside the outer one and a hang there fails with a
+    # message instead.
+    #
+    # This is a nightly: latency costs nothing, and a cancelled run costs a
+    # whole day of the "green live nightly in the preceding week" that Stage
+    # 11's release checklist requires.
+    timeout-minutes: 30
     # The governance tests in `tests/live/test_github_governance.py` assert
     # that GitHub *refuses* privileged operations -- a direct push to a
     # protected `main`, a merge with a red required check. To assert a
