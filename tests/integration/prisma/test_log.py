@@ -36,9 +36,11 @@ from pathlib import Path
 
 import pytest
 
-from prismabib.errors import LogError, ValidationError
+from prismabib.errors import LogError, StoreError, ValidationError
 from prismabib.prisma import engine
+from prismabib.prisma.engine import _capture_snapshot
 from prismabib.prisma.events import DecisionEvent
+from prismabib.prisma.flow import compute_flow_counts
 from prismabib.prisma.log import (
     DecisionLog,
     LockKind,
@@ -49,6 +51,7 @@ from prismabib.prisma.log import (
 )
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
+from prismabib.store.db import connect
 from tests.append_only_log_conformance import (
     LogUnderTest,
     append_only_log__append__is_fsynced_and_checksummed,
@@ -72,6 +75,7 @@ from tests.prisma_helpers import (
     rewrite_sidecar,
     sidecar_matches_log,
     sidecar_path,
+    write_criteria,
 )
 
 RECORDS = [RecordSpec(number=index) for index in range(1, 6)]
@@ -1591,3 +1595,172 @@ def test_log__truncated_line_recovery__names_the_decision_log_specifically(
         log.load()
 
     assert phrase in str(caught.value), why
+
+
+# ---------------------------------------------------------------------------
+# Lock *modes* -- issue #23 §1. `_locked("shared")` silently becoming an
+# exclusive lock removes read concurrency entirely, and six mutants proved
+# nothing observed it: mutating the literal left 697 tests passing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="flock semantics are POSIX; Windows takes the byte-range backend, tested separately",
+)
+def test_log__shared_lock__admits_a_second_reader_but_excludes_a_writer(
+    project: Project,
+) -> None:
+    """A shared lock must actually be shared -- the property the mode exists for.
+
+    `_locked` reads `LOCK_SH if kind == "shared" else LOCK_EX`, so any
+    corruption of that literal (`"SHARED"`, `"XXsharedXX"`) makes *every*
+    read take an exclusive lock. Nothing breaks: an exclusive lock is never
+    weaker than a shared one, so the suite stays green while the concurrency
+    the mode exists to provide is gone. Six surviving mutants, and 697 tests
+    passing under the mutation.
+
+    Probed from a second open file description rather than the held one:
+    `flock` conflicts are per-description, so re-locking the same fd would
+    succeed regardless of mode and prove nothing.
+    """
+    import fcntl
+
+    log = open_log(project)
+
+    with log._locked("shared"):
+        probe = os.open(project.decisions_path, os.O_RDWR)
+        try:
+            # A second reader must get in. This is the assertion the mutants
+            # survived: under `LOCK_EX` it raises.
+            fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            fcntl.flock(probe, fcntl.LOCK_UN)
+
+            # ...and a writer must not.
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(probe)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="flock semantics are POSIX; Windows takes the byte-range backend, tested separately",
+)
+def test_log__exclusive_lock__excludes_even_a_reader(project: Project) -> None:
+    """The other half: an exclusive lock must exclude a *shared* request too.
+
+    Without this, `kind == "shared"` inverted to `!=` would take `LOCK_SH`
+    for writes -- two appends could then interleave into one file. The
+    sibling test above cannot catch that inversion on its own, because a
+    shared lock does admit a second reader.
+    """
+    import fcntl
+
+    log = open_log(project)
+
+    with log._locked("exclusive"):
+        probe = os.open(project.decisions_path, os.O_RDWR)
+        try:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        finally:
+            os.close(probe)
+
+
+# ---------------------------------------------------------------------------
+# The single-read guarantee -- issue #23 §2. `_capture_snapshot` documents
+# that every set comes "from one pair of queries on one connection ... rather
+# than several that a concurrent `build_store` could have moved between".
+# Dropping the caller's connection opens a second one and breaks exactly
+# that, and five mutants proved nothing observed it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_snapshot__given_a_writable_connection__reuses_it_instead_of_opening_its_own(
+    project: Project,
+) -> None:
+    """The caller's handle must be borrowed, not supplemented.
+
+    `_layer1_connection`'s own docstring names the mechanism that makes this
+    observable: DuckDB refuses a second connection to the same file from one
+    process when the two disagree about configuration. So a caller holding a
+    *writable* handle cannot have this module open a read-only one
+    underneath it -- it raises before any set is computed.
+
+    That turns an invisible property ("one read, not several") into a
+    visible one. Under the mutants that drop `connection=` on the way to
+    `_capture_layer1`, this raises `StoreError`; with the connection
+    threaded through, it returns a snapshot.
+
+    Asserting on the returned sets as well as on the absence of a raise, so
+    the test cannot pass by the call being skipped.
+    """
+    writable = connect(project, read_only=False)
+    try:
+        snapshot = _capture_snapshot(project, connection=writable)
+    finally:
+        writable.close()
+
+    assert snapshot.layer1.raw == frozenset(record.record_id for record in RECORDS)
+
+
+# ---------------------------------------------------------------------------
+# Issue #23 §3 and §5: two defaults that are persisted or that gate access,
+# and that no assertion pinned.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_log__append_without_a_note__persists_an_empty_note_not_a_sentinel(
+    project: Project,
+) -> None:
+    """`note` defaults to `""`, and that default reaches `decisions.jsonl`.
+
+    The mutant replaces it with the literal `XXXX`, which survives -- so
+    every note-less decision would carry `XXXX` in a reviewer's permanent,
+    append-only screening record. Nothing else in the system would object:
+    it is a valid string in a free-text field.
+
+    Read back off disk rather than off the returned event, because the file
+    is the artefact that outlives the process.
+    """
+    log = open_log(project)
+
+    log.append(
+        record_id=RECORDS[0].record_id,
+        stage=PrismaStage.TITLE_ABSTRACT,
+        decision="include",
+        reviewer="alice",
+        criteria_version=CRITERIA.version,
+    )
+
+    (line,) = read_log_bytes(project).decode("utf-8").splitlines()
+    assert json.loads(line)["note"] == ""
+
+
+@pytest.mark.integration
+def test_flow_counts__no_layer1_store__raises_rather_than_creating_one(
+    tmp_path: Path,
+) -> None:
+    """`connect(..., read_only=True)` is what makes a missing store an error.
+
+    With `read_only=False` -- the surviving mutant -- DuckDB *creates* the
+    file instead, and the flow counts come back as a full set of zeros: a
+    complete, plausible PRISMA diagram for a corpus that was never built.
+    That is the §1.4 failure exactly, and it reaches a reader as numbers
+    rather than as a crash.
+
+    The project here is initialised but never has `build_store` run against
+    it, which is the state any new project is in.
+    """
+    project = Project.init("no-store-yet", title="No Store Yet", root=tmp_path)
+    write_criteria(project, CRITERIA)
+
+    with pytest.raises(StoreError):
+        compute_flow_counts(project)
+
+    assert not project.db_path.exists(), "read_only=True must not bring a store into being"
