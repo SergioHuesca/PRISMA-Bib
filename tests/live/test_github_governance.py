@@ -171,7 +171,25 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
         contributor_env = {
             key: value for key, value in os.environ.items() if key not in _CREDENTIAL_ENV_VARS
         }
-        # `-m "not benchmark"`, because a timing assertion measured *inside*
+        # `not live` is load-bearing and must never be dropped from this
+        # selection. `pyproject.toml`'s default `addopts` carries
+        # `-m "not live"` as a **safety control** (BUILD_PLAN §3.7.2 line
+        # 492): the live tests push branches to origin, open real pull
+        # requests, and attempt a push to `refs/heads/main`. Passing any
+        # `-m` on the command line *replaces* that default rather than
+        # narrowing it.
+        #
+        # A previous version passed only `-m "not benchmark"` and so
+        # re-enabled them -- inside a suite that is itself launched by
+        # `test_clean_clone__from_github`. That test then ran itself: clone,
+        # sync, run the suite, clone, sync, ... Each level also opened a
+        # real throwaway pull request (21 of them, all auto-closed, no
+        # branches left behind, no commit on `main` -- branch protection
+        # held). The recursion is why three successive timeout increases
+        # never helped: nothing was slow, it was unbounded.
+        #
+        # `-m "not benchmark"` on its own is also why a timing assertion was
+        # measured *inside*
         # a nested pytest process on an already-busy runner measures
         # contention, not the code. The dedicated `benchmark` job exists to
         # run these in isolation and passed on the same run this failed:
@@ -202,7 +220,7 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
         # and arrives with the `uv sync --all-extras` two steps above, so
         # this needs nothing a fresh contributor would not already have.
         suite = subprocess.run(
-            ["uv", "run", "pytest", "-m", "not benchmark", "-n", "auto"],
+            ["uv", "run", "pytest", "-m", "not live and not benchmark", "-n", "auto"],
             cwd=target,
             capture_output=True,
             text=True,
@@ -446,3 +464,29 @@ def test_main_branch__direct_push__is_rejected_by_branch_protection() -> None:
 
     assert push.returncode != 0
     assert "protected branch" in (push.stderr or "").lower()
+
+
+@pytest.mark.live
+def test_clean_clone__nested_selection__never_re_enables_live_tests() -> None:
+    """The nested suite must not run `tests/live/`, which contains this test.
+
+    `pyproject.toml`'s default `addopts` carries `-m "not live"` as a safety
+    control (BUILD_PLAN §3.7.2 line 492), and any `-m` passed on the command
+    line *replaces* it rather than narrowing it. A selection of
+    `-m "not benchmark"` therefore re-enabled the live tests inside a suite
+    launched by `test_clean_clone__from_github` -- so that test ran itself,
+    recursively, each level opening a real throwaway pull request.
+
+    Twenty-one were created and auto-closed before this was caught. Nothing
+    was left behind and branch protection held, but three successive timeout
+    increases were spent on a run that was unbounded rather than slow.
+
+    Asserting on the argument list rather than on the run's duration: a
+    timing assertion would be exactly the kind of proxy that took three
+    rounds to see through.
+    """
+    source = Path(__file__).read_text(encoding="utf-8")
+
+    assert '"-m", "not live and not benchmark"' in source, (
+        "the nested clean-clone suite must exclude `live`, or it runs itself"
+    )
