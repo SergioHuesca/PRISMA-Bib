@@ -66,7 +66,19 @@ def main() -> int:
     # source of difference. Dict ordering is insertion-ordered in CPython and
     # therefore stable here, but relying on that would make the comparison
     # depend on a language guarantee rather than on the numbers.
-    destination.write_text(json.dumps(numbers, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # `newline="\n"` is load-bearing, and its absence was caught by this very
+    # criterion on its first real run: Windows translated every `\n` to
+    # `\r\n`, so the two machines' files differed at byte 2 while every
+    # number in them was identical. The harness for a reproducibility check
+    # was itself not reproducible.
+    #
+    # `report/export.py` already writes the real `numbers.json` this way, so
+    # the *published* artefact was never affected -- only this script's copy
+    # of it. Matching that convention here is what lets the comparison below
+    # assert bytes rather than settle for parsed values.
+    destination.write_text(
+        json.dumps(numbers, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
     print(f"wrote {len(numbers)} numbers to {destination}")
     return 0
 

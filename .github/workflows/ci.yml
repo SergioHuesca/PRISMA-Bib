@@ -245,8 +245,13 @@ jobs:
           pattern: numbers-*
           path: exported
 
+      # Plain `python`, not `uv run`: this step installs no toolchain (it only
+      # checks out and downloads two artifacts), and the comparison is pure
+      # stdlib by design -- a reproducibility check that needed the project's
+      # own dependency resolution to run would be one more thing that could
+      # differ between the machines it is comparing.
       - name: Two machines, one numbers.json
-        run: uv run --no-project python scripts/compare_reference_numbers.py exported
+        run: python3 scripts/compare_reference_numbers.py exported
 
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the

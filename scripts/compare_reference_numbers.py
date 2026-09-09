@@ -57,7 +57,8 @@ def main() -> int:
         )
         return 1
 
-    loaded = {path.parent.name: json.loads(path.read_text(encoding="utf-8")) for path in exports}
+    raw = {path.parent.name: path.read_bytes() for path in exports}
+    loaded = {name: json.loads(payload.decode("utf-8")) for name, payload in raw.items()}
     machines = sorted(loaded)
     reference_name = machines[0]
     reference = loaded[reference_name]
@@ -80,7 +81,27 @@ def main() -> int:
             print(f"::error::numbers.json differs across machines -- {line}")
         return 1
 
-    print("every number is identical across every machine")
+    # Bytes, not only parsed values. `validation.md` claims byte-identity, and
+    # the two are different assertions: Windows once produced a file whose
+    # every number matched and whose bytes differed at byte 2, because `\n`
+    # had been translated to `\r\n`.
+    #
+    # Checked *after* the key comparison, so a genuine numeric difference is
+    # reported as a number rather than as an offset -- a reproducibility
+    # failure is read by someone trying to find what is machine-dependent, and
+    # "line 12 differs" does not tell them.
+    reference_bytes = raw[reference_name]
+    byte_differences = [name for name in machines[1:] if raw[name] != reference_bytes]
+    if byte_differences:
+        for name in byte_differences:
+            print(
+                f"::error::numbers.json is byte-different on {name} though every number "
+                f"matches {reference_name} -- serialisation, not arithmetic (line endings, "
+                "encoding, or key order)"
+            )
+        return 1
+
+    print("every number is identical across every machine, and so is every byte")
     return 0
 
 
