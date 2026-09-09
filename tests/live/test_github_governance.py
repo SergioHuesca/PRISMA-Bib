@@ -189,8 +189,20 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
         # Everything S00-AC2 actually claims is preserved: a clone taken
         # from GitHub installs and passes. What is dropped is a second,
         # worse-conditioned measurement of a budget already measured well.
+        # `-n auto`, because this ran single-process and did not finish.
+        # Run #24 failed with `subprocess.TimeoutExpired` after the full
+        # 900 s: 1523 tests on a two-vCPU runner, where the same suite takes
+        # ~155 s single-process on a developer machine. Under xdist it is
+        # about two minutes.
+        #
+        # S00-AC2 claims a clone taken from GitHub *installs and passes*, not
+        # that it passes single-process -- and `-n auto` is how this project
+        # runs its suite everywhere else, including the `full` job whose
+        # result this is meant to mirror. `pytest-xdist` is a dev dependency
+        # and arrives with the `uv sync --all-extras` two steps above, so
+        # this needs nothing a fresh contributor would not already have.
         suite = subprocess.run(
-            ["uv", "run", "pytest", "-m", "not benchmark"],
+            ["uv", "run", "pytest", "-m", "not benchmark", "-n", "auto"],
             cwd=target,
             capture_output=True,
             text=True,
