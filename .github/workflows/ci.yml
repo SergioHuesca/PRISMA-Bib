@@ -193,6 +193,61 @@ jobs:
       - name: End-to-end suite (reference project)
         run: uv run pytest -m e2e
 
+  # Stage 11's reproducibility criterion (BUILD_PLAN): a clean clone on a
+  # *different machine* must reproduce `numbers.json`. ADR 0027 Decision 3
+  # records why two GitHub-hosted runners satisfy that better than two
+  # machines the maintainer owns would: each is provisioned fresh with no
+  # shared state, and the comparison spans operating systems as well --
+  # filesystem, locale, path separators and line endings all differ, which
+  # is four of the axes this project has already shipped defects on.
+  #
+  # Deliberately NOT in the required-check set yet: same precedent as `e2e`
+  # and `full-windows` -- a required check that has never passed can wedge
+  # the branch, so it is promoted after it runs green on `main`.
+  reproducibility:
+    name: reproducibility (${{ matrix.os }})
+    needs: [full]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Export the reference project
+        run: uv run python scripts/export_reference_numbers.py numbers.json
+
+      - name: Upload this machine's numbers.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: numbers-${{ matrix.os }}
+          path: numbers.json
+
+  # The comparison itself. Separate from the matrix because it needs both
+  # results: a matrix job can only ever see its own.
+  reproducibility-compare:
+    name: reproducibility
+    needs: [reproducibility]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: numbers-*
+          path: exported
+
+      - name: Two machines, one numbers.json
+        run: uv run --no-project python scripts/compare_reference_numbers.py exported
+
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the
   # branch, so it is promoted only after it has run green on `main`.
