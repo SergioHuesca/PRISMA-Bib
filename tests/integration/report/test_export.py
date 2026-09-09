@@ -325,3 +325,122 @@ def test_export__source_csv__carries_every_automated_reason_the_figure_shows(
         assert re.search(rf"{REASON_TO_LABEL_TEXT[reason]}: {count}(?!\d)", automated_text), (
             f"{reason}={count} is in the CSV but not under its label on the diagram"
         )
+
+
+# ---------------------------------------------------------------------------
+# `commit_is_pushed` -- issue #25 §1. The only existing test builds a repo
+# with *no remote*, where `git branch -r --contains` returns empty whatever
+# the implementation does: hard-coding `commit_is_pushed = False` passed the
+# whole suite. These exercise `_git_provenance` directly, which needs no
+# monkeypatching of `prismabib.*` (§3.7.3) because it already takes `cwd`.
+# ---------------------------------------------------------------------------
+
+
+def _repo_with_bare_remote(tmp_path: Path) -> tuple[Path, Path]:
+    """A git repo with one commit pushed to a local bare remote.
+
+    Args:
+        tmp_path: The test's temporary directory.
+
+    Returns:
+        ``(repo, remote)``. A *local* bare remote rather than a network one:
+        `git branch -r` reads remote-tracking refs, so what is being tested
+        is the ref bookkeeping, and nothing here needs a server.
+    """
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "work"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    subprocess.run(
+        ["git", "init", "--quiet", "--initial-branch=main", str(repo)],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-qm", "init"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "push", "--quiet", "-u", "origin", "main"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    return repo, remote
+
+
+@pytest.mark.integration
+def test_git_provenance__pushed_commit__reports_true(tmp_path: Path) -> None:
+    """The positive control the suite lacked.
+
+    Without it, `commit_is_pushed` could be hard-coded `False` and every
+    test still passed -- the same vacuity the `dirty` tests were correctly
+    guarded against.
+    """
+    repo, _remote = _repo_with_bare_remote(tmp_path)
+
+    from prismabib.report.export import _git_provenance
+
+    assert _git_provenance(repo)["commit_is_pushed"] is True
+
+
+@pytest.mark.integration
+def test_git_provenance__commit_made_after_the_push__reports_false(tmp_path: Path) -> None:
+    """The discriminating case: a remote exists, and this commit is not on it.
+
+    The pre-existing negative test used a repo with no remote at all, where
+    the query returns empty for a reason that has nothing to do with the
+    commit. Here the remote is configured and populated, so a `False` means
+    what the key claims it means.
+    """
+    repo, _remote = _repo_with_bare_remote(tmp_path)
+    (repo / "b.py").write_text("y = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-qm", "later"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    from prismabib.report.export import _git_provenance
+
+    assert _git_provenance(repo)["commit_is_pushed"] is False
+
+
+@pytest.mark.integration
+def test_git_provenance__branch_deleted_upstream__still_reports_true(tmp_path: Path) -> None:
+    """A known limitation, pinned as behaviour rather than left as a caveat.
+
+    `git branch -r --contains` reads *remote-tracking* refs, which are only
+    as fresh as the last fetch. Delete the branch upstream and the stale
+    local `origin/main` still contains the commit, so this reports `True`
+    for a SHA no reader can now fetch.
+
+    That is not hypothetical for this repository: `main` squash-merges and
+    deletes branches, so lingering refs are the normal state. BUILD_PLAN
+    asks that the manifest SHA be one that *exists on GitHub*, and this
+    check cannot establish that offline -- `_git_provenance`'s docstring now
+    says so rather than claiming otherwise.
+
+    Asserting the limitation makes it a decision someone can revisit with a
+    failing test in hand, instead of a sentence in a comment that the code
+    may or may not still match.
+    """
+    repo, remote = _repo_with_bare_remote(tmp_path)
+    subprocess.run(
+        ["git", "--git-dir", str(remote), "update-ref", "-d", "refs/heads/main"], check=True
+    )
+
+    from prismabib.report.export import _git_provenance
+
+    assert _git_provenance(repo)["commit_is_pushed"] is True, (
+        "documents the staleness limitation; if this starts failing the check became "
+        "remote-aware, and the docstring must stop hedging"
+    )

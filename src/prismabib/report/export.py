@@ -13,7 +13,9 @@ Three ways that traceability can fail, and what is done about each:
 - **An unpushed commit.** The SHA is real but resolves nowhere a reader can
   reach. BUILD_PLAN calls this out as the same defect class as a dirty tree,
   which ``dirty`` alone does not cover, so ``commit_is_pushed`` records it
-  separately.
+  separately. It is a **local, best-effort** check -- it reads
+  remote-tracking refs and is only as fresh as the last fetch; see
+  :func:`_git_provenance` for what that does and does not establish.
 - **No git at all.** Exporting from an unpacked tarball is legitimate but not
   traceable; the SHA is ``null`` and ``dirty`` is ``true``, because "unknown"
   must never read as "clean".
@@ -142,8 +144,24 @@ def _git_provenance(cwd: Path) -> dict[str, Any]:
     status = _git(["status", "--porcelain"], cwd=cwd)
     dirty = status.returncode != 0 or bool(status.stdout.strip())
 
-    # `branch -r --contains` is empty when no remote branch contains the
-    # commit, which is exactly "a reader cannot fetch this".
+    # `branch -r --contains` reads *remote-tracking* refs, so this answers
+    # "no ref I last fetched contains this commit" -- which is a useful
+    # signal and not the same claim as "no reader can fetch it".
+    #
+    # Two ways it is weaker than the key name suggests, both accepted
+    # deliberately rather than fixed:
+    #
+    # - It is only as fresh as the last fetch. This repository squash-merges
+    #   and deletes branches, so a stale `origin/<branch>` can still contain
+    #   a commit GitHub no longer has, and this reports `True`. Pinned by
+    #   `test_git_provenance__branch_deleted_upstream__still_reports_true`.
+    # - With no remote configured it reports `False`, which reads as "not
+    #   pushed" rather than "nowhere to push to".
+    #
+    # Establishing BUILD_PLAN's "a SHA that exists on GitHub" needs the
+    # network, and an export that fetched would make a reproducibility
+    # artefact depend on connectivity -- the wrong trade for a check whose
+    # job is catching the common case, which is forgetting to push.
     contains = _git(["branch", "-r", "--contains", commit], cwd=cwd)
     pushed = contains.returncode == 0 and bool(contains.stdout.strip())
 
