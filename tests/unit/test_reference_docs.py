@@ -44,6 +44,7 @@ def _packages() -> list[str]:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("package", _packages())
+@pytest.mark.acceptance("S11-AC3")
 def test_reference_docs__every_package__has_a_section(package: str) -> None:
     """A package with no `::: prismabib.<pkg>` directive is invisible to readers.
 

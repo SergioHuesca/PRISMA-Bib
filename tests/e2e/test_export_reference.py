@@ -69,6 +69,7 @@ def test_export__numbers_json__agrees_with_the_flow_counts_golden(tmp_path: Path
 
 
 @pytest.mark.e2e
+@pytest.mark.acceptance("S11-AC1")
 def test_export__run_twice__numbers_json_identical(tmp_path: Path) -> None:
     """Two exports of the same corpus produce byte-identical numbers.
 
