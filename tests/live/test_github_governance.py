@@ -207,7 +207,18 @@ def test_clean_clone__from_github__syncs_and_passes_the_default_suite() -> None:
             capture_output=True,
             text=True,
             check=False,
-            timeout=900,
+            # 1800 s, raised from 900 after nightly #26 timed out again *with*
+            # `-n auto`. The captured stdout settles what kind of failure this
+            # is: `created: 2/2 workers`, `2 workers [1523 items]`, then a
+            # steady stream of dots to the wall. It was progressing, not hung
+            # -- a GitHub-hosted runner has two vCPUs, so `-n auto` bought 2x,
+            # and 1523 tests do not fit in 900 s on two slow cores.
+            #
+            # Bounded inside the job's own 45-minute budget with room for the
+            # clone, a cold `uv sync --all-extras` and the six other live
+            # tests, so a genuine hang here still fails with this timeout's
+            # message rather than a bare job cancellation.
+            timeout=1800,
             env=contributor_env,
         )
 

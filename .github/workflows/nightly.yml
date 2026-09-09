@@ -114,7 +114,10 @@ jobs:
     # This is a nightly: latency costs nothing, and a cancelled run costs a
     # whole day of the "green live nightly in the preceding week" that Stage
     # 11's release checklist requires.
-    timeout-minutes: 30
+    # 45, raised from 30 alongside the nested suite's own 1800 s bound:
+    # that bound must sit *inside* this one, or a slow inner run trips the
+    # job wall first and reports "cancelled", which names nothing.
+    timeout-minutes: 45
     # The governance tests in `tests/live/test_github_governance.py` assert
     # that GitHub *refuses* privileged operations -- a direct push to a
     # protected `main`, a merge with a red required check. To assert a
