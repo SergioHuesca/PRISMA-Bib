@@ -19,6 +19,9 @@ permissions:
 
 env:
   UV_VERSION: "0.11.26"
+  # Experiment: one polars thread, so no thread pool exists to be inherited broken by
+  # the forked mutmut workers. Compare the timeout count with the previous run.
+  POLARS_MAX_THREADS: "1"
 
 jobs:
   diagnose:
@@ -87,6 +90,7 @@ jobs:
             echo
             echo "Stack dumps captured: $(ls diag/stack-*.txt 2>/dev/null | wc -l)"
           } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
       - name: Collect artifacts
         if: always()
