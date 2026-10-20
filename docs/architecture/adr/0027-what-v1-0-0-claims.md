@@ -22,12 +22,15 @@ removed         1
 included        0
 ```
 
-**Screening has not run.** Thirty-five records carry a title/abstract decision; none carries a
-full-text decision. `included = 0` is not a finding — it is the absence of one.
+**Screening is incomplete.** 814 of 1,293 records carry a title/abstract decision (737 exclude,
+42 unsure, 35 include, after collapsing 15 records with conflicting repeat decisions to their
+latest event); 479 carry none. The 35 included records are the ones with full-text assets
+retrieved, and none carries a full-text decision. `included = 0` is not a finding — it is the
+absence of one.
 
-Screening 1293 records is irreducibly human labour, and ADR 0003 exists to keep it that way. It
-is weeks of work, and it is not work the software is waiting on: every stage is built, tested
-and released.
+Completing title/abstract screening and judging full-text eligibility is irreducibly human
+labour, and ADR 0003 exists to keep it that way. It is not work the software is waiting on:
+every stage is built, tested and released.
 
 Two further facts bear on the release:
 

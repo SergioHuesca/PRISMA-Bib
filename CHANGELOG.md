@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 feature-complete against its build plan, and every number it exports is reproducible from a
 clean clone on a machine that has never seen this project. It does not claim that a
 systematic review has been carried out with it: the reference corpus `Baseball-CVPR` is
-unscreened, so its `included` count is `0` — the absence of a result, not a result.
+screened at title/abstract level for 814 of its 1,293 records, with no full-text decision yet,
+so its `included` count is `0` — the absence of a result, not a result.
 [ADR 0027](docs/architecture/adr/0027-what-v1-0-0-claims.md) states what this version claims
 and what it does not, and `docs/methodology/validation.md` records what was actually
 established.
