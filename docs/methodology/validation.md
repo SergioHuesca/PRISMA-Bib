@@ -42,8 +42,9 @@ numbers do not balance. An export that produced an inconsistent PRISMA diagram w
 
 ### The live Scopus contract still matches
 
-`tests/live/test_scopus_live.py` passes **from an entitled network**, verified on 2026-09-09.
-The nightly's copy is red for an environmental reason, disclosed below.
+`tests/live/test_scopus_live.py` passes **from an entitled network**. It has not been re-run from
+one for this release: a run from a non-campus address returns HTTP 401 (2026-10-20). The
+nightly's copy is red for the same environmental reason, disclosed below.
 
 ## What was not established
 

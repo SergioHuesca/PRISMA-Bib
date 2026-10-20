@@ -66,9 +66,9 @@ the code, for a failure that is not a defect in the code. The key is valid; a Gi
 is not covered by the institutional entitlement.
 
 What the checklist actually wants — *evidence the live contract still matches Scopus's API
-shape* — is available and was obtained: the live Scopus test **passes from an entitled network**
-and was run there. The release notes say so, and say plainly that the nightly's copy of that
-test is red for an environmental reason, with the remedy pending.
+shape* — is available: the live Scopus test **passes from an entitled network**, but it has not
+been re-run from one for this release. The release notes say so, and say plainly that the
+nightly's copy of that test is red for an environmental reason, with the remedy pending.
 
 An undisclosed red test would be dishonest. A disclosed one, with its cause and remedy named, is
 the ordinary condition of software that depends on a licensed third-party API.
@@ -117,8 +117,9 @@ in a published document.
 4. **A reader can reproduce every number in the bundle**, which is the property that actually
    makes the tool trustworthy, and it is now tested across two machines and two operating
    systems.
-5. **Two release-checklist lines ship unmet and are disclosed.** The mutation kill rate for
-   `taxonomy/` is unmeasured, and the `live` Scopus test is red on hosted runners. A checklist
+5. **Three release-checklist lines ship unmet and are disclosed.** The mutation kill rate for
+   `taxonomy/` is unmeasured, the S05-AC5 screening-throughput timing is unmeasured, and the
+   `live` Scopus test is red on hosted runners and not re-run from an entitled network. A checklist
    whose items may be quietly skipped is not a checklist; both are named, in the release notes
    and here.
 
