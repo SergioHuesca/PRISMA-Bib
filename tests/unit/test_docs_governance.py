@@ -47,8 +47,8 @@ def _status_word(adr: Path) -> str:
 
 
 def _changelog_versions() -> list[str]:
-    """Release headings, newest first (helper, not a test)."""
-    return re.findall(r"^## \[([^\]]+)\] —", CHANGELOG.read_text(encoding="utf-8"), re.MULTILINE)
+    """Every bracketed heading, `Unreleased` included, newest first (helper, not a test)."""
+    return re.findall(r"^## \[([^\]]+)\]", CHANGELOG.read_text(encoding="utf-8"), re.MULTILINE)
 
 
 def _changelog_definitions() -> dict[str, str]:
@@ -60,12 +60,15 @@ def _changelog_definitions() -> dict[str, str]:
 
 def _expected_definitions() -> dict[str, str]:
     """What the definitions must be, derived from the headings (helper, not a test)."""
-    versions = _changelog_versions()
+    headings = _changelog_versions()
+    released = [version for version in headings if version != "Unreleased"]
     expected = {
         current: f"{REPOSITORY_URL}/compare/v{previous}...v{current}"
-        for current, previous in pairwise(versions)
+        for current, previous in pairwise(released)
     }
-    expected[versions[-1]] = f"{REPOSITORY_URL}/releases/tag/v{versions[-1]}"
+    expected[released[-1]] = f"{REPOSITORY_URL}/releases/tag/v{released[-1]}"
+    if "Unreleased" in headings:
+        expected["Unreleased"] = f"{REPOSITORY_URL}/compare/v{released[0]}...HEAD"
     return expected
 
 
@@ -115,3 +118,26 @@ def test_changelog__every_definition__spans_from_the_previous_release() -> None:
     subsequent releases, which is how this was found.
     """
     assert _changelog_definitions() == _expected_definitions()
+
+
+@pytest.mark.unit
+def test_changelog__bare_unreleased_heading__is_checked_against_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `## [Unreleased]` heading has no date, so it must still be checked.
+
+    The heading pattern once required a date, which hid this heading from both
+    tests: its link could point at any range. Its definition must compare the
+    newest release with `HEAD`.
+    """
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "## [Unreleased]\n\n## [1.0.0] — 2026-09-09\n\n"
+        f"[Unreleased]: {REPOSITORY_URL}/compare/v1.0.0...HEAD\n"
+        f"[1.0.0]: {REPOSITORY_URL}/releases/tag/v1.0.0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(globals(), "CHANGELOG", changelog)
+
+    assert _changelog_definitions() == _expected_definitions()
+    assert _expected_definitions()["Unreleased"] == f"{REPOSITORY_URL}/compare/v1.0.0...HEAD"
