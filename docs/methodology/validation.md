@@ -42,15 +42,16 @@ numbers do not balance. An export that produced an inconsistent PRISMA diagram w
 
 ### The live Scopus contract still matches
 
-`tests/live/test_scopus_live.py` passes **from an entitled network**, verified on 2026-09-09.
-The nightly's copy is red for an environmental reason, disclosed below.
+`tests/live/test_scopus_live.py` passes **from an entitled network**. It has not been re-run from
+one for this release: a run from a non-campus address returns HTTP 401 (2026-10-20). The
+nightly's copy is red for the same environmental reason, disclosed below.
 
 ## What was not established
 
 ### No completed review, and therefore no reference-review comparison
 
 BUILD_PLAN asks for a delta against a published review, with differences explained. There is
-none to compare, because **screening has not been performed**:
+none to compare, because **screening is incomplete and no full-text eligibility has been judged**:
 
 ```
 identified   1294
@@ -58,8 +59,8 @@ removed         1
 included        0
 ```
 
-Thirty-five records carry a title/abstract decision; none carries a full-text decision.
-**`included = 0` is the absence of a result, not a result.** Any figure, table or taxonomy
+814 of 1,293 records carry a title/abstract decision (737 exclude, 42 unsure, 35 include); 479
+carry none. No full-text decision exists. **`included = 0` is the absence of a result, not a result.** Any figure, table or taxonomy
 distribution generated over the `INCLUDED` set is correspondingly empty, and the captions say
 so — every one states `n = 0 (included)`.
 

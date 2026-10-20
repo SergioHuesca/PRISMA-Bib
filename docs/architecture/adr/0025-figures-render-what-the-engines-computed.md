@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-07. Implements BUILD_PLAN Stage 9. Amends the Stage 7 `network.py` and Stage 8
+Accepted — 2026-09-07. Implements BUILD_PLAN Stage 9. Amends the Stage 7 `network.py` and Stage 8
 `taxonomy` contracts — see Decision 2, which is the reason this ADR exists before any code.
 
 Adopts the `dataviz` skill's reference palette wholesale (Decision 3); this ADR records the

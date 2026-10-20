@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-09. Records three deviations from BUILD_PLAN Stage 11, taken together because
+Accepted — 2026-09-09. Records three deviations from BUILD_PLAN Stage 11, taken together because
 they are one decision: what the `v1.0.0` release asserts about this project.
 
 §2.6 requires an ADR for each. Taking them separately would let a reader assemble a claim from
@@ -22,12 +22,15 @@ removed         1
 included        0
 ```
 
-**Screening has not run.** Thirty-five records carry a title/abstract decision; none carries a
-full-text decision. `included = 0` is not a finding — it is the absence of one.
+**Screening is incomplete.** 814 of 1,293 records carry a title/abstract decision (737 exclude,
+42 unsure, 35 include, after collapsing 15 records with conflicting repeat decisions to their
+latest event); 479 carry none. The 35 included records are those for which full-text resolution
+was attempted; 9 of them hold a stored PDF, and none carries a full-text decision. `included = 0` is not a finding — it is the
+absence of one.
 
-Screening 1293 records is irreducibly human labour, and ADR 0003 exists to keep it that way. It
-is weeks of work, and it is not work the software is waiting on: every stage is built, tested
-and released.
+Completing title/abstract screening and judging full-text eligibility is irreducibly human
+labour, and ADR 0003 exists to keep it that way. It is not work the software is waiting on:
+every stage is built, tested and released.
 
 Two further facts bear on the release:
 
@@ -63,9 +66,9 @@ the code, for a failure that is not a defect in the code. The key is valid; a Gi
 is not covered by the institutional entitlement.
 
 What the checklist actually wants — *evidence the live contract still matches Scopus's API
-shape* — is available and was obtained: the live Scopus test **passes from an entitled network**
-and was run there. The release notes say so, and say plainly that the nightly's copy of that
-test is red for an environmental reason, with the remedy pending.
+shape* — is available: the live Scopus test **passes from an entitled network**, but it has not
+been re-run from one for this release. The release notes say so, and say plainly that the
+nightly's copy of that test is red for an environmental reason, with the remedy pending.
 
 An undisclosed red test would be dishonest. A disclosed one, with its cause and remedy named, is
 the ordinary condition of software that depends on a licensed third-party API.
@@ -114,8 +117,11 @@ in a published document.
 4. **A reader can reproduce every number in the bundle**, which is the property that actually
    makes the tool trustworthy, and it is now tested across two machines and two operating
    systems.
-5. **One release-checklist line ships unmet and disclosed.** A checklist whose items may be
-   quietly skipped is not a checklist; this one is named, in the release notes and here.
+5. **Three release-checklist lines ship unmet and are disclosed.** The mutation kill rate for
+   `taxonomy/` is unmeasured, the S05-AC5 screening-throughput timing is unmeasured, and the
+   `live` Scopus test is red on hosted runners and not re-run from an entitled network. A checklist
+   whose items may be quietly skipped is not a checklist; both are named, in the release notes
+   and here.
 
 ## Related decisions
 

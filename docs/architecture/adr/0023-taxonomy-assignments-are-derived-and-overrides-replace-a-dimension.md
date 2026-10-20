@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-04. Implements BUILD_PLAN Stage 8, under [ADR 0005](0005-rules-plus-override-taxonomy.md),
+Accepted — 2026-09-04. Implements BUILD_PLAN Stage 8, under [ADR 0005](0005-rules-plus-override-taxonomy.md),
 which already fixed the architecture: versioned rule files as data, human override events,
 mandatory counting units, a seeded audit sample.
 
