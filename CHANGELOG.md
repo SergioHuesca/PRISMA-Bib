@@ -25,6 +25,19 @@ entitled network and was run there before this release. The documented remedy �
 red test would be dishonest; a disclosed one, with its cause and remedy named, is the ordinary
 condition of software that depends on a licensed third-party API.
 
+### Known limitations
+
+Open issues carried into 1.0.0, each tracked on the issue tracker:
+
+- **#60** — the nightly benchmark's persistence budget (100 ms) has been exceeded intermittently
+  (305 ms on one run); the cause is not yet established.
+- **#42** — 129 surviving mutants in `src/prismabib/prisma/` are not yet triaged.
+- **#50** — `taxonomy.analysis` sits outside the `AnalysisResult` introspective sweep, so it has
+  no bit-identity check (S07-AC5).
+- **#25** — Stage 10 follow-ups: `commit_is_pushed` staleness, gates typo tolerance, a PNG ADR,
+  and five smaller items.
+- **#27** — a misleading error when `compound_terms` is a single table instead of a list.
+
 ### Added
 
 - **`numbers.json` is now proven reproducible across machines, not asserted to be**
