@@ -1,0 +1,104 @@
+# One-off diagnostic for the taxonomy/ mutation timeouts. NOT for merging to main.
+#
+# Question: are the timeouts real hangs? The previous diagnosis suspected polars
+# deadlocking in the mutmut workers after os.fork(). This run mutates taxonomy/ only,
+# on Linux, and takes a py-spy stack dump of each worker every 10 minutes, so a stuck
+# worker shows where it is blocked.
+#
+# It starts on a push to its own branch, because GitHub dispatches manual workflows only
+# from the default branch. It reports numbers; it does not gate anything.
+
+name: Diagnostic taxonomy mutation
+
+on:
+  push:
+    branches: [diag/taxonomy-mutation-hang]
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.11.26"
+
+jobs:
+  diagnose:
+    name: taxonomy mutation diagnostic
+    runs-on: ubuntu-latest
+    # The approved cap. The mutmut run itself is capped at 45 minutes below, so the
+    # artifact and summary are written before this job is killed.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Install py-spy
+        run: uv tool install py-spy
+
+      - name: Mutation run on taxonomy only, with stack dumps of stuck workers
+        run: |
+          set -uo pipefail
+          mkdir -p diag
+          start=$(date +%s)
+
+          # Watchdog: every 10 minutes, dump the stack of every python worker that is
+          # a child of mutmut. A hung polars call shows as the same frame in every dump.
+          (
+            while sleep 600; do
+              ts=$(date -u +%H%M%S)
+              for pid in $(pgrep -f "mutmut" | xargs -r -I{} pgrep -P {} || true); do
+                sudo -E "$HOME/.local/bin/py-spy" dump --pid "$pid" \
+                  > "diag/stack-${ts}-${pid}.txt" 2>&1 || true
+              done
+            done
+          ) &
+          watchdog=$!
+
+          timeout --signal=INT 2700 uv run mutmut run "prismabib.taxonomy.*" --max-children 4 \
+            > diag/mutmut-run.log 2>&1
+          echo "mutmut exit: $?" | tee diag/exit.txt
+
+          kill "$watchdog" 2>/dev/null || true
+          echo "elapsed_seconds=$(( $(date +%s) - start ))" | tee -a diag/exit.txt
+
+      - name: Summarise the run
+        if: always()
+        run: |
+          set -uo pipefail
+          uv run mutmut export-cicd-stats > /dev/null 2>&1 || true
+          {
+            echo "## Diagnostic: taxonomy/ mutation"
+            echo
+            cat diag/exit.txt 2>/dev/null
+            echo
+            if [ -f mutants/mutmut-cicd-stats.json ]; then
+              echo '```json'
+              cat mutants/mutmut-cicd-stats.json
+              echo '```'
+            else
+              echo "No statistics were written: the run did not reach export."
+            fi
+            echo
+            echo "Stack dumps captured: $(ls diag/stack-*.txt 2>/dev/null | wc -l)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          set -uo pipefail
+          cp mutants/mutmut-cicd-stats.json diag/ 2>/dev/null || true
+          uv run mutmut results > diag/results.txt 2>&1 || true
+
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: taxonomy-mutation-diagnostic
+          path: diag/
+          retention-days: 14
