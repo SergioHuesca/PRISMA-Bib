@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# Any env file, e.g. IPN.env; the .env rule above matches only the exact name
+*.env
 
 # Licensed and proprietary data (Layer 0, store, full-text, DuckDB)
 # Per BUILD_PLAN §2.5: data never enters git
