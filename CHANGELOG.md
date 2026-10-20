@@ -17,8 +17,13 @@ so its `included` count is `0` — the absence of a result, not a result.
 and what it does not, and `docs/methodology/validation.md` records what was actually
 established.
 
-**One release-checklist item ships unmet and disclosed.** The `live` nightly's Scopus test is
-red from GitHub-hosted runners: the API key is valid, but the institutional entitlement is
+**Two release-checklist items ship unmet and are disclosed here.** First, the mutation kill
+rate for `taxonomy/` has not been measured. The weekly mutation job, which covers `prisma/` and
+`taxonomy/`, has been cancelled at its time limit every week since 2026-09-14. Diagnostic runs
+on 2026-10-20 showed mutant workers for `taxonomy/` idle inside the polars library after the
+process is forked, so their timeouts are counted as caught and cannot be read as a measurement.
+The last measured kill rate, 87.14%, covers `prisma/` only and predates `taxonomy/` joining the
+scope. Second, the `live` nightly's Scopus test is red from GitHub-hosted runners: the API key is valid, but the institutional entitlement is
 bound to campus IP addresses, and a runner's is not one of them. The same test passes from an
 entitled network and was run there before this release. The documented remedy —
 `X-ELS-Insttoken`, already plumbed at `sources/scopus.py` — is with Elsevier. An undisclosed

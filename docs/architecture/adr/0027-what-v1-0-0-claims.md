@@ -117,8 +117,10 @@ in a published document.
 4. **A reader can reproduce every number in the bundle**, which is the property that actually
    makes the tool trustworthy, and it is now tested across two machines and two operating
    systems.
-5. **One release-checklist line ships unmet and disclosed.** A checklist whose items may be
-   quietly skipped is not a checklist; this one is named, in the release notes and here.
+5. **Two release-checklist lines ship unmet and are disclosed.** The mutation kill rate for
+   `taxonomy/` is unmeasured, and the `live` Scopus test is red on hosted runners. A checklist
+   whose items may be quietly skipped is not a checklist; both are named, in the release notes
+   and here.
 
 ## Related decisions
 
