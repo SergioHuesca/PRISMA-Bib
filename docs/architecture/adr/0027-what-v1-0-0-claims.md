@@ -24,8 +24,8 @@ included        0
 
 **Screening is incomplete.** 814 of 1,293 records carry a title/abstract decision (737 exclude,
 42 unsure, 35 include, after collapsing 15 records with conflicting repeat decisions to their
-latest event); 479 carry none. The 35 included records are the ones with full-text assets
-retrieved, and none carries a full-text decision. `included = 0` is not a finding — it is the
+latest event); 479 carry none. The 35 included records are those for which full-text resolution
+was attempted; 9 of them hold a stored PDF, and none carries a full-text decision. `included = 0` is not a finding — it is the
 absence of one.
 
 Completing title/abstract screening and judging full-text eligibility is irreducibly human
