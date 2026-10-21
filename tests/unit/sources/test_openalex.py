@@ -16,7 +16,7 @@ import pytest
 import respx
 
 from prismabib.config import Settings
-from prismabib.errors import RateLimitError
+from prismabib.errors import AuthError, EntitlementError, RateLimitError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.openalex import (
     FieldOutcome,
@@ -155,13 +155,41 @@ def test_lookup_dois__over_fifty__splits_into_batches() -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("status", [401, 403])
-def test_lookup_dois__401_or_403__is_refused_with_status_not_raised(status: int) -> None:
+def test_lookup_dois__401_or_403_in_opt_in_run__is_refused_with_status(status: int) -> None:
     with respx.mock:
         route = respx.get(OpenAlexClient.ENDPOINT).mock(return_value=httpx.Response(status))
-        result = _client().lookup_dois([_DOI_ONE])
+        result = _client().lookup_dois([_DOI_ONE], fallback_opt_in=True)
 
     assert result == {_DOI_ONE: Refused(status)}
     assert route.call_count == 1  # a refusal is not retried
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("status", "error"), [(401, AuthError), (403, EntitlementError)])
+def test_lookup_dois__401_or_403_outside_opt_in__raises(
+    status: int, error: type[Exception]
+) -> None:
+    with respx.mock:
+        route = respx.get(OpenAlexClient.ENDPOINT).mock(return_value=httpx.Response(status))
+        with pytest.raises(error):
+            _client().lookup_dois([_DOI_ONE])
+
+    assert route.call_count == 1
+
+
+@pytest.mark.integration
+def test_lookup_dois__case_variant_dois__one_request_entry_and_result_per_input() -> None:
+    upper, lower = "10.9999/SYNTHETIC.ONE", "10.9999/Synthetic.One"
+    with respx.mock:
+        route = respx.get(OpenAlexClient.ENDPOINT).mock(
+            return_value=httpx.Response(200, json=_cassette("works_batch.json"))
+        )
+        result = _client().lookup_dois([upper, lower, _DOI_ONE])
+
+    assert route.call_count == 1
+    assert route.calls.last.request.url.params["filter"] == f"doi:{_DOI_ONE}"
+    assert set(result) == {upper, lower, _DOI_ONE}
+    assert all(isinstance(w, OpenAlexWork) for w in result.values())
 
 
 def _single_work_body(doi: str) -> dict[str, Any]:
@@ -332,7 +360,9 @@ def test_search_title__near_miss__is_rejected(title: str, year: int) -> None:
 
 
 @pytest.mark.integration
-def test_search_title__401__is_refused() -> None:
+def test_search_title__401__refused_only_in_opt_in_run_else_raises() -> None:
     with respx.mock:
         respx.get(OpenAlexClient.ENDPOINT).mock(return_value=httpx.Response(401))
-        assert _client().search_title("Anything", 2021) == Refused(401)
+        assert _client().search_title("Anything", 2021, fallback_opt_in=True) == Refused(401)
+        with pytest.raises(AuthError):
+            _client().search_title("Anything", 2021)

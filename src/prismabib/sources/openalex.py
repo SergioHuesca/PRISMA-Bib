@@ -2,9 +2,11 @@
 
 Modelled on :mod:`prismabib.sources.crossref`: same injectable
 ``http_client``/``rate_limiter``/``cache``, same ``tenacity`` policy (429 and
-5xx retried, nothing else), same error taxonomy -- except that 401 and 403
-are *not* raised. ADR 0028 Decision 1 records them as a ``refused`` outcome
-carrying the HTTP status, so the cascade can continue to the next level.
+5xx retried, nothing else), same error taxonomy. 401 and 403 raise
+:class:`~prismabib.errors.AuthError` / :class:`~prismabib.errors.EntitlementError`,
+except in an explicit ``fallback_opt_in`` run, where ADR 0028 (resolved item 1)
+records them as a ``refused`` outcome carrying the HTTP status so the cascade
+can continue to the next level.
 
 **The API key** (``Settings.openalex_api_key``, optional) is sent as the
 ``api_key`` query parameter on the wire only. It is deliberately left out of
@@ -32,7 +34,13 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait
 
 from prismabib import __version__
 from prismabib.config import Settings
-from prismabib.errors import RateLimitError, UpstreamError, ValidationError
+from prismabib.errors import (
+    AuthError,
+    EntitlementError,
+    RateLimitError,
+    UpstreamError,
+    ValidationError,
+)
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 
@@ -244,61 +252,78 @@ class OpenAlexClient:
         if self._owns_http:
             self._http.close()
 
-    def lookup_dois(self, dois: Iterable[str]) -> dict[str, OpenAlexWork | NotFound | Refused]:
+    def lookup_dois(
+        self, dois: Iterable[str], *, fallback_opt_in: bool = False
+    ) -> dict[str, OpenAlexWork | NotFound | Refused]:
         """Look up DOIs, 50 per request (``filter=doi:a|b|...``).
+
+        Args:
+            dois: DOIs; case variants of one DOI share one lookup and result.
+            fallback_opt_in: True only inside an opt-in fallback run (ADR 0028
+                resolved item 1). Then 401/403 come back as ``Refused``;
+                otherwise they raise.
 
         Returns:
             One entry per input DOI (keyed as given): the work, ``NotFound``
             when OpenAlex has none (absent from the batch, or a 404), or
-            ``Refused`` on 401/403 (not raised, so the cascade can go on).
+            ``Refused`` on 401/403 when ``fallback_opt_in``.
 
         Raises:
+            AuthError: On HTTP 401 outside an opt-in run.
+            EntitlementError: On HTTP 403 outside an opt-in run.
             RateLimitError: On HTTP 429 exhausting the retry budget.
             UpstreamError: On 5xx exhausting the retry budget, or any other
                 unexpected status.
             ValidationError: If a 200 body is not the documented shape.
         """
-        unique = list(dict.fromkeys(dois))
+        inputs = list(dict.fromkeys(dois))
+        # Work on one canonical (lowercase) form, so case variants share one result.
+        canon = list(dict.fromkeys(normalise_doi(d) for d in inputs))
         found: dict[str, OpenAlexWork | NotFound | Refused] = {}
         # `|` and `,` are filter syntax: such a DOI can never sit inside a batch.
-        singles = [d for d in unique if "|" in d or "," in d]
-        batchable = [d for d in unique if d not in singles]
+        singles = [d for d in canon if "|" in d or "," in d]
+        batchable = [d for d in canon if d not in singles]
         for start in range(0, len(batchable), self.BATCH_SIZE):
             batch = batchable[start : start + self.BATCH_SIZE]
-            wanted = {normalise_doi(d): d for d in batch}
             params = {
-                "filter": "doi:" + "|".join(wanted),
+                "filter": "doi:" + "|".join(batch),
                 "per-page": str(self.BATCH_SIZE),
                 "select": _SELECT,
             }
-            result = self._get_works(params)
+            result = self._get_works(params, fallback_opt_in=fallback_opt_in)
             if result is None:
                 # A 404 on the whole batch says nothing about any one DOI.
                 singles.extend(batch)
             elif isinstance(result, list):
                 by_doi = {w.doi: w for w in result if w.doi}
-                found.update({orig: by_doi.get(bare, NotFound()) for bare, orig in wanted.items()})
+                found.update({d: by_doi.get(d, NotFound()) for d in batch})
             else:
                 found.update(dict.fromkeys(batch, result))
         for doi in singles:
-            found[doi] = self._lookup_one(doi)
-        return {d: found[d] for d in unique}
+            found[doi] = self._lookup_one(doi, fallback_opt_in=fallback_opt_in)
+        return {d: found[normalise_doi(d)] for d in inputs}
 
-    def _lookup_one(self, doi: str) -> OpenAlexWork | NotFound | Refused:
+    def _lookup_one(self, doi: str, *, fallback_opt_in: bool) -> OpenAlexWork | NotFound | Refused:
         """Look one DOI up by URL path; only a 404 here means ``not_found``."""
         url = f"{self.ENDPOINT}/doi:{quote(normalise_doi(doi), safe='')}"
-        result = self._get_works({"select": _SELECT}, url=url)
+        result = self._get_works({"select": _SELECT}, url=url, fallback_opt_in=fallback_opt_in)
         if result is None:
             return NotFound()
         return result if isinstance(result, Refused) else result[0]
 
-    def search_title(self, title: str, year: int) -> OpenAlexWork | Refused | None:
+    def search_title(
+        self, title: str, year: int, *, fallback_opt_in: bool = False
+    ) -> OpenAlexWork | Refused | None:
         """Keyword-search by title; accept only an exact normalised-title, same-year match.
 
         Returns:
             The matching work; ``None`` if nothing matches exactly (a near
             miss belongs on a human review list, ADR 0028 Decision 4); or
-            ``Refused`` on 401/403.
+            ``Refused`` on 401/403 when ``fallback_opt_in``.
+
+        Raises:
+            AuthError: On HTTP 401 outside an opt-in run.
+            EntitlementError: On HTTP 403 outside an opt-in run.
         """
         params = {
             "search": title,
@@ -306,7 +331,7 @@ class OpenAlexClient:
             "per-page": "25",
             "select": _SELECT,
         }
-        result = self._get_works(params)
+        result = self._get_works(params, fallback_opt_in=fallback_opt_in)
         if isinstance(result, Refused):
             return result
         if result is None:
@@ -322,7 +347,7 @@ class OpenAlexClient:
         )
 
     def _get_works(
-        self, params: Mapping[str, str], *, url: str | None = None
+        self, params: Mapping[str, str], *, fallback_opt_in: bool, url: str | None = None
     ) -> list[OpenAlexWork] | Refused | None:
         """GET works (the cache key excludes the API key); ``None`` means HTTP 404.
 
@@ -344,8 +369,13 @@ class OpenAlexClient:
         if response.status_code == 404:
             return None
         if response.status_code in (401, 403):
-            logger.warning("openalex.works.refused", status=response.status_code)
-            return Refused(response.status_code)
+            status = response.status_code
+            logger.warning("openalex.works.refused", status=status, opt_in=fallback_opt_in)
+            if fallback_opt_in:
+                return Refused(status)
+            if status == 401:
+                raise AuthError("OpenAlex rejected the request (HTTP 401): check OPENALEX_API_KEY.")
+            raise EntitlementError("OpenAlex refused access (HTTP 403).")
         if self._cache is not None:
             self._cache.store(url, params, response.content)
         logger.info("openalex.works", cache="miss")
