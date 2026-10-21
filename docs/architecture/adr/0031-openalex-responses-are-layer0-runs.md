@@ -22,16 +22,16 @@ drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cite
 
 - **§2.2, lines 101–102.** "Every HTTP response is persisted verbatim as JSONL before any parsing."
   (Wording supplied by the coordinator from the frozen spec; not yet checked against the file.)
-- **§2.2, Layer 1.** "Layer 1 must be reconstructible from Layer 0 by running one function." (as
-  quoted in [ADR 0011](0011-abstract-retrieval-for-subject-areas.md), Context.)
+- **§2.2, Layer 1 (BUILD_PLAN.md line 105).** "Layer 1 must be reconstructible from Layer 0 by running
+  one function." (as quoted in [ADR 0011](0011-abstract-retrieval-for-subject-areas.md), Context.)
 - **§2.2, Layer 0 immutability.** Paraphrased: a sealed run directory is never written again. The
   rule is enforced in `src/prismabib/capture/layout.py` (`guard_writable`).
-- **Stage 1, line 696.** The `PayloadRef` is "Layer 0 file + line offset." (as cited in
+- **Stage 1, line 696.** The `PayloadRef` is "Layer 0 file + line offset". (as cited in
   `src/prismabib/capture/writer.py`.)
 - **Stage 3, line 856.** The schema carries `payload_file` and `payload_line` for each record.
   (as cited in `src/prismabib/capture/writer.py`.)
-- **§5 risk 2.** "never re-fetch what Layer 0 already holds." (as quoted in ADR 0011.)
-- **§5 risk 1.** "Fail loudly, never degrade." (as quoted in ADR 0028.)
+- **§5 risk 2.** "never re-fetch what Layer 0 already holds" (as quoted in ADR 0011).
+- **§5 risk 1.** "Fail loudly, never degrade" (as quoted in ADR 0028).
 - **§2.6, line 301.** "Any later deviation from §1.2 requires a new ADR that supersedes the relevant
   one." (Frozen wording, verified against BUILD_PLAN.md line 301.) The
   deviations below touch §2.2, Stage 1 and Stage 3, not §1.2. Whether §2.6 requires an ADR for them is
@@ -138,7 +138,8 @@ Each `OpenAlexRequest` holds:
 - `params`: the query parameters as sent, with `api_key` removed. For `doi_single` the DOI is in the
   path, so `params` holds only `select`.
 - `api_view`: the `select` string. This is the OpenAlex form of the frozen §2.2 "API view" field
-  (Deviations, item 3).
+  (Deviations, item 3). The frozen "endpoint" and "timestamp" fields map to the manifest's `endpoint`,
+  `retrieved_at`, `started_at` and `finished_at`.
 - `entitlement_context`: `{api_key_used, fallback_opt_in, refusal_status}`, where `refusal_status` is
   401, 403, or `null`. This is the OpenAlex form of the frozen "entitlement context" field.
 - `http_status`, `retrieved_at` (UTC, the time of this request), `result_count`, the number of works in
@@ -315,10 +316,11 @@ approve each one by name before acceptance. The owner approved all five items as
    before any parsing." This record writes one response per file, with exactly one JSONL line per file,
    and keeps the bytes verbatim where it can. A body with a line break is written in compact form, and
    the manifest records the encoding and `raw_sha256` (Decision 2; decided by the owner).
-3. **The §2.2 manifest fields.** The frozen wording names "API view, entitlement context, result count".
-   This record maps them to OpenAlex as `api_view` (the `select` string), `entitlement_context`
-   (`api_key_used`, `fallback_opt_in`, `refusal_status`), and `result_count` (the works in `results`).
-   The owner confirms the mapping.
+3. **The §2.2 manifest fields.** The frozen wording names "API view, endpoint, timestamp, entitlement
+   context, result count". This record maps them to OpenAlex as `api_view` (the `select` string),
+   `endpoint` (the manifest's base URL), `timestamp` (`retrieved_at` per request, with `started_at` and
+   `finished_at` per run), `entitlement_context` (`api_key_used`, `fallback_opt_in`, `refusal_status`),
+   and `result_count` (the works in `results`). The owner approved the mapping.
 4. **The `PayloadRef` form.** Stage 1, line 696 says "file + line offset", and Stage 3, line 856 defines
    `payload_file` and `payload_line`. An OpenAlex work is addressed by file, line `0`, and `openalex_id`
    (Decision 2).
