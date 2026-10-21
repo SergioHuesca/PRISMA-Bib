@@ -1,0 +1,6 @@
+{"search-results": {"opensearch:totalResults": "2", "entry": [
+  {"dc:identifier": "SCOPUS_ID:111", "eid": "2-s2.0-111", "prism:doi": "10.1000/A",
+   "dc:creator": "Doe J.",
+   "affiliation": [{"affilname": "Univ Example", "affiliation-city": "Madrid", "affiliation-country": "Spain"}]},
+  {"dc:identifier": "SCOPUS_ID:222", "eid": "2-s2.0-222", "prism:doi": "10.1000/b"}
+]}}
