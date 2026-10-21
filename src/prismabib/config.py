@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     scopus_insttoken: SecretStr | None = None
     elsevier_sd_api_key: SecretStr | None = None
     unpaywall_email: str | None = None
+    openalex_api_key: SecretStr | None = None
     prismabib_projects_root: Path = Path("./projects")
 
     def __init__(self, **data: Any) -> None:

@@ -1,0 +1,32 @@
+{
+  "meta": {"count": 3, "page": 1, "per_page": 25},
+  "results": [
+    {
+      "id": "https://openalex.org/W2000000001",
+      "doi": null,
+      "title": "Pitch Tracking with Vision Models: A Survey",
+      "publication_year": 2021,
+      "abstract_inverted_index": null,
+      "authorships": [],
+      "topics": []
+    },
+    {
+      "id": "https://openalex.org/W2000000002",
+      "doi": null,
+      "title": "Pitch tracking, with vision  models",
+      "publication_year": 2019,
+      "abstract_inverted_index": null,
+      "authorships": [],
+      "topics": []
+    },
+    {
+      "id": "https://openalex.org/W2000000003",
+      "doi": null,
+      "title": "Pitch Tracking, with Vision   Models!",
+      "publication_year": 2021,
+      "abstract_inverted_index": {"Exact": [0]},
+      "authorships": [],
+      "topics": []
+    }
+  ]
+}
