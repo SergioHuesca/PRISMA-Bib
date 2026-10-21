@@ -8,20 +8,18 @@ Adds a Layer 0 run kind for OpenAlex responses. It is the capture that
 [ADR 0028](0028-field-level-fallback-cascade.md) Decision 3 requires, and ADR 0030 Decision 6 names
 this record as the place that specifies it. The record changes the Layer 0 layout and the `PayloadRef`
 form, and the owner approved each change as a deviation in the section "Deviations from the frozen
-contract". The owner's decisions are recorded under "Owner decisions". The §2.2 and Stage quotes are
-not verified against the file; that is recorded under "Not verified against the file".
+contract". The owner's decisions are recorded under "Owner decisions", and the quote check is recorded
+under "Verification record".
 
 ## Context
 
 ### The spec clauses this record relies on
 
-The §2.6 wording is verified against BUILD_PLAN.md line 301 (Owner decisions). The other clauses are
-not verified against the file (Owner decisions, "Not verified against the file"). BUILD_PLAN.md is not published in this repository (see
-[provenance.md](../provenance.md)) and was not readable from the worktree where this record was
-drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cites them.
+BUILD_PLAN.md is not published in this repository (see [provenance.md](../provenance.md)). The clauses
+below were checked against the frozen file and the cited ADRs (Verification record). Clauses marked
+*as quoted in* are quoted from the ADR or code that cites them.
 
 - **§2.2, lines 101–102.** "Every HTTP response is persisted verbatim as JSONL before any parsing."
-  (Wording supplied by the coordinator from the frozen spec; not yet checked against the file.)
 - **§2.2, Layer 1 (BUILD_PLAN.md line 105).** "Layer 1 must be reconstructible from Layer 0 by running
   one function." (as quoted in [ADR 0011](0011-abstract-retrieval-for-subject-areas.md), Context.)
 - **§2.2, Layer 0 immutability.** Paraphrased: a sealed run directory is never written again. The
@@ -33,10 +31,8 @@ drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cite
 - **§5 risk 2.** "never re-fetch what Layer 0 already holds" (as quoted in ADR 0011).
 - **§5 risk 1.** "Fail loudly, never degrade" (as quoted in ADR 0028).
 - **§2.6, line 301.** "Any later deviation from §1.2 requires a new ADR that supersedes the relevant
-  one." (Frozen wording, verified against BUILD_PLAN.md line 301.) The
-  deviations below touch §2.2, Stage 1 and Stage 3, not §1.2. Whether §2.6 requires an ADR for them is
-  for the owner to confirm (open
-  question 6).
+  one." (Frozen wording, BUILD_PLAN.md line 301.) The deviations below touch §2.2, Stage 1 and Stage 3,
+  not §1.2. Under §2.6, this record is the ADR for them (Owner decisions).
 
 ### What the client asks for today
 
@@ -176,7 +172,7 @@ complete outcome set, so a reader can see which identifiers were attempted and w
 without parsing the bodies. A test recomputes both from the stored bytes and fails if they differ
 from the manifest (Verification 1). Deriving them only in Layer 1 was the alternative. It was rejected
 because it made `not_found` derived and `absent` stored or vice versa, and a refusal's body may be
-empty, so the manifest needs its own record of the outcome. The owner may reverse this on acceptance.
+empty, so the manifest needs its own record of the outcome.
 
 Layer 1 field provenance (ADR 0028 Decision 1) takes each field's outcome from these entries. The
 four field outcomes are `value` (the work was found and the field is not in `absent_fields`),
@@ -425,24 +421,35 @@ Each decision below is the owner's, or is recorded in an earlier ADR as shown.
   (Decision 7).
 - **The OpenAlex capture is specified in this record, ADR 0031.** Decided by ADR 0030 Decision 6, which
   is Accepted on its branch and names this record.
-- **`not_found` and `absent` are stored in the manifest, not derived from the body** (Decision 4, with
-  the reason given there).
+- **`not_found` and `absent` are stored in the manifest, computed at write time** (Decision 4). The
+  manifest needs its own record of each outcome, because a refusal's body may be empty, and a reader
+  must see what was attempted without parsing bodies. Deriving them only in Layer 1 was rejected for
+  that reason.
+- **§2.6 applies to the five deviations, and this ADR is the record.** The five items in "Deviations
+  from the frozen contract" are the deviations it covers.
 - **No topic score is stored in Layer 1.** Decided by ADR 0030 Decision 1. The score stays in the stored body.
-
-- **The API key is sent in a request header, not the query string** (Decision 6). The header name and
-  value format are an implementation check against the OpenAlex documentation, to be done before the
-  implementation is written. This is not a further owner decision.
+- **The API key is sent in a request header, not the query string** (Decision 6). This is an
+  implementation check, not an owner decision: the header name and value format are confirmed against the
+  OpenAlex documentation before the implementation is written.
 - **The compact encoding is an allowed fallback** for response bodies that contain line breaks,
   recorded per response in `encoding` and `raw_sha256`. Layer 1 still rebuilds from the stored bytes
   (Decision 2, Verification 1).
-- **The quoted §2.6 wording is verified** against BUILD_PLAN.md line 301 (Context).
 
-### Not verified against the file
+### Verification record
 
-The owner's decisions cover the §2.6 quote only. The following are not checked against BUILD_PLAN.md
-in this record, and they are recorded as unverified, not as open questions: the §2.2 quotes at lines
-101–102, the Stage 1 line 696 and Stage 3 line 856 citations, and the quotes that ADR 0011 and ADR 0028
-attribute to the frozen spec. The owner decides whether they are verified before merge.
+The quotes and citations in this record were checked against BUILD_PLAN.md and the cited ADRs at commit
+bf5b19f. The checked items are:
+
+- §2.2, lines 101–102, "Every HTTP response is persisted verbatim as JSONL before any parsing."
+- §2.2, line 105, "Layer 1 must be reconstructible from Layer 0 by running one function."
+- Stage 1, line 696, `PayloadRef` "Layer 0 file + line offset".
+- Stage 3, line 856, `payload_file` and `payload_line`.
+- The ADR 0011 quotes in this record.
+- The ADR 0028 quotes in this record.
+- The §5 quotes, risks 1 and 2.
+- §2.6, line 301, "Any later deviation from §1.2 requires a new ADR that supersedes the relevant one."
+
+The ADR 0028 line 192 error is a separate correction, and it is not part of this ADR.
 
 ## Related decisions
 
