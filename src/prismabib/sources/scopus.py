@@ -24,9 +24,11 @@ asks for: redacting the API key **at the structlog processor level**. See
 from __future__ import annotations
 
 import json
+import re
 import time
-from collections.abc import Iterator, Mapping, MutableMapping
-from typing import Any, Self
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
+from dataclasses import dataclass
+from typing import Any, Literal, Self, TypeVar
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -342,6 +344,107 @@ class RecordNotFoundError(SourceError):
     """
 
 
+_EID_RE = re.compile(r"2-s2\.0-\d+")
+_E = TypeVar("_E", bound=SourceError)
+
+
+def _with_refusal(exc: _E, response: httpx.Response) -> _E:
+    """Attach the HTTP status and server message the opt-in cascade records.
+
+    The public class is raised unchanged (so the CLI prints ``AuthError``); the two
+    values are plain instance attributes, which survive pickling and copying.
+    """
+    exc.http_status = response.status_code  # type: ignore[attr-defined]
+    exc.response_message = _response_message(response)  # type: ignore[attr-defined]
+    return exc
+
+
+def _response_message(response: httpx.Response) -> str:
+    """The server's own refusal text: ``service-error.status.statusText``, else the body."""
+    named = _entitlement_name(response, None)
+    return named if named != "unknown entitlement" else response.text[:200]
+
+
+#: ADR 0028 enrichment-level outcome for one field group (Decision 1).
+CascadeOutcome = Literal["value", "refused", "absent", "not_found"]
+
+#: Query term for one DOI in :meth:`ScopusClient.search_standard_by_dois`.
+#:
+#: Verified against a live request on 2026-10-21, for one DOI:
+#: ``DOI("10.1002/ajp.23170")`` returned HTTP 200 with 1 entry. The batch form,
+#: several terms joined with ``DOI_QUERY_JOINER`` (`` OR ``), is NOT yet verified
+#: for more than one DOI.
+DOI_QUERY_TERM = 'DOI("{doi}")'
+DOI_QUERY_JOINER = " OR "
+
+
+@dataclass(frozen=True, slots=True)
+class Affiliation:
+    """One affiliation as a STANDARD or META view reports it."""
+
+    name: str | None
+    city: str | None
+    country: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CascadeResult:
+    """What one enrichment level returned for one record (ADR 0028 Decision 1).
+
+    ``http_status`` and ``message`` are set only when ``outcome == "refused"``.
+    """
+
+    outcome: CascadeOutcome
+    affiliations: tuple[Affiliation, ...] = ()
+    first_author: str | None = None
+    identifiers: Mapping[str, str] | None = None
+    http_status: int | None = None
+    message: str | None = None
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Scopus JSON collapses a one-element list to the bare object."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _affiliations(raw: Any) -> tuple[Affiliation, ...]:
+    # affilname, affiliation-city and affiliation-country were observed in a 2026-10-21 single-DOI probe.
+    return tuple(
+        Affiliation(a.get("affilname"), a.get("affiliation-city"), a.get("affiliation-country"))
+        for a in _as_list(raw)
+        if isinstance(a, Mapping)
+    )
+
+
+def _first_author(value: Any) -> str | None:
+    """First author from a ``dc:creator`` value.
+
+    Verified 2026-10-21 (single-DOI probes): in STANDARD, ``entry[0].dc:creator`` is a
+    plain string; in META, ``coredata.dc:creator`` is a dict whose only key is
+    ``author``. UNVERIFIED: what ``author`` holds (a list, or a dict) and its inner key
+    names; ``ce:indexed-name`` / ``authname`` / ``$`` are guesses.
+    """
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, Mapping):
+        authors = _as_list(value.get("author"))
+        item = authors[0] if authors else value
+        if isinstance(item, Mapping):
+            for key in ("ce:indexed-name", "authname", "$"):
+                if isinstance(name := item.get(key), str) and name:
+                    return name
+    return None
+
+
+def _result(
+    affiliations: tuple[Affiliation, ...], first_author: str | None, ids: Mapping[str, str]
+) -> CascadeResult:
+    outcome: CascadeOutcome = "value" if affiliations or first_author else "absent"
+    return CascadeResult(outcome, affiliations, first_author, dict(ids))
+
+
 class ScopusClient:
     """A client for the Scopus Search and Abstract Retrieval APIs.
 
@@ -546,6 +649,154 @@ class ScopusClient:
             )
         return response
 
+    def search_standard_by_dois(
+        self, dois: Iterable[str], *, batch_size: int = PAGE_SIZE, fallback_opt_in: bool = False
+    ) -> dict[str, CascadeResult]:
+        """ADR 0028 level 2: ``view=STANDARD`` Search, one request per batch of DOIs.
+
+        Never called by the acquisition path, which stays ``view=COMPLETE``.
+        The single-DOI query is live-verified; the multi-DOI ``OR`` batch is not
+        (see :data:`DOI_QUERY_TERM`).
+
+        Args:
+            dois: DOIs to look up; duplicates are collapsed.
+            batch_size: DOIs per request, 1..:data:`PAGE_SIZE` (one page is read per
+                batch, so more than a page could silently drop results).
+            fallback_opt_in: When ``False`` a 401/403 raises as for any client call.
+                When ``True`` it yields ``refused`` for that batch's DOIs and goes on.
+
+        Returns:
+            DOI (as given) -> ``value``, ``absent`` (entry has no affiliation or
+            first author), ``not_found`` (no entry returned) or ``refused``.
+
+        Raises:
+            ValidationError: Bad ``batch_size`` or a DOI containing ``"``.
+            AuthError: On 401 unless ``fallback_opt_in``.
+            EntitlementError: On 403 unless ``fallback_opt_in``.
+        """
+        if not 0 < batch_size <= self.PAGE_SIZE:
+            raise ValidationError(f"batch_size must be 1..{self.PAGE_SIZE}, got {batch_size}")
+        unique = list(dict.fromkeys(dois))
+        if any('"' in d for d in unique):
+            raise ValidationError("A DOI containing a double quote cannot be put in a query")
+        results: dict[str, CascadeResult] = {}
+        for i in range(0, len(unique), batch_size):
+            batch = unique[i : i + batch_size]
+            query = DOI_QUERY_JOINER.join(DOI_QUERY_TERM.format(doi=d) for d in batch)
+            params = {"query": query, "view": "STANDARD", "count": str(self.PAGE_SIZE)}
+            try:
+                page = self._get(self.SEARCH_ENDPOINT, params, view="STANDARD")
+            except (AuthError, EntitlementError) as exc:
+                if not fallback_opt_in:
+                    raise
+                refused = CascadeResult(
+                    "refused",
+                    http_status=getattr(exc, "http_status", None),
+                    message=getattr(exc, "response_message", None),
+                )
+                results.update(dict.fromkeys(batch, refused))
+                continue
+            by_doi = self._index_standard_page(page, batch)
+            for doi in batch:
+                entry = by_doi.get(doi.lower())
+                if entry is None:
+                    results[doi] = CascadeResult("not_found")
+                    continue
+                ids = {
+                    k: v
+                    for k in ("dc:identifier", "eid", "prism:doi", "pubmed-id")
+                    if isinstance(v := entry.get(k), str)
+                }
+                results[doi] = _result(
+                    _affiliations(entry.get("affiliation")),
+                    _first_author(entry.get("dc:creator")),
+                    ids,
+                )
+        return results
+
+    def _index_standard_page(
+        self, page: JsonDict, batch: list[str]
+    ) -> dict[str, Mapping[str, Any]]:
+        """Validate one STANDARD page and index its entries by lower-cased DOI.
+
+        Raises:
+            ValidationError: On a ``service-error`` or envelope-less body, when
+                ``opensearch:totalResults`` exceeds the entries received (the batch
+                would silently lose records), or when two entries share a DOI.
+        """
+        if "service-error" in page:
+            raise ValidationError(
+                f"Scopus returned HTTP 200 with a service-error body: {page['service-error']!r}"
+            )
+        total = extract_total_results(page)  # also checks the 'search-results' object
+        entries = _as_list(page["search-results"].get("entry"))
+        if total > len(entries):
+            raise ValidationError(
+                f"Scopus reports {total} results for a batch of {len(batch)} DOIs but returned "
+                f"{len(entries)} entries; refusing to drop the rest. Use a smaller batch_size."
+            )
+        by_doi: dict[str, Mapping[str, Any]] = {}
+        for e in entries:
+            if isinstance(e, Mapping) and isinstance(e.get("prism:doi"), str):
+                key = e["prism:doi"].lower()
+                if key in by_doi:
+                    raise ValidationError(f"Scopus returned two entries for DOI {key!r}")
+                by_doi[key] = e
+        return by_doi
+
+    def abstract_meta(self, scopus_id: str, *, fallback_opt_in: bool = False) -> CascadeResult:
+        """ADR 0028 level 3: Abstract Retrieval ``view=META`` for one record.
+
+        Carries affiliations and the first author; the abstract is absent in this
+        view. Addressed like :meth:`abstract` (the verified EID path). Never called
+        by the acquisition path.
+
+        Args:
+            scopus_id: An EID, ``2-s2.0-<digits>``; ``scopus:`` prefix optional.
+            fallback_opt_in: As for :meth:`search_standard_by_dois`.
+
+        Returns:
+            ``value``, ``absent``, ``not_found`` (HTTP 404, always) or ``refused``.
+
+        Raises:
+            ValidationError: If ``scopus_id`` is not an EID.
+            AuthError: On 401 unless ``fallback_opt_in``.
+            EntitlementError: On 403 unless ``fallback_opt_in``.
+        """
+        eid = scopus_id.removeprefix("scopus:")
+        if not _EID_RE.fullmatch(eid):
+            raise ValidationError(
+                "abstract_meta needs an EID like '2-s2.0-<digits>' (optionally prefixed "
+                f"'scopus:'), got {scopus_id!r}; a 'SCOPUS_ID:' value would 404 as not_found."
+            )
+        url = self.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id=eid)
+        try:
+            page = self._get(url, {"view": "META"}, view="META")
+        except RecordNotFoundError:
+            return CascadeResult("not_found")
+        except (AuthError, EntitlementError) as exc:
+            if not fallback_opt_in:
+                raise
+            return CascadeResult(
+                "refused",
+                http_status=getattr(exc, "http_status", None),
+                message=getattr(exc, "response_message", None),
+            )
+        body = page.get("abstracts-retrieval-response")
+        if not isinstance(body, Mapping):
+            raise ValidationError(f"Scopus returned HTTP 200 for {url} without a record body")
+        core = body.get("coredata")
+        core = core if isinstance(core, Mapping) else {}
+        # Observed in the 2026-10-21 single-DOI probe: coredata.dc:creator, a dict whose
+        # only key is "author". NOT observed (kept as a fallback only): dc:creator on the
+        # body. The JSON root is not read, and the live META response had no "authors" object.
+        candidates = (core.get("dc:creator"), body.get("dc:creator"))
+        first = next((a for c in candidates if (a := _first_author(c))), None)
+        ids = {
+            k: v for k in ("dc:identifier", "eid", "prism:doi") if isinstance(v := core.get(k), str)
+        }
+        return _result(_affiliations(body.get("affiliation")), first, ids)
+
     def _get(self, url: str, params: dict[str, str], *, view: str | None) -> JsonDict:
         """Fetch and parse one JSON object, transparently using the cache when present."""
         cached = self._cache.load(url, params) if self._cache is not None else None
@@ -615,18 +866,21 @@ class ScopusClient:
 
         if status == 401:
             logger.warning("scopus.request.auth_error", endpoint=endpoint, status=status)
-            raise AuthError(
-                f"Scopus rejected the API key (HTTP 401) for {endpoint}.\n"
-                "\n"
-                "What to check, in the order that resolves this most often:\n"
-                "  1. SCOPUS_API_KEY is set in your .env and is the key itself, not a\n"
-                "     quoted string or a copied URL. Get one at https://dev.elsevier.com.\n"
-                "  2. If you set SCOPUS_INSTTOKEN, it must be the institutional token\n"
-                "     issued *for that same key*. Scopus reports the mismatch as\n"
-                "     'Institution Token is not associated with API Key' -- the most\n"
-                "     common cause is pasting the API key into both fields.\n"
-                "  3. If you have no institutional token, leave SCOPUS_INSTTOKEN empty\n"
-                "     rather than blank-but-present with a placeholder value."
+            raise _with_refusal(
+                AuthError(
+                    f"Scopus rejected the API key (HTTP 401) for {endpoint}.\n"
+                    "\n"
+                    "What to check, in the order that resolves this most often:\n"
+                    "  1. SCOPUS_API_KEY is set in your .env and is the key itself, not a\n"
+                    "     quoted string or a copied URL. Get one at https://dev.elsevier.com.\n"
+                    "  2. If you set SCOPUS_INSTTOKEN, it must be the institutional token\n"
+                    "     issued *for that same key*. Scopus reports the mismatch as\n"
+                    "     'Institution Token is not associated with API Key' -- the most\n"
+                    "     common cause is pasting the API key into both fields.\n"
+                    "  3. If you have no institutional token, leave SCOPUS_INSTTOKEN empty\n"
+                    "     rather than blank-but-present with a placeholder value."
+                ),
+                response,
             )
 
         if status == 403:
@@ -638,29 +892,32 @@ class ScopusClient:
                 entitlement=entitlement,
                 view=view,
             )
-            raise EntitlementError(
-                f"Scopus denied access (HTTP 403) to {endpoint} under view={view!r}: "
-                f"missing entitlement {entitlement!r}.\n"
-                "\n"
-                "This is an access-rights problem, not a bug in your query or your key.\n"
-                f"view={view!r} carries author keywords and full affiliation data, and a\n"
-                "personal or free Scopus API key does not include it -- it is granted to\n"
-                "subscribing institutions.\n"
-                "\n"
-                "What to do:\n"
-                "  1. Run from your institution's network, which is often sufficient.\n"
-                "  2. Off campus, ask your university library or research-support office\n"
-                "     for a Scopus *institutional token* and set SCOPUS_INSTTOKEN in your\n"
-                "     .env alongside SCOPUS_API_KEY. Requesting it is a normal, routine\n"
-                "     request; librarians handle it regularly.\n"
-                "  3. If your institution has no Scopus subscription, prismabib cannot\n"
-                "     run against Scopus for you today. See docs/getting-started.md for\n"
-                "     the access requirements before investing further time.\n"
-                "\n"
-                "prismabib will not silently retry at a lesser view. STANDARD omits the\n"
-                "keyword and affiliation fields, so a corpus built from it would produce\n"
-                "a keyword network and a geography analysis that look complete and are\n"
-                "quietly biased -- a wrong number is worse than a refusal here."
+            raise _with_refusal(
+                EntitlementError(
+                    f"Scopus denied access (HTTP 403) to {endpoint} under view={view!r}: "
+                    f"missing entitlement {entitlement!r}.\n"
+                    "\n"
+                    "This is an access-rights problem, not a bug in your query or your key.\n"
+                    f"view={view!r} carries author keywords and full affiliation data, and a\n"
+                    "personal or free Scopus API key does not include it -- it is granted to\n"
+                    "subscribing institutions.\n"
+                    "\n"
+                    "What to do:\n"
+                    "  1. Run from your institution's network, which is often sufficient.\n"
+                    "  2. Off campus, ask your university library or research-support office\n"
+                    "     for a Scopus *institutional token* and set SCOPUS_INSTTOKEN in your\n"
+                    "     .env alongside SCOPUS_API_KEY. Requesting it is a normal, routine\n"
+                    "     request; librarians handle it regularly.\n"
+                    "  3. If your institution has no Scopus subscription, prismabib cannot\n"
+                    "     run against Scopus for you today. See docs/getting-started.md for\n"
+                    "     the access requirements before investing further time.\n"
+                    "\n"
+                    "prismabib will not silently retry at a lesser view. STANDARD omits the\n"
+                    "keyword and affiliation fields, so a corpus built from it would produce\n"
+                    "a keyword network and a geography analysis that look complete and are\n"
+                    "quietly biased -- a wrong number is worse than a refusal here."
+                ),
+                response,
             )
 
         if status == 429:
