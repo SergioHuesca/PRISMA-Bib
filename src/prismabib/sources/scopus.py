@@ -370,11 +370,10 @@ CascadeOutcome = Literal["value", "refused", "absent", "not_found"]
 
 #: Query term for one DOI in :meth:`ScopusClient.search_standard_by_dois`.
 #:
-#: UNVERIFIED against the live Scopus API. ``DOI(...)`` is the Advanced Search
-#: field code as the author understands the Scopus search guide, and terms are
-#: joined with ``DOI_QUERY_JOINER``; no request using this template has been sent
-#: to Elsevier. Check it live before relying on it, and fix this constant if the
-#: syntax differs.
+#: Verified against a live request on 2026-10-21, for one DOI:
+#: ``DOI("10.1002/ajp.23170")`` returned HTTP 200 with 1 entry. The batch form,
+#: several terms joined with ``DOI_QUERY_JOINER`` (`` OR ``), is NOT yet verified
+#: for more than one DOI.
 DOI_QUERY_TERM = 'DOI("{doi}")'
 DOI_QUERY_JOINER = " OR "
 
@@ -416,6 +415,25 @@ def _affiliations(raw: Any) -> tuple[Affiliation, ...]:
         for a in _as_list(raw)
         if isinstance(a, Mapping)
     )
+
+
+def _first_author(value: Any) -> str | None:
+    """First author from a ``dc:creator`` value.
+
+    The JSON type of ``dc:creator`` is not recorded for either view, so a plain
+    string and a mapping are both accepted. A mapping may be one author
+    (``ce:indexed-name`` / ``authname`` / ``$``) or ``{"author": [...]}``.
+    """
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, Mapping):
+        authors = _as_list(value.get("author"))
+        item = authors[0] if authors else value
+        if isinstance(item, Mapping):
+            for key in ("ce:indexed-name", "authname", "$"):
+                if isinstance(name := item.get(key), str) and name:
+                    return name
+    return None
 
 
 def _result(
@@ -635,7 +653,8 @@ class ScopusClient:
         """ADR 0028 level 2: ``view=STANDARD`` Search, one request per batch of DOIs.
 
         Never called by the acquisition path, which stays ``view=COMPLETE``.
-        The query syntax (:data:`DOI_QUERY_TERM`) is unverified against the live API.
+        The single-DOI query is live-verified; the multi-DOI ``OR`` batch is not
+        (see :data:`DOI_QUERY_TERM`).
 
         Args:
             dois: DOIs to look up; duplicates are collapsed.
@@ -687,7 +706,9 @@ class ScopusClient:
                     if isinstance(v := entry.get(k), str)
                 }
                 results[doi] = _result(
-                    _affiliations(entry.get("affiliation")), entry.get("dc:creator"), ids
+                    _affiliations(entry.get("affiliation")),
+                    _first_author(entry.get("dc:creator")),
+                    ids,
                 )
         return results
 
@@ -764,12 +785,11 @@ class ScopusClient:
             raise ValidationError(f"Scopus returned HTTP 200 for {url} without a record body")
         core = body.get("coredata")
         core = core if isinstance(core, Mapping) else {}
-        authors = body.get("authors")
-        authors = _as_list(authors.get("author") if isinstance(authors, Mapping) else None)
-        first = (
-            authors[0].get("ce:indexed-name")
-            if authors and isinstance(authors[0], Mapping)
-            else None
+        # The location of dc:creator in META is UNVERIFIED (a probe confirmed it is
+        # present, not where), so accept coredata, the response body, or the root.
+        first = next(
+            (a for src in (core, body, page) if (a := _first_author(src.get("dc:creator")))),
+            None,
         )
         ids = {
             k: v for k in ("dc:identifier", "eid", "prism:doi") if isinstance(v := core.get(k), str)

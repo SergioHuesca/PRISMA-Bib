@@ -14,7 +14,7 @@ import respx
 from prismabib.config import Settings
 from prismabib.errors import AuthError, EntitlementError, ValidationError
 from prismabib.sources.ratelimit import RateLimiter
-from prismabib.sources.scopus import DOI_QUERY_TERM, ScopusClient
+from prismabib.sources.scopus import DOI_QUERY_TERM, ScopusClient, extract_total_results
 
 _FIX = Path(__file__).parents[2] / "fixtures" / "scopus_cascade"
 _SEARCH = ScopusClient.SEARCH_ENDPOINT
@@ -84,6 +84,49 @@ def test_abstract_meta__value_and_view_meta() -> None:
     assert result.outcome == "value"
     assert result.first_author == "Doe J."
     assert result.affiliations[0].country == "Spain"  # single affiliation arrives as a bare object
+
+
+def test_search_standard__reads_verified_affiliation_keys() -> None:
+    with respx.mock:
+        respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=_fx("search_standard.json")))
+        aff = _client().search_standard_by_dois(["10.1000/a"])["10.1000/a"].affiliations[0]
+    assert (aff.name, aff.city, aff.country) == ("Univ Example", "Madrid", "Spain")
+
+
+def test_extract_total_results__reads_exact_opensearch_key() -> None:
+    page = _fx("search_standard.json")
+    assert extract_total_results(page) == 2
+    page["search-results"]["totalResults"] = page["search-results"].pop("opensearch:totalResults")
+    with pytest.raises(ValidationError):
+        extract_total_results(page)
+
+
+@pytest.mark.parametrize(
+    "creator",
+    [
+        "Doe J.",
+        {"ce:indexed-name": "Doe J."},
+        {"author": [{"ce:indexed-name": "Doe J."}, {"ce:indexed-name": "Roe R."}]},
+    ],
+)
+def test_search_standard__dc_creator_string_or_dict(creator: object) -> None:
+    page = _fx("search_standard.json")
+    page["search-results"]["entry"][0]["dc:creator"] = creator
+    with respx.mock:
+        respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=page))
+        out = _client().search_standard_by_dois(["10.1000/a"])
+    assert out["10.1000/a"].first_author == "Doe J."
+
+
+@pytest.mark.parametrize("location", ["coredata", "body", "root"])
+def test_abstract_meta__dc_creator_in_any_location(location: str) -> None:
+    page = _fx("abstract_meta.json")
+    body = page["abstracts-retrieval-response"]
+    del body["coredata"]["dc:creator"]
+    {"coredata": body["coredata"], "body": body, "root": page}[location]["dc:creator"] = "Doe J."
+    with respx.mock:
+        respx.get(_ABSTRACT).mock(return_value=httpx.Response(200, json=page))
+        assert _client().abstract_meta("2-s2.0-111").first_author == "Doe J."
 
 
 def test_abstract_meta__404_is_not_found() -> None:
