@@ -435,12 +435,12 @@ Each decision below is the owner's, or is recorded in an earlier ADR as shown.
   on disk as the audit trail. Where no sealed run holds a value for a field, Layer 1 takes the latest outcome,
   `absent` or `not_found` (Decision 7).
 - **The OpenAlex capture is specified in this record, ADR 0031.** Decided by ADR 0030 Decision 6, which
-  is Accepted on its branch and names this record.
+  is Accepted and on main, and names this record.
 - **`not_found` and `absent` are stored in the manifest, computed at write time** (Decision 4). The
   manifest needs its own record of each outcome, because a refusal's body may be empty, and a reader
   must see what was attempted without parsing bodies. Deriving them only in Layer 1 was rejected for
   that reason.
-- **§2.6 applies to the five deviations, and this ADR is the record.** The five items in "Deviations
+- **§2.6 applies to the six deviations, and this ADR is the record.** The six items in "Deviations
   from the frozen contract" are the deviations it covers.
 - **No topic score is stored in Layer 1.** Decided by ADR 0030 Decision 1. The score stays in the stored body.
 - **The API key is sent in a request header, not the query string** (Decision 6). The owner decided this.
