@@ -220,7 +220,7 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 
 ## Owner decisions
 
-Each of the four items below is decided by the owner. ADR 0029, ADR 0032 and ADR 0033 are accepted separately, each on its own merge. This ADR stays Proposed until the owner accepts it.
+Each of the four items below is decided by the owner. ADR 0029, ADR 0032 and ADR 0033 are accepted separately, each on its own merge.
 
 1. **The §2.6 reading and the split.** ADR 0029 covers Stage 2 (the `S02-AC5` wording and the registration). ADR 0032 covers the Stage 3 table and view. ADR 0033 covers the Stage 4 `FlowCounts` change. Each is accepted on its own. The reading of §2.6 is the one in "The spec clauses this amends" above.
 2. **The amended `S02-AC5` wording, as drafted.** The exact amended text is quoted in "Amended wording of `S02-AC5`" above and reads:
