@@ -125,3 +125,6 @@ logs/
 # driver leaves a `.fuse_hidden*` copy beside it -- and `git add -A` picks
 # it up. One reached a release commit as a stale duplicate of a test file.
 .fuse_hidden*
+
+# graphify knowledge graph output (a local index of this repo, regenerated on demand)
+graphify-out/
