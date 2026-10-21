@@ -99,6 +99,13 @@ removed) is equal and the year is the same. A title match that is not exact goes
 list, and a person confirms or rejects it. Attachment never creates a record from an OpenAlex
 result, so the set of records is still fixed by the Scopus search.
 
+> **Note added 2026-10-21 (PR for ADR 0029; this note does not change the paragraph above).** The
+> wording "punctuation and whitespace removed" does not describe the implementation. `normalise_title`
+> in `capture/candidates.py` replaces punctuation with a space and collapses whitespace, so `well-being`
+> matches `well being` and does not match `wellbeing`. The code's definition is the one in force. ADR 0029
+> uses it for registration matching. Whether this paragraph's wording should be corrected to match is left
+> to the owner, and no edit is made here.
+
 ### 5. Google Scholar is candidate discovery, and a person does the searching
 
 The Scholar boolean query is run by a person in a browser. The person pastes the resulting

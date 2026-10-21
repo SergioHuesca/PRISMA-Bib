@@ -2,13 +2,13 @@
 
 ## Status
 
-Proposed — 2026-10-21. Not in force. This record amends the wording of BUILD_PLAN Stage 2 acceptance criterion 5 (`S02-AC5`) and nothing else in the frozen BUILD_PLAN. The Stage 3 schema change and the Stage 4 `FlowCounts` change that registration needs are split into ADR 0032 and ADR 0033, both to be written, and are not decided here. Also proposed here: moving the shared `AppendOnlyLog` below Stage 3, which amends [ADR 0024](0024-one-implementation-of-append-only-durability.md) (owner decision, §8). Each change is a deviation from the frozen BUILD_PLAN and needs its own record under §2.6. This ADR moves to Accepted only when the owner approves it on merge. No registration code is written before then, as [ADR 0028](0028-field-level-fallback-cascade.md) resolved item 3 requires.
+Proposed — 2026-10-21. Not in force. This record amends the wording of BUILD_PLAN Stage 2 acceptance criterion 5 (`S02-AC5`) and nothing else in the frozen BUILD_PLAN. Three further records carry the other changes. Moving the shared `AppendOnlyLog` below Stage 3, with an `append_if` method, amends [ADR 0024](0024-one-implementation-of-append-only-durability.md), and the owner has decided it. The Stage 3 schema change is ADR 0032 and the Stage 4 `FlowCounts` change is ADR 0033, both to be written, and neither is decided here. Each change is a deviation from the frozen BUILD_PLAN and needs its own record under §2.6. This ADR moves to Accepted only when the owner approves it on merge. No registration code is written before then, as [ADR 0028](0028-field-level-fallback-cascade.md) resolved item 3 requires.
 
 ## Context
 
 [ADR 0028](0028-field-level-fallback-cascade.md) Decision 5 lets a person search Google Scholar by hand and paste title and year rows. Each row is a candidate, and a candidate is not a record. ADR 0028 records that the owner has chosen to allow a reviewer to register a candidate as a record, and that this needs its own ADR, because the Stage 2 rule about identified records is affected.
 
-Without registration, a paper that a reviewer has found and resolved (its DOI, or its exact title and year, matched a source work) can never be screened. The corpus omits it, and the flow diagram does not say so. This ADR is the smallest change that lets such a paper enter screening while keeping the Scopus search as the only source of the "records identified" number and keeping every registration traceable.
+Without registration, a paper that a reviewer has found and resolved (a source work matched the candidate by DOI, by exact title and year, or by a near match the reviewer confirmed) can never be screened. The corpus omits it, and the flow diagram does not say so. This ADR is the smallest change that lets such a paper enter screening while keeping the Scopus search as the only source of the "records identified" number and keeping every registration traceable.
 
 ## The spec clauses this amends
 
@@ -34,35 +34,37 @@ BUILD_PLAN §2.6 reads exactly:
 
 §1.2 reads exactly: "These were settled during design and are **not open for renegotiation** during implementation. Changing one requires a new ADR (see §2.6)."
 
-The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." The Stage 2 criterion is not in §1.2, so this ADR relies on the `CLAUDE.md` reading, and on [ADR 0013](0013-identified-sums-across-searches.md), which applied §2.6 to the Stage 4 `FlowCounts` contract for the same reason.
+The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." The Stage 2 criterion is not in §1.2. This ADR therefore relies on the `CLAUDE.md` reading, and on [ADR 0013](0013-identified-sums-across-searches.md), which applied §2.6 to the Stage 4 `FlowCounts` contract for the same reason.
 
 ## Decision
 
-**A resolved candidate may be registered as a record, by a named reviewer, as an explicit Layer 2 event. `identified` is not changed. Registered records are counted on a separate line, in the "other methods" identification box of the PRISMA diagram.**
+**A candidate resolved at level 4 (OpenAlex), against a work that has a DOI, may be registered as a record, by a named reviewer, as an explicit Layer 2 event. `identified` is not changed. Registered records are counted on a separate line, in the "other methods" identification box of the PRISMA diagram.**
 
 ### 1. Who may register, and what counts as resolved
 
 - Only a named reviewer registers a candidate, one event per candidate. Registration is never automatic. It is not a side effect of a search, an attachment or an enrichment run, and nothing registers in batch.
-- A candidate is **resolved** when a source work, retrieved at one of [ADR 0028](0028-field-level-fallback-cascade.md)'s levels **1 to 4**, satisfies exactly one of:
-  - (a) the candidate's DOI equals the work's DOI; or
-  - (b) the candidate has no DOI, the work's title and the candidate's title are equal under `normalise_title` (the function in `capture/candidates.py`), and the years are equal.
-- **Level 5 (manual entry) never supports a registration.** A manual payload is a Layer 2 event (ADR 0028 Decision 3), and a person has typed its values, so it cannot be the source of a registered record in this version.
-- Exactly one work in the source response may satisfy the rule. Two or more matches leave the candidate unresolved. ADR 0028 does not state this condition; this ADR adds it, because a title and year can match two different papers, such as a conference paper and its preprint.
-- A non-exact title match (ADR 0028 Decision 4's review list) is not resolved, and is not registrable. A person's confirmation of that match does not change this.
-- Before the event is written, the reviewer sees the DOI, the title, the year and the match rule, and confirms them. The confirmation is a UI step; the event records the match rule, not the confirmation dialogue.
-- A reviewer may leave a resolved candidate unregistered. The number of resolved candidates that are not registered is reported beside `registered` (§3), so the choice is visible.
+- **Only level 4 can be registered.** A candidate resolved at level 1, 2 or 3 is already a Scopus record: those levels read Scopus payloads, so the work is in the Scopus data. Such a candidate is refused as a duplicate of a Scopus record, and it attaches under ADR 0028 Decision 4 instead. Level 5 (manual entry) is never a source either, because a manual payload is a Layer 2 event (ADR 0028 Decision 3) whose values a person has typed.
+- **The source work must have a DOI.** A work without a DOI is refused. Every registered record therefore carries a DOI.
+- A candidate is **resolved** when exactly one level 4 work satisfies one of these match rules:
+  - `doi`: the candidate's DOI equals the work's DOI;
+  - `title_year`: the candidate has no DOI, the work's title and the candidate's title are equal under `normalise_title` (the function in `capture/candidates.py`), and the years are equal. That function's definition is the code's: punctuation becomes a space, and whitespace is collapsed, so `well-being` matches `well being` and does not match `wellbeing`;
+  - `near_confirmed`: the work is a near match to the candidate under the two rules that `capture/candidates.py` already applies to its review list (`near_matches`): the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. The reviewer must confirm that this work is the candidate, and the confirmation is the registration call itself. A near match is never registered without it.
+- Two or more works that satisfy a rule leave the candidate unresolved, under any rule. ADR 0028 does not state this condition. This ADR adds it, because a title and year can match two different papers, such as a conference paper and its preprint.
+- Before the event is written, the reviewer sees the DOI, the title, the year and the match rule, and confirms them. The confirmation is a UI step; the event records the match rule.
+- A reviewer may leave a resolved candidate unregistered. The number of resolved candidates that are not registered is reported beside `registered` (§3).
 
 ### 2. The registration is a Layer 2 event
 
-- A registration is written to `projects/<slug>/decisions/registrations.jsonl`, with the checksum sidecar `registrations.jsonl.sha256`, through the append-only machinery of `AppendOnlyLog` (ADR 0024), as candidate paste events already are. It is a separate file, not `decisions.jsonl`, so the Stage 4 fold keyed on `(stage, record_id, reviewer)` is not changed.
+- A registration is written to `projects/<slug>/decisions/registrations.jsonl`, with the checksum sidecar `registrations.jsonl.sha256`, through `AppendOnlyLog` (ADR 0024), as candidate paste events already are. It is a separate file, not `decisions.jsonl`, so the Stage 4 fold keyed on `(stage, record_id, reviewer)` is not changed. Like `decisions.jsonl`, the file and its sidecar are tracked in git, as BUILD_PLAN §2.5 recommends, and they are archived with the Stage 11 numbers (Consequence 9).
 - Each event carries `event_id` (ULID), `schema_version` (1), `ts` (UTC, ending `Z`), `project`, and `action`. The actions are:
-  - `register`, which carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi` or `title_year`), `source_level` (1, 2, 3 or 4), `source_payload_ref`, `source_payload_sha256`, and `doi` (nullable);
-  - `reverse`, which carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
-  - `supersede`, written only by the automatic step in §6, which carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule`, and an `actor` of `system`.
-- `source_payload_ref` is a Layer 0 `PayloadRef` (the type Stage 3 uses for `source_payload_ref`), and it names a Scopus or OpenAlex payload. Because level 5 is excluded, every `source_payload_ref` in a registration points to Layer 0. A manual payload (Layer 2) has no `PayloadRef` into Layer 0 and never reaches this field.
+  - `register`, which creates a record. It carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi`, `title_year` or `near_confirmed`), `source_level` (always 4), `source_payload_ref`, `source_payload_sha256`, and `doi` (required);
+  - `reverse`, which removes a record it names. It carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
+  - `supersede`, which removes a record it names, written only by the automatic step in §6. It carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule` (`doi` or `title_year`), and `actor` (`system`).
+- **Why `supersede` is a separate kind, not a second `register`.** A `register` event creates a record, and a `supersede` event removes one. A record is created by a human's choice, and it is removed by a reversal or by a Scopus match. Writing removal as a second `register` would mix the two meanings in one kind, and every reader of `register` would have to check which one it was. The two kinds are kept apart so that the count of `register` events is the count of records ever created, and the count of active registrations is that count less the removals.
+- `source_payload_ref` is a Layer 0 `PayloadRef` (the type Stage 3 uses for `source_payload_ref`). Because only level 4 is accepted, it always names an OpenAlex payload in Layer 0. A manual payload is a Layer 2 event, not a Layer 0 payload, so it has no `PayloadRef` into Layer 0 and never reaches this field.
 - The `registered_records` table that holds these records in Layer 1 is specified by ADR 0032. The loader derives it, as the only writer of Layer 1 (ADR 0028 Decision 3), by folding this file and reading the referenced payloads.
 
-Worked example. Illustrative values, not from a real run:
+Worked example of a `register` event. Illustrative values, not from a real run:
 
 ```json
 {"event_id": "01HZ7M3QK2W9T4R8N6Y1C5B0XD", "schema_version": 1,
@@ -86,7 +88,7 @@ Worked example. Illustrative values, not from a real run:
   identified + registered - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated
   ```
 
-  The added `registered` term is the only change to the identity's form. The `registered` records are in S_raw and nowhere else, and the reason is in the two bullets above. The equation is written by ADR 0033.
+  The added `registered` term is the only change to the identity's form. The `registered` records are in S_raw and nowhere else, and the reason is in the two bullets above. ADR 0033 writes the equation.
 - **PRISMA diagram.** `registered` is drawn as one line in the **other methods** identification box (PRISMA 2020 has a box for identification by other methods), labelled as a reviewer registration of candidates from a manual Google Scholar search. `identified` stays in the box for databases and registers, with its label unchanged. The two flow into the same box, whose number is `identified + registered - duplicates_across_searches - removed_other_reasons`, as the identity above gives it before `excluded_automated` is subtracted.
 - `numbers.json` and the methods carry `identified`, `registered` and the count of resolved, unregistered candidates as separate keys. No export sums `registered` into a value named "identified". Every function named `identified` returns the Scopus value alone.
 - **Orphaned decisions.** A decision in `decisions.jsonl` that names a `record_id` no longer in S_raw is an orphaned decision. It is never folded into membership. It is reported as a count beside the diagram and listed in the methods. It is not an arithmetic term.
@@ -94,32 +96,34 @@ Worked example. Illustrative values, not from a real run:
 ### 4. The `record_id` scheme for registered records
 
 - A registered record's `record_id` is `registered:<event_id>`, where `<event_id>` is the ULID of its `register` event. Example: `registered:01HZ7M3QK2W9T4R8N6Y1C5B0XD`.
-- The `scopus:` prefix (BUILD_PLAN §3.2) is produced only by the Scopus loader, which rejects any id beginning `registered:`. The registration writer rejects any id not beginning `registered:`, and rejects a `register` event whose `record_id` is not exactly `"registered:" + event_id`. The two prefixes are the enforcement. The fact that no `scopus:` id equals a `registered:` id follows from the prefixes, so it is a documentation invariant, not a runtime check.
+- The `scopus:` prefix (BUILD_PLAN §3.2) is produced only by the Scopus loader, which rejects any id beginning `registered:`. The registration writer rejects any id not beginning `registered:`, and rejects a `register` event whose `record_id` is not exactly `"registered:" + event_id`. The two prefixes are the enforcement. That no `scopus:` id equals a `registered:` id follows from the prefixes, so it is a documentation invariant. No runtime check is added for it.
 - An id is never reused. A registration after a reversal gets a new `event_id`, and so a new `record_id`.
-- The id is not derived from the DOI or from `candidate_id`. A DOI is absent for a title-and-year match, and a `candidate_id`-based id would repeat after a reversal and re-registration.
+- The id is not derived from the DOI or from `candidate_id`. A `candidate_id`-based id would repeat after a reversal and re-registration.
 
 ### 5. What registration cannot do, and where each limit is enforced
 
 | Limit | Enforcement point | Mechanism |
 |---|---|---|
-| Only levels 1 to 4 support a registration; level 5 is refused | The registration writer, before any lock is taken; the event model on write and on load | Validation at the boundary. `source_level` must be 1, 2, 3 or 4. |
-| The match is a DOI match, or an exact normalised title and year match, against exactly one work | The registration writer, against the referenced payload, read by `source_payload_sha256` | A pure check on the payload before the write. |
+| Only level 4 is registrable. Levels 1 to 3 are refused as duplicates of Scopus records. Level 5 is refused. | The registration writer, before any lock is taken; the event model on write and on load | Validation at the boundary. `source_level` must be 4. |
+| The work must have a DOI | The registration writer, against the referenced payload | A pure check before the write. |
+| Exactly one work satisfies a match rule | The registration writer, against the referenced payload | A pure check before the write. |
+| A near match is registered only with the reviewer's confirmation in the same call | The registration writer | A `near_confirmed` event is written only from a call that carries the confirmation. The event model requires a non-empty `reviewer` for it. |
 | No registration of a paper the corpus already holds (a `records` row, or an active registration, with the same DOI or the same normalised title and year) | The registration writer, against Layer 1 as built, repeated inside the lock (§8) | The check reads Layer 1 and is run again under the lock, so a concurrent write cannot pass it. |
-| No second active registration for one `candidate_id` | The registration writer, **inside** the exclusive lock of the registration log | The check reads the log's confirmed events, and the append follows in the same locked section (§8). |
+| No second active registration for one `candidate_id` | The registration writer, **inside** the exclusive lock of the registration log, through `append_if` (§8) | The check reads the log's confirmed events, and the append follows in the same locked section. |
 | A `reverse` names only an active registration | The registration writer, inside the exclusive lock | As above. |
 | A `supersede` names only an active registration | The automatic step in §6, inside the exclusive lock | As above. |
-| No silent overwrite; no event edits or deletes another | `AppendOnlyLog` (ADR 0024, its rules on append-only, checksum and duplicate `event_id`) | There is no update operation. A wrong DOI or title is corrected by reversing and registering again, which gives a new `record_id`. |
+| No silent overwrite; no event edits or deletes another | `AppendOnlyLog` (ADR 0024: append-only, checksum, duplicate `event_id` refused) | There is no update operation. A wrong DOI or title is corrected by reversing and registering again, which gives a new `record_id`. |
 | Reversal is allowed after screening decisions exist; the decisions are reported as orphaned | The registration writer, plus the Stage 4 fold (ADR 0033) | The fold does not raise on an orphaned decision; it reports it (§3). |
 | No write to Layer 0 | No code path. V7 asserts that `raw/` is byte-identical after a registration. | |
 | No write to `decisions.jsonl` and no screening decision created | The registration module does not import `DecisionLog`. A test asserts it. | |
 | No write to the Scopus `records` table | The registration module writes only the registration log. | |
-| A refused attempt writes nothing | The writer raises before `write_event` is reached. | A test asserts the log's bytes and checksum are unchanged. |
+| A refused attempt writes nothing | The writer raises before any append. | A test asserts the log's bytes and checksum are unchanged. |
 
-**`AppendOnlyLog.write_event` bypasses business rules.** Its documented contract is "Append an already-constructed, already-validated event." It checks schema, checksum and duplicate `event_id`, and nothing else. It does not know what a candidate, a DOI, or an active registration is. The registration path must therefore never call `write_event` directly, since that would skip every rule in the table above. The business check and the append must run in one locked section. §8 says how. A test asserts that no module other than the registration writer calls `write_event` on the registration log.
+**`AppendOnlyLog.write_event` bypasses business rules.** Its documented contract is "Append an already-constructed, already-validated event." It checks schema, checksum and duplicate `event_id`, and nothing else. It does not know what a candidate, a DOI, or an active registration is. The registration path therefore never calls `write_event` directly, since that would skip every rule in the table above. The business check and the append run in one locked section through `append_if` (§8). A test asserts that no module other than the registration writer and the §6 step calls `write_event` on the registration log.
 
 ### 6. A later Scopus match supersedes the registration, automatically and visibly
 
-- A build step, run before the loader folds the registration log, takes the exclusive lock on `registrations.jsonl` and checks each active registration against the Scopus records just loaded. A Scopus record matches when its DOI equals the registration's DOI, or its normalised title and year equal the registration's.
+- A build step, run before the loader folds the registration log, takes the exclusive lock on `registrations.jsonl` and checks each active registration against the Scopus records just loaded. A Scopus record matches when its DOI equals the registration's DOI, or its normalised title and year equal the registration's. Near matches are not used here.
 - For each match, the step appends a `supersede` event (§2) naming the `register` event and the Scopus `record_id`. The registration then stops being active. The `register` event is not altered. Nothing is removed from the log.
 - The build report lists every `supersede` event it wrote. It is not silent.
 - The `supersede` event is the only Layer 2 event written by a machine rather than a reviewer. ADR 0028 Decision 3 describes Layer 2 as human-written, so this is a visible departure, and ADR 0028 Resolved item 3 carries a pointer to it.
@@ -132,9 +136,9 @@ Worked example. Illustrative values, not from a real run:
 
 ### 8. Where the shared log lives, and the locked check
 
-- The registration check and its append must run in one exclusive lock. `AppendOnlyLog` takes its own lock inside `write_event`, and the lock is not reentrant (`_refuse_reentrant_lock` in `prisma/log.py`). A caller therefore cannot take the lock, check, and then call `write_event`. The class needs a method that runs a caller's check on the confirmed events and appends the event within the same locked section. The method is named `append_if` in this proposal. Its contract is that the check sees the confirmed events, and that the append happens only when the check returns.
-- `AppendOnlyLog` is currently defined in `src/prismabib/prisma/log.py`, which is the Stage 4 package. The registration writer is at or after Stage 3, because it reads Layer 1. A Stage 2 module that uses the log (the candidate intake in `capture/candidates.py`, which already imports `prisma.log`) imports from a later stage, which BUILD_PLAN §0 rule 1 forbids.
-- **Proposed, and an owner decision:** move `AppendOnlyLog` to a module below Stage 3, with no stage-specific imports, and add `append_if`. This amends [ADR 0024](0024-one-implementation-of-append-only-durability.md), which describes `AppendOnlyLog` as the one implementation in use by the decision log and the override log. The move keeps one implementation. It adds one method and changes the module's location. It is not a second implementation.
+- The registration check and its append must run in one exclusive lock. `AppendOnlyLog` takes its own lock inside `write_event`, and the lock is not reentrant (`_refuse_reentrant_lock` in `prisma/log.py`). A caller therefore cannot take the lock, check, and then call `write_event`. The class gains `append_if`, which runs a caller's check on the confirmed events and appends the event within the same locked section. The check sees the confirmed events, and the append happens only when the check returns.
+- **Decided:** `AppendOnlyLog` moves to a module below Stage 3, with no stage-specific imports. Its current location, `src/prismabib/prisma/log.py`, is in the Stage 4 package. The registration writer reads Layer 1, so it is at or after Stage 3. The candidate intake (`capture/candidates.py`, Stage 2) already imports `prisma.log`, which is a Stage 2 module importing a later stage, forbidden by BUILD_PLAN §0 rule 1. The move removes that import. The new module path is set at implementation, and this ADR does not fix a file name.
+- **This amends [ADR 0024](0024-one-implementation-of-append-only-durability.md).** ADR 0024 describes `AppendOnlyLog` as the one implementation shared by the decision log and the override log. The move keeps one implementation, changes its module location, and adds one method. It is not a second implementation. ADR 0024 carries a dated pointer note in the same pull request.
 
 ### 9. What this does not change
 
@@ -150,7 +154,7 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 
 1. A reviewer pastes the candidate "Example Paper", 2019, into the candidate log. Its `candidate_id` is `3f9c0a7e…` (ADR 0028 Decision 5).
 2. The OpenAlex lookup (level 4) returns exactly one work with that normalised title and year, with DOI `10.0000/example.2019.1`. The payload is `raw/run-0007/openalex-0001.jsonl`, line 42, with checksum `9b1e…`.
-3. The registration writer checks the level (4, allowed), the single match, the exact title, and that no `records` row and no active registration holds that DOI or that title and year. All pass.
+3. The registration writer checks the level (4, allowed), the DOI (present), the single match under `title_year`, and that no `records` row and no active registration holds that DOI or that title and year. All pass.
 4. Under the exclusive lock, `append_if` confirms that no active registration names `3f9c0a7e…`, then appends the `register` event above. `registered` becomes 1. `identified` stays 1,294.
 5. The paper passes the automated set, so it reaches title and abstract screening. A reviewer records an `exclude` decision on `registered:01HZ7M3QK2W9T4R8N6Y1C5B0XD`.
 6. Months later, a second Scopus search returns the same DOI as `scopus:2-s2.0-…`. Its `total_results` is recorded under its own query string, and `identified` rises by that search's total (ADR 0013). The build step appends a `supersede` event, and `registered` falls back to 0. The exclusion decision on the `registered:` record becomes orphaned. The build report lists both facts. The reviewer must decide the Scopus record again.
@@ -178,46 +182,43 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 1. **Existing projects are unchanged.** A project with no registration events has `registered = 0`, no `supersede` events, and no orphaned decisions. Its numbers, its existing table checksums on the reference fixture, and `numbers.json` are unchanged.
 2. **The Stage 4 `FlowCounts` contract changes again**, in ADR 0033 (to be written). The change adds `registered` and the identity in §3. It is a further deviation, after ADRs 0007, 0013 and 0016.
 3. **Layer 1 gains a table and a view**, specified by ADR 0032 (to be written), as ADR 0012 and ADR 0013 require for schema additions.
-4. **`AppendOnlyLog` moves and gains `append_if`**, if the owner accepts §8. That amends ADR 0024.
+4. **`AppendOnlyLog` moves and gains `append_if`** (§8). This amends ADR 0024, which carries a pointer note in this pull request.
 5. **Layer 2 carries one machine-written event kind**, `supersede` (§6). The loader and every reader must accept it. The methods must say that some Layer 2 events were written by the build.
 6. **Selection risk.** The reviewer chooses which resolved candidates to register. Each registration names its reviewer and time. The number of resolved candidates not registered is reported beside `registered`. The methods state the query each paste was made with.
 7. **Stage 7 citation metrics.** Registered records have no Scopus citation snapshot. Their `cited_by_count` is reported as `unavailable`, counted explicitly in every citation denominator, split by origin, and never imputed. This applies ADR 0028 Consequence 6 and Resolved item 6.
-8. **Methods and exports name the second population.** The corpus is no longer only the Scopus search's results. The methods state each registration's source level, reviewer, and the fact that the paper came from a manual Google Scholar search, which has no API.
-9. **Reproducibility needs Layer 2 as well as Layer 0.** A corpus with registrations reproduces only if `registrations.jsonl`, its sidecar and the referenced Layer 0 payloads are kept with the run's archive. BUILD_PLAN §2.5 says `decisions.jsonl` is optional to track and recommends tracking it, because it is the human labour. It does not mention `registrations.jsonl`. This ADR proposes the same treatment for it, and the owner decides (owner list).
+8. **Methods and exports name the second population.** The corpus is no longer only the Scopus search's results. The methods state each registration's match rule, reviewer, and the fact that the paper came from a manual Google Scholar search, which has no API.
+9. **Reproducibility needs Layer 2 as well as Layer 0.** A corpus with registrations reproduces only if `registrations.jsonl`, its sidecar and the referenced Layer 0 payloads are kept. BUILD_PLAN §2.5 says `decisions.jsonl` is optional to track and recommends tracking it, because it is the human labour. It does not mention `registrations.jsonl`. The owner has decided that the registration log and its sidecar are tracked in git, as §2.5 recommends for `decisions.jsonl`, and that they are archived with the Stage 11 numbers, together with the referenced Layer 0 payloads.
 
 ## Verification the implementation will need
 
 - **V1.** `FlowCounts.identified` still reads only `runs`. `test_manifest__total_results__is_the_only_identified_count` is kept. A new test shows that registering any number of candidates leaves `identified` unchanged.
 - **V2.** `registered` counts active registrations only. Unit cases: none; one `register`; `register` then `reverse` (0); `register`, `reverse`, `register` (1, with a new `record_id`); `register` then `supersede` (0).
-- **V3.** Level validation. `source_level` 5 is refused on write and on load. Levels 1 to 4 are accepted.
-- **V4.** One test for each refusal in §1 and §5: no match, non-exact title, two matches, duplicate of a Scopus record, duplicate of an active registration, second active registration for one `candidate_id`, reversal of an unknown or already-reversed registration, a bad prefix, and a `record_id` that is not `"registered:" + event_id`. Each asserts that the log's bytes and checksum are unchanged.
+- **V3.** Level validation. A `source_level` other than 4 is refused on write and on load. A level 1, 2 or 3 resolution is refused as a Scopus duplicate, and a level 5 resolution is refused.
+- **V4.** One test for each refusal in §1 and §5: no match; two matches; a work without a DOI; a near match without the reviewer's confirmation; a near match that is not one of the two near rules; a duplicate of a Scopus record; a duplicate of an active registration; a second active registration for one `candidate_id`; a reversal of an unknown or already-reversed registration; a bad prefix; a `record_id` that is not `"registered:" + event_id`. Each asserts that the log's bytes and checksum are unchanged.
 - **V5.** Concurrency. Two registrations for one `candidate_id`, started together, produce exactly one `register` event. This runs against the locked `append_if`, not against `write_event`.
-- **V6.** `write_event` is called on the registration log only by the registration writer (a test asserts it), and `DecisionLog` is not imported by the registration module.
+- **V6.** `write_event` is called on the registration log only by the registration writer and the §6 step (a test asserts it), and `DecisionLog` is not imported by the registration module.
 - **V7.** Layer 0 immutability. `raw/` is byte-identical before and after a registration. This extends `test_capture__raw_dir__is_never_reopened_for_write`.
 - **V8.** A hand edit of `registrations.jsonl` raises `LogError` on the next load.
 - **V9.** Prefix enforcement: the Scopus loader rejects `registered:`, and the registration writer rejects `scopus:`.
-- **V10.** Supersession. A Scopus record matching an active registration yields one `supersede` event, listed in the build report. A rebuild gives the same result. The superseded registration's decisions are reported as orphaned.
+- **V10.** Supersession. A Scopus record matching an active registration by DOI or exact title and year yields one `supersede` event, listed in the build report. A rebuild gives the same result. The superseded registration's decisions are reported as orphaned.
 - **V11.** Reversal after decisions. A reversal of a registration with decisions succeeds, and the decisions are reported as orphaned, not folded.
 - **V12.** Machine independence. `ts` is UTC with a `Z` suffix. Folds sort by `event_id`. No result depends on locale or timezone. The suite runs under `pytest -n auto` as well as single-process, and the Stage 11 clean-clone check on a second machine covers a corpus with registrations.
-- **V13.** `normalise_title` is pinned by a test that asserts the code's definition: punctuation becomes a space, and whitespace is collapsed. So `well-being` matches `well being`, and does not match `wellbeing`. ADR 0028 Decision 4 says "punctuation and whitespace removed", which differs. The owner list asks which wording governs.
+- **V13.** `normalise_title` is pinned by a test that asserts the code's definition: punctuation becomes a space, and whitespace is collapsed. So `well-being` matches `well being`, and does not match `wellbeing`. ADR 0028 Decision 4 words this differently. The code's definition governs. A dated pointer note in ADR 0028 records the difference, and its text is not edited.
 - **V14.** Rebuild. Deleting Layer 1 and rebuilding from Layers 0 and 2 gives byte-identical table checksums, including the rows that ADR 0032 defines.
 
 ## Split records
 
-- **ADR 0032 (to be written):** the Stage 3 Layer 1 table for registered records, and the view that unites them with Scopus records. This ADR fixes only what the view must provide: a record identifier, an origin, a DOI, a title and a year.
+- **ADR 0032 (to be written):** the Stage 3 Layer 1 table for registered records, and the view that unites them with Scopus records. This ADR fixes what the table must carry for registered records: `record_id`, `origin`, `doi` (required, since §1 requires a DOI), `title`, `year`, and the following three fields, which are a requirement on ADR 0032 and not an assumption made here:
+  - `doc_type`, `language`, and the subject-area input. Criterion A is year, subject area and document type, and criterion L is language (BUILD_PLAN Stage 4). Both are computed from the stored fields, so a registered record without them cannot be classified and must not enter S_raw. ADR 0032 must specify how each is obtained for a registered record.
+  - Subject area is the open point. OpenAlex topics are not ASJC subject areas, and ADR 0028 Decision 2 keeps them separate. ADR 0017 matches subject areas by ASJC grouping. ADR 0032 must say where a registered record's subject area comes from (owner list).
 - **ADR 0033 (to be written):** the Stage 4 `FlowCounts` change, namely the `registered` field and the identity in §3, and the fold's handling of orphaned decisions.
 
 ## Questions for the owner before acceptance
 
 1. Confirm the reading of BUILD_PLAN §2.6 in "Context", and that this ADR, ADR 0032 and ADR 0033 are the right split for the Stage 2, Stage 3 and Stage 4 changes.
 2. Confirm the amended wording of `S02-AC5`.
-3. Confirm that a reviewer may leave some resolved candidates unregistered, with the unregistered count reported (§1).
-4. Confirm that DOI is not required on the resolved work. Title and year alone are allowed (§1).
-5. Confirm exact title matching only. A person's confirmation of a non-exact match does not make it registrable (§1).
-6. Confirm the title rule. The code's `normalise_title` replaces punctuation with a space. ADR 0028 Decision 4 says "punctuation and whitespace removed." Which wording governs, and should the other one change? This ADR keeps the code's definition.
-7. Confirm that the supersession event is a new `supersede` event in `registrations.jsonl`. The brief said "through a register event". A `register` event creates a record, and a supersession removes one, so this ADR writes a separate event kind.
-8. Accept or decline the move of `AppendOnlyLog` below Stage 3 and the new `append_if` method, which amends ADR 0024 (§8).
-9. Should `registrations.jsonl` and its sidecar be tracked in git, as §2.5 recommends for `decisions.jsonl`, and should the referenced payloads be archived with the Stage 11 numbers (Consequence 9)?
+3. Confirm that "near match" means exactly the two rules `capture/candidates.py` applies to its review list, and nothing wider.
+4. Where does a registered record's subject area come from, given that OpenAlex supplies topics and not ASJC codes? This is for ADR 0032 to settle, and the owner must choose the source.
 
 ## Related decisions
 
@@ -225,6 +226,7 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 - [ADR 0003](0003-human-only-screening.md): human-only screening. Registration is also a human act, and it is never automatic.
 - [ADR 0007](0007-flow-counts-unsure-fields.md), [ADR 0013](0013-identified-sums-across-searches.md) and [ADR 0016](0016-automated-exclusion-reasons.md): earlier changes to the `FlowCounts` contract. ADR 0033 is a further one.
 - [ADR 0012](0012-persisting-skipped-layer0-entries.md): the rule that a Layer 1 schema addition needs its own ADR. ADR 0032 applies it.
-- [ADR 0024](0024-one-implementation-of-append-only-durability.md): the shared `AppendOnlyLog`, whose location and API §8 proposes to amend.
+- [ADR 0017](0017-subject-areas-match-by-asjc-grouping.md): subject areas match by ASJC grouping, which bears on the subject-area source for registered records.
+- [ADR 0024](0024-one-implementation-of-append-only-durability.md): the shared `AppendOnlyLog`, which §8 moves below Stage 3 and extends with `append_if`. This ADR amends it.
 - [ADR 0027](0027-what-v1-0-0-claims.md): what v1.0.0 claims, which this ADR does not change.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the candidate, attachment and provenance rules. This ADR builds on them and amends its Decision 4 closing sentence for registrations. A pointer is recorded under its Resolved item 3.
