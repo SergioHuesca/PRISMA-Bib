@@ -99,6 +99,13 @@ removed) is equal and the year is the same. A title match that is not exact goes
 list, and a person confirms or rejects it. Attachment never creates a record from an OpenAlex
 result, so the set of records is still fixed by the Scopus search.
 
+> **Note added 2026-10-21 (PR for ADR 0029; this note does not change the paragraph above).** The
+> wording "punctuation and whitespace removed" does not describe the implementation. `normalise_title`
+> in `capture/candidates.py` replaces punctuation with a space and collapses whitespace, so `well-being`
+> matches `well being` and does not match `wellbeing`. The code's definition is the one in force. ADR 0029
+> uses it for registration matching. Whether this paragraph's wording should be corrected to match is left
+> to the owner, and no edit is made here.
+
 ### 5. Google Scholar is candidate discovery, and a person does the searching
 
 The Scholar boolean query is run by a person in a browser. The person pastes the resulting
@@ -200,6 +207,12 @@ evidence.
 3. **Candidate registration.** A reviewer may register a candidate as a record. This needs a separate ADR
    amending Stage 2, which changes the "identified" count. No registration code is written before that ADR
    is accepted.
+   > **Note added 2026-10-21 (this note does not change the item above).** [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md)
+   > was accepted on 2026-10-21, so the registration rule is in force. It does **not** change the "identified"
+   > count. `identified` stays the Scopus `total_results`, and registered records are counted on a separate
+   > line in the other-methods box. ADR 0029 also amends Decision 4's closing sentence for registrations only,
+   > and it adds one machine-written Layer 2 event (`supersede`), which Decision 3's "human-written" description
+   > does not yet cover. Registration code still waits for ADR 0032 (to be written), which specifies the Layer 1 table and the subject-area mapping.
 4. **Opt-in fallback.** Fallback runs are an explicit per-run opt-in, recorded in `RunManifest`. The
    public documents that state "never degrade" change in the same pull request.
 5. **Keyword topics.** OpenAlex topics feed the keyword network as a **new keyword kind**, separate from

@@ -6,6 +6,12 @@ Accepted — 2026-09-04. Amends [ADR 0002](0002-append-only-decision-log.md), wh
 `DecisionLog` as *the* implementation of this project's append-only guarantees. It is now one of
 two users of a shared implementation.
 
+> **Note added 2026-10-21 (PR for ADR 0029; this note does not change the record above).**
+> [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) §8 moves `AppendOnlyLog` to a
+> module below Stage 3, with no stage-specific imports, and adds an `append_if` method that runs a
+> caller's check and the append under one exclusive lock. The owner has decided this. It keeps one
+> implementation. The module's location changes, and a third user, the registration log, is added.
+
 Written **after** the code, during Stage 8's review. That order is the wrong one and is recorded
 as such: the extraction arrived as an unrequested part of a taxonomy PR, in the module that
 protects the one artefact this project cannot recompute.
