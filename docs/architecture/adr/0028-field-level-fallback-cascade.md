@@ -200,6 +200,10 @@ evidence.
    401/403 split in BUILD_PLAN §3.3 is unchanged: a 401 remains `AuthError` for every client call
    that is not part of an opt-in cascade. Whether `130.153.0.3` is a registered address is recorded
    in the run manifest, not assumed.
+   > **Correction added 2026-10-21 (this note does not change the item above).** The phrase "never
+   > degrade" is from BUILD_PLAN §5 risk 1 ("Fail loudly, never degrade"), not from §1. §1 does not
+   > contain it. The sentence above that attributes it to §1 is wrong, and the exception it describes
+   > is an exception to §5 risk 1.
 2. **DOI-less records.** Resolved by a probe on 2026-10-21. Abstract `META` returned HTTP 200 for three
    DOI-less corpus records looked up by `scopus_id`, and by `eid`. Every Scopus record carries its
    `scopus_id` in its `record_id`, so levels 2 and 3 key on `scopus_id`. Only the OpenAlex level needs a
