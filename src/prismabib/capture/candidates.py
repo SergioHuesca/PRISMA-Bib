@@ -116,9 +116,13 @@ def parse_pasted_rows(text: str) -> list[CandidateRow]:
     return rows
 
 
-def candidate_id(title: str, year: int, doi: str | None) -> str:
-    """Deterministic id from normalised title, year and DOI."""
-    key = "\x1f".join([normalise_title(title), str(year), normalise_doi(doi) or ""])
+def candidate_id(title: str, year: int) -> str:
+    """Deterministic id from normalised title and year only.
+
+    The DOI is deliberately not part of identity: the same paper pasted with
+    and without a DOI is one candidate. The DOI stays on the event.
+    """
+    key = "\x1f".join([normalise_title(title), str(year)])
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
 
 
@@ -158,8 +162,8 @@ class CandidateEvent(BaseModel):
 
     @model_validator(mode="after")
     def _id_matches_content(self) -> CandidateEvent:
-        if self.candidate_id != candidate_id(self.title, self.year, self.doi):
-            raise ValueError("candidate_id does not match title, year and doi")
+        if self.candidate_id != candidate_id(self.title, self.year):
+            raise ValueError("candidate_id does not match title and year")
         return self
 
     @classmethod
@@ -167,7 +171,7 @@ class CandidateEvent(BaseModel):
         """Build an event, deriving ``candidate_id`` from the row."""
         doi = normalise_doi(row.doi)
         return cls(
-            candidate_id=candidate_id(row.title, row.year, doi),
+            candidate_id=candidate_id(row.title, row.year),
             title=row.title,
             year=row.year,
             doi=doi,

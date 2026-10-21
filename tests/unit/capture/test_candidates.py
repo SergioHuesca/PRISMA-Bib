@@ -108,9 +108,26 @@ def test_parse__too_many_tab_columns_rejected() -> None:
 def test_candidate_id__deterministic_and_content_sensitive() -> None:
     assert _event().candidate_id == _event("a  study!").candidate_id
     assert _event().candidate_id != _event(year=2021).candidate_id
-    assert _event().candidate_id != _event(doi="10.1/x").candidate_id
-    assert _event(doi="DOI:10.1/X").candidate_id == _event(doi="10.1/x").candidate_id
-    assert candidate_id("A Study", 2020, None) == _event().candidate_id
+    assert candidate_id("A Study", 2020) == _event().candidate_id
+
+
+def test_candidate_id__same_paper_with_and_without_doi_is_one_candidate(tmp_path: Path) -> None:
+    bare, with_doi = _event(), _event(doi="DOI:10.1/X")
+    assert bare.candidate_id == with_doi.candidate_id
+    assert with_doi.doi == "10.1/x"  # still stored, normalised
+    log = CandidateLog(tmp_path / "c.jsonl")
+    assert log.add(bare) is True
+    assert log.add(with_doi) is False
+    assert len(log.load()) == 1
+
+
+def test_candidate_id__different_titles_same_year_are_two_candidates(tmp_path: Path) -> None:
+    a, b = _event("Alpha"), _event("Beta")
+    assert a.candidate_id != b.candidate_id
+    log = CandidateLog(tmp_path / "c.jsonl")
+    assert log.add(a) is True
+    assert log.add(b) is True
+    assert len(log.load()) == 2
 
 
 def test_event__forged_id_naive_time_and_blank_title_rejected() -> None:
