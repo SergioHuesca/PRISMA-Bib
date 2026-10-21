@@ -306,7 +306,7 @@ client's return values are never persisted and never read by the loader.
 ## Deviations from the frozen contract
 
 Each item is a change to the frozen contract, listed for owner approval under §2.6. The owner approved
-items 1 to 5 as written. Item 6 is listed for the owner's approval and is not yet approved.
+items 1 to 6 as written. Item 6 was approved as written by the owner.
 
 1. **A new Layer 0 run kind**, `raw/openalex/<run_id>/`, with its own manifest schema and a
    `NON_RUN_DIRNAMES` entry. The frozen Layer 0 layout has no OpenAlex run.
@@ -332,7 +332,7 @@ items 1 to 5 as written. Item 6 is listed for the owner's approval and is not ye
    seal is `manifest.json`, and the resumption sidecar is deleted on seal. Reason: `RunManifest` is frozen
    by the plan, its `total_results` is the only sanctioned identified count (BUILD_PLAN S02-AC5), and
    reusing it would make the scanner parse OpenAlex runs as Scopus search runs (Alternatives). Owner
-   approval is required (Owner decisions).
+   approval was given as written (Owner decisions).
 
 ## Alternatives considered
 
@@ -424,9 +424,9 @@ covers a line proves nothing until it fails on the original defect.
 
 Each decision below is the owner's, or is recorded in an earlier ADR as shown.
 
-- **Deviations 1 to 5 approved as written.** The owner approved the new run kind, the JSONL form, the §2.2
-  field mapping (`api_view`, `entitlement_context`, `result_count`), the `PayloadRef` form, and `refresh`.
-  Deviation 6 (the manifest model and opt-in record, against ADR 0028) is not yet approved.
+- **Deviations 1 to 6 approved as written.** The owner approved the new run kind, the JSONL form, the §2.2
+  field mapping (`api_view`, `entitlement_context`, `result_count`), the `PayloadRef` form, `refresh`, and
+  the manifest model and opt-in record that depart from ADR 0028 Decision 3 (deviation 6).
 - **A body that contains the API key is refused.** The writer refuses the write, the body is never
   stored, the run stays unsealed, and the error names the file without the key (Decision 6).
 - **Refresh is off by default** (Decision 7, Deviations item 5).
