@@ -1,0 +1,396 @@
+"""The OpenAlex works client (ADR 0028, level 4 of the field-level cascade).
+
+Modelled on :mod:`prismabib.sources.crossref`: same injectable
+``http_client``/``rate_limiter``/``cache``, same ``tenacity`` policy (429 and
+5xx retried, nothing else), same error taxonomy -- except that 401 and 403
+are *not* raised. ADR 0028 Decision 1 records them as a ``refused`` outcome
+carrying the HTTP status, so the cascade can continue to the next level.
+
+**The API key** (``Settings.openalex_api_key``, optional) is sent as the
+``api_key`` query parameter on the wire only. It is deliberately left out of
+the cache's ``params``, so it is never part of a cache key, and it is never
+logged: log lines carry the endpoint without the query string.
+
+**Nothing here writes to the store.** :func:`topics_to_keywords` returns the
+``openalex-topic`` keyword kind as data; persisting it needs a separate ADR
+(ADR 0028, resolved item 5).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Final, Literal, Self
+from urllib.parse import quote
+
+import httpx
+import structlog
+from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_random_exponential
+
+from prismabib import __version__
+from prismabib.config import Settings
+from prismabib.errors import RateLimitError, UpstreamError, ValidationError
+from prismabib.sources.cache import HttpCache
+from prismabib.sources.ratelimit import RateLimiter
+
+logger = structlog.get_logger(__name__)
+
+JsonDict = dict[str, Any]
+
+_USER_AGENT: Final = f"prismabib/{__version__} (+https://github.com/SergioHuesca/PRISMA-Bib)"
+_SELECT: Final = "id,doi,title,publication_year,abstract_inverted_index,authorships,topics"
+_DOI_PREFIX: Final = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
+KEYWORD_KIND: Final = "openalex-topic"
+
+
+class _RetryableUpstreamError(UpstreamError):
+    """A 5xx from OpenAlex -- retried, unlike any other unexpected status."""
+
+
+@dataclass(frozen=True)
+class OpenAlexWork:
+    """The subset of an OpenAlex work this project reads (the ``select`` list)."""
+
+    openalex_id: str | None
+    doi: str | None
+    title: str | None
+    publication_year: int | None
+    abstract_inverted_index: Mapping[str, Sequence[int]] | None = None
+    authorships: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
+    topics: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class NotFound:
+    """OpenAlex has no work for this DOI (ADR 0028 outcome ``not_found``)."""
+
+
+@dataclass(frozen=True)
+class Refused:
+    """OpenAlex answered 401 or 403 (ADR 0028 outcome ``refused``)."""
+
+    http_status: int
+
+
+@dataclass(frozen=True)
+class FieldOutcome:
+    """One field's outcome at this level: ``value``, ``absent``, ``not_found`` or ``refused``."""
+
+    outcome: Literal["value", "absent", "not_found", "refused"]
+    value: Any = None
+    http_status: int | None = None
+
+
+@dataclass(frozen=True)
+class AuthorFields:
+    """Authors and institution affiliations, in OpenAlex's authorship order."""
+
+    authors: tuple[str, ...]
+    affiliations: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TopicKeyword:
+    """One OpenAlex topic, as data for the ``openalex-topic`` keyword kind."""
+
+    name: str
+    score: float | None
+    kind: str = KEYWORD_KIND
+
+
+def normalise_title(title: str) -> str:
+    """Lowercase, delete punctuation, collapse whitespace (ADR 0028 Decision 4)."""
+    kept = "".join(c for c in title.lower() if not unicodedata.category(c).startswith("P"))
+    return " ".join(kept.split())
+
+
+def normalise_doi(doi: str) -> str:
+    """Bare, lowercase DOI: OpenAlex returns ``https://doi.org/...`` URLs."""
+    return _DOI_PREFIX.sub("", doi.strip()).lower()
+
+
+def rebuild_abstract(inverted_index: Mapping[str, Sequence[int]] | None) -> str | None:
+    """Rebuild an abstract from OpenAlex's ``abstract_inverted_index``.
+
+    Returns:
+        The words joined by single spaces in position order, or ``None`` when
+        the index is missing or empty (the ``absent`` outcome).
+    """
+    if not inverted_index:
+        return None
+    placed = sorted((pos, word) for word, positions in inverted_index.items() for pos in positions)
+    return " ".join(word for _, word in placed) or None
+
+
+def authorships_to_fields(work: OpenAlexWork) -> AuthorFields:
+    """Authors and de-duplicated institution names from ``authorships[]``."""
+    authors: list[str] = []
+    affiliations: dict[str, None] = {}
+    for authorship in work.authorships:
+        author = authorship.get("author")
+        name = author.get("display_name") if isinstance(author, Mapping) else None
+        if isinstance(name, str) and name:
+            authors.append(name)
+        for inst in authorship.get("institutions") or ():
+            inst_name = inst.get("display_name") if isinstance(inst, Mapping) else None
+            if isinstance(inst_name, str) and inst_name:
+                affiliations[inst_name] = None
+    return AuthorFields(tuple(authors), tuple(affiliations))
+
+
+def topics_to_keywords(work: OpenAlexWork) -> tuple[TopicKeyword, ...]:
+    """The work's topics as ``openalex-topic`` keywords (data only; nothing is stored)."""
+    out: list[TopicKeyword] = []
+    for topic in work.topics:
+        name = topic.get("display_name")
+        if isinstance(name, str) and name:
+            score = topic.get("score")
+            out.append(TopicKeyword(name, float(score) if isinstance(score, int | float) else None))
+    return tuple(out)
+
+
+def field_outcomes(result: OpenAlexWork | NotFound | Refused) -> dict[str, FieldOutcome]:
+    """Map a lookup result to the per-field outcomes of ADR 0028 Decision 1."""
+    names = ("abstract", "authors", "affiliations", "keywords")
+    if isinstance(result, Refused):
+        return {n: FieldOutcome("refused", http_status=result.http_status) for n in names}
+    if isinstance(result, NotFound):
+        return {n: FieldOutcome("not_found") for n in names}
+    people = authorships_to_fields(result)
+    values: dict[str, Any] = {
+        "abstract": rebuild_abstract(result.abstract_inverted_index),
+        "authors": people.authors,
+        "affiliations": people.affiliations,
+        "keywords": topics_to_keywords(result),
+    }
+    return {n: FieldOutcome("value", v) if v else FieldOutcome("absent") for n, v in values.items()}
+
+
+def _parse_work(raw: Mapping[str, Any]) -> OpenAlexWork:
+    year = raw.get("publication_year")
+    doi = raw.get("doi")
+    return OpenAlexWork(
+        openalex_id=raw.get("id"),
+        doi=normalise_doi(doi) if isinstance(doi, str) else None,
+        title=raw.get("title"),
+        publication_year=year if isinstance(year, int) else None,
+        abstract_inverted_index=raw.get("abstract_inverted_index") or None,
+        authorships=raw.get("authorships") or (),
+        topics=raw.get("topics") or (),
+    )
+
+
+def _parse_results(body: bytes, *, single: bool = False) -> list[OpenAlexWork]:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"OpenAlex response is not valid JSON: {exc}") from exc
+    if single:
+        parsed = {"results": [parsed]}
+    results = parsed.get("results") if isinstance(parsed, dict) else None
+    if not isinstance(results, list):
+        raise ValidationError("OpenAlex response has no 'results' list")
+    return [_parse_work(r) for r in results if isinstance(r, dict)]
+
+
+class OpenAlexClient:
+    """A client for the OpenAlex ``/works`` endpoint.
+
+    Args:
+        settings: Environment configuration; ``openalex_api_key`` is optional.
+            Defaults to ``Settings()``.
+        http_client: An injectable ``httpx.Client``, primarily for tests.
+        rate_limiter: An injectable :class:`~prismabib.sources.ratelimit.RateLimiter`.
+        cache: An injectable :class:`~prismabib.sources.cache.HttpCache`.
+        timeout: The request timeout in seconds, for a self-built client.
+    """
+
+    ENDPOINT = "https://api.openalex.org/works"
+    MAX_ATTEMPTS = 5
+    BATCH_SIZE = 50
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        http_client: httpx.Client | None = None,
+        rate_limiter: RateLimiter | None = None,
+        cache: HttpCache | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._settings = settings if settings is not None else Settings()
+        self._http = (
+            http_client
+            if http_client is not None
+            else httpx.Client(timeout=timeout, headers={"User-Agent": _USER_AGENT})
+        )
+        self._owns_http = http_client is None
+        self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
+        self._cache = cache
+
+    def __enter__(self) -> Self:
+        """Enter the client as a context manager; returns ``self``."""
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Exit the client as a context manager, closing an owned HTTP client."""
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying HTTP client, if this instance owns one."""
+        if self._owns_http:
+            self._http.close()
+
+    def lookup_dois(self, dois: Iterable[str]) -> dict[str, OpenAlexWork | NotFound | Refused]:
+        """Look up DOIs, 50 per request (``filter=doi:a|b|...``).
+
+        Returns:
+            One entry per input DOI (keyed as given): the work, ``NotFound``
+            when OpenAlex has none (absent from the batch, or a 404), or
+            ``Refused`` on 401/403 (not raised, so the cascade can go on).
+
+        Raises:
+            RateLimitError: On HTTP 429 exhausting the retry budget.
+            UpstreamError: On 5xx exhausting the retry budget, or any other
+                unexpected status.
+            ValidationError: If a 200 body is not the documented shape.
+        """
+        unique = list(dict.fromkeys(dois))
+        found: dict[str, OpenAlexWork | NotFound | Refused] = {}
+        # `|` and `,` are filter syntax: such a DOI can never sit inside a batch.
+        singles = [d for d in unique if "|" in d or "," in d]
+        batchable = [d for d in unique if d not in singles]
+        for start in range(0, len(batchable), self.BATCH_SIZE):
+            batch = batchable[start : start + self.BATCH_SIZE]
+            wanted = {normalise_doi(d): d for d in batch}
+            params = {
+                "filter": "doi:" + "|".join(wanted),
+                "per-page": str(self.BATCH_SIZE),
+                "select": _SELECT,
+            }
+            result = self._get_works(params)
+            if result is None:
+                # A 404 on the whole batch says nothing about any one DOI.
+                singles.extend(batch)
+            elif isinstance(result, list):
+                by_doi = {w.doi: w for w in result if w.doi}
+                found.update({orig: by_doi.get(bare, NotFound()) for bare, orig in wanted.items()})
+            else:
+                found.update(dict.fromkeys(batch, result))
+        for doi in singles:
+            found[doi] = self._lookup_one(doi)
+        return {d: found[d] for d in unique}
+
+    def _lookup_one(self, doi: str) -> OpenAlexWork | NotFound | Refused:
+        """Look one DOI up by URL path; only a 404 here means ``not_found``."""
+        url = f"{self.ENDPOINT}/doi:{quote(normalise_doi(doi), safe='')}"
+        result = self._get_works({"select": _SELECT}, url=url)
+        if result is None:
+            return NotFound()
+        return result if isinstance(result, Refused) else result[0]
+
+    def search_title(self, title: str, year: int) -> OpenAlexWork | Refused | None:
+        """Keyword-search by title; accept only an exact normalised-title, same-year match.
+
+        Returns:
+            The matching work; ``None`` if nothing matches exactly (a near
+            miss belongs on a human review list, ADR 0028 Decision 4); or
+            ``Refused`` on 401/403.
+        """
+        params = {
+            "search": title,
+            "filter": f"publication_year:{year}",
+            "per-page": "25",
+            "select": _SELECT,
+        }
+        result = self._get_works(params)
+        if isinstance(result, Refused):
+            return result
+        if result is None:
+            return None
+        wanted = normalise_title(title)
+        return next(
+            (
+                w
+                for w in result
+                if w.title and w.publication_year == year and normalise_title(w.title) == wanted
+            ),
+            None,
+        )
+
+    def _get_works(
+        self, params: Mapping[str, str], *, url: str | None = None
+    ) -> list[OpenAlexWork] | Refused | None:
+        """GET works (the cache key excludes the API key); ``None`` means HTTP 404.
+
+        With ``url`` (a single-work path) the body is one work object, returned
+        as a one-item list.
+        """
+        url = url or self.ENDPOINT
+        single = url != self.ENDPOINT
+        cached = self._cache.load(url, params) if self._cache is not None else None
+        if cached is not None:
+            logger.info("openalex.works", cache="hit")
+            return _parse_results(cached, single=single)
+
+        wire = dict(params)
+        key = self._settings.openalex_api_key
+        if key is not None:
+            wire["api_key"] = key.get_secret_value()
+        response = self._request_with_retry(url, wire)
+        if response.status_code == 404:
+            return None
+        if response.status_code in (401, 403):
+            logger.warning("openalex.works.refused", status=response.status_code)
+            return Refused(response.status_code)
+        if self._cache is not None:
+            self._cache.store(url, params, response.content)
+        logger.info("openalex.works", cache="miss")
+        return _parse_results(response.content, single=single)
+
+    def _request_with_retry(self, url: str, params: Mapping[str, str]) -> httpx.Response:
+        retryer = Retrying(
+            stop=stop_after_attempt(self.MAX_ATTEMPTS),
+            wait=wait_random_exponential(multiplier=1, max=30),
+            retry=retry_if_exception_type((RateLimitError, _RetryableUpstreamError)),
+            reraise=True,
+        )
+        response: httpx.Response = retryer(self._do_request, url, params)
+        return response
+
+    def _do_request(self, url: str, params: Mapping[str, str]) -> httpx.Response:
+        self._rate_limiter.acquire()
+        response = self._http.get(url, params=dict(params))
+        self._rate_limiter.observe_headers(response.headers)
+        status = response.status_code
+        # Endpoint only: the query string may carry the API key.
+        if status == 429:
+            logger.warning("openalex.request.rate_limited", status=status)
+            raise RateLimitError("OpenAlex rate-limited the request (HTTP 429).")
+        if 500 <= status < 600:
+            logger.warning("openalex.request.upstream_error", status=status)
+            raise _RetryableUpstreamError(f"OpenAlex returned HTTP {status}.")
+        if not (200 <= status < 300 or status in (401, 403, 404)):
+            logger.warning("openalex.request.unexpected_status", status=status)
+            raise UpstreamError(f"OpenAlex returned unexpected HTTP {status}.")
+        return response
+
+
+__all__ = [
+    "AuthorFields",
+    "FieldOutcome",
+    "NotFound",
+    "OpenAlexClient",
+    "OpenAlexWork",
+    "Refused",
+    "TopicKeyword",
+    "authorships_to_fields",
+    "field_outcomes",
+    "normalise_doi",
+    "normalise_title",
+    "rebuild_abstract",
+    "topics_to_keywords",
+]
