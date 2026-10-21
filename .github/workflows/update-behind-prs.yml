@@ -1,0 +1,60 @@
+# Keep open PRs current with main after every squash-merge.
+#
+# !! OWNER SETUP REQUIRED !!
+# Pushes made with the default GITHUB_TOKEN do NOT trigger new workflow runs, so updated
+# PRs would get no checks. This job therefore mints a GitHub App installation token. The
+# owner must create the GitHub App (Contents: write, Pull requests: write, installed on
+# this repo only) and set two repo secrets: APP_ID and APP_PRIVATE_KEY. This workflow
+# does not create or store any secret. Until they exist, the token step fails the job.
+#
+# A PR whose state is still UNKNOWN is skipped, so it can stay BEHIND until the next
+# push to main. Any failed update fails the job at the end.
+# It never merges, closes, approves, or edits PR contents.
+
+name: Update behind PRs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: update-behind-prs
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # actions/create-github-app-token v3.3.0
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        id: app
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Update BEHIND pull requests
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          failed=0
+          for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
+            s=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus)
+            if [ "$s" != "BEHIND" ]; then echo "PR #$n: $s, skipping"; continue; fi
+            echo "PR #$n: BEHIND, updating"
+            if gh pr update-branch "$n" &&
+              gh pr comment "$n" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
+              :
+            else
+              echo "::error::PR #$n: update or comment failed"; failed=1
+            fi
+          done
+          exit "$failed"
