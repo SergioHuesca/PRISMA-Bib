@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed — 2026-10-21. Not in force. This record amends the wording of BUILD_PLAN Stage 2 acceptance criterion 5 (`S02-AC5`) and nothing else in the frozen BUILD_PLAN. Three further records carry the other changes. Moving the shared `AppendOnlyLog` below Stage 3, with an `append_if` method, amends [ADR 0024](0024-one-implementation-of-append-only-durability.md), and the owner has decided it. The Stage 3 schema change is ADR 0032 and the Stage 4 `FlowCounts` change is ADR 0033, both to be written, and neither is decided here. Each change is a deviation from the frozen BUILD_PLAN and needs its own record under §2.6. This ADR moves to Accepted only when the owner approves it on merge. No registration code is written before then, as [ADR 0028](0028-field-level-fallback-cascade.md) resolved item 3 requires.
+Accepted — 2026-10-21. Accepted by the owner; all open questions were decided as recorded.
+
+Each change is a deviation from the frozen BUILD_PLAN and needs its own record under §2.6.
 
 ## Context
 
