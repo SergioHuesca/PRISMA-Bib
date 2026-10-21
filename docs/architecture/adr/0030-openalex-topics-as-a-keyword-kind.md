@@ -2,13 +2,13 @@
 
 ## Status
 
-Proposed — 2026-10-21. Amends the data model and the frozen DDL. The allowed values of
-`record_keywords.kind` change from `author` and `index` to include `openalex-topic`, and the
-column gains a `CHECK` constraint. The frozen BUILD_PLAN line 871 is the clause changed. Under §2.6,
-this record is the recorded deviation, and BUILD_PLAN itself is not edited. It is the separate ADR
-that [ADR 0028](0028-field-level-fallback-cascade.md) resolved item 5 requires. No keyword code is
-written before it is accepted. The owner accepts it; it moves to Accepted when the owner approves
-it on merge.
+Accepted — 2026-10-21. Accepted by the owner; the open questions were decided as recorded.
+
+Amends the data model and the frozen DDL. The allowed values of `record_keywords.kind` change from
+`author` and `index` to include `openalex-topic`, and the column gains a `CHECK` constraint. The
+frozen BUILD_PLAN line 871 is the clause changed. Under §2.6, this record is the recorded deviation,
+and BUILD_PLAN itself is not edited. It is the separate ADR that
+[ADR 0028](0028-field-level-fallback-cascade.md) resolved item 5 requires.
 
 ## Context
 
@@ -161,7 +161,7 @@ before the change reports no `openalex-topic` count. That is visible, not silent
 ### 5. Checksums and the frozen reference fixture
 
 The checksum is a hash of row content, not of DDL. `store/checksums.py` `table_checksum` runs
-`SELECT *` in sort-key order and hashes the cells (`checksums.py`, lines 105 to 130). Nothing
+`SELECT *` in sort-key order and hashes the cells (`checksums.py`, lines 105 to 134). Nothing
 hashes `schema.sql`, so the CHECK does not move any checksum by itself.
 
 - **A store with no topic rows keeps every table checksum.** This includes every Scopus-only
