@@ -788,9 +788,9 @@ class ScopusClient:
         core = body.get("coredata")
         core = core if isinstance(core, Mapping) else {}
         # Observed in the 2026-10-21 single-DOI probe: coredata.dc:creator, a dict whose
-        # only key is "author". NOT observed (kept as fallbacks only): dc:creator on the
-        # body or the root. The live META response had no "authors" object.
-        candidates = (core.get("dc:creator"), body.get("dc:creator"), page.get("dc:creator"))
+        # only key is "author". NOT observed (kept as a fallback only): dc:creator on the
+        # body. The JSON root is not read, and the live META response had no "authors" object.
+        candidates = (core.get("dc:creator"), body.get("dc:creator"))
         first = next((a for c in candidates if (a := _first_author(c))), None)
         ids = {
             k: v for k in ("dc:identifier", "eid", "prism:doi") if isinstance(v := core.get(k), str)

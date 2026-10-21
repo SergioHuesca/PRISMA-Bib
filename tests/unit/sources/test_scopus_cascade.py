@@ -118,15 +118,24 @@ def test_search_standard__dc_creator_string_or_dict(creator: object) -> None:
     assert out["10.1000/a"].first_author == "Doe J."
 
 
-@pytest.mark.parametrize("location", ["coredata", "body", "root"])
-def test_abstract_meta__dc_creator_in_any_location(location: str) -> None:
+@pytest.mark.parametrize("location", ["coredata", "body"])
+def test_abstract_meta__dc_creator_in_coredata_or_body(location: str) -> None:
     page = _fx("abstract_meta.json")
     body = page["abstracts-retrieval-response"]
     del body["coredata"]["dc:creator"]
-    {"coredata": body["coredata"], "body": body, "root": page}[location]["dc:creator"] = "Doe J."
+    {"coredata": body["coredata"], "body": body}[location]["dc:creator"] = "Doe J."
     with respx.mock:
         respx.get(_ABSTRACT).mock(return_value=httpx.Response(200, json=page))
         assert _client().abstract_meta("2-s2.0-111").first_author == "Doe J."
+
+
+def test_abstract_meta__root_dc_creator_is_not_read() -> None:
+    page = _fx("abstract_meta.json")
+    del page["abstracts-retrieval-response"]["coredata"]["dc:creator"]
+    page["dc:creator"] = "Doe J."
+    with respx.mock:
+        respx.get(_ABSTRACT).mock(return_value=httpx.Response(200, json=page))
+        assert _client().abstract_meta("2-s2.0-111").first_author is None
 
 
 def test_abstract_meta__authors_object_is_not_read_so_no_name_is_absent() -> None:
