@@ -34,7 +34,7 @@ BUILD_PLAN §2.6 reads exactly:
 
 §1.2 reads exactly: "These were settled during design and are **not open for renegotiation** during implementation. Changing one requires a new ADR (see §2.6)."
 
-The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." The Stage 2 criterion is not in §1.2. This ADR therefore relies on the `CLAUDE.md` reading, and on [ADR 0013](0013-identified-sums-across-searches.md), which applied §2.6 to the Stage 4 `FlowCounts` contract for the same reason.
+The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." (The source line breaks after "renegotiable"; the words are unchanged.) The Stage 2 criterion is not in §1.2. This ADR therefore relies on the `CLAUDE.md` reading, and on [ADR 0013](0013-identified-sums-across-searches.md), which applied §2.6 to the Stage 4 `FlowCounts` contract for the same reason.
 
 ## Decision
 
@@ -48,7 +48,7 @@ The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptanc
 - A candidate is **resolved** when exactly one level 4 work satisfies one of these match rules:
   - `doi`: the candidate's DOI equals the work's DOI;
   - `title_year`: the candidate has no DOI, the work's title and the candidate's title are equal under `normalise_title` (the function in `capture/candidates.py`), and the years are equal. That function's definition is the code's: punctuation becomes a space, and whitespace is collapsed, so `well-being` matches `well being` and does not match `wellbeing`;
-  - `near_confirmed`: the work is a near match to the candidate under the two rules that `capture/candidates.py` already applies to its review list (`near_matches`): the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. The reviewer must confirm that this work is the candidate, and the confirmation is the registration call itself. A near match is never registered without it.
+  - `near_confirmed`: the work is a near match to the candidate under the two rules that `capture/candidates.py` already applies to its review list (`near_matches`): the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. The reviewer must confirm that this work is the candidate, and the confirmation is the registration call itself. A near match is never registered without it. Nothing wider than those two rules is a near match.
 - Two or more works that satisfy a rule leave the candidate unresolved, under any rule. ADR 0028 does not state this condition. This ADR adds it, because a title and year can match two different papers, such as a conference paper and its preprint.
 - Before the event is written, the reviewer sees the DOI, the title, the year and the match rule, and confirms them. The confirmation is a UI step; the event records the match rule.
 - A reviewer may leave a resolved candidate unregistered. The number of resolved candidates that are not registered is reported beside `registered` (§3).
@@ -57,7 +57,7 @@ The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptanc
 
 - A registration is written to `projects/<slug>/decisions/registrations.jsonl`, with the checksum sidecar `registrations.jsonl.sha256`, through `AppendOnlyLog` (ADR 0024), as candidate paste events already are. It is a separate file, not `decisions.jsonl`, so the Stage 4 fold keyed on `(stage, record_id, reviewer)` is not changed. Like `decisions.jsonl`, the file and its sidecar are tracked in git, as BUILD_PLAN §2.5 recommends. The Layer 0 payloads they reference are not committed; see Consequence 9.
 - Each event carries `event_id` (ULID), `schema_version` (1), `ts` (UTC, ending `Z`), `project`, and `action`. The actions are:
-  - `register`, which creates a record. It carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi`, `title_year` or `near_confirmed`), `source_level` (always 4), `source_payload_ref`, `source_payload_sha256`, and `doi` (required);
+  - `register`, which creates a record. It carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi`, `title_year` or `near_confirmed`), `source_level` (always 4), `source_payload_ref`, `source_payload_sha256`, `doi` (required), `subject_map_version` and `subject_map_sha256` (the version and checksum of the OpenAlex-topic-to-ASJC mapping table in ADR 0032 that gave the record its subject area);
   - `reverse`, which removes a record it names. It carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
   - `supersede`, which removes a record it names, written only by the automatic step in §6. It carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule` (`doi` or `title_year`), and `actor` (`system`).
 - **Why `supersede` is a separate kind, not a second `register`.** A `register` event creates a record, and a `supersede` event removes one. A record is created by a human's choice, and it is removed by a reversal or by a Scopus match. Writing removal as a second `register` would mix the two meanings in one kind, and every reader of `register` would have to check which one it was. The two kinds are kept apart so that the count of `register` events is the count of records ever created, and the count of active registrations is that count less the removals.
@@ -73,7 +73,8 @@ Worked example of a `register` event. Illustrative values, not from a real run:
  "candidate_id": "3f9c0a7e5b2d41f8a6c0e9d7b1a24c60", "reviewer": "sh",
  "match_rule": "title_year", "source_level": 4,
  "source_payload_ref": {"file": "raw/run-0007/openalex-0001.jsonl", "line": 42},
- "source_payload_sha256": "9b1e...", "doi": "10.0000/example.2019.1"}
+ "source_payload_sha256": "9b1e...", "doi": "10.0000/example.2019.1",
+ "subject_map_version": "1", "subject_map_sha256": "c41d..."}
 ```
 
 ### 3. The sets and the counts
@@ -211,16 +212,21 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 ## Split records
 
 - **ADR 0032 (to be written):** the Stage 3 Layer 1 table for registered records, and the view that unites them with Scopus records. This ADR fixes what the table must carry for registered records: `record_id`, `origin`, `doi` (required, since §1 requires a DOI), `title`, `year`, and the following three fields, which are a requirement on ADR 0032 and not an assumption made here:
-  - `doc_type`, `language`, and the subject-area input. Criterion A is year, subject area and document type, and criterion L is language (BUILD_PLAN Stage 4). Both are computed from the stored fields, so a registered record without them cannot be classified and must not enter S_raw. ADR 0032 must specify how each is obtained for a registered record.
-  - Subject area is the open point. OpenAlex topics are not ASJC subject areas, and ADR 0028 Decision 2 keeps them separate. ADR 0017 matches subject areas by ASJC grouping. ADR 0032 must say where a registered record's subject area comes from (owner list).
+  - `doc_type`, `language`, and the subject-area input. Criterion A is year, subject area and document type, and criterion L is language (BUILD_PLAN Stage 4). Both are computed from the stored fields, so a registered record without them cannot be classified and must not enter S_raw. ADR 0032 must specify how each is obtained for a registered record. Subject area is decided in the owner decisions below.
+  - Subject area comes from a **fixed, versioned mapping table from OpenAlex topics to ASJC codes**. OpenAlex topics are not ASJC subject areas, and ADR 0028 Decision 2 keeps them separate, and ADR 0017 matches subject areas by ASJC grouping. The mapping table and its version are recorded with each registration (the `register` event's `subject_map_version` and `subject_map_sha256`, §2). ADR 0032 must include the mapping itself, and it does not yet exist, so ADR 0032 is a precondition for registration.
 - **ADR 0033 (to be written):** the Stage 4 `FlowCounts` change, namely the `registered` field and the identity in §3, and the fold's handling of orphaned decisions.
 
-## Questions for the owner before acceptance
+## Owner decisions
 
-1. Confirm the reading of BUILD_PLAN §2.6 in "Context", and that this ADR, ADR 0032 and ADR 0033 are the right split for the Stage 2, Stage 3 and Stage 4 changes.
-2. Confirm the amended wording of `S02-AC5`.
-3. Confirm that "near match" means exactly the two rules `capture/candidates.py` applies to its review list, and nothing wider.
-4. Where does a registered record's subject area come from, given that OpenAlex supplies topics and not ASJC codes? This is for ADR 0032 to settle, and the owner must choose the source.
+Each of the four items below is decided by the owner. ADR 0029, ADR 0032 and ADR 0033 are accepted separately, each on its own merge. This ADR stays Proposed until the owner accepts it.
+
+1. **The §2.6 reading and the split.** ADR 0029 covers Stage 2 (the `S02-AC5` wording and the registration). ADR 0032 covers the Stage 3 table and view. ADR 0033 covers the Stage 4 `FlowCounts` change. Each is accepted on its own. The reading of §2.6 is the one in "The spec clauses this amends" above.
+2. **The amended `S02-AC5` wording, as drafted.** The exact amended text is quoted in "Amended wording of `S02-AC5`" above and reads:
+
+   > The reported `total_results` is recorded in the manifest and is the **only** source of the PRISMA "records identified" number. Records registered by a reviewer under ADR 0029 are counted on a separate line named "registered", and are never added to or reported as part of that number.
+
+3. **"Near match" means exactly the two rules in `near_matches`** in `capture/candidates.py`: the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. Nothing wider is a near match.
+4. **Subject area source.** A registered record's subject area comes from a fixed, versioned mapping table from OpenAlex topics to ASJC codes. The table and its version are recorded with each registration. ADR 0032 specifies the mapping.
 
 ## Related decisions
 
