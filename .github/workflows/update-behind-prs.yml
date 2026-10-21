@@ -4,11 +4,13 @@
 # Pushes made with the default GITHUB_TOKEN do NOT trigger new workflow runs, so updated
 # PRs would get no checks. This job therefore mints a GitHub App installation token. The
 # owner must create the GitHub App (Contents: write, Pull requests: write, installed on
-# this repo only) and set two repo secrets: APP_ID and APP_PRIVATE_KEY. This workflow
-# does not create or store any secret. Until they exist, the token step fails the job.
+# this repo only) and set two repo secrets: APP_CLIENT_ID (the App's Client ID, not the
+# numeric App ID; the owner must ADD this) and APP_PRIVATE_KEY. This workflow does not
+# create or store any secret. Until they exist, the token step fails the job.
 #
-# A PR whose state is still UNKNOWN is skipped, so it can stay BEHIND until the next
-# push to main. Any failed update fails the job at the end.
+# An UNKNOWN PR is polled for ~60s, then skipped with a warning and a step-summary note
+# (the job does not fail), so it can stay BEHIND until the next push to main.
+# Any failed update fails the job at the end.
 # It never merges, closes, approves, or edits PR contents.
 
 name: Update behind PRs
@@ -36,7 +38,7 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         id: app
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
@@ -47,7 +49,17 @@ jobs:
         run: |
           failed=0
           for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
-            s=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus)
+            # mergeStateStatus is computed lazily: poll UNKNOWN up to ~60s (6 x 10s).
+            for i in 1 2 3 4 5 6; do
+              s=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus)
+              [ "$s" != "UNKNOWN" ] && break
+              echo "PR #$n: UNKNOWN, retry $i/6"; sleep 10
+            done
+            if [ "$s" = "UNKNOWN" ]; then
+              echo "::warning::PR #$n still UNKNOWN after 60s; needs a manual check"
+              echo "PR #$n: still UNKNOWN, needs a manual check" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
             if [ "$s" != "BEHIND" ]; then echo "PR #$n: $s, skipping"; continue; fi
             echo "PR #$n: BEHIND, updating"
             if gh pr update-branch "$n" &&
