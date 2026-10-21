@@ -1,4 +1,5 @@
 {"abstracts-retrieval-response": {
-  "coredata": {"dc:identifier": "SCOPUS_ID:111", "eid": "2-s2.0-111", "prism:doi": "10.1000/a", "dc:creator": "Doe J."},
+  "coredata": {"dc:identifier": "SCOPUS_ID:111", "eid": "2-s2.0-111", "prism:doi": "10.1000/a",
+               "dc:creator": {"author": [{"ce:indexed-name": "Doe J."}]}},
   "affiliation": {"@_fa": "true", "affilname": "Univ Example", "affiliation-city": "Madrid", "affiliation-country": "Spain"}
 }}

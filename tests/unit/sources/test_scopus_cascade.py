@@ -129,16 +129,17 @@ def test_abstract_meta__dc_creator_in_any_location(location: str) -> None:
         assert _client().abstract_meta("2-s2.0-111").first_author == "Doe J."
 
 
-def test_abstract_meta__first_author_from_authors_list() -> None:
+def test_abstract_meta__authors_object_is_not_read_so_no_name_is_absent() -> None:
+    # The live META response had no "authors" object, so it is not a source.
     page = _fx("abstract_meta.json")
     body = page["abstracts-retrieval-response"]
-    del body["coredata"]["dc:creator"]
-    body["authors"] = {"author": [{"ce:indexed-name": "Doe J."}, {"ce:indexed-name": "Roe R."}]}
+    del body["coredata"]["dc:creator"], body["affiliation"]
+    body["authors"] = {"author": [{"ce:indexed-name": "Doe J."}]}
     with respx.mock:
         respx.get(_ABSTRACT).mock(return_value=httpx.Response(200, json=page))
         result = _client().abstract_meta("2-s2.0-111")
-    assert result.first_author == "Doe J."
-    assert result.outcome == "value"
+    assert result.first_author is None
+    assert result.outcome == "absent"
 
 
 def test_abstract_meta__404_is_not_found() -> None:

@@ -421,9 +421,10 @@ def _affiliations(raw: Any) -> tuple[Affiliation, ...]:
 def _first_author(value: Any) -> str | None:
     """First author from a ``dc:creator`` value.
 
-    The JSON type of ``dc:creator`` is not recorded for either view, so a plain
-    string and a mapping are both accepted. A mapping may be one author
-    (``ce:indexed-name`` / ``authname`` / ``$``) or ``{"author": [...]}``.
+    Verified 2026-10-21 (single-DOI probes): in STANDARD, ``entry[0].dc:creator`` is a
+    plain string; in META, ``coredata.dc:creator`` is a dict whose only key is
+    ``author``. UNVERIFIED: what ``author`` holds (a list, or a dict) and its inner key
+    names; ``ce:indexed-name`` / ``authname`` / ``$`` are guesses.
     """
     if isinstance(value, str):
         return value or None
@@ -786,14 +787,10 @@ class ScopusClient:
             raise ValidationError(f"Scopus returned HTTP 200 for {url} without a record body")
         core = body.get("coredata")
         core = core if isinstance(core, Mapping) else {}
-        # The location of dc:creator in META is UNVERIFIED (a probe confirmed it is
-        # present, not where), so accept coredata, the body, the root, then authors.author[0].
-        candidates = (
-            core.get("dc:creator"),
-            body.get("dc:creator"),
-            page.get("dc:creator"),
-            body.get("authors"),  # {"author": [{"ce:indexed-name": ...}]}
-        )
+        # Observed in the 2026-10-21 single-DOI probe: coredata.dc:creator, a dict whose
+        # only key is "author". NOT observed (kept as fallbacks only): dc:creator on the
+        # body or the root. The live META response had no "authors" object.
+        candidates = (core.get("dc:creator"), body.get("dc:creator"), page.get("dc:creator"))
         first = next((a for c in candidates if (a := _first_author(c))), None)
         ids = {
             k: v for k in ("dc:identifier", "eid", "prism:doi") if isinstance(v := core.get(k), str)
