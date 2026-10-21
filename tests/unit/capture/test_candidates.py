@@ -14,6 +14,7 @@ from prismabib.capture.candidates import (
     CandidateEvent,
     CandidateLog,
     CandidateRow,
+    DoiConflictEvent,
     DoiEnrichmentEvent,
     candidate_id,
     near_matches,
@@ -154,21 +155,67 @@ def test_enrichment__same_doi_again_is_already_present_and_writes_nothing(tmp_pa
     assert (log.path.read_bytes(), log.doi_path.read_bytes()) == before
 
 
-def test_enrichment__different_doi_on_enriched_candidate_first_stands(tmp_path: Path) -> None:
+def test_conflict__different_doi_on_enriched_candidate_first_stands(tmp_path: Path) -> None:
     log = CandidateLog(tmp_path / "c.jsonl")
+    cid = _event().candidate_id
     log.add(_event())
     log.add(_event(doi="10.1/first"))
-    assert log.add(_event(doi="10.1/second")) == "already_present"
-    assert log.effective_doi(_event().candidate_id) == "10.1/first"
+    assert log.add(_event(doi="10.1/second")) == "conflict"
+    assert log.effective_doi(cid) == "10.1/first"
     assert len(log.load_enrichments()) == 1
+    (conflict,) = log.conflicts(cid)
+    assert (conflict.doi, conflict.stored_doi) == ("10.1/second", "10.1/first")
+    assert log.view()[0].conflicting_dois == ("10.1/second",)
 
 
-def test_enrichment__different_doi_on_original_doi_first_stands(tmp_path: Path) -> None:
+def test_conflict__different_doi_on_original_doi_first_stands(tmp_path: Path) -> None:
     log = CandidateLog(tmp_path / "c.jsonl")
+    cid = _event().candidate_id
     assert log.add(_event(doi="10.1/first")) == "added"
-    assert log.add(_event(doi="10.1/second")) == "already_present"
-    assert log.effective_doi(_event().candidate_id) == "10.1/first"
-    assert not log.doi_path.exists() or log.load_enrichments() == []
+    assert log.add(_event(doi="10.1/second")) == "conflict"
+    assert log.effective_doi(cid) == "10.1/first"
+    assert [c.doi for c in log.conflicts(cid)] == ["10.1/second"]
+    assert log.load_enrichments() == []  # not an enrichment
+    assert log.conflicts("other") == []
+
+
+def test_conflict__same_conflicting_doi_again_writes_nothing_more(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event(doi="10.1/first"))
+    log.add(_event(doi="10.1/second"))
+    before = log.conflict_path.read_bytes()
+    assert log.add(_event(doi="10.1/second")) == "conflict"
+    assert log.conflict_path.read_bytes() == before
+    assert log.add(_event(doi="10.1/third")) == "conflict"  # a new distinct one is recorded
+    assert [c.doi for c in log.load_conflicts()] == ["10.1/second", "10.1/third"]
+
+
+def test_conflict__matching_or_absent_doi_is_already_present_without_write(
+    tmp_path: Path,
+) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event(doi="10.1/first"))
+    assert log.add(_event(doi="DOI:10.1/FIRST")) == "already_present"
+    assert log.add(_event()) == "already_present"
+    assert log.load_conflicts() == []
+
+
+def test_conflict__tampering_is_detected(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event(doi="10.1/first"))
+    log.add(_event(doi="10.1/second"))
+    log.conflict_path.write_bytes(log.conflict_path.read_bytes().replace(b"10.1/second", b"10.9/z"))
+    with pytest.raises(LogError):
+        log.load_conflicts()
+    with pytest.raises(LogError):
+        log.view()
+
+
+def test_conflict__event_must_actually_differ() -> None:
+    with pytest.raises(PydanticValidationError):
+        DoiConflictEvent(
+            candidate_id="x", doi="10.1/a", stored_doi="DOI:10.1/A", pasted_at=NOW, reviewer="sh"
+        )
 
 
 def test_enrichment__tampering_is_detected(tmp_path: Path) -> None:

@@ -27,6 +27,7 @@ from prismabib.prisma.log import AppendOnlyLog
 
 CURRENT_CANDIDATE_SCHEMA_VERSION = 1
 CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION = 1
+CURRENT_DOI_CONFLICT_SCHEMA_VERSION = 1
 
 _DOI_LIKE = re.compile(r"(10\.|doi:|https?://)", re.IGNORECASE)
 _YEAR = re.compile(r"[0-9]+")
@@ -228,7 +229,64 @@ class DoiEnrichmentEvent(BaseModel):
         return value
 
 
-AddResult = Literal["added", "enriched", "already_present"]
+class DoiConflictEvent(BaseModel):
+    """A pasted DOI that differs from the one stored for the candidate (Layer 2).
+
+    The stored DOI is never replaced; this records the disagreement. Unique per
+    (candidate, conflicting DOI), so repeating the same conflict writes nothing.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = Field(default_factory=lambda: CURRENT_DOI_CONFLICT_SCHEMA_VERSION)
+    candidate_id: str
+    doi: str
+    stored_doi: str
+    pasted_at: datetime
+    reviewer: str
+
+    @property
+    def event_id(self) -> str:
+        """Storage-level uniqueness key: candidate plus conflicting DOI."""
+        return f"{self.candidate_id}:{self.doi}"
+
+    @field_validator("schema_version")
+    @classmethod
+    def _current_version(cls, value: int) -> int:
+        if value != CURRENT_DOI_CONFLICT_SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema_version {value}")
+        return value
+
+    @field_validator("doi", "stored_doi")
+    @classmethod
+    def _normalised_doi(cls, value: str) -> str:
+        normalised = normalise_doi(value)
+        if normalised is None:
+            raise ValueError("doi must not be blank")
+        return normalised
+
+    @field_validator("reviewer")
+    @classmethod
+    def _nonempty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("pasted_at")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("pasted_at must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def _actually_differs(self) -> DoiConflictEvent:
+        if self.doi == self.stored_doi:
+            raise ValueError("a conflict needs a DOI different from the stored one")
+        return self
+
+
+AddResult = Literal["added", "enriched", "already_present", "conflict"]
 
 
 @dataclass(frozen=True)
@@ -237,6 +295,7 @@ class CandidateView:
 
     event: CandidateEvent
     doi: str | None  # first of: original DOI, earliest enrichment DOI
+    conflicting_dois: tuple[str, ...] = ()  # later, different DOIs; never override ``doi``
 
 
 class CandidateLog:
@@ -269,6 +328,22 @@ class CandidateLog:
             writer_name="CandidateLog",
             labour="human candidate",
         )
+        self._conflict_store: AppendOnlyLog[DoiConflictEvent] = AppendOnlyLog(
+            path.with_name(f"{path.stem}.conflicts{path.suffix}"),
+            model=DoiConflictEvent,
+            current_schema_version=CURRENT_DOI_CONFLICT_SCHEMA_VERSION,
+            event_id=lambda event: event.event_id,
+            noun="doi conflict",
+            event_description="candidate DOI conflict",
+            recovery_hint="CandidateLog.add",
+            writer_name="CandidateLog",
+            labour="human candidate",
+        )
+
+    @property
+    def conflict_path(self) -> Path:
+        """The DOI-conflict JSONL path."""
+        return self._conflict_store.path
 
     @property
     def path(self) -> Path:
@@ -288,12 +363,31 @@ class CandidateLog:
         """Every DOI-enrichment event, oldest first."""
         return self._doi_store.load()
 
+    def load_conflicts(self) -> list[DoiConflictEvent]:
+        """Every DOI-conflict event, oldest first."""
+        return self._conflict_store.load()
+
+    def conflicts(self, candidate_id_: str) -> list[DoiConflictEvent]:
+        """Conflicting DOIs pasted for one candidate, oldest first."""
+        return [e for e in self._conflict_store.load() if e.candidate_id == candidate_id_]
+
     def view(self) -> list[CandidateView]:
-        """Candidates with effective DOI (original, else first enrichment)."""
+        """Candidates with effective DOI (original, else first enrichment).
+
+        The first DOI always stands; conflicting DOIs are listed on the view.
+        """
         enriched: dict[str, str] = {}
         for e in self._doi_store.load():
             enriched.setdefault(e.candidate_id, e.doi)
-        return [CandidateView(c, c.doi or enriched.get(c.candidate_id)) for c in self._store.load()]
+        conflicting: dict[str, list[str]] = {}
+        for ce in self._conflict_store.load():
+            conflicting.setdefault(ce.candidate_id, []).append(ce.doi)
+        return [
+            CandidateView(
+                c, c.doi or enriched.get(c.candidate_id), tuple(conflicting.get(c.candidate_id, []))
+            )
+            for c in self._store.load()
+        ]
 
     def effective_doi(self, candidate_id_: str) -> str | None:
         """Effective DOI of one candidate, or ``None`` if it has none (or is unknown)."""
@@ -306,7 +400,10 @@ class CandidateLog:
             ``"added"`` for a new candidate; ``"enriched"`` if the candidate
             existed without a DOI and ``event`` carries one (a
             :class:`DoiEnrichmentEvent` is appended); ``"already_present"``
-            otherwise (nothing written; the first DOI, if any, stands).
+            when the paste matches the stored DOI or carries none (nothing
+            written); ``"conflict"`` when it carries a DOI different from the
+            stored one (a :class:`DoiConflictEvent` is appended once per
+            distinct conflicting DOI; the stored DOI is never replaced).
         """
         existing = next(
             (v for v in self.view() if v.event.candidate_id == event.candidate_id), None
@@ -320,8 +417,25 @@ class CandidateLog:
                     return "already_present"
                 raise
             return "added"
-        if existing.doi is not None or event.doi is None:
+        if event.doi is None:
             return "already_present"
+        if existing.doi is not None:
+            if event.doi == existing.doi:
+                return "already_present"
+            conflict = DoiConflictEvent(
+                candidate_id=event.candidate_id,
+                doi=event.doi,
+                stored_doi=existing.doi,
+                pasted_at=event.pasted_at,
+                reviewer=event.reviewer,
+            )
+            try:
+                self._conflict_store.write_event(conflict)
+            except LogError:
+                # The same conflicting DOI is already recorded: write nothing more.
+                if conflict.event_id not in {e.event_id for e in self._conflict_store.load()}:
+                    raise
+            return "conflict"
         try:
             self._doi_store.write_event(
                 DoiEnrichmentEvent(
@@ -381,6 +495,7 @@ __all__ = [
     "CandidateLog",
     "CandidateRow",
     "CandidateView",
+    "DoiConflictEvent",
     "DoiEnrichmentEvent",
     "candidate_id",
     "near_matches",
