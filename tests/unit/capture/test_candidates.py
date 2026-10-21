@@ -14,6 +14,7 @@ from prismabib.capture.candidates import (
     CandidateEvent,
     CandidateLog,
     CandidateRow,
+    DoiEnrichmentEvent,
     candidate_id,
     near_matches,
     normalise_doi,
@@ -116,8 +117,8 @@ def test_candidate_id__same_paper_with_and_without_doi_is_one_candidate(tmp_path
     assert bare.candidate_id == with_doi.candidate_id
     assert with_doi.doi == "10.1/x"  # still stored, normalised
     log = CandidateLog(tmp_path / "c.jsonl")
-    assert log.add(bare) is True
-    assert log.add(with_doi) is False
+    assert log.add(bare) == "added"
+    assert log.add(with_doi) == "enriched"
     assert len(log.load()) == 1
 
 
@@ -125,9 +126,66 @@ def test_candidate_id__different_titles_same_year_are_two_candidates(tmp_path: P
     a, b = _event("Alpha"), _event("Beta")
     assert a.candidate_id != b.candidate_id
     log = CandidateLog(tmp_path / "c.jsonl")
-    assert log.add(a) is True
-    assert log.add(b) is True
+    assert log.add(a) == "added"
+    assert log.add(b) == "added"
     assert len(log.load()) == 2
+
+
+def test_enrichment__doi_less_candidate_repasted_with_doi_gets_one_event(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    cid = _event().candidate_id
+    log.add(_event())
+    assert log.effective_doi(cid) is None
+    assert log.add(_event(doi="https://doi.org/10.1/X")) == "enriched"
+    events = log.load_enrichments()
+    assert [(e.candidate_id, e.doi) for e in events] == [(cid, "10.1/x")]
+    assert log.effective_doi(cid) == "10.1/x"
+    assert [(v.event.title, v.doi) for v in log.view()] == [("A Study", "10.1/x")]
+    assert len(log.load()) == 1  # candidate events untouched
+
+
+def test_enrichment__same_doi_again_is_already_present_and_writes_nothing(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event())
+    log.add(_event(doi="10.1/x"))
+    before = (log.path.read_bytes(), log.doi_path.read_bytes())
+    assert log.add(_event(doi="10.1/x")) == "already_present"
+    assert log.add(_event()) == "already_present"  # no DOI offered
+    assert (log.path.read_bytes(), log.doi_path.read_bytes()) == before
+
+
+def test_enrichment__different_doi_on_enriched_candidate_first_stands(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event())
+    log.add(_event(doi="10.1/first"))
+    assert log.add(_event(doi="10.1/second")) == "already_present"
+    assert log.effective_doi(_event().candidate_id) == "10.1/first"
+    assert len(log.load_enrichments()) == 1
+
+
+def test_enrichment__different_doi_on_original_doi_first_stands(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    assert log.add(_event(doi="10.1/first")) == "added"
+    assert log.add(_event(doi="10.1/second")) == "already_present"
+    assert log.effective_doi(_event().candidate_id) == "10.1/first"
+    assert not log.doi_path.exists() or log.load_enrichments() == []
+
+
+def test_enrichment__tampering_is_detected(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    log.add(_event())
+    log.add(_event(doi="10.1/x"))
+    log.doi_path.write_bytes(log.doi_path.read_bytes().replace(b"10.1/x", b"10.9/y"))
+    with pytest.raises(LogError):
+        log.load_enrichments()
+    with pytest.raises(LogError):
+        log.view()
+
+
+def test_enrichment__blank_doi_rejected_and_unknown_candidate_has_no_doi(tmp_path: Path) -> None:
+    with pytest.raises(PydanticValidationError):
+        DoiEnrichmentEvent(candidate_id="x", doi="  ", pasted_at=NOW, reviewer="sh")
+    assert CandidateLog(tmp_path / "c.jsonl").effective_doi("nope") is None
 
 
 def test_event__forged_id_naive_time_and_blank_title_rejected() -> None:
@@ -142,11 +200,11 @@ def test_event__forged_id_naive_time_and_blank_title_rejected() -> None:
 
 def test_log__append_only_roundtrip_and_repaste_detected(tmp_path: Path) -> None:
     log = CandidateLog(tmp_path / "decisions" / "candidates.jsonl")
-    assert log.add(_event()) is True
+    assert log.add(_event()) == "added"
     before = log.path.read_bytes()
-    assert log.add(_event("A study.")) is False  # same normalised content
+    assert log.add(_event("A study.")) == "already_present"  # same normalised content
     assert log.path.read_bytes() == before  # nothing overwritten or appended
-    assert log.add(_event("Other", 2021)) is True
+    assert log.add(_event("Other", 2021)) == "added"
     assert log.path.read_bytes().startswith(before)  # earlier bytes untouched
     assert [e.title for e in log.load()] == ["A Study", "Other"]
 

@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -25,6 +26,7 @@ from prismabib.models import normalise_doi as _models_normalise_doi
 from prismabib.prisma.log import AppendOnlyLog
 
 CURRENT_CANDIDATE_SCHEMA_VERSION = 1
+CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION = 1
 
 _DOI_LIKE = re.compile(r"(10\.|doi:|https?://)", re.IGNORECASE)
 _YEAR = re.compile(r"[0-9]+")
@@ -180,8 +182,69 @@ class CandidateEvent(BaseModel):
         )
 
 
+class DoiEnrichmentEvent(BaseModel):
+    """A DOI pasted later for an existing DOI-less candidate (Layer 2).
+
+    Links to the candidate by ``candidate_id``; never part of identity. At most
+    one exists per candidate (the first DOI stands), so ``candidate_id`` is
+    also this log's unique event id.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = Field(default_factory=lambda: CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION)
+    candidate_id: str
+    doi: str
+    pasted_at: datetime
+    reviewer: str
+
+    @field_validator("schema_version")
+    @classmethod
+    def _current_version(cls, value: int) -> int:
+        if value != CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema_version {value}")
+        return value
+
+    @field_validator("doi")
+    @classmethod
+    def _normalised_doi(cls, value: str) -> str:
+        normalised = normalise_doi(value)
+        if normalised is None:
+            raise ValueError("doi must not be blank")
+        return normalised
+
+    @field_validator("reviewer")
+    @classmethod
+    def _nonempty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("pasted_at")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("pasted_at must be timezone-aware")
+        return value
+
+
+AddResult = Literal["added", "enriched", "already_present"]
+
+
+@dataclass(frozen=True)
+class CandidateView:
+    """A candidate with its effective DOI, for the review list."""
+
+    event: CandidateEvent
+    doi: str | None  # first of: original DOI, earliest enrichment DOI
+
+
 class CandidateLog:
-    """Append-only candidates file, built on the shared :class:`AppendOnlyLog`."""
+    """Append-only candidates file plus a sibling DOI-enrichment file.
+
+    Both are built on the shared :class:`AppendOnlyLog`. The enrichment file is
+    ``<stem>.doi<suffix>`` next to ``path``.
+    """
 
     def __init__(self, path: Path) -> None:
         self._store: AppendOnlyLog[CandidateEvent] = AppendOnlyLog(
@@ -195,33 +258,84 @@ class CandidateLog:
             writer_name="CandidateLog",
             labour="human candidate",
         )
+        self._doi_store: AppendOnlyLog[DoiEnrichmentEvent] = AppendOnlyLog(
+            path.with_name(f"{path.stem}.doi{path.suffix}"),
+            model=DoiEnrichmentEvent,
+            current_schema_version=CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION,
+            event_id=lambda event: event.candidate_id,
+            noun="doi enrichment",
+            event_description="candidate DOI enrichment",
+            recovery_hint="CandidateLog.add",
+            writer_name="CandidateLog",
+            labour="human candidate",
+        )
 
     @property
     def path(self) -> Path:
-        """The JSONL path."""
+        """The candidates JSONL path."""
         return self._store.path
+
+    @property
+    def doi_path(self) -> Path:
+        """The DOI-enrichment JSONL path."""
+        return self._doi_store.path
 
     def load(self) -> list[CandidateEvent]:
         """Every candidate event, oldest first."""
         return self._store.load()
 
-    def add(self, event: CandidateEvent) -> bool:
-        """Append ``event`` unless the same candidate is already logged.
+    def load_enrichments(self) -> list[DoiEnrichmentEvent]:
+        """Every DOI-enrichment event, oldest first."""
+        return self._doi_store.load()
+
+    def view(self) -> list[CandidateView]:
+        """Candidates with effective DOI (original, else first enrichment)."""
+        enriched: dict[str, str] = {}
+        for e in self._doi_store.load():
+            enriched.setdefault(e.candidate_id, e.doi)
+        return [CandidateView(c, c.doi or enriched.get(c.candidate_id)) for c in self._store.load()]
+
+    def effective_doi(self, candidate_id_: str) -> str | None:
+        """Effective DOI of one candidate, or ``None`` if it has none (or is unknown)."""
+        return next((v.doi for v in self.view() if v.event.candidate_id == candidate_id_), None)
+
+    def add(self, event: CandidateEvent) -> AddResult:
+        """Log a paste, never dropping a new fact.
 
         Returns:
-            ``True`` if appended, ``False`` for a re-paste of an existing row
-            (nothing is written; the first event stands).
+            ``"added"`` for a new candidate; ``"enriched"`` if the candidate
+            existed without a DOI and ``event`` carries one (a
+            :class:`DoiEnrichmentEvent` is appended); ``"already_present"``
+            otherwise (nothing written; the first DOI, if any, stands).
         """
-        if any(e.candidate_id == event.candidate_id for e in self._store.load()):
-            return False
+        existing = next(
+            (v for v in self.view() if v.event.candidate_id == event.candidate_id), None
+        )
+        if existing is None:
+            try:
+                self._store.write_event(event)
+            except LogError:
+                # A concurrent writer may have added it between check and write.
+                if any(e.candidate_id == event.candidate_id for e in self._store.load()):
+                    return "already_present"
+                raise
+            return "added"
+        if existing.doi is not None or event.doi is None:
+            return "already_present"
         try:
-            self._store.write_event(event)
+            self._doi_store.write_event(
+                DoiEnrichmentEvent(
+                    candidate_id=event.candidate_id,
+                    doi=event.doi,
+                    pasted_at=event.pasted_at,
+                    reviewer=event.reviewer,
+                )
+            )
         except LogError:
-            # A concurrent writer may have added it between check and write.
-            if any(e.candidate_id == event.candidate_id for e in self._store.load()):
-                return False
+            if event.candidate_id in {e.candidate_id for e in self._doi_store.load()}:
+                return "already_present"
             raise
-        return True
+        return "enriched"
 
 
 def title_match(
@@ -266,6 +380,8 @@ __all__ = [
     "CandidateEvent",
     "CandidateLog",
     "CandidateRow",
+    "CandidateView",
+    "DoiEnrichmentEvent",
     "candidate_id",
     "near_matches",
     "normalise_doi",
