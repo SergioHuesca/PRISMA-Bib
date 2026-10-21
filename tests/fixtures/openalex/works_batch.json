@@ -1,0 +1,42 @@
+{
+  "meta": {"count": 2, "page": 1, "per_page": 50},
+  "results": [
+    {
+      "id": "https://openalex.org/W1000000001",
+      "doi": "https://doi.org/10.9999/Synthetic.One",
+      "title": "Pitch Tracking with Vision Models",
+      "publication_year": 2021,
+      "abstract_inverted_index": {"We": [0], "track": [1, 4], "pitches": [2], "and": [3], "batters": [5]},
+      "authorships": [
+        {
+          "author": {"id": "https://openalex.org/A1", "display_name": "Ada Synthetic"},
+          "institutions": [
+            {"display_name": "University of Nowhere"},
+            {"display_name": "Institute of Examples"}
+          ]
+        },
+        {
+          "author": {"id": "https://openalex.org/A2", "display_name": "Bo Placeholder"},
+          "institutions": [{"display_name": "University of Nowhere"}]
+        },
+        {
+          "author": {"id": "https://openalex.org/A3", "display_name": "Cy Unaffiliated"},
+          "institutions": []
+        }
+      ],
+      "topics": [
+        {"id": "https://openalex.org/T1", "display_name": "Sports Analytics", "score": 0.98},
+        {"id": "https://openalex.org/T2", "display_name": "Object Tracking", "score": 0.91}
+      ]
+    },
+    {
+      "id": "https://openalex.org/W1000000002",
+      "doi": "https://doi.org/10.9999/synthetic.two",
+      "title": "A Work Without an Abstract",
+      "publication_year": 2020,
+      "abstract_inverted_index": null,
+      "authorships": [],
+      "topics": []
+    }
+  ]
+}
