@@ -168,9 +168,63 @@ def test_near_matches__lists_near_misses_not_exact_or_unrelated() -> None:
     assert not any(title_match(cand, t, y) for t, y in near_matches(cand, records))
 
 
+def _references_record(source: str) -> bool:
+    """True if ``source`` imports, names or attribute-accesses ``Record``, or star-imports."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom | ast.Import) and any(
+            a.name in {"Record", "*"} for a in node.names
+        ):
+            return True
+        if isinstance(node, ast.Name) and node.id == "Record":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "Record":
+            return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from prismabib.models import Record",
+        "from prismabib.models import Record as R",
+        "import prismabib.models as m\nm.Record(x=1)",
+        "import prismabib.models\nprismabib.models.Record",
+        "from prismabib.models import *",
+    ],
+)
+def test_record_guard__detects_each_form(source: str) -> None:
+    assert _references_record(source)
+
+
+def test_record_guard__passes_innocent_code() -> None:
+    assert not _references_record("from prismabib.models import normalise_doi as n")
+
+
 def test_module__never_imports_or_calls_record_creation() -> None:
-    tree = ast.parse(Path(candidates.__file__).read_text(encoding="utf-8"))
-    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
-    assert "Record" not in imported
-    assert not any(isinstance(n, ast.Name) and n.id == "Record" for n in ast.walk(tree))
+    assert not _references_record(Path(candidates.__file__).read_text(encoding="utf-8"))
     assert not any(n.startswith("register") for n in dir(candidates))
+
+
+def test_parse__header_with_doi_column_is_skipped_in_both_forms() -> None:
+    assert parse_pasted_rows("Title,Year,DOI\nA,2020") == [CandidateRow("A", 2020, None)]
+    assert parse_pasted_rows("Title\tYear\tDOI\nA\t2020") == [CandidateRow("A", 2020, None)]
+
+
+def test_parse__header_only_skipped_when_first() -> None:
+    with pytest.raises(ValidationError, match="line 2"):
+        parse_pasted_rows("A,2020\nTitle,Year,DOI")
+
+
+def test_parse__trailing_empty_doi_column_accepted_like_tab_form() -> None:
+    expected = [CandidateRow("Deep learning", 2020, None)]
+    assert parse_pasted_rows("Deep learning,2020,") == expected
+    assert parse_pasted_rows("Deep learning\t2020\t") == expected
+    assert parse_pasted_rows("A, B,2020,") == [CandidateRow("A, B", 2020, None)]
+
+
+def test_event__schema_version_follows_single_constant(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _event().schema_version == candidates.CURRENT_CANDIDATE_SCHEMA_VERSION
+    monkeypatch.setattr(candidates, "CURRENT_CANDIDATE_SCHEMA_VERSION", 2)
+    assert _event().schema_version == 2  # a bump must not break new events
+    with pytest.raises(PydanticValidationError):
+        CandidateEvent(**{**_event().model_dump(), "schema_version": 1})

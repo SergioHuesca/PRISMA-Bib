@@ -17,9 +17,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from prismabib.errors import LogError, ValidationError
 from prismabib.models import normalise_doi as _models_normalise_doi
@@ -70,11 +69,19 @@ def _parse_line(line: str) -> tuple[str, str, str | None]:
             raise ValueError("expected title and year")
         return fields[0], fields[1], (fields[2] or None) if len(fields) == 3 else None
     fields = next(csv.reader([line]))
+    if len(fields) >= 3 and not fields[-1].strip():
+        fields.pop()  # trailing empty DOI column, as the tab form allows
     doi = fields.pop().strip() if len(fields) >= 3 and _DOI_LIKE.match(fields[-1].strip()) else None
     if len(fields) < 2:
         raise ValueError("expected title and year")
     # Unquoted titles may contain commas: the year is the last remaining field.
     return ",".join(fields[:-1]).strip(), fields[-1].strip(), doi
+
+
+def _is_header(line: str) -> bool:
+    """True for a ``Title,Year[,DOI]`` header in either separator form."""
+    fields = line.split("\t") if "\t" in line else next(csv.reader([line]))
+    return [f.strip().casefold() for f in fields[:2]] == ["title", "year"]
 
 
 def parse_pasted_rows(text: str) -> list[CandidateRow]:
@@ -91,13 +98,13 @@ def parse_pasted_rows(text: str) -> list[CandidateRow]:
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
+        if not rows and not errors and _is_header(line):
+            continue
         try:
             title, year, doi = _parse_line(line)
         except ValueError as exc:
             errors.append(f"line {number}: {exc}")
             continue
-        if not rows and not errors and (title.casefold(), year.casefold()) == ("title", "year"):
-            continue  # header row
         if not title:
             errors.append(f"line {number}: missing title")
         elif not _YEAR.fullmatch(year):
@@ -120,13 +127,20 @@ class CandidateEvent(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: int = Field(default_factory=lambda: CURRENT_CANDIDATE_SCHEMA_VERSION)
     candidate_id: str
     title: str
     year: int
     doi: str | None = None
     pasted_at: datetime
     reviewer: str
+
+    @field_validator("schema_version")
+    @classmethod
+    def _current_version(cls, value: int) -> int:
+        if value != CURRENT_CANDIDATE_SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema_version {value}")
+        return value
 
     @field_validator("title", "reviewer")
     @classmethod
