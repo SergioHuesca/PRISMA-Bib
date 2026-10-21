@@ -115,7 +115,14 @@ _DECISIONLOG_MODULE_RELATIVE_PATH = "prisma/log.py"
 #: narrowness is now asserted by
 #: ``test_decisionlog_write_scan__exemption_waives_only_the_write_event_rule``
 #: instead of claimed in a comment.
-_WRITE_EVENT_EXEMPT_RELATIVE_PATHS = frozenset({"prisma/log.py", "taxonomy/overrides.py"})
+_WRITE_EVENT_EXEMPT_RELATIVE_PATHS = frozenset(
+    {
+        "prisma/log.py",
+        "taxonomy/overrides.py",
+        # Candidate pastes are Layer 2 events, not screening decisions.
+        "capture/candidates.py",
+    }
+)
 
 
 def _source_files() -> list[Path]:
