@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import pickle
 from pathlib import Path
 
 import httpx
@@ -17,6 +19,7 @@ from prismabib.sources.scopus import DOI_QUERY_TERM, ScopusClient
 _FIX = Path(__file__).parents[2] / "fixtures" / "scopus_cascade"
 _SEARCH = ScopusClient.SEARCH_ENDPOINT
 _ABSTRACT = ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id="2-s2.0-111")
+_EMPTY = {"search-results": {"opensearch:totalResults": "0", "entry": []}}
 
 
 def _fx(name: str) -> dict:
@@ -36,9 +39,7 @@ def test_doi_query_template__is_pinned() -> None:
 def test_search_standard__batches_and_sends_standard_view() -> None:
     dois = [f"10.1/{i}" for i in range(5)]
     with respx.mock:
-        route = respx.get(_SEARCH).mock(
-            return_value=httpx.Response(200, json={"search-results": {"entry": []}})
-        )
+        route = respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=_EMPTY))
         _client().search_standard_by_dois(dois, batch_size=2)
     params = [r.request.url.params for r in route.calls]
     assert len(params) == 3  # 2 + 2 + 1
@@ -50,9 +51,7 @@ def test_search_standard__batches_and_sends_standard_view() -> None:
 def test_search_standard__default_batch_is_25() -> None:
     dois = [f"10.1/{i}" for i in range(26)]
     with respx.mock:
-        route = respx.get(_SEARCH).mock(
-            return_value=httpx.Response(200, json={"search-results": {"entry": []}})
-        )
+        route = respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=_EMPTY))
         _client().search_standard_by_dois(dois)
     assert route.call_count == 2
 
@@ -163,3 +162,62 @@ def test_acquisition__capture_code_does_not_reference_cascade_steps() -> None:
         text = path.read_text(encoding="utf-8")
         assert "search_standard_by_dois" not in text, path
         assert "abstract_meta" not in text, path
+
+
+_REFUSAL_TEXT = "Synthetic: view not available to this key"
+
+
+@pytest.mark.parametrize(("status", "name"), [(401, "AuthError"), (403, "EntitlementError")])
+def test_default__raises_public_class_that_pickles_and_copies(status: int, name: str) -> None:
+    with respx.mock:
+        respx.get(_ABSTRACT).mock(return_value=httpx.Response(status, json=_fx("refusal_401.json")))
+        with pytest.raises((AuthError, EntitlementError)) as info:
+            _client().abstract_meta("2-s2.0-111")
+    exc = info.value
+    assert type(exc).__name__ == name  # what cli.py prints
+    for clone in (pickle.loads(pickle.dumps(exc)), copy.copy(exc), copy.deepcopy(exc)):
+        assert type(clone) is type(exc)
+        assert str(clone) == str(exc)
+        assert clone.http_status == status  # type: ignore[attr-defined]
+        assert clone.response_message == _REFUSAL_TEXT  # type: ignore[attr-defined]
+
+
+def test_search_standard__batch_size_zero_raises() -> None:
+    with pytest.raises(ValidationError):
+        _client().search_standard_by_dois(["10.1/a"], batch_size=0)
+
+
+def test_search_standard__200_service_error_body_raises() -> None:
+    with respx.mock:
+        respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=_fx("refusal_401.json")))
+        with pytest.raises(ValidationError, match="service-error"):
+            _client().search_standard_by_dois(["10.1/a"])
+
+
+def test_search_standard__total_exceeds_entries_raises() -> None:
+    page = _fx("search_standard.json")
+    page["search-results"]["opensearch:totalResults"] = "30"  # more than one page of matches
+    with respx.mock:
+        respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=page))
+        with pytest.raises(ValidationError, match="30"):
+            _client().search_standard_by_dois(["10.1000/a"])
+
+
+def test_search_standard__duplicate_doi_entries_raise() -> None:
+    page = _fx("search_standard.json")
+    page["search-results"]["entry"][1]["prism:doi"] = "10.1000/a"
+    with respx.mock:
+        respx.get(_SEARCH).mock(return_value=httpx.Response(200, json=page))
+        with pytest.raises(ValidationError, match="two entries"):
+            _client().search_standard_by_dois(["10.1000/a"])
+
+
+@pytest.mark.parametrize("bad", ["SCOPUS_ID:111", "111", "scopus:SCOPUS_ID:111", "2-s2.0-"])
+def test_abstract_meta__non_eid_raises_before_any_request(bad: str) -> None:
+    with respx.mock:
+        route = respx.get(url__startswith=ScopusClient.ABSTRACT_URL_PREFIX).mock(
+            return_value=httpx.Response(404, json={})
+        )
+        with pytest.raises(ValidationError, match="EID"):
+            _client().abstract_meta(bad)
+    assert route.call_count == 0
