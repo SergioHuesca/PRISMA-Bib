@@ -31,7 +31,7 @@ drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cite
 - **§5 risk 2.** "never re-fetch what Layer 0 already holds." (as quoted in ADR 0011.)
 - **§5 risk 1.** "Fail loudly, never degrade." (as quoted in ADR 0028.)
 - **§2.6, line 301.** "Any later deviation from §1.2 requires a new ADR that supersedes the relevant
-  one." (Frozen wording as supplied by the coordinator; not yet checked against the file.) The
+  one." (Frozen wording, BUILD_PLAN.md line 301.) The
   deviations below touch §2.2, Stage 1 and Stage 3, not §1.2. Whether §2.6 requires an ADR for them is
   for the owner to confirm (open
   question 6).
