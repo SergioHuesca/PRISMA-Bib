@@ -66,7 +66,7 @@ record is that ADR, and it keeps the name already in code.
 There is no OpenAlex capture writer and no OpenAlex Layer 0 directory. `grep` finds OpenAlex only
 in `config.py` and `sources/openalex.py`. So topics cannot reach the store until the OpenAlex
 payload capture of [ADR 0028](0028-field-level-fallback-cascade.md) Decision 3 exists. Decision 6
-covers that prerequisite, and its layout is pending.
+names ADR 0031 as the record that specifies it.
 
 ## Decision
 
@@ -82,8 +82,9 @@ Topic names pass through the same `_normalise_keyword_term` as author keywords a
 and an author keyword "machine learning" share a `keywords` row and differ only in
 `record_keywords.kind`. The raw form stays in `keywords.term_raw`, as ADR 0028 Decision 2 needs.
 
-The OpenAlex `score` is not stored. `record_keywords` has no column for it, and adding one is a
-DDL change this decision does not make (open question 2). The score stays in the Layer 0 payload.
+Topics are stored as `record_keywords` rows with no score. **No score column is added.** The
+OpenAlex `score` is not part of the store, and the DDL change in Decision 3 is the CHECK only. The
+score remains in the Layer 0 payload, where ADR 0031 governs it.
 
 ### 2. Topic networks are built on their own. No mixed networks
 
@@ -186,18 +187,15 @@ must say so in its description, under the rule in BUILD_PLAN line 927.
 A test of topic-bearing stores uses a **new** fixture, or a project built in `tmp_path`. It does
 not touch the frozen reference fixture, which BUILD_PLAN line 536 freezes and versions.
 
-### 6. Prerequisite, pending: the OpenAlex Layer 0 layout
-
-**Pending the owner's decision on the OpenAlex capture (open question 1). Not settled here.**
+### 6. Prerequisite: the OpenAlex Layer 0 capture is specified in ADR 0031
 
 The rebuild test in Decision 7 cannot exist until OpenAlex payloads are Layer 0 data. ADR 0028
 Decision 3 requires that they be written under `raw/` with a sealed manifest and the checksum
-pattern of `capture/writer.py`. Two things are not decided:
-
-- the directory name and the `capture/layout.py::NON_RUN_DIRNAMES` entry, which the
-  [ADR 0011](0011-abstract-retrieval-for-subject-areas.md) precedent requires so that search-run
-  scans skip it by name; and
-- whether the capture is specified in its own ADR or as an amendment to ADR 0028.
+pattern of `capture/writer.py`. The owner has chosen ADR 0031
+as the home for that specification, covering the directory layout and its
+`capture/layout.py::NON_RUN_DIRNAMES` entry, following the
+[ADR 0011](0011-abstract-retrieval-for-subject-areas.md) precedent. ADR 0031 is not written in this
+pull request. This record depends on it and does not settle its layout.
 
 ### 7. Verification the implementation must include
 
@@ -283,38 +281,42 @@ Outputs from a topic-bearing store are outside that claim. They are reproducible
 Layer 0 payloads (ADR 0028 resolved item 7), and they are not covered by the frozen-fixture
 cross-runner test until a topic-bearing fixture is added to that check.
 
-**ADR 0027 Decision 3 is narrowed by this record.** Decision 3 treats `numbers.json` as the
-artefact that must be byte-identical across two runners for the published corpus. This record
-limits that claim to Scopus-only stores. Any corpus with topic rows is outside the claim until it
-has its own cross-runner check. This narrowing is an explicit owner decision (open question 3), and
-it is not in effect until the owner accepts it.
+### 8. Narrowing of ADR 0027 Decision 3 (owner decision)
+
+**The owner has decided this narrowing. It takes effect when this record is accepted.**
+
+ADR 0027 Decision 3 treats `numbers.json` as the artefact that must be byte-identical across two
+runners for the published corpus. From acceptance of this record, that claim is limited to
+Scopus-only stores. Topic-bearing stores are **outside the byte check** until a topic-bearing
+fixture exists and has its own cross-runner test. Until then, no topic-based number may be cited
+as covered by the ADR 0027 byte check.
 
 ## Open questions for the owner
 
-Decided by the owner, and recorded above as final: a kind in `record_keywords` rather than a separate
-table (Decision 1 and Alternatives); no mixed author-and-topic network (Decision 2); a CHECK
-constraint as a §2.6 amendment to BUILD_PLAN line 871 (Decision 3); the build report states the
-topic count per kind, with no refusal and no new schema version (Decision 4); and the
-first-seen `term_raw` precedence (Decision 3).
+Decided by the owner, and recorded above as final:
 
-Still open:
+- a kind in `record_keywords` rather than a separate table (Decision 1 and Alternatives);
+- no mixed author-and-topic network (Decision 2);
+- a CHECK constraint as a §2.6 amendment to BUILD_PLAN line 871 (Decision 3);
+- the build report states the topic count per kind, with no refusal and no new schema version
+  (Decision 4);
+- the first-seen `term_raw` precedence (Decision 3);
+- the OpenAlex Layer 0 capture is specified in its own ADR, 0031 (Decision 6);
+- no topic score is stored, and no score column is added (Decision 1); and
+- the narrowing of ADR 0027 Decision 3 to Scopus-only stores (Decision 8).
 
-1. **OpenAlex Layer 0 capture.** Is the OpenAlex payload capture (Decision 6) specified in its own
-   ADR, or as an amendment to ADR 0028? The rebuild test (Decision 7) depends on it, and the
-   Decision 6 layout stays pending until this is answered.
-2. **Topic score.** Does any analysis need the OpenAlex `score`? If yes, it needs a DDL column, and
-   this record is amended.
-3. **ADR 0027 Decision 3 narrowing.** Does the owner accept that the cross-runner `numbers.json`
-   claim is limited to Scopus-only stores, until a topic-bearing corpus has its own cross-runner
-   check?
+No open questions remain for this record. ADR 0031, which specifies the OpenAlex capture, is not
+written in this pull request.
 
 ## Related decisions
 
 - [ADR 0011](0011-abstract-retrieval-for-subject-areas.md): a Layer 0 run kind nested under `raw/`
-  and skipped by name, which Decision 6 follows once it is decided.
+  and skipped by name, the precedent ADR 0031 follows.
+- ADR 0031 (not yet written): the OpenAlex Layer 0 capture, which Decision 6 names and which this
+  record does not write.
 - [ADR 0022](0022-the-analysis-result-contract-and-its-provenance.md): `params` is part of the
   analysis result, which is why the topic network records its `kind` as a scalar.
 - [ADR 0027](0027-what-v1-0-0-claims.md): the cross-runner criterion that Decision 3 of this record
-  narrows, pending the owner's decision.
+  narrows to Scopus-only stores (Decision 8).
 - [ADR 0028](0028-field-level-fallback-cascade.md): the cascade whose Decision 2 and resolved item 5
   this record implements, and whose item 7 bounds the reproducibility claim.
