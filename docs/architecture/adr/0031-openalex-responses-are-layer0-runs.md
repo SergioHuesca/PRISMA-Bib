@@ -2,19 +2,22 @@
 
 ## Status
 
-Proposed — 2026-10-21. Adds a Layer 0 run kind for OpenAlex responses. It is the capture that
+Accepted — 2026-10-21. Accepted by the owner; the open questions were decided as recorded.
+
+Adds a Layer 0 run kind for OpenAlex responses. It is the capture that
 [ADR 0028](0028-field-level-fallback-cascade.md) Decision 3 requires, and ADR 0030 Decision 6 names
-this record as the place that specifies it. No code writes it yet. The record changes the Layer 0
-layout and the `PayloadRef` form, and it lists each change as a deviation in the section
-"Deviations from the frozen contract". No OpenAlex capture code is written before the owner accepts
-it. It moves to Accepted when the owner approves it on merge.
+this record as the place that specifies it. The record changes the Layer 0 layout and the `PayloadRef`
+form, and the owner approved each change as a deviation in the section "Deviations from the frozen
+contract". The owner's decisions are recorded under "Owner decisions". Three questions were not in the
+owner's decision and remain undecided: header support for the API key, the frozen spec wording check, and
+the compact encoding fallback. They are listed there as undecided.
 
 ## Context
 
 ### The spec clauses this record relies on
 
-The owner must check the wording of each clause against the frozen BUILD_PLAN before acceptance
-(open question 6). BUILD_PLAN.md is not published in this repository (see
+The owner must check the wording of each clause against the frozen BUILD_PLAN (undecided, see
+Owner decisions). BUILD_PLAN.md is not published in this repository (see
 [provenance.md](../provenance.md)) and was not readable from the worktree where this record was
 drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cites them.
 
@@ -97,8 +100,8 @@ lookups, is written as one file, `response-NNNN.jsonl`, containing exactly one l
 - **Compact fallback.** When the body contains a line break, the writer parses it and writes it
   as compact JSON with key order kept (`json.dumps(..., ensure_ascii=False, separators=(",", ":"))`).
   The manifest records `encoding: "compact"` and `raw_sha256`, the digest of the body as received. This
-  is a deviation from the frozen wording (Deviations, item 2), and open question 7 asks the owner to
-  accept it or require verbatim only.
+  is a deviation from the frozen wording (Deviations, item 2). Whether the owner accepts it or requires
+  verbatim only is undecided (Owner decisions).
 - `sha256` in the manifest is the digest of the stored file's bytes. `payload_sha256` is the digest of
   the stored files' bytes concatenated in request order, as `writer._payload_sha256` does.
 
@@ -204,8 +207,8 @@ seals, and the manifest records `fallback_opt_in: true`, each refusal's `refusal
 The key is `Settings.openalex_api_key`. It is never written to:
 
 1. **A payload.** The stored bytes are the response body. A body does not normally contain the key.
-   If one does, the writer refuses to write that file, the run stays unsealed, and the error names
-   the file without the key (open question 2).
+   If one does, the writer refuses to write that file, the body is never stored, the run stays unsealed,
+   and the error names the file without the key. This is the owner's decision (Owner decisions).
 2. **A manifest.** `params` excludes `api_key`. `api_key_used` is a boolean.
 3. **A log.** The client logs the endpoint and never the query string. The key is also registered with
    `register_secret_for_redaction`, as `sources/scopus.py` does. `openalex.py` does not do this today.
@@ -228,7 +231,7 @@ and holds the set of keys that clients have registered.
 **OpenAlex and the header.** This record does not verify whether OpenAlex accepts the key in a request
 header. It did not consult the OpenAlex documentation through a live call, and it makes no claim about
 header support. If the owner confirms header support, the key moves to the header and the URL leak
-disappears. The filter stays as defence in depth (open question 3).
+disappears. The filter stays as defence in depth. Header support is undecided (Owner decisions).
 
 **Test.** `test_httpx_info_log__never_contains_the_key` uses the real `httpx.Client`, with
 `httpx.MockTransport` so no network call is made. It sets `caplog` to INFO on the `httpx` logger,
@@ -255,9 +258,9 @@ request, so the rebuild does not spend the quota that ADR 0011 rejected.
 
 **Layer 1 value choice.** Each field takes its value from the most recent sealed run that holds a
 `value` outcome for that identifier. Run ids sort by time, so the latest run id wins. The supplying run
-and its `retrieved_at` go into the field's provenance. Older runs stay in Layer 0 and are not merged.
-Under the reuse rule, two sealed runs disagree only after a refresh, so the choice matters only then
-(open question 5).
+and its `retrieved_at` go into the field's provenance. Older runs stay on disk as the audit trail, and
+they are not merged into the Layer 1 value. This is the owner's decision. Under the reuse rule, two sealed
+runs disagree only after a refresh, so the choice matters only then.
 
 **Reproducibility** covers the recorded payloads only (ADR 0028 resolved item 7). A methods text cites
 the run ids and retrieval dates it used.
@@ -298,14 +301,14 @@ client's return values are never persisted and never read by the loader.
 ## Deviations from the frozen contract
 
 Each item is a change to the frozen contract, listed for owner approval under §2.6. The owner must
-approve each one by name before acceptance.
+approve each one by name before acceptance. The owner approved all five items as written.
 
 1. **A new Layer 0 run kind**, `raw/openalex/<run_id>/`, with its own manifest schema and a
    `NON_RUN_DIRNAMES` entry. The frozen Layer 0 layout has no OpenAlex run.
 2. **The JSONL form.** The frozen §2.2 wording is "Every HTTP response is persisted verbatim as JSONL
    before any parsing." This record writes one response per file, with exactly one JSONL line per file,
    and keeps the bytes verbatim where it can. A body with a line break is written in compact form, and
-   the manifest records the encoding and `raw_sha256` (Decision 2; open question 7).
+   the manifest records the encoding and `raw_sha256` (Decision 2; undecided, see Owner decisions).
 3. **The §2.2 manifest fields.** The frozen wording names "API view, entitlement context, result count".
    This record maps them to OpenAlex as `api_view` (the `select` string), `entitlement_context`
    (`api_key_used`, `fallback_opt_in`, `refusal_status`), and `result_count` (the works in `results`).
@@ -398,29 +401,35 @@ covers a line proves nothing until it fails on the original defect.
 
 ### Decided
 
-These are settled. The source of each decision is recorded.
+### Decided
 
+Each decision below is the owner's, or is recorded in an earlier ADR as shown.
+
+- **Deviations approved as written.** The owner approved all five items in "Deviations from the frozen
+  contract": the new run kind, the JSONL form, the §2.2 field mapping (`api_view`,
+  `entitlement_context`, `result_count`), the `PayloadRef` form, and `refresh`.
+- **A body that contains the API key is refused.** The writer refuses the write, the body is never
+  stored, the run stays unsealed, and the error names the file without the key (Decision 6).
+- **Refresh is off by default** (Decision 7, Deviations item 5).
+- **On refresh, the latest sealed value wins for each field.** Older runs stay on disk as the audit trail
+  (Decision 7).
 - **The OpenAlex capture is specified in this record, ADR 0031.** Decided by ADR 0030 Decision 6, which
-  is Accepted on its branch and names this record. The earlier draft's open question on this is closed.
-- **`not_found` and `absent` are stored in the manifest, not derived from the body.** Decided in this
-  record, Decision 4, with the reason given there. The owner may reverse it on acceptance.
+  is Accepted on its branch and names this record.
+- **`not_found` and `absent` are stored in the manifest, not derived from the body** (Decision 4, with
+  the reason given there).
 - **No topic score is stored in Layer 1.** Decided by ADR 0030 Decision 1. The score stays in the stored body.
 
-### Open, to be answered before acceptance
+### Undecided
 
-1. **Deviations.** Approve each of the five items in "Deviations from the frozen contract" by name.
-   Confirm that §2.6, which as supplied covers §1.2 deviations by superseding ADR, requires this record
-   for deviations to §2.2, Stage 1 and Stage 3. Item 3 (the field mapping) and item 4 (the `PayloadRef`
-   form) are the two the owner most needs to check.
-2. **A body that contains the key.** Decision 6 refuses the write and leaves the run unsealed. The
-   alternative is to store the body and fail the run. Which?
-3. **Header support.** Does OpenAlex accept the key in a request header? This is unverified here. If
-   yes, the key moves to the header, and the filter stays.
-4. **Refresh.** Accept `refresh` as an off-by-default deviation from §5 risk 2 (Deviations, item 5)?
-5. **Which value wins on refresh.** Latest sealed run, as Decision 7 proposes, or first?
-6. **Spec wording.** Do the quoted §2.2 lines 101–102, §2.6 line 301, and Stage 1 and Stage 3 clauses match
-   the frozen BUILD_PLAN? They were not checked against the file.
-7. **Compact fallback.** Accept the compact encoding for bodies with a line break (Decision 2), or require
+These three questions were not in the owner's decision. They are not decided, and the record does not
+assume an answer to any of them.
+
+1. **Header support.** Does OpenAlex accept the key in a request header? This is unverified here. If it
+   does, the key moves to the header, and the filter stays.
+2. **Spec wording.** Do the quoted §2.2 lines 101–102, the §2.6 line 301 wording, and the Stage 1 and
+   Stage 3 clauses match the frozen BUILD_PLAN? The §2.6 wording was confirmed by the coordinator. The
+   others were not checked against the file.
+3. **Compact fallback.** Accept the compact encoding for bodies with a line break (Decision 2), or require
    verbatim bytes and fail the request when a body has a line break?
 
 ## Related decisions
