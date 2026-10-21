@@ -200,6 +200,12 @@ evidence.
 3. **Candidate registration.** A reviewer may register a candidate as a record. This needs a separate ADR
    amending Stage 2, which changes the "identified" count. No registration code is written before that ADR
    is accepted.
+   > **Note added 2026-10-21 (PR for ADR 0029; this note does not change the item above).** The proposed
+   > [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) does **not** change the "identified"
+   > count. `identified` stays the Scopus `total_results`, and registered records are counted on a separate
+   > line in the other-methods box. ADR 0029 is Proposed, so this is not yet in force. If accepted, it also
+   > amends Decision 4's closing sentence for registrations only, and it adds one machine-written Layer 2
+   > event (`supersede`), which Decision 3's "human-written" description does not yet cover.
 4. **Opt-in fallback.** Fallback runs are an explicit per-run opt-in, recorded in `RunManifest`. The
    public documents that state "never degrade" change in the same pull request.
 5. **Keyword topics.** OpenAlex topics feed the keyword network as a **new keyword kind**, separate from
