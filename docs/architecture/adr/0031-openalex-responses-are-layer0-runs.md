@@ -112,7 +112,8 @@ is listed as a deviation (Deviations, item 4).
 ### 3. The manifest: `OpenAlexRunManifest`
 
 `OpenAlexRunManifest` is a new model in `src/prismabib/capture/manifest.py`. It does not reuse
-`RunManifest`, which the scanner in `store/load.py` would parse as a Scopus search run.
+`RunManifest`, which the scanner in `store/load.py` would parse as a Scopus search run. This departs from
+ADR 0028 Decision 3 (Deviations, item 6).
 
 | Field | Content |
 |---|---|
@@ -259,11 +260,12 @@ overwritten.
 **Rebuild never requests.** `build_store(rebuild=True)` reads sealed runs only. It makes no HTTP
 request, so the rebuild does not spend the quota that ADR 0011 rejected.
 
-**Layer 1 value choice.** Each field takes its value from the most recent sealed run that holds a
-`value` outcome for that identifier. Run ids sort by time, so the latest run id wins. The supplying run
-and its `retrieved_at` go into the field's provenance. Older runs stay on disk as the audit trail, and
-they are not merged into the Layer 1 value. This is the owner's decision. Under the reuse rule, two sealed
-runs disagree only after a refresh, so the choice matters only then.
+**Layer 1 value choice (the owner's decision).** Per identifier and field, Layer 1 takes the value from the
+latest sealed run whose outcome for that field is a `value`. A newer outcome of `absent` or `not_found`
+does not replace an older value. Older runs stay on disk as the audit trail. Where no sealed run holds a
+value for a field, Layer 1 takes the latest outcome, `absent` or `not_found`. Run ids sort by time, so
+"latest" is the latest run id. The supplying run and its `retrieved_at` go into the field's provenance.
+Under the reuse rule, two sealed runs disagree only after a refresh, so the rule matters only then.
 
 **Reproducibility** covers the recorded payloads only (ADR 0028 resolved item 7). A methods text cites
 the run ids and retrieval dates it used.
@@ -303,8 +305,8 @@ client's return values are never persisted and never read by the loader.
 
 ## Deviations from the frozen contract
 
-Each item is a change to the frozen contract, listed for owner approval under §2.6. The owner must
-approve each one by name before acceptance. The owner approved all five items as written.
+Each item is a change to the frozen contract, listed for owner approval under §2.6. The owner approved
+items 1 to 5 as written. Item 6 is listed for the owner's approval and is not yet approved.
 
 1. **A new Layer 0 run kind**, `raw/openalex/<run_id>/`, with its own manifest schema and a
    `NON_RUN_DIRNAMES` entry. The frozen Layer 0 layout has no OpenAlex run.
@@ -322,6 +324,15 @@ approve each one by name before acceptance. The owner approved all five items as
    (Decision 2).
 5. **A refresh re-requests held identifiers.** §5 risk 2 says "never re-fetch what Layer 0 already
    holds". `refresh=true` re-fetches them, so it is off by default and needs owner approval (Decision 7).
+6. **The manifest model, the run layout, and the opt-in record differ from ADR 0028 Decision 3.** ADR 0028
+   Decision 3 says each attempt is written "with the run manifest and checksum pattern of `capture/writer.py`".
+   ADR 0028 resolved item 4 says the fallback opt-in is "recorded in `RunManifest`". This record uses a
+   separate `OpenAlexRunManifest` (Decision 3), one response per file (Decision 2), and records
+   `fallback_opt_in` in that manifest. It keeps the checksum pattern: a SHA-256 over the stored bytes, the
+   seal is `manifest.json`, and the resumption sidecar is deleted on seal. Reason: `RunManifest` is frozen
+   by the plan, its `total_results` is the only sanctioned identified count (BUILD_PLAN S02-AC5), and
+   reusing it would make the scanner parse OpenAlex runs as Scopus search runs (Alternatives). Owner
+   approval is required (Owner decisions).
 
 ## Alternatives considered
 
@@ -402,23 +413,27 @@ covers a line proves nothing until it fails on the original defect.
    finds only the Scopus runs.
 9. The suite runs with `pytest -n auto` and in a single process, and the rebuild test runs on Linux and
    Windows.
+10. **A newer `not_found` does not erase an older value.** Seal run A with a `value` for an identifier, then
+    seal run B (a refresh) with `not_found` for it. The Layer 1 value must still come from run A, and run B's
+    `not_found` is recorded in provenance. The test must fail if the loader takes the latest outcome
+    regardless of its kind. The same holds for a newer `absent`.
 
 ## Owner decisions
 
 ### Decided
 
-### Decided
-
 Each decision below is the owner's, or is recorded in an earlier ADR as shown.
 
-- **Deviations approved as written.** The owner approved all five items in "Deviations from the frozen
-  contract": the new run kind, the JSONL form, the §2.2 field mapping (`api_view`,
-  `entitlement_context`, `result_count`), the `PayloadRef` form, and `refresh`.
+- **Deviations 1 to 5 approved as written.** The owner approved the new run kind, the JSONL form, the §2.2
+  field mapping (`api_view`, `entitlement_context`, `result_count`), the `PayloadRef` form, and `refresh`.
+  Deviation 6 (the manifest model and opt-in record, against ADR 0028) is not yet approved.
 - **A body that contains the API key is refused.** The writer refuses the write, the body is never
   stored, the run stays unsealed, and the error names the file without the key (Decision 6).
 - **Refresh is off by default** (Decision 7, Deviations item 5).
-- **On refresh, the latest sealed value wins for each field.** Older runs stay on disk as the audit trail
-  (Decision 7).
+- **Per identifier and field, Layer 1 takes the value from the latest sealed run whose outcome for that field
+  is a `value`.** A newer outcome of `absent` or `not_found` does not replace an older value. Older runs stay
+  on disk as the audit trail. Where no sealed run holds a value for a field, Layer 1 takes the latest outcome,
+  `absent` or `not_found` (Decision 7).
 - **The OpenAlex capture is specified in this record, ADR 0031.** Decided by ADR 0030 Decision 6, which
   is Accepted on its branch and names this record.
 - **`not_found` and `absent` are stored in the manifest, computed at write time** (Decision 4). The
@@ -428,9 +443,9 @@ Each decision below is the owner's, or is recorded in an earlier ADR as shown.
 - **§2.6 applies to the five deviations, and this ADR is the record.** The five items in "Deviations
   from the frozen contract" are the deviations it covers.
 - **No topic score is stored in Layer 1.** Decided by ADR 0030 Decision 1. The score stays in the stored body.
-- **The API key is sent in a request header, not the query string** (Decision 6). This is an
-  implementation check, not an owner decision: the header name and value format are confirmed against the
-  OpenAlex documentation before the implementation is written.
+- **The API key is sent in a request header, not the query string** (Decision 6). The owner decided this.
+  The header name and value format are an implementation check, confirmed against the OpenAlex
+  documentation before the implementation is written.
 - **The compact encoding is an allowed fallback** for response bodies that contain line breaks,
   recorded per response in `encoding` and `raw_sha256`. Layer 1 still rebuilds from the stored bytes
   (Decision 2, Verification 1).
@@ -461,8 +476,7 @@ The ADR 0028 line 192 error is a separate correction, and it is not part of this
   which Consequence 6 follows.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the cascade whose Decision 3 this record implements, and
   whose resolved items 1, 4 and 7, and the title rule of Decision 4, it applies.
-- ADR 0030, the OpenAlex topics keyword kind. It is Accepted on branch `docs/adr-openalex-topic-keyword`,
-  and it is not yet on `main`, so it is not linked. Its Decision 1 says no score is stored in Layer 1, and
-  its Decision 6 names this record.
+- [ADR 0030](0030-openalex-topics-as-a-keyword-kind.md): the OpenAlex topics keyword kind. It is Accepted
+  and on `main`. Its Decision 1 says no score is stored in Layer 1, and its Decision 6 names this record.
 - ADR 0029, reviewer registration of a candidate. It is on branch `docs/adr-candidate-registration-stage2`,
   not yet on `main`. It does not affect this record.
