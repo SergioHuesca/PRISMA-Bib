@@ -410,6 +410,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _affiliations(raw: Any) -> tuple[Affiliation, ...]:
+    # affilname, affiliation-city and affiliation-country were observed in a 2026-10-21 single-DOI probe.
     return tuple(
         Affiliation(a.get("affilname"), a.get("affiliation-city"), a.get("affiliation-country"))
         for a in _as_list(raw)
@@ -786,11 +787,14 @@ class ScopusClient:
         core = body.get("coredata")
         core = core if isinstance(core, Mapping) else {}
         # The location of dc:creator in META is UNVERIFIED (a probe confirmed it is
-        # present, not where), so accept coredata, the response body, or the root.
-        first = next(
-            (a for src in (core, body, page) if (a := _first_author(src.get("dc:creator")))),
-            None,
+        # present, not where), so accept coredata, the body, the root, then authors.author[0].
+        candidates = (
+            core.get("dc:creator"),
+            body.get("dc:creator"),
+            page.get("dc:creator"),
+            body.get("authors"),  # {"author": [{"ce:indexed-name": ...}]}
         )
+        first = next((a for c in candidates if (a := _first_author(c))), None)
         ids = {
             k: v for k in ("dc:identifier", "eid", "prism:doi") if isinstance(v := core.get(k), str)
         }
