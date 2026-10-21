@@ -30,9 +30,10 @@ drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cite
   (as cited in `src/prismabib/capture/writer.py`.)
 - **§5 risk 2.** "never re-fetch what Layer 0 already holds." (as quoted in ADR 0011.)
 - **§5 risk 1.** "Fail loudly, never degrade." (as quoted in ADR 0028.)
-- **§2.6, line 301.** "requires a superseding ADR for §1.2 deviations." (Wording supplied by the
-  coordinator; not yet checked against the file.) The deviations below touch §2.2, Stage 1 and
-  Stage 3, not §1.2. Whether §2.6 requires an ADR for them is for the owner to confirm (open
+- **§2.6, line 301.** "Any later deviation from §1.2 requires a new ADR that supersedes the relevant
+  one." (Frozen wording as supplied by the coordinator; not yet checked against the file.) The
+  deviations below touch §2.2, Stage 1 and Stage 3, not §1.2. Whether §2.6 requires an ADR for them is
+  for the owner to confirm (open
   question 6).
 
 ### What the client asks for today
@@ -190,12 +191,13 @@ four field outcomes are `value` (the work was found and the field is not in `abs
    stays in the dead run as evidence and is never loaded, since the run is not sealed.
 
 A run with `fallback_opt_in=false` can therefore never contain a sealed `refused` outcome. The
-sealing step checks this too, and it refuses to write a manifest when a response is not 200 or 404,
-so a refusal cannot be sealed by any path.
+sealing step checks this too: when `fallback_opt_in` is false, it refuses to write a manifest if any
+response is not 200 or 404. Only that case is refused, and an opt-in refusal is exempt from it.
 
 **Inside an opt-in run (`fallback_opt_in=true`).** The same file is written, the identifiers are
-recorded as `refused` with `http_status`, and the run continues. It seals, and the manifest records
-`fallback_opt_in: true` and each refusal's `refusal_status`.
+recorded as `refused` with `http_status`, and the run continues. An opt-in refusal may seal: the run
+seals, and the manifest records `fallback_opt_in: true`, each refusal's `refusal_status`, and a
+`refused` outcome for each affected identifier.
 
 ### 6. The API key rule
 
@@ -218,7 +220,7 @@ from stdlib logging to structlog, so that processor never sees an httpx record. 
 rely on it for httpx.
 
 The fix is a `logging.Filter` on the `httpx` logger. `openalex.py` attaches it once, when the client is
-first constructed. The filter replaces the raw key and its percent-encoded form (`quote(key, safe="")`)
+first constructed. The filter replaces the raw key and its percent-encoded form (`quote_plus(key, safe="")`, because httpx encodes spaces as `+`)
 in each record's formatted message with `***`, then clears `record.args`. A filter on a logger
 applies to records logged directly on that logger, which is where httpx emits. The filter is process-wide
 and holds the set of keys that clients have registered.
@@ -382,8 +384,10 @@ covers a line proves nothing until it fails on the original defect.
    refusal, and no `manifest.json` exists.
 6. **A resume does not seal a refusal.** `test_resume_of_refused_run__starts_new_run_and_never_seals_it`:
    after case 5, a second call with `fallback_opt_in=false` and the same plan starts a new run. The dead run
-   gets no new request and no manifest. A sealing attempt on a directory holding a non-200/404 response is
-   refused.
+   gets no new request and no manifest. A sealing attempt on a run with `fallback_opt_in=false` that holds
+   a non-200/404 response is refused. A run with `fallback_opt_in=true` that holds a 401 or 403 seals, and
+   each affected identifier is recorded as `refused`. That case is a positive test: it seals and records
+   the refusal outcome.
 7. A resumed run with an identical plan does not re-request a response already on disk.
 8. `raw/openalex/` is in `NON_RUN_DIRNAMES`, and a Scopus scan of a project that contains an OpenAlex run
    finds only the Scopus runs.
