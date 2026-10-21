@@ -2,22 +2,21 @@
 
 ## Status
 
-Accepted — 2026-10-21. Accepted by the owner; the open questions were decided as recorded.
+Accepted — 2026-10-21. Accepted by the owner; all open questions were decided as recorded.
 
 Adds a Layer 0 run kind for OpenAlex responses. It is the capture that
 [ADR 0028](0028-field-level-fallback-cascade.md) Decision 3 requires, and ADR 0030 Decision 6 names
 this record as the place that specifies it. The record changes the Layer 0 layout and the `PayloadRef`
 form, and the owner approved each change as a deviation in the section "Deviations from the frozen
-contract". The owner's decisions are recorded under "Owner decisions". Three questions were not in the
-owner's decision and remain undecided: header support for the API key, the frozen spec wording check, and
-the compact encoding fallback. They are listed there as undecided.
+contract". The owner's decisions are recorded under "Owner decisions". The §2.2 and Stage quotes are
+not verified against the file; that is recorded under "Not verified against the file".
 
 ## Context
 
 ### The spec clauses this record relies on
 
-The owner must check the wording of each clause against the frozen BUILD_PLAN (undecided, see
-Owner decisions). BUILD_PLAN.md is not published in this repository (see
+The §2.6 wording is verified against BUILD_PLAN.md line 301 (Owner decisions). The other clauses are
+not verified against the file (Owner decisions, "Not verified against the file"). BUILD_PLAN.md is not published in this repository (see
 [provenance.md](../provenance.md)) and was not readable from the worktree where this record was
 drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cites them.
 
@@ -34,7 +33,7 @@ drafted. Clauses marked *as quoted in* are quoted from the ADR or code that cite
 - **§5 risk 2.** "never re-fetch what Layer 0 already holds." (as quoted in ADR 0011.)
 - **§5 risk 1.** "Fail loudly, never degrade." (as quoted in ADR 0028.)
 - **§2.6, line 301.** "Any later deviation from §1.2 requires a new ADR that supersedes the relevant
-  one." (Frozen wording, BUILD_PLAN.md line 301.) The
+  one." (Frozen wording, verified against BUILD_PLAN.md line 301.) The
   deviations below touch §2.2, Stage 1 and Stage 3, not §1.2. Whether §2.6 requires an ADR for them is
   for the owner to confirm (open
   question 6).
@@ -100,8 +99,8 @@ lookups, is written as one file, `response-NNNN.jsonl`, containing exactly one l
 - **Compact fallback.** When the body contains a line break, the writer parses it and writes it
   as compact JSON with key order kept (`json.dumps(..., ensure_ascii=False, separators=(",", ":"))`).
   The manifest records `encoding: "compact"` and `raw_sha256`, the digest of the body as received. This
-  is a deviation from the frozen wording (Deviations, item 2). Whether the owner accepts it or requires
-  verbatim only is undecided (Owner decisions).
+  is a deviation from the frozen wording (Deviations, item 2). The owner decided that it is an allowed
+  fallback, recorded per response. Layer 1 still rebuilds from it (Owner decisions).
 - `sha256` in the manifest is the digest of the stored file's bytes. `payload_sha256` is the digest of
   the stored files' bytes concatenated in request order, as `writer._payload_sha256` does.
 
@@ -216,28 +215,35 @@ The key is `Settings.openalex_api_key`. It is never written to:
 4. **A cache key.** The client already passes `params` without the key to `HttpCache`. Capture no
    longer uses the cache (Decision 7), so this holds by construction. A test pins it.
 
-**The httpx leak, and its enforceable fix.** The key travels in the query string. httpx logs every
-request at INFO on the logger `httpx`, as `HTTP Request: GET <url>`, and the URL includes
-`api_key=...`. `register_secret_for_redaction` runs as a structlog processor, and `main` has no bridge
-from stdlib logging to structlog, so that processor never sees an httpx record. This record does not
-rely on it for httpx.
+**The key travels in a request header.** The owner decided that OpenAlex receives the API key in a
+request header, not in the query string. The header name and value format are an implementation check:
+they are confirmed against the OpenAlex documentation before the implementation is written. This is not
+a further owner decision, and this record does not state the header name. The client never puts the key
+in `params`, so it appears in neither the URL nor the `HttpCache` key. The current client sends it as the
+`api_key` query parameter, and the implementation must change that.
 
-The fix is a `logging.Filter` on the `httpx` logger. `openalex.py` attaches it once, when the client is
-first constructed. The filter replaces the raw key and its percent-encoded form (`quote_plus(key, safe="")`, because httpx encodes spaces as `+`)
-in each record's formatted message with `***`, then clears `record.args`. A filter on a logger
-applies to records logged directly on that logger, which is where httpx emits. The filter is process-wide
-and holds the set of keys that clients have registered.
+**The httpx leak.** httpx logs every request at INFO on the logger `httpx`, as `HTTP Request: GET <url>`.
+With the header form the URL carries no key. The query-string form is kept as a regression check, so a
+future change that moves the key back into the URL is caught. `register_secret_for_redaction` runs as a
+structlog processor, and `main` has no bridge from stdlib logging to structlog, so that processor never
+sees an httpx record. This record does not rely on it for httpx.
 
-**OpenAlex and the header.** This record does not verify whether OpenAlex accepts the key in a request
-header. It did not consult the OpenAlex documentation through a live call, and it makes no claim about
-header support. If the owner confirms header support, the key moves to the header and the URL leak
-disappears. The filter stays as defence in depth. Header support is undecided (Owner decisions).
+As defence in depth, `openalex.py` attaches a `logging.Filter` to the `httpx` logger once, when the client
+is first constructed. The filter replaces the raw key and its percent-encoded form
+(`quote_plus(key, safe="")`, because httpx encodes spaces as `+`) in each record's formatted message with
+`***`, then clears `record.args`. A filter on a logger applies to records logged directly on that logger,
+which is where httpx emits. The filter is process-wide and holds the set of keys that clients have
+registered.
 
-**Test.** `test_httpx_info_log__never_contains_the_key` uses the real `httpx.Client`, with
-`httpx.MockTransport` so no network call is made. It sets `caplog` to INFO on the `httpx` logger,
-runs `OpenAlexClient.lookup_dois` with a sentinel key, and asserts that `"HTTP Request"` appears in the
-captured text (so the test is not vacuous) and that neither the sentinel nor its percent-encoded form
-does. The test must fail with the filter removed.
+**Tests.** Both use the real `httpx.Client` with `httpx.MockTransport`, so no network call is made. Each
+sets `caplog` to INFO on the `httpx` logger, runs `OpenAlexClient.lookup_dois` with a sentinel key, and
+asserts that `"HTTP Request"` appears in the captured text (so the test is not vacuous) and that neither
+the sentinel nor its percent-encoded form does.
+
+- `test_httpx_info_log__header_form__never_contains_the_key`: the key is sent in the header. This is the
+  shipped path.
+- `test_httpx_info_log__query_form__regression__never_contains_the_key`: the key is sent in the query
+  string, with the filter in place. The test must fail with the filter removed.
 
 ### 7. Reuse, reruns, and the retrieval date
 
@@ -308,7 +314,7 @@ approve each one by name before acceptance. The owner approved all five items as
 2. **The JSONL form.** The frozen §2.2 wording is "Every HTTP response is persisted verbatim as JSONL
    before any parsing." This record writes one response per file, with exactly one JSONL line per file,
    and keeps the bytes verbatim where it can. A body with a line break is written in compact form, and
-   the manifest records the encoding and `raw_sha256` (Decision 2; undecided, see Owner decisions).
+   the manifest records the encoding and `raw_sha256` (Decision 2; decided by the owner).
 3. **The §2.2 manifest fields.** The frozen wording names "API view, entitlement context, result count".
    This record maps them to OpenAlex as `api_view` (the `select` string), `entitlement_context`
    (`api_key_used`, `fallback_opt_in`, `refusal_status`), and `result_count` (the works in `results`).
@@ -370,13 +376,15 @@ covers a line proves nothing until it fails on the original defect.
    identical. The abstract text must equal `rebuild_abstract` applied to the stored
    `abstract_inverted_index`. The manifest's outcomes, including `not_found` and `absent_fields`, must
    equal those recomputed from the stored bytes. The test fails if the loader reads client return values,
-   or if the manifest and bytes disagree.
+   or if the manifest and bytes disagree. A second project holds a body with a line break, stored in
+   compact form, and its rebuild must match its first build (Decision 2).
 2. **No key in any stored file.** Run a capture with a sentinel key, through a fake HTTP client that
    returns a 200, a 401, and a 404. Scan every file under `raw/openalex/<run_id>/`, the captured log
    output, and the cache directory for the sentinel and its percent-encoded form. The test must fail on
    a naive implementation that writes the wire params into the manifest.
-3. **The httpx log never contains the key.** `test_httpx_info_log__never_contains_the_key`, as described
-   in Decision 6. It must fail with the filter removed.
+3. **The httpx log never contains the key.** `test_httpx_info_log__header_form__never_contains_the_key` and
+   `test_httpx_info_log__query_form__regression__never_contains_the_key`, as described in Decision 6. The
+   query-form test must fail with the filter removed.
 4. **A rerun does not overwrite, and reuse requests nothing held.** Seal a run. Run the same plan again.
    Assert that the second call creates no run and makes no request, because every identifier is held.
    Then assert that a run with a new identifier gets a new `run_id`, that the first run's files and
@@ -419,18 +427,20 @@ Each decision below is the owner's, or is recorded in an earlier ADR as shown.
   the reason given there).
 - **No topic score is stored in Layer 1.** Decided by ADR 0030 Decision 1. The score stays in the stored body.
 
-### Undecided
+- **The API key is sent in a request header, not the query string** (Decision 6). The header name and
+  value format are an implementation check against the OpenAlex documentation, to be done before the
+  implementation is written. This is not a further owner decision.
+- **The compact encoding is an allowed fallback** for response bodies that contain line breaks,
+  recorded per response in `encoding` and `raw_sha256`. Layer 1 still rebuilds from the stored bytes
+  (Decision 2, Verification 1).
+- **The quoted §2.6 wording is verified** against BUILD_PLAN.md line 301 (Context).
 
-These three questions were not in the owner's decision. They are not decided, and the record does not
-assume an answer to any of them.
+### Not verified against the file
 
-1. **Header support.** Does OpenAlex accept the key in a request header? This is unverified here. If it
-   does, the key moves to the header, and the filter stays.
-2. **Spec wording.** Do the quoted §2.2 lines 101–102, the §2.6 line 301 wording, and the Stage 1 and
-   Stage 3 clauses match the frozen BUILD_PLAN? The §2.6 wording was confirmed by the coordinator. The
-   others were not checked against the file.
-3. **Compact fallback.** Accept the compact encoding for bodies with a line break (Decision 2), or require
-   verbatim bytes and fail the request when a body has a line break?
+The owner's decisions cover the §2.6 quote only. The following are not checked against BUILD_PLAN.md
+in this record, and they are recorded as unverified, not as open questions: the §2.2 quotes at lines
+101–102, the Stage 1 line 696 and Stage 3 line 856 citations, and the quotes that ADR 0011 and ADR 0028
+attribute to the frozen spec. The owner decides whether they are verified before merge.
 
 ## Related decisions
 
