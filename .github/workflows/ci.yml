@@ -330,7 +330,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Measure coverage
-        run: uv run pytest -m "not live and not benchmark" -n auto -q --cov=prismabib --cov-report=json:coverage.json --cov-branch --durations=15
+        run: uv run pytest -m "not live and not benchmark" -q --cov=prismabib --cov-report=json:coverage.json --cov-branch --durations=15
 
       - name: Enforce the per-module gates
         run: |
