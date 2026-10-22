@@ -10,6 +10,12 @@ frozen BUILD_PLAN line 871 is the clause changed. Under §2.6, this record is th
 and BUILD_PLAN itself is not edited. It is the separate ADR that
 [ADR 0028](0028-field-level-fallback-cascade.md) resolved item 5 requires.
 
+> **Note added 2026-10-22 (ADR 0032 and ADR 0033; this note does not change the record above).** Decision 5 (lines 167-168) and the
+> golden-file statement (lines 182-185) hold for a store with no registrations. ADR 0032 adds the table `registered_records` to the
+> checksum set (`store/checksums.py`, `_TABLE_SORT_KEYS`), and ADR 0033 adds the key `flow.registered` to `reference_numbers.json`.
+> So when registrations are enabled, `reference_table_checksums.json` and `reference_numbers.json` change. They change only for a
+> store that holds registrations, and the implementation PR names the re-baseline under BUILD_PLAN line 927.
+
 ## Context
 
 [ADR 0028](0028-field-level-fallback-cascade.md) Decision 2 says OpenAlex topics are stored with
