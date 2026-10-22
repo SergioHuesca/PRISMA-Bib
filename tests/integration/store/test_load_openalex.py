@@ -55,13 +55,13 @@ def _project(tmp_path: Path) -> Project:
             title="Alpha Study",
             cover_date="2020-03-01",
             doi=_DOI_1,
-            authkeywords="Machine Learning | Graphs",
+            authkeywords="Machine Learning | Graphs",  # pragma: allowlist secret
         ),
         make_entry(
             eid="2-s2.0-800000000002",
             title="Beta: A Study!",
             cover_date="2021-03-01",
-            authkeywords="Graphs",
+            authkeywords="Graphs",  # pragma: allowlist secret
         ),
     ]
     write_sealed_run(
