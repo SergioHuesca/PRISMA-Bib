@@ -12,8 +12,10 @@
 # fail the run. A failed listing call or token step still fails the job, so real faults stay
 # visible. The job never blocks main. It never merges, closes, approves, or edits PR contents.
 #
-# Triggers: push to main (a merge changes the queue); workflow_run of CI completing (a PR's
-# checks finishing is what ends "CI running", so the queue can change); workflow_dispatch.
+# Triggers: push to main (a merge changes the queue); workflow_run of CI or Docs completing
+# (a PR's checks finishing is what ends "CI running", so the queue can change; Docs is a
+# separate workflow whose checks are in the same rollup, so it needs its own trigger or a
+# head waiting on Docs would stall); workflow_dispatch.
 # No trigger here checks out or runs PR-controlled code, and the App token never sees one.
 #
 # Rule (scripts/next_pr_to_update.py): only the head of the queue is ever updated. The head
@@ -21,9 +23,9 @@
 # script), skipping PRs whose mergeStateStatus is DIRTY (conflicts a bot update cannot fix).
 # The head is updated if and only if it is BEHIND and has no queued or in-progress checks.
 #
-# Starvation caveat: a permanently red or conflicting PR at the head blocks automation for
-# the others until it merges or is closed. DIRTY PRs are skipped, so only red or stalled
-# non-conflicting PRs can block. Red PRs are not skipped by design.
+# Starvation caveat: a permanently red, stalled, abandoned-draft or CLEAN-but-unmerged PR at
+# the head blocks automation for the others until it merges or is closed. DIRTY PRs are
+# skipped, so only non-conflicting PRs can block. Red PRs and drafts are not skipped by design.
 
 name: Update behind PRs
 
@@ -32,7 +34,7 @@ on:
     branches:
       - main
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["CI", "Docs"]
     types: [completed]
   workflow_dispatch:
 
@@ -93,6 +95,6 @@ jobs:
             gh pr comment "$next" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
             :
           else
-            echo "::warning::PR #$next: update or comment failed; it stays BEHIND until the next trigger"
-            echo "PR #$next: update or comment failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::PR #$next: the update or the comment failed; if the update failed it stays BEHIND until the next trigger, if only the comment failed the branch is already updated"
+            echo "PR #$next: the update or the comment failed (check whether the branch was updated)" >> "$GITHUB_STEP_SUMMARY"
           fi

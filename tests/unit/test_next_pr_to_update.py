@@ -168,3 +168,33 @@ def test_next_pr__cli__prints_number_or_nothing() -> None:
     assert run([_pr(9), _pr(8, draft=True)]) == "8\n"
     assert run([_pr(9)]) == "9\n"
     assert run([_pr(8, "CLEAN")]) == ""
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("state", ["SUCCESS", "FAILURE", "ERROR"])
+def test_next_pr__finished_commit_status__is_not_running(state: str) -> None:
+    # A StatusContext (commit status) carries `state`, not `status`; only PENDING and
+    # EXPECTED mean it is still running.
+    check = {"__typename": "StatusContext", "context": "ci/legacy", "state": state}
+    assert select_next_pr([_pr(3, checks=[check])]) == 3
+
+
+@pytest.mark.unit
+def test_next_pr__cancelled_check_head__is_selected() -> None:
+    # A cancelled run is COMPLETED, so the head is not "running" and gets updated.
+    cancelled = {**_DONE_CHECK, "conclusion": "CANCELLED"}
+    assert select_next_pr([_pr(3, checks=[cancelled])]) == 3
+
+
+@pytest.mark.integration
+def test_next_pr__cli_malformed_input__fails_visibly() -> None:
+    # A bad `gh` response must fail the step, not silently update nothing.
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPT)],
+        input="not json",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert proc.stdout == ""
