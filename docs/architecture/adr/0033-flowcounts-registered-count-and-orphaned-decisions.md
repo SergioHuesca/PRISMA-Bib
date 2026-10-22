@@ -134,6 +134,11 @@ key in `numbers.json` is the same M, so the number is written once as data and o
 
 ### 3. Orphaned decisions: reported, not deleted, not re-attached
 
+**Authority.** ADR 0029 §3 ("Orphaned decisions", line 111) states that an orphaned decision is reported and is not an arithmetic
+term. ADR 0029 §7 states that orphaned decisions are reported, not deleted, and never silently re-attached. Neither is an owner
+decision of 2026-10-22. ADR 0029's Owner decisions section has no item on reversal. The 2026-10-22 owner decision in this area
+covers the reason codes (Decision 4), not the reporting rule.
+
 **Definition.** A **current** decision is the latest event for its `(stage, record_id, reviewer)` key, which is the fold rule of BUILD_PLAN
 Stage 4 (lines 970-972: append-only, later events supersede earlier ones by `ts`, ties broken by `event_id`). An orphaned decision is a
 current decision whose `record_id` is not in `S_raw` (`records_all`). Earlier events for the same key are history, and they are not

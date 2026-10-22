@@ -211,14 +211,31 @@ and are fixed by this record (decided 2026-10-22).
 - `bibliometrics/venues.py` (lines 162-163, 193-194) and `taxonomy/coder.py` (line 376). Venues take the `Corpus.venues` change.
   The coder applies its rules to title and abstract, so a registration is coded from its OpenAlex abstract when it has one.
 - `bibliometrics/network.py` (lines 444, 497). A registration has no keyword rows, so it adds no node or edge.
-- Tests that depend on the change. The implementation PR must update these, and they are named here so that none is missed:
+- Tests that depend on the change. The list below was found by grep at commit 86819e3, for `Corpus(`, `.records(`, `corpus.records`,
+  `Corpus.open(` and `records_all`. It is not claimed complete beyond that grep. The implementation PR re-greps `tests/` and `src/`
+  before it merges. The reference fixture has no registrations, so a test changes only where it counts registrations or asserts the
+  `records` column set, which becomes the 16-column view. Each entry says which. Entries marked "check" were not read line by line at
+  this commit.
   - `tests/integration/store/test_corpus_bibliometrics_accessors.py:62` counts `records JOIN venues`. After `Corpus.venues` reads
     `records_all`, the expected count must include registrations, so this test changes.
   - `tests/integration/report/test_bundle_consistency.py:119` picks the top venue from `records JOIN venues`. The reference fixture
     has no registrations, so its value does not change. The implementation PR moves it to `records_all`, so that the test and
     `Corpus.venues` use one definition.
-  - `tests/unit/bibliometrics/test_trends.py:385` and `tests/e2e/test_reference_project.py:65-66` read `Corpus.records`. On the
-    reference fixture they keep their values, but any that assert the 13-column schema change with the 16-column view.
+  - `tests/e2e/test_reference_project.py:64-66` (`records` INCLUDED and RAW): values unchanged. Check any column-set assertion.
+  - `tests/integration/store/test_load.py:381-429, 735, 765, 799, 821` (`records` RAW, INCLUDED and LANGUAGE): values unchanged. Check
+    column-set assertions.
+  - `tests/integration/store/test_portability.py:137` (`records` RAW): values unchanged. Check columns. Lines 58-74 (`citations`) are
+    unchanged, because citations stay snapshot-only.
+  - `tests/integration/taxonomy/test_coder.py:157` (`records` INCLUDED height): value unchanged.
+  - `tests/unit/bibliometrics/test_trends.py:385` (`records` RAW): values unchanged. Check columns.
+  - `tests/integration/store/test_corpus_bibliometrics_accessors.py:55-238` (`Corpus.open` and `Corpus(connection)`): values unchanged,
+    except line 62, named above. Check column-set assertions.
+  - `tests/integration/report/test_bundle_consistency.py:169` (`Corpus.open` RAW passed to report code): values unchanged.
+  - `tests/integration/bibliometrics/test_analysis_result_contract.py:190-191` (`Corpus.open` only): values unchanged.
+  - `tests/unit/store/test_load.py:179` (`Corpus(connection)`): check.
+  - `tests/bibliometrics_helpers.py:249` (`Corpus.open` helper): values unchanged. Changes only where the tests that use it assert the
+    column set.
+  - `tests/unit/bibliometrics/test_citations.py:136` is a docstring only.
 
 - `bibliometrics/base.py` line 314 (`build_provenance`, `corpus_size=records.height`, over `corpus.records`). The provenance
   line of each figure reports `n` from the records frame, so it counts registrations, as owner decision A decides. A figure's
@@ -253,7 +270,8 @@ record has `language` NULL, so no language table could be checked against stored
 filter by the existing no-data rule (`_passes_language`, `prisma/engine.py` lines 372-375), the same as every Scopus record in the
 two stores. ADR 0029's Split records bullet (line 231) names language as an input, and this is deviation (viii).
 
-**Refusal is at registration.** ADR 0029 §5 names the registration writer as the enforcement point for every
+**Refusal is at registration.** This follows ADR 0029 §5, "What registration cannot do, and where each limit is enforced"
+(accepted 2026-10-21), which names the registration writer as the enforcement point for every
 refusal, so the writer checks every input in the table above before the append. This refusal is not in code today. It is required of the
 registration PR, which is later than this record, and the tests that prove it are named in the venue_name rule (Decision 5). The loader also refuses a `register` event
 whose referenced body cannot yield them, so a mis-built event cannot enter `S_raw`. The refusal names the
@@ -271,7 +289,7 @@ holds three tables, (a) to (c) below. Two constants name it:
   digest is computed when the module is written, and it is pinned in the same commit. It is not computed in
   this draft.
 
-ADR 0029 Owner decision 4 (line 250) and the register bullet (line 62) describe the mapping as "a fixed, versioned
+ADR 0029 Owner decision 4 (line 251) and the register bullet (line 62) describe the mapping as "a fixed, versioned
 mapping table from OpenAlex topics to ASJC codes". **The owner decided the granularity on 2026-10-22: the map is from
 OpenAlex subfield to ASJC code, not from topic.** This record changes that wording in ADR 0029 Owner decision 4
 and in line 62. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. The change is
@@ -632,7 +650,8 @@ The engine reads `records_all` (Decision 1), so this holds without a `venues` ro
 
 **`venue_name` for a registration** is the OpenAlex `primary_location.source.display_name`, and it is NOT NULL. A conference
 registration is matched against the whitelist exactly as a Scopus conference is: a casefold substring match on `venue_name`
-(`_passes_conference_whitelist`, `prisma/engine.py` lines 315-320). A `venue_name` that is missing, or empty after `strip()`, is to be **refused** for every venue type. The refusal point is the
+(`_passes_conference_whitelist`, `prisma/engine.py` lines 315-320). A `venue_name` that is missing, or empty after `strip()`, is to be **refused** for every venue type. This is a rule of this record, under ADR 0029 §5, which assigns each limit to the
+registration writer. The owner's answers of 2026-10-22 do not decide it separately. The refusal point is the
 registration writer, which does not exist yet. It is part of the later registration PR (ADR 0029 §5), so no code enforces this
 rule today. The loader stores the stripped name, so the refusal check and the stored value use the same string. The engine does not strip
 names (`prisma/engine.py` lines 319-320), so without the load-time strip a whitespace-only
@@ -709,7 +728,7 @@ between subject areas, and an old published number could not be reproduced.
 criteria are not renegotiable without a new ADR (§2.6)." Item (ii) also cites BUILD_PLAN line 301. Each is named here, and each
 needs the owner's acceptance under this record:
 
-- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 250) and the register bullet (line 62) say "OpenAlex
+- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 251) and the register bullet (line 62) say "OpenAlex
   topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(ii) BUILD_PLAN §1.2, metadata source (line 54).** §1.2 fixes the metadata source as "Scopus API (institutional key)".
   Registered records bring OpenAlex-derived metadata (`doc_type`, `venue_type`, subject area, title and DOI) into Layer 1,
@@ -748,7 +767,7 @@ this record is decided by the dedicated review named in Status.
   against recorded pairs.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the loader is the only Layer 1 writer (Decision 3). The separation of OpenAlex topics from ASJC is stated in Context of this record, not in ADR 0028.
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the registration this record makes possible. Its
-  Owner decision 4 (line 250) and line 62 are changed by this record (deviation i).
+  Owner decision 4 (line 251) and line 62 are changed by this record (deviation i).
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the stored OpenAlex body, the `PayloadRef` form, and the select
   amendment (deviation vi).
 - [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md): the Stage 4 counts that read `records_all`.
