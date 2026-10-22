@@ -40,8 +40,8 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_serializer, fi
 from pydantic import ValidationError as PydanticValidationError
 
 from prismabib.errors import LogError, ValidationError
+from prismabib.log import AppendOnlyLog
 from prismabib.prisma.events import IdFactory, MonotonicUlidFactory
-from prismabib.prisma.log import AppendOnlyLog
 from prismabib.project import Project
 from prismabib.taxonomy.schema import TaxonomySchema
 
