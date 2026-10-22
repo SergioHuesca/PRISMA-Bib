@@ -13,8 +13,11 @@ and BUILD_PLAN itself is not edited. It is the separate ADR that
 > **Note added 2026-10-22 (ADR 0032 and ADR 0033; this note does not change the record above).** Decision 5 (lines 167-168) and the
 > golden-file statement (lines 182-185) hold for a store with no registrations. ADR 0032 adds the table `registered_records` to the
 > checksum set (`store/checksums.py`, `_TABLE_SORT_KEYS`), and ADR 0033 adds the key `flow.registered` to `reference_numbers.json`.
-> So when registrations are enabled, `reference_table_checksums.json` and `reference_numbers.json` change. They change only for a
-> store that holds registrations, and the implementation PR names the re-baseline under BUILD_PLAN line 927.
+> Two golden files change, and the statements differ by store. (1) `reference_numbers.json` changes for **every** store, including
+> the reference fixture, because ADR 0033 always writes the key `flow.registered` (value 0 when there are no registrations; owner
+> decision, 2026-10-22). (2) `reference_table_checksums.json` gains the key of the new table `registered_records`, so it changes for
+> every store too. The checksum values of the existing tables stay the same for a store with no registrations, and only a store
+> that holds registrations has a non-empty `registered_records`. The implementation PR names both re-baselines under BUILD_PLAN line 927.
 
 ## Context
 

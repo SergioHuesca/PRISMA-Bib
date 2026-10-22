@@ -225,7 +225,9 @@ record, so the restated contract is the one that the code and its tests read.
 6. `AppendOnlyLog` gains `append_if` in ADR 0029 §8, and a reversal or supersession uses it. This record does not change that mechanism.
 7. The docstring of `compute_flow_counts` (`prisma/flow.py` lines 474-485) says that `after_automated` is derived from Layer 1's
    `records` rows and that equation 1 is a cross-check. Both statements go stale once registrations join `S_raw`. The
-   implementation PR updates that docstring.
+   implementation PR updates that docstring. The comment in `src/prismabib/cli.py` lines 982-986 describes equation 1 as a check of
+   `total_results` against the rows in Layer 1. Once registrations join `S_raw`, those rows include them, so that comment is stale
+   too, and the implementation PR updates it.
 
 ## Deviations from the frozen contract
 

@@ -62,6 +62,7 @@ The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptanc
   - `register`, which creates a record. It carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi`, `title_year` or `near_confirmed`), `source_level` (always 4), `source_payload_ref`, `source_payload_sha256`, `doi` (required), `subject_map_version` and `subject_map_sha256` (the version and checksum of the OpenAlex-topic-to-ASJC mapping table in ADR 0032 that gave the record its subject area);
   - `reverse`, which removes a record it names. It carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
   - `supersede`, which removes a record it names, written only by the automatic step in §6. It carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule` (`doi` or `title_year`), and `actor` (`system`).
+
 > **Note added 2026-10-22 (ADR 0032 and ADR 0033; this note does not change the bullets above).** The `register` bullet's
 > "OpenAlex-topic-to-ASJC mapping table" is narrowed by ADR 0032 to a mapping from OpenAlex subfield to ASJC code, by owner
 > decision of 2026-10-22. The `reverse` bullet's "mandatory `reason`" is narrowed by ADR 0033 (Decision 4) to a closed set of
@@ -229,10 +230,10 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 - **ADR 0032 (to be written):** the Stage 3 Layer 1 table for registered records, and the view that unites them with Scopus records. This ADR fixes what the table must carry for registered records: `record_id`, `origin`, `doi` (required, since §1 requires a DOI), `title`, `year`, and the following three fields, which are a requirement on ADR 0032 and not an assumption made here:
   - `doc_type`, `language`, and the subject-area input. Criterion A is year, subject area and document type, and criterion L is language (BUILD_PLAN Stage 4). Both are computed from the stored fields, so a registered record without them cannot be classified and must not enter S_raw. ADR 0032 must specify how each is obtained for a registered record. Subject area is decided in the owner decisions below.
 
-  > **Note added 2026-10-22 (ADR 0032, deviation viii; this note does not change the bullet above).** ADR 0032 drops `language`
-  > as a registration input, by owner decision of 2026-10-22. Every stored Scopus record has `language` NULL, so no language
-  > mapping can be checked against stored data, and a registration's `language` is NULL. The deviation rests on the project rule
-  > in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
+> **Note added 2026-10-22 (ADR 0032, deviation viii; this note does not change the bullet above).** ADR 0032 drops `language`
+> as a registration input, by owner decision of 2026-10-22. Every stored Scopus record has `language` NULL, so no language
+> mapping can be checked against stored data, and a registration's `language` is NULL. The deviation rests on the project rule
+> in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
   - Subject area comes from a **fixed, versioned mapping table from OpenAlex topics to ASJC codes**. OpenAlex topics are not ASJC subject areas, and ADR 0028 Decision 2 keeps them separate, and ADR 0017 matches subject areas by ASJC grouping. The mapping table and its version are recorded with each registration (the `register` event's `subject_map_version` and `subject_map_sha256`, §2). ADR 0032 must include the mapping itself, and it does not yet exist, so ADR 0032 is a precondition for registration.
 - **ADR 0033 (to be written):** the Stage 4 `FlowCounts` change, namely the `registered` field and the identity in §3, and the fold's handling of orphaned decisions.
 
@@ -248,7 +249,7 @@ Each of the four items below is decided by the owner. ADR 0029, ADR 0032 and ADR
 3. **"Near match" means exactly the two rules in `near_matches`** in `capture/candidates.py`: the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. Nothing wider is a near match.
 4. **Subject area source.** A registered record's subject area comes from a fixed, versioned mapping table from OpenAlex topics to ASJC codes. The table and its version are recorded with each registration. ADR 0032 specifies the mapping.
 
-> **Note added 2026-10-22 (ADR 0032; this note does not change the item above).** ADR 0032 narrows the mapping to OpenAlex **subfield** to ASJC code, by owner decision, and the subject area is derived from the work's `primary_topic` only. The same narrowing applies to "OpenAlex topics to ASJC codes" in Split records (line 218). The mapping is a fixed, versioned table as this item says, and its granularity is the subfield.
+> **Note added 2026-10-22 (ADR 0032; this note does not change the item above).** ADR 0032 narrows the mapping to OpenAlex **subfield** to ASJC code, by owner decision, and the subject area is derived from the work's `primary_topic` only. The same narrowing applies to "OpenAlex topics to ASJC codes" in Split records (line 236). The mapping is a fixed, versioned table as this item says, and its granularity is the subfield.
 
 ## Related decisions
 

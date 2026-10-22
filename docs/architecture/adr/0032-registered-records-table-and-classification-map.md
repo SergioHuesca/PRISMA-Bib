@@ -59,7 +59,7 @@ be recorded for it. `Corpus.records` (`store/load.py`, lines 2508-2537) runs `SE
   excluded anything in them, and no language table can be checked against stored values.
 - `subject_areas.area_code` holds a four-digit ASJC code (`2202`), matched at grouping level through
   `asjc.area_abbrev` (`asjc.py`, line 74; [ADR 0017](0017-subject-areas-match-by-asjc-grouping.md)).
-- OpenAlex gives `type` (26 values, verified against the OpenAlex Work types page), `language` as an ISO 639-1
+- OpenAlex gives `type` (25 values, verified against the OpenAlex Work types page), `language` as an ISO 639-1
   code that is not used by this record (Decision 2), `primary_location.source.type`
   (seven values, verified against the OpenAlex Sources page), and `topics`. The OpenAlex Work object page
   states that `primary_topic` is the first entry of `topics`, that `topics` holds up to three topics, and
@@ -119,7 +119,7 @@ CREATE VIEW records_all AS
   SELECT r.record_id, 'scopus' AS origin, r.run_id, r.doi, r.title, r.abstract, r.year,
          r.cover_date, r.doc_type, r.language, r.venue_id, r.open_access,
          r.payload_file, r.payload_line,
-         COALESCE(v.venue_type, '') AS venue_type, COALESCE(v.name, '') AS venue_name
+         v.venue_type, v.name AS venue_name
     FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id
   UNION ALL
   SELECT record_id, 'registered', NULL, doi, title, abstract, year,
@@ -129,7 +129,10 @@ CREATE VIEW records_all AS
 ```
 
 The view has 16 columns: the 13 columns of `records` (BUILD_PLAN lines 853-857), plus `origin`, `venue_type` and
-`venue_name`. The Scopus half keeps the `COALESCE` that `_fetch_record_attributes` uses today, so Scopus rows are read as they
+`venue_name`. The Scopus half has no `COALESCE`, so a Scopus record with no venue keeps a NULL venue name and type, as
+`screening/ui.py` line 224 (`v.name`) reads them today. `_fetch_record_attributes` keeps its own `COALESCE` (`prisma/engine.py`
+lines 211-212). An earlier draft put `COALESCE` in the view, which would have changed the screening reader's value from NULL to
+`''` for Scopus rows; that draft is withdrawn. The Scopus rows are read
 are now.
 
 **The readers that move to `records_all`**, each with what it does for a registration:
@@ -143,7 +146,9 @@ are now.
 - `store/load.py` `Corpus.records` (lines 2508-2537). For `PrismaStage.RAW` it runs `SELECT * FROM records_all`. For the other
   stages it filters `records_all` by the engine's record ids.
 - `store/load.py` `Corpus.venues` (lines 2646-2655). Its inner join `records r JOIN venues v` drops every registration, because a
-  registration has no `venues` row. It reads `records_all` instead, and a registration is grouped by its `venue_name`. Owner
+  registration has no `venues` row. It reads `records_all` instead, and a registration is grouped by its `venue_name`. `Corpus.venues` (`store/load.py` lines 2646-2648) selects `venue_id`, `name`,
+  `issn`, `eissn`, `venue_type` and `abbreviation`. A registration has NULL for `venue_id`, `issn`, `eissn` and `abbreviation`,
+  and its `name` and `venue_type` come from `venue_name` and the registration's type. Owner
   decision A: registrations count in the venue tables.
 - `report/numbers.py` `corpus scalars` (lines 100-103). `corpus.size`, `corpus.year_min` and `corpus.year_max` are computed from
   `records` today. They read `records_all`, so they count registrations. Owner decision A.
@@ -236,7 +241,7 @@ A value that a table does not cover is a refusal (§4).
 |---|---|---|---|
 | `doc_type` | `type` | `TYPE_TO_DOC_TYPE` (Decision 3b) | description form, as the engine compares it, for example `article` or `conference paper` |
 | `venue_type` | `primary_location.source.type` | `SOURCE_TYPE_TO_VENUE_TYPE` (Decision 3c) | `journal`, `conference`, `book` or `other` |
-| `venue_name` | `primary_location.source.display_name` | copied verbatim | string |
+| `venue_name` | `primary_location.source.display_name` | stored after `strip()`; refused if empty after stripping (Decision 5) | string |
 | subject area | `primary_topic.subfield.id` | `SUBFIELD_TO_ASJC` (Decision 3a) | four-digit ASJC code, one row in `subject_areas` |
 
 The subject area takes **`primary_topic` only** (owner decision, 2026-10-22). The second and third topics are not
@@ -553,7 +558,7 @@ A registered record that carries one is flagged in the methods. The owner may ti
 **Unmapped rule.** Every subfield in the table has a code. A subfield that is missing from a future version of
 this table is a refusal, not a guess: the registration is refused with the id named, and no record is created.
 
-**(b) Work type to `doc_type`: version 1, 26 rows.** Source: the OpenAlex Work types page, fetched 2026-10-22. The
+**(b) Work type to `doc_type`: version 1, 25 rows.** The OpenAlex Work types page lists 25 values, and every one has a row. Eight are mapped and 17 are refused. The refused row lists them. Source: the OpenAlex Work types page, fetched 2026-10-22. The
 targets are the description strings the engine compares with (`_DOC_TYPE_CODE_TO_DESCRIPTION`,
 `prisma/engine.py` lines 255-268). A type with no target is refused.
 
@@ -588,9 +593,12 @@ They are tightenable in a later ADR. The engine reads only `conference`, so no r
 
 A `primary_location` with no source, or a source type outside this table, is refused. The Sources page confirms
 `type` only on the source object, not the path `primary_location.source.type` on a work. The registration PR must include
-a required test, which does not exist yet: `test_registration__source_type_path__matches_recorded_works_fixture`, checked against
-a recorded OpenAlex response. This path is unverified. It must be checked against a recorded OpenAlex work fixture before the registration PR merges, and
-the test named above is that check. If the path is absent there, the registration is refused, not guessed.
+a required test, which does not exist yet: `test_registration__source_type_path__matches_recorded_works_fixture`. This path is
+unverified, and the test is its gate: it must pass before the registration PR merges. The fixture source is as follows. The
+registration PR captures a recorded OpenAlex work response from the live API, with the API key redacted, and saves it under
+`tests/fixtures/openalex/`. It is not hand-written, unlike the existing client cassettes that ADR 0030 (lines 182-184) describes.
+Its licence is checked before the commit. This record does not verify OpenAlex's licence terms. The fixture does not exist yet.
+If the path is absent in the fixture, the registration is refused, not guessed.
 
 **Language: no table.** Language is not in the map (Decision 2).
 
@@ -626,7 +634,8 @@ The engine reads `records_all` (Decision 1), so this holds without a `venues` ro
 registration is matched against the whitelist exactly as a Scopus conference is: a casefold substring match on `venue_name`
 (`_passes_conference_whitelist`, `prisma/engine.py` lines 315-320). A `venue_name` that is missing, or empty after `strip()`, is to be **refused** for every venue type. The refusal point is the
 registration writer, which does not exist yet. It is part of the later registration PR (ADR 0029 §5), so no code enforces this
-rule today. The engine does not strip the name (`prisma/engine.py` lines 319-320), so the writer must strip it: a whitespace-only
+rule today. The loader stores the stripped name, so the refusal check and the stored value use the same string. The engine does not strip
+names (`prisma/engine.py` lines 319-320), so without the load-time strip a whitespace-only
 name would otherwise fail every token and exclude a registered conference paper silently. The implementation PR must include two
 tests, which do not exist yet: `test_registration__whitespace_venue_name__is_refused` and `test_registration__missing_venue_name__is_refused`.
 Both assert that the event log's bytes and checksum are unchanged after the refusal. The refusal, not a silent pass or exclusion, is the rule, because an empty name would otherwise fail every
