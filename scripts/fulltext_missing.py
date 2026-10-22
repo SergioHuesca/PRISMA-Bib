@@ -74,8 +74,8 @@ def main() -> None:
         meta: dict[str, tuple[str, int | None, str, str | None]] = {
             record_id: (title, year, venue, doi)
             for record_id, title, year, venue, doi in connection.execute(
-                "SELECT r.record_id, r.title, r.year, COALESCE(v.name, '(no venue)'), r.doi "
-                "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id"
+                "SELECT r.record_id, r.title, r.year, COALESCE(r.venue_name, '(no venue)'), r.doi "
+                "FROM records_all r"
             ).fetchall()
         }
     finally:

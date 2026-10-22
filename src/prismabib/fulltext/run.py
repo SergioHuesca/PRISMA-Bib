@@ -199,7 +199,7 @@ def run_fulltext_resolution(
     connection = connect(project, read_only=True)
     try:
         rows = connection.execute(
-            "SELECT record_id, doi FROM records WHERE record_id = ANY(?)",
+            "SELECT record_id, doi FROM records_all WHERE record_id = ANY(?)",
             [target_ids],
         ).fetchall()
         doi_by_record_id = {str(record_id): doi for record_id, doi in rows}

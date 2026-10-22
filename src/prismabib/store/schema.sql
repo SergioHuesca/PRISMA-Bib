@@ -155,3 +155,33 @@ CREATE TABLE fulltext_sections (
   low_confidence BOOLEAN,
   PRIMARY KEY (record_id, position)
 );
+
+-- Added by ADR 0032, not part of the frozen BUILD_PLAN schema. Active reviewer
+-- registrations (ADR 0029), folded from Layer 2 by the loader; every build creates
+-- it, empty until the registration fold fills it. A registration has no run and no
+-- `venues` row, so its venue type and name live here. `language` is always NULL in
+-- this version (ADR 0032 Decision 2).
+CREATE TABLE registered_records (
+  record_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, doi TEXT NOT NULL,
+  title TEXT NOT NULL, abstract TEXT, year INTEGER NOT NULL,
+  doc_type TEXT NOT NULL, language TEXT, venue_type TEXT NOT NULL,
+  venue_name TEXT NOT NULL, openalex_id TEXT NOT NULL, payload_file TEXT NOT NULL,
+  payload_line INTEGER NOT NULL, match_rule TEXT NOT NULL, reviewer TEXT NOT NULL,
+  registered_ts TIMESTAMP NOT NULL
+);
+
+-- The one reader of S_raw (ADR 0032 Decision 1): Scopus rows plus registrations.
+-- Deliberately no COALESCE on the Scopus half, so a record with no venue keeps NULL
+-- `venue_type`/`venue_name` exactly as screening/ui.py read them from the LEFT JOIN.
+-- A view is not checksummed.
+CREATE VIEW records_all AS
+  SELECT r.record_id, 'scopus' AS origin, r.run_id, r.doi, r.title, r.abstract, r.year,
+         r.cover_date, r.doc_type, r.language, r.venue_id, r.open_access,
+         r.payload_file, r.payload_line,
+         v.venue_type, v.name AS venue_name
+    FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id
+  UNION ALL
+  SELECT record_id, 'registered', NULL, doi, title, abstract, year,
+         NULL, doc_type, language, NULL, NULL,
+         payload_file, payload_line, venue_type, venue_name
+    FROM registered_records;

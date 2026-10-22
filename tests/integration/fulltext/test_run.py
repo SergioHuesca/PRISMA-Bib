@@ -24,9 +24,12 @@ the same two-step shape already established for ``prismabib enrich``.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 import duckdb
 import httpx
@@ -47,7 +50,7 @@ from prismabib.store.db import connect
 from prismabib.store.load import build_store
 from tests.conftest import SeededIdFactory
 from tests.fixtures.pdf_builder import make_minimal_pdf
-from tests.store_helpers import make_entry, write_sealed_run
+from tests.store_helpers import insert_registered_record, make_entry, write_sealed_run
 
 _STARTED_AT = datetime(2025, 1, 1, tzinfo=UTC)
 
@@ -447,3 +450,53 @@ def test_settings__ambient_credentials__do_not_reach_the_resolver_chain(
     assert settings.elsevier_sd_api_key is None
     assert settings.scopus_insttoken is None
     assert settings.unpaywall_email is None
+
+
+def _register_and_include(project: Project) -> str:
+    """Insert a registration (ADR 0032 scaffolding) and include it at title/abstract."""
+    connection = connect(project, read_only=False)
+    try:
+        insert_registered_record(connection, "registered:ev-1", doi="10.1016/j.registered.1")
+    finally:
+        connection.close()
+    DecisionLog(project, id_factory=SeededIdFactory(seed=1, prefix="rg")).append(
+        stage=PrismaStage.TITLE_ABSTRACT,
+        record_id="registered:ev-1",
+        reviewer="kp",
+        decision="include",
+    )
+    return "registered:ev-1"
+
+
+@pytest.mark.integration
+def test_run__registered_record__resolvers_see_its_doi(tmp_path: Path) -> None:
+    """ADR 0032: the DOI lookup reads `records_all`; before, a registration got no DOI."""
+    project, _a, _b = _build_project_with_two_included_records(tmp_path)
+    registered = _register_and_include(project)
+
+    run_fulltext_resolution(project, settings=_settings(), record_ids=[registered])
+
+    looked_up = [unquote(str(call.request.url)) for call in respx.calls]
+    assert any("10.1016/j.registered.1" in url for url in looked_up)
+
+
+@pytest.mark.integration
+def test_fulltext_missing_script__registered_record__is_listed_without_key_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0032: `meta[record_id]` is built from `records_all`; before, this raised KeyError."""
+    project, _a, _b = _build_project_with_two_included_records(tmp_path)
+    _register_and_include(project)
+    script = Path(__file__).resolve().parents[3] / "scripts" / "fulltext_missing.py"
+    spec = importlib.util.spec_from_file_location("fulltext_missing_script", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(sys, "argv", ["fulltext_missing", project.slug, "--root", str(tmp_path)])
+
+    module.main()
+
+    out = capsys.readouterr().out
+    assert "A Registered Work" in out
+    assert "https://doi.org/10.1016/j.registered.1" in out
+    assert "Journal of Registered Things" in out

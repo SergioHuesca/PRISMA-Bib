@@ -313,7 +313,7 @@ def run(
     try:
         placeholders = ", ".join("?" for _ in batch)
         rows = connection.execute(
-            f"SELECT record_id, title, doi FROM records WHERE record_id IN ({placeholders})",
+            f"SELECT record_id, title, doi FROM records_all WHERE record_id IN ({placeholders})",
             batch,
         ).fetchall()
     finally:

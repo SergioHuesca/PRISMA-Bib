@@ -116,8 +116,8 @@ def test_bundle__venue_split_across_types__is_one_venue_in_both_places(
     try:
         top = connection.execute(
             """
-            SELECT v.name FROM records r JOIN venues v ON r.venue_id = v.venue_id
-            GROUP BY v.name ORDER BY count(*) DESC, v.name ASC LIMIT 1
+            SELECT venue_name FROM records_all WHERE venue_name IS NOT NULL
+            GROUP BY venue_name ORDER BY count(*) DESC, venue_name ASC LIMIT 1
             """
         ).fetchone()
         assert top is not None

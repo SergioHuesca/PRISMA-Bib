@@ -59,7 +59,8 @@ def test_corpus__venues__raw_stage__matches_independent_sql(tmp_path: Path) -> N
     connection = connect(project, read_only=True)
     try:
         expected = connection.execute(
-            "SELECT count(*) FROM records r JOIN venues v ON r.venue_id = v.venue_id"
+            "SELECT count(*) FROM records_all r LEFT JOIN venues v ON r.venue_id = v.venue_id "
+            "WHERE r.origin = 'registered' OR v.venue_id IS NOT NULL"
         ).fetchone()
     finally:
         connection.close()

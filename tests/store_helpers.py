@@ -101,6 +101,55 @@ def create_schema(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute(SCHEMA_SQL_PATH.read_text(encoding="utf-8"))
 
 
+def insert_registered_record(
+    connection: duckdb.DuckDBPyConnection, record_id: str = "registered:ev-1", **overrides: Any
+) -> dict[str, Any]:
+    """Insert one row into ``registered_records`` (ADR 0032); test scaffolding only.
+
+    The real fold from ``registrations.jsonl`` belongs to a later batch; until it
+    exists, this is how a test gives a reader a registration to read. The defaults
+    are a valid, passing registration (an English-agnostic journal article).
+
+    Args:
+        connection: A writable DuckDB connection onto a built store.
+        record_id: The row's ``record_id`` (``registered:<event_id>``).
+        **overrides: Any ``registered_records`` column to override.
+
+    Returns:
+        The full row as inserted, keyed by column.
+    """
+    row: dict[str, Any] = {
+        "record_id": record_id,
+        "event_id": record_id.removeprefix("registered:"),
+        "doi": "10.5555/registered.1",
+        "title": "A Registered Work",
+        "abstract": "An OpenAlex abstract.",
+        "year": 2021,
+        "doc_type": "article",
+        "language": None,
+        "venue_type": "journal",
+        "venue_name": "Journal of Registered Things",
+        "openalex_id": "https://openalex.org/W1",
+        "payload_file": "run-0001/response-0001.jsonl",
+        "payload_line": 0,
+        "match_rule": "doi",
+        "reviewer": "kp",
+        # A literal, not a datetime: the column is a naive TIMESTAMP, and DuckDB casts an aware
+        # datetime through the session time zone, which would make the row machine-dependent.
+        "registered_ts": "2026-10-22 12:00:00",
+    }
+    unknown = set(overrides) - set(row)
+    if unknown:
+        raise KeyError(f"not a registered_records column: {sorted(unknown)}")
+    row.update(overrides)
+    columns = ", ".join(row)
+    connection.execute(
+        f"INSERT INTO registered_records ({columns}) VALUES ({', '.join('?' for _ in row)})",
+        list(row.values()),
+    )
+    return row
+
+
 def write_sealed_run(
     raw_dir: Path,
     run_id: str,

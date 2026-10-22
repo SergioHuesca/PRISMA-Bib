@@ -132,7 +132,7 @@ def coverage_by_publisher_table(connection: duckdb.DuckDBPyConnection) -> Table:
                MAX(CASE WHEN a.media_type IS NOT NULL THEN 1 ELSE 0 END) AS resolved,
                MAX(CASE WHEN a.entitled IS FALSE THEN 1 ELSE 0 END) AS refused
         FROM fulltext_assets a
-        JOIN records r ON r.record_id = a.record_id
+        JOIN records_all r ON r.record_id = a.record_id
         GROUP BY r.record_id, r.doi
         """
     ).fetchall()

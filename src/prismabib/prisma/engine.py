@@ -106,7 +106,7 @@ import duckdb
 import structlog
 
 from prismabib.asjc import area_abbrev
-from prismabib.errors import ConfigError
+from prismabib.errors import ConfigError, StoreError
 from prismabib.prisma.criteria import resolve_criteria
 from prismabib.prisma.events import Decision, DecisionEvent
 from prismabib.prisma.log import DecisionLog, FoldKey
@@ -202,15 +202,15 @@ def _fetch_record_attributes(
 
     Returns:
         One :class:`_RecordAttributes` per ``record_id`` currently in
-        ``records``, from one pair of queries on one connection: every set
-        derived from the result therefore describes the same read of Layer 1
+        ``records_all`` (Scopus and registered rows), from one pair of queries
+        on one connection: every set derived from the result therefore describes the same read of Layer 1
         rather than several that a concurrent ``build_store`` could have
         moved between.
     """
     rows = connection.execute(
         "SELECT r.record_id, r.year, r.doc_type, r.language, "
-        "COALESCE(v.venue_type, ''), COALESCE(v.name, '') "
-        "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id"
+        "COALESCE(r.venue_type, ''), COALESCE(r.venue_name, ''), r.origin "
+        "FROM records_all r"
     ).fetchall()
     area_rows = connection.execute("SELECT record_id, area_code FROM subject_areas").fetchall()
     observed = {
@@ -219,6 +219,16 @@ def _fetch_record_attributes(
             "SELECT DISTINCT record_id FROM record_subject_area_coverage"
         ).fetchall()
     }
+
+    # ADR 0032 Decision 5: the writer refuses a registration whose venue_name is blank
+    # and stores it stripped. The engine does not strip, so a blank one that got here
+    # anyway would silently fail every whitelist token; fail loudly instead.
+    for record_id, *_, venue_name, origin in rows:
+        if origin == "registered" and not venue_name.strip():
+            raise StoreError(
+                f"Registered record {record_id!r} has a blank venue_name "
+                "(ADR 0032 Decision 5); rebuild the store from Layers 0 and 2."
+            )
 
     areas_by_record: dict[str, set[str]] = defaultdict(set)
     for record_id, area_code in area_rows:
@@ -237,7 +247,7 @@ def _fetch_record_attributes(
             # this paper none" and "we never asked" are otherwise identical.
             subject_area_observed=record_id in observed or bool(areas_by_record.get(record_id)),
         )
-        for record_id, year, doc_type, language, venue_type, venue_name in rows
+        for record_id, year, doc_type, language, venue_type, venue_name, _origin in rows
     }
 
 
@@ -738,7 +748,7 @@ def raw_set(project: Project) -> frozenset[str]:
     """
     connection = connect(project, read_only=True)
     try:
-        rows = connection.execute("SELECT record_id FROM records").fetchall()
+        rows = connection.execute("SELECT record_id FROM records_all").fetchall()
     finally:
         connection.close()
     return frozenset(record_id for (record_id,) in rows)
