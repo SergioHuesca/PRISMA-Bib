@@ -55,21 +55,22 @@ registration is reversed. It can re-enter the queue when a Scopus match supersed
 ```python
 @dataclass(frozen=True)
 class FlowCounts:
-    identified: int                       # sum of runs.total_results over distinct searches (ADR 0013)
-    duplicates_across_searches: int       # ADR 0013
-    removed_other_reasons: int            # unreadable capture entries (ADR 0012)
-    registered: int                       # active registrations (ADR 0029 §3); new here
-    excluded_automated: int               # |S_raw| - |S_raw ∩ A|
-    excluded_automated_by_reason: Mapping[str, int]   # ADR 0016; sums to excluded_automated
-    after_automated: int                  # |A|
-    excluded_language: int                # |A| - |L|
-    after_language: int                   # |L|
-    excluded_title_abstract: int          # exclude decisions in L (ADR 0007)
-    unsure_title_abstract: int            # ADR 0007
-    retrieved_fulltext: int               # |M_abs|
-    excluded_fulltext: dict[str, int]     # by reason_code
-    unsure_fulltext: int                  # ADR 0007
-    included: int                         # |C| = |M_full|
+    identified: int  # sum of runs.total_results over distinct searches (ADR 0013)
+    duplicates_across_searches: int  # ADR 0013
+    removed_other_reasons: int  # unreadable capture entries (ADR 0012)
+    registered: int  # active registrations (ADR 0029 §3); new here
+    excluded_automated: int  # |S_raw| - |S_raw ∩ A|
+    excluded_automated_by_reason: Mapping[str, int]  # ADR 0016; sums to excluded_automated
+    after_automated: int  # |A|
+    excluded_language: int  # |A| - |L|
+    after_language: int  # |L|
+    excluded_title_abstract: int  # exclude decisions in L (ADR 0007)
+    unsure_title_abstract: int  # ADR 0007
+    retrieved_fulltext: int  # |M_abs|
+    excluded_fulltext: dict[str, int]  # by reason_code
+    unsure_fulltext: int  # ADR 0007
+    included: int  # |C| = |M_full|
+
     def assert_consistent(self) -> None: ...
 ```
 
