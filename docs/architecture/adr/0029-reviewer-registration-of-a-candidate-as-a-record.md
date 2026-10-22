@@ -196,6 +196,11 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 
 **Keep `write_event` as the only write and check rules before calling it.** Rejected. The check would run outside the lock, so two concurrent registrations could both pass the one-active-registration rule. §8 keeps the check and the append in one locked section.
 
+> **Note added 2026-10-22 (this note does not change the record above).** ADR 0032 and ADR 0033 were written and accepted together on
+> 2026-10-22 in PR #150. The statements "to be written" (lines 202, 203, 230 and 239) and "accepted separately, each on its own merge"
+> (line 243) are historical. See [ADR 0032](0032-registered-records-table-and-classification-map.md) and
+> [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md).
+
 ## Consequences
 
 1. **Existing projects are unchanged.** A project with no registration events has `registered = 0`, no `supersede` events, and no orphaned decisions. Its numbers, its existing table checksums on the reference fixture, and `numbers.json` are unchanged.
