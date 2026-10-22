@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   count in `FlowCounts`. ADR 0033 supersedes ADR 0007 in full. These are decisions, not
   implementations: the registration code, the `registered_records` table and the
   `FlowCounts.registered` field are not built yet.
-- `graphify-out/` and `*.env` files are ignored by git (#135, #137).
+- `graphify-out/` is ignored by git (#137).
 
 ## [1.0.0] — 2026-10-20
 
