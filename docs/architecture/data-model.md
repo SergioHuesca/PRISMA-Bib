@@ -365,7 +365,7 @@ This is tested in Stage 1's acceptance criteria (BUILD_PLAN §Stage 1 line 726):
 
 ## Stage 3 — The Normalised Store (Layer 1)
 
-Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duckdb`) derived from Layer 0's sealed run directories. It contains 11 tables, frozen in the BUILD_PLAN schema (lines 847–879) and never hand-edited. This section describes the ER model, the rationale for key design choices, and the frozen read-facing API.
+Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duckdb`) derived from Layer 0's sealed run directories. It contains the 11 tables frozen in the BUILD_PLAN schema (lines 847–879), the tables that later ADRs added (for example `abstract_runs`, `record_subject_area_coverage` and, empty until registrations exist, `registered_records`, [ADR 0032](adr/0032-registered-records-table-and-classification-map.md)), and the `records_all` view; it is never hand-edited. This section describes the ER model, the rationale for key design choices, and the frozen read-facing API.
 
 ### Layer 1 is reconstructible and disposable
 
@@ -377,7 +377,7 @@ Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duck
 
 ### Entity-Relationship description
 
-The 11 tables are:
+The 11 tables frozen in the BUILD_PLAN are:
 
 #### Core entities
 
