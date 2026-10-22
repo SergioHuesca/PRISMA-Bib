@@ -300,3 +300,110 @@ class FullTextRunManifest(BaseModel):
     attempts_sha256: str
     client_version: str
     criteria_version: str
+
+
+class OpenAlexTitle(BaseModel):
+    """A title-search identifier: the title as asked and its publication year."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str
+    year: int
+
+
+class OpenAlexOutcome(BaseModel):
+    """What one identifier of one request returned (ADR 0031 Decision 4).
+
+    Attributes:
+        identifier: The normalised DOI, or the title and year.
+        outcome: ``value`` (found), ``not_found``, or ``refused`` (401/403,
+            only ever sealed in an opt-in run).
+        http_status: The HTTP status of the response that answered it.
+        openalex_id: The work's OpenAlex id for a ``value``, else ``None``.
+        absent_fields: The empty fields of a ``value`` work, among
+            ``abstract``, ``authors``, ``affiliations``, ``keywords``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    identifier: str | OpenAlexTitle
+    outcome: Literal["value", "not_found", "refused"]
+    http_status: int
+    openalex_id: str | None = None
+    absent_fields: list[str] = []
+
+
+class OpenAlexEntitlementContext(BaseModel):
+    """The OpenAlex form of the frozen "entitlement context" field (ADR 0031 Deviation 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    api_key_used: bool
+    fallback_opt_in: bool
+    refusal_status: Literal[401, 403] | None = None
+
+
+class OpenAlexRequest(BaseModel):
+    """One HTTP request of an OpenAlex run, and the one file that holds its response.
+
+    Attributes:
+        index: Request order; also the number in ``response-NNNN.jsonl``.
+        file: The response file, relative to the run directory.
+        sha256: Digest of the stored file's bytes.
+        encoding: ``verbatim`` (the body bytes plus a newline) or ``compact``
+            (the body held a line break; ``raw_sha256`` digests the body as
+            received).
+        raw_sha256: Digest of the body as received; set only when compact.
+        lookup: ``doi_batch``, ``doi_single`` or ``title_search``.
+        identifiers: What the request was asked for: normalised DOIs, or
+            title and year.
+        params: The query parameters as sent, minus ``api_key``.
+        api_view: The ``select`` string.
+        entitlement_context: Key use, opt-in, and any refusal status.
+        http_status: The response status (200, 401, 403 or 404).
+        retrieved_at: The real request time (UTC).
+        result_count: Works in ``results``; ``None`` when there is no list.
+        outcomes: One entry per identifier; empty for a batch 404, whose
+            identifiers are re-asked singly.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int
+    file: str
+    sha256: str
+    encoding: Literal["verbatim", "compact"]
+    raw_sha256: str | None = None
+    lookup: Literal["doi_batch", "doi_single", "title_search"]
+    identifiers: list[str] | list[OpenAlexTitle]
+    params: dict[str, str]
+    api_view: str
+    entitlement_context: OpenAlexEntitlementContext
+    http_status: int
+    retrieved_at: datetime
+    result_count: int | None
+    outcomes: list[OpenAlexOutcome]
+
+
+class OpenAlexRunManifest(BaseModel):
+    """The manifest for one OpenAlex Layer 0 run (ADR 0031 Decision 3).
+
+    Written to ``raw/openalex/<run_id>/manifest.json``; its presence is the
+    seal. It has no ``total_results``: OpenAlex identifies no records
+    (BUILD_PLAN S02-AC5). ``api_key_used`` is a boolean, never the key.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    started_at: datetime
+    finished_at: datetime
+    endpoint: str
+    fallback_opt_in: bool
+    api_key_used: bool
+    refresh: bool = False
+    requests: list[OpenAlexRequest]
+    payload_files: list[str]
+    payload_sha256: str
+    client_version: str
+    criteria_version: str

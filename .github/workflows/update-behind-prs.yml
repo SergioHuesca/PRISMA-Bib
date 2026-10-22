@@ -1,4 +1,4 @@
-# Keep open PRs current with main after every squash-merge.
+# Keep PRs current with main, and merge a batch in order when the merge train is on.
 #
 # !! OWNER SETUP REQUIRED !!
 # Pushes made with the default GITHUB_TOKEN do NOT trigger new workflow runs, so updated
@@ -7,11 +7,44 @@
 # this repo only) and set two repo secrets: APP_CLIENT_ID (the App's Client ID, not the
 # numeric App ID; the owner must ADD this) and APP_PRIVATE_KEY. This workflow does not
 # create or store any secret. Until they exist, the token step fails the job.
+# The train also needs the label train:halted to exist (gh pr edit fails otherwise).
 #
-# An UNKNOWN PR is polled for ~60s, then skipped with a warning and a step-summary note
-# (the job does not fail), so it can stay BEHIND until the next push to main.
-# Any failed update fails the job at the end.
-# It never merges, closes, approves, or edits PR contents.
+# A failed update or comment is reported as a warning and a step-summary note; it does not
+# fail the run. A failed listing call or token step still fails the job, so real faults stay
+# visible. Update-only mode never merges, closes, approves, or edits PR contents.
+#
+# Triggers: push to main (a merge changes the queue); workflow_run of CI or Docs completing
+# (a PR's checks finishing is what ends "CI running", so the queue can change; Docs is a
+# separate workflow whose checks are in the same rollup, so it needs its own trigger or a
+# head waiting on Docs would stall); workflow_dispatch.
+# No trigger here checks out or runs PR-controlled code, and the App token never sees one.
+#
+# MERGE TRAIN (scripts/train_step.py). Off unless the repository variable MERGE_TRAIN is "on".
+# A batch is the open PRs labelled train:1, train:2, ... (drafts until the batch starts).
+# Starting = set MERGE_TRAIN to on and dispatch this workflow. A run acts only on the train
+# head, the lowest N among open PRs. Its single label reviewed:<40 hex> names the commit a
+# reviewer approved. scripts/train_verify_head.py decides whether the head is that commit plus
+# only verified update merges of main (byte-exact diffs, no other change, no overlap with the
+# PR's own edits). The head is squash-merged, pinned to its head sha, only when it is not a
+# draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED or NEUTRAL with none queued
+# or running; and the verification passed. No batch PR may sit below the head closed unmerged
+# (the closed list is checked). Lists are capped at 100; a full list halts.
+# Otherwise: BEHIND with no running check -> update-branch; running checks -> wait; anything
+# unexpected -> halt: label the head train:halted and post one comment with the reason. While
+# any open PR has train:halted, every run does nothing. Resume = fix it, remove the label,
+# dispatch. The train never skips a PR, never merges out of order, and never retries a failed
+# check. Full rules: docs/how-to/merge-train.md.
+#
+# Update-only mode (no train:N labels, or MERGE_TRAIN not on). Rule (scripts/next_pr_to_update.py):
+# only the head of the queue is ever updated. The head is the lowest-numbered open PR targeting
+# main, drafts included (INCLUDE_DRAFTS in the script), skipping PRs whose mergeStateStatus is
+# DIRTY (conflicts a bot update cannot fix). The head is updated if and only if it is BEHIND and
+# has no queued or in-progress checks.
+#
+# Starvation and halt caveats: while a train runs, non-train PRs are not updated. A permanently
+# red, stalled, abandoned-draft or CLEAN-but-unmerged PR at the head blocks update-only mode
+# for the others until it merges or is closed. DIRTY PRs are skipped, so only non-conflicting
+# PRs can block. A train head whose checks never report stays WAIT until a re-trigger.
 
 name: Update behind PRs
 
@@ -19,6 +52,9 @@ on:
   push:
     branches:
       - main
+  workflow_run:
+    workflows: ["CI", "Docs"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -31,10 +67,18 @@ jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
-      # actions/create-github-app-token v3.3.0
+      # No `ref:` on purpose. On workflow_run the default checkout is the default branch
+      # (main), so the scripts and this workflow are main's code. Passing the triggering
+      # run's ref would check out PR-controlled code while the App token is in scope.
+      # fetch-depth 0: the verification walks main's history and merge bases.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # actions/create-github-app-token v3.3.0. Only these two permissions: the App was not
+      # granted others, and requesting them would fail this step.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         id: app
         with:
@@ -42,31 +86,92 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - name: Update BEHIND pull requests
+      - name: Decide and act (merge train or update-only)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          MERGE_TRAIN: ${{ vars.MERGE_TRAIN }}
         run: |
-          failed=0
-          for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
-            # mergeStateStatus is computed lazily: poll UNKNOWN up to ~60s (6 x 10s).
+          prs="$RUNNER_TEMP/prs.json"
+          gh pr list --base main --state open --limit 100 \
+            --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup > "$prs"
+          # Closed-unmerged PRs: a closed train:K below the head means the batch is broken.
+          # Merged ones are excluded by the search. Passed to decide; a missing file halts.
+          closed="$RUNNER_TEMP/closed.json"
+          gh pr list --base main --state closed --search "is:unmerged" --limit 100 \
+            --json number,labels,mergedAt > "$closed"
+          # mergeStateStatus is computed lazily: re-read each UNKNOWN PR, up to ~60s (6 x 10s).
+          for n in $(jq -r '.[] | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
             for i in 1 2 3 4 5 6; do
-              s=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus)
-              [ "$s" != "UNKNOWN" ] && break
+              rec=$(gh pr view "$n" --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup)
+              if [ "$(jq -r .mergeStateStatus <<<"$rec")" != UNKNOWN ]; then break; fi
               echo "PR #$n: UNKNOWN, retry $i/6"; sleep 10
             done
-            if [ "$s" = "UNKNOWN" ]; then
-              echo "::warning::PR #$n still UNKNOWN after 60s; needs a manual check"
-              echo "PR #$n: still UNKNOWN, needs a manual check" >> "$GITHUB_STEP_SUMMARY"
-              continue
+            if [ "$(jq -r .mergeStateStatus <<<"$rec")" = UNKNOWN ]; then
+              echo "::warning::PR #$n still UNKNOWN after 60s; the decision halts it if it is the head"
+              echo "PR #$n: still UNKNOWN after 60s; needs a manual check" >> "$GITHUB_STEP_SUMMARY"
             fi
-            if [ "$s" != "BEHIND" ]; then echo "PR #$n: $s, skipping"; continue; fi
-            echo "PR #$n: BEHIND, updating"
-            if gh pr update-branch "$n" &&
-              gh pr comment "$n" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
-              :
-            else
-              echo "::error::PR #$n: update or comment failed"; failed=1
-            fi
+            jq --argjson r "$rec" 'map(if .number == $r.number then $r else . end)' "$prs" > "$prs.new" && mv "$prs.new" "$prs"
           done
-          exit "$failed"
+
+          # The train head's verification. PR content is fetched as data and never checked out
+          # or executed. A failed fetch or verify leaves the head check out, and decide halts it.
+          verify=()
+          cand=$(python3 scripts/train_step.py candidate --merge-train "${MERGE_TRAIN:-off}" < "$prs")
+          if [ -n "$cand" ]; then
+            read -r n sha rsha <<<"$cand"
+            vout="$RUNNER_TEMP/verify.json"
+            if git fetch --no-tags --quiet origin main &&
+               git fetch --no-tags --quiet origin "pull/$n/head" &&
+               python3 scripts/train_verify_head.py "$rsha" "$sha" --main origin/main > "$vout"; then
+              verify=(--head-pr "$n" --head-check "$vout")
+            else
+              echo "::warning::PR #$n: head verification did not run; the decision halts it"
+            fi
+          fi
+
+          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" "${verify[@]}" < "$prs")
+          action=$(jq -r .action <<<"$out")
+          pr=$(jq -r '.pr // empty' <<<"$out")
+          sha=$(jq -r '.head_sha // empty' <<<"$out")
+          mode=$(jq -r .mode <<<"$out")
+          reason=$(jq -r .reason <<<"$out")
+          echo "$action (mode $mode): $reason"
+          echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+
+          # A halt labels the head and says why. The reason is sanitised by the script, and it
+          # is passed quoted.
+          halt() {
+            gh pr edit "$pr" --add-label train:halted &&
+              gh pr comment "$pr" --body "Merge train halted: $1. Fix it, remove the train:halted label, then dispatch the update-behind workflow to resume."
+          }
+          case "$action" in
+            halt)
+              halt "$reason" || { echo "::error::PR #$pr: could not add train:halted or comment"; exit 1; }
+              ;;
+            merge)
+              if gh pr merge "$pr" --squash --match-head-commit "$sha"; then
+                echo "Merged #$pr (train head, head $sha)"
+              else
+                halt "the squash merge of this head failed" || true
+                echo "::error::PR #$pr: squash merge failed; the train is halted"
+                exit 1
+              fi
+              ;;
+            update)
+              if [ "$mode" = train ]; then
+                note="Merge train updated this branch from main at ${GITHUB_SHA}. The head is verified against its reviewed commit before merge."
+              else
+                note="Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."
+              fi
+              if gh pr update-branch "$pr" && gh pr comment "$pr" --body "$note"; then
+                :
+              else
+                echo "::warning::PR #$pr: the update or the comment failed; if the update failed it stays BEHIND until the next trigger, if only the comment failed the branch is already updated"
+                echo "PR #$pr: the update or the comment failed (check whether the branch was updated)" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              ;;
+            *)
+              # none or wait: nothing to do this run; the next trigger re-evaluates.
+              ;;
+          esac
