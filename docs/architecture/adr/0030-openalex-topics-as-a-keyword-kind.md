@@ -305,15 +305,15 @@ Decided by the owner, and recorded above as final:
 - no topic score is stored, and no score column is added (Decision 1); and
 - the narrowing of ADR 0027 Decision 3 to Scopus-only stores (Decision 8).
 
-No open questions remain for this record. ADR 0031, which specifies the OpenAlex capture, is in PR #146
-and is not yet on `main`.
+No open questions remain for this record. [ADR 0031](0031-openalex-responses-are-layer0-runs.md),
+which specifies the OpenAlex capture, is accepted and on `main`.
 
 ## Related decisions
 
 - [ADR 0011](0011-abstract-retrieval-for-subject-areas.md): a Layer 0 run kind nested under `raw/`
   and skipped by name, the precedent ADR 0031 follows.
-- ADR 0031: the OpenAlex Layer 0 capture, which Decision 6 names and which this record does not write.
-  It is in PR #146 and is not yet on `main`, so it is not linked.
+- [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the OpenAlex Layer 0 capture, which
+  Decision 6 names and which this record does not write.
 - [ADR 0022](0022-the-analysis-result-contract-and-its-provenance.md): `params` is part of the
   analysis result, which is why the topic network records its `kind` as a scalar.
 - [ADR 0027](0027-what-v1-0-0-claims.md): the cross-runner criterion that Decision 3 of this record
