@@ -17,7 +17,9 @@ _ADR = (
     Path(__file__).resolve().parents[2]
     / "docs/architecture/adr/0032-registered-records-table-and-classification-map.md"
 )
-_PINNED_SHA256 = "801149ebb3c2b6114a54034909f4719d6ab179ba0eceaa53b0f4fa89a03d20f1"
+_PINNED_SHA256 = (
+    "801149ebb3c2b6114a54034909f4719d6ab179ba0eceaa53b0f4fa89a03d20f1"  # pragma: allowlist secret
+)
 
 
 def _adr_text(start: str, end: str) -> str:
@@ -40,9 +42,52 @@ def test_subfield_table__id_and_code__equal_per_row() -> None:
 
 
 @pytest.mark.unit
-def test_subfield_table__qualifier_rows__carry_asjc_name_and_exact_rows_do_not() -> None:
-    for r in m.SUBFIELD_TO_ASJC.values():
-        assert (r.asjc_name is None) == r.exact
+def test_subfield_table__every_row__exposes_asjc_name() -> None:
+    assert all(r.asjc_name for r in m.SUBFIELD_TO_ASJC.values())
+    assert m.subfield_to_asjc(1702).asjc_name == "Artificial Intelligence"
+    assert m.subfield_to_asjc(1204).asjc_name == "Archeology (arts and humanities)"
+
+
+@pytest.mark.unit
+def test_map_provenance__returns_version_and_pinned_digest() -> None:
+    p = m.map_provenance()
+    assert (p.subject_map_version, p.subject_map_sha256) == ("1", _PINNED_SHA256)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://evil/x/1702",
+        "https://evil.org/subfields/1702",
+        "http://openalex.org/subfields/1702",
+        "https://openalex.org/subfields/1702/x",
+        "https://openalex.org/works/1702",
+        "1702/",
+        "",
+        "17x2",
+        "abc",
+        -1702,
+        "-1702",
+        True,
+        "１７０２",  # noqa: RUF001 (fullwidth digits)
+    ],
+)
+def test_subfield_to_asjc__malformed_or_foreign__is_refused(raw: str | int) -> None:
+    with pytest.raises(m.ClassificationRefusal) as exc:
+        m.subfield_to_asjc(raw)
+    assert str(exc.value) == f"subfield {raw!r} is not in classification map version 1"
+
+
+@pytest.mark.unit
+def test_subfield_to_asjc__url_with_trailing_slash__maps() -> None:
+    assert m.subfield_to_asjc("https://openalex.org/subfields/1702/").code == "1702"
+
+
+@pytest.mark.unit
+def test_primary_topic_to_subject_area__foreign_prefix__is_refused() -> None:
+    with pytest.raises(m.ClassificationRefusal):
+        m.primary_topic_to_subject_area({"subfield": {"id": "https://evil/x/1702"}})
 
 
 @pytest.mark.unit
@@ -153,7 +198,9 @@ def test_source_type_to_venue_type__outside_table_or_missing__is_refused(bad: st
 @pytest.mark.unit
 def test_primary_topic_to_subject_area__uses_primary_topic_subfield() -> None:
     topic = {"id": "T1", "subfield": {"id": "https://openalex.org/subfields/1702"}}
-    assert m.primary_topic_to_subject_area(topic) == m.SubjectArea("1702", True, None)
+    assert m.primary_topic_to_subject_area(topic) == m.SubjectArea(
+        "1702", True, "Artificial Intelligence"
+    )
 
 
 @pytest.mark.unit

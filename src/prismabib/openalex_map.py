@@ -38,13 +38,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from typing import Any, Final, NamedTuple
 
 from prismabib.errors import PrismabibError
 
 MAP_VERSION: Final = "1"
-MAP_SHA256: Final = "801149ebb3c2b6114a54034909f4719d6ab179ba0eceaa53b0f4fa89a03d20f1"
+MAP_SHA256: Final = (
+    "801149ebb3c2b6114a54034909f4719d6ab179ba0eceaa53b0f4fa89a03d20f1"  # pragma: allowlist secret
+)
 
 
 class ClassificationRefusal(PrismabibError):
@@ -56,7 +59,7 @@ class SubjectArea(NamedTuple):
 
     code: str
     exact: bool
-    asjc_name: str | None  # the ASJC spelling, set only for ``qualifier`` rows
+    asjc_name: str  # the ASJC spelling (for exact rows, equal to the OpenAlex name)
 
 
 _SUBFIELD_ROWS: Final[tuple[tuple[str, str, str, bool, str | None], ...]] = (
@@ -359,10 +362,29 @@ _SOURCE_ROWS: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
+# For ``exact`` rows the ASJC name equals the OpenAlex name by the ADR's definition of
+# ``exact`` (asjc.py holds no names), so it is taken from the row.
 SUBFIELD_TO_ASJC: Final[Mapping[str, SubjectArea]] = {
-    sid: SubjectArea(code, exact, asjc_name)
-    for sid, _name, code, exact, asjc_name in _SUBFIELD_ROWS
+    sid: SubjectArea(code, exact, asjc_name or name)
+    for sid, name, code, exact, asjc_name in _SUBFIELD_ROWS
 }
+_SUBFIELD_ID: Final = re.compile(
+    r"(?:https://openalex\.org/subfields/(?P<url>[0-9]+)/?|(?P<bare>[0-9]+))", re.ASCII
+)
+
+
+class MapProvenance(NamedTuple):
+    """The ``subject_map_version`` / ``subject_map_sha256`` pair of ADR 0029 Decision 2."""
+
+    subject_map_version: str
+    subject_map_sha256: str
+
+
+def map_provenance() -> MapProvenance:
+    """Provenance fields a ``register`` event records."""
+    return MapProvenance(MAP_VERSION, MAP_SHA256)
+
+
 TYPE_TO_DOC_TYPE: Final[Mapping[str, str | None]] = dict(_TYPE_ROWS)
 SOURCE_TYPE_TO_VENUE_TYPE: Final[Mapping[str, str]] = dict(_SOURCE_ROWS)
 
@@ -394,13 +416,14 @@ def _refuse(what: str, value: object) -> ClassificationRefusal:
 def subfield_to_asjc(subfield_id: str | int) -> SubjectArea:
     """Map an OpenAlex subfield id to its ASJC code.
 
-    Accepts ``1204``, ``"1204"`` or the API's ``https://openalex.org/subfields/1204``.
+    Accepts only a bare id (``1204`` or ``"1204"``) or exactly
+    ``https://openalex.org/subfields/1204`` (optional trailing slash).
     """
-    key = str(subfield_id).rstrip("/").rsplit("/", 1)[-1]
-    try:
-        return SUBFIELD_TO_ASJC[key]
-    except KeyError:
-        raise _refuse("subfield", subfield_id) from None
+    m = None if isinstance(subfield_id, bool) else _SUBFIELD_ID.fullmatch(str(subfield_id))
+    key = m and (m["url"] or m["bare"])
+    if not key or key not in SUBFIELD_TO_ASJC:
+        raise _refuse("subfield", subfield_id)
+    return SUBFIELD_TO_ASJC[key]
 
 
 def work_type_to_doc_type(work_type: str) -> str:
