@@ -62,6 +62,13 @@ The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptanc
   - `register`, which creates a record. It carries `reviewer`, `record_id`, `candidate_id` (the id from ADR 0028 Decision 5), `match_rule` (`doi`, `title_year` or `near_confirmed`), `source_level` (always 4), `source_payload_ref`, `source_payload_sha256`, `doi` (required), `subject_map_version` and `subject_map_sha256` (the version and checksum of the OpenAlex-topic-to-ASJC mapping table in ADR 0032 that gave the record its subject area);
   - `reverse`, which removes a record it names. It carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
   - `supersede`, which removes a record it names, written only by the automatic step in §6. It carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule` (`doi` or `title_year`), and `actor` (`system`).
+> **Note added 2026-10-22 (ADR 0032 and ADR 0033; this note does not change the bullets above).** The `register` bullet's
+> "OpenAlex-topic-to-ASJC mapping table" is narrowed by ADR 0032 to a mapping from OpenAlex subfield to ASJC code, by owner
+> decision of 2026-10-22. The `reverse` bullet's "mandatory `reason`" is narrowed by ADR 0033 (Decision 4) to a closed set of
+> codes (`wrong_doi`, `wrong_title`, `duplicate_of_scopus`, `not_eligible`, `other`), with a required `note` when the reason is
+> `other`, by the same owner decision. Both narrowings are deviations under BUILD_PLAN §2.6 (line 301), listed in ADR 0032 and
+> ADR 0033.
+
 - **Why `supersede` is a separate kind, not a second `register`.** A `register` event creates a record, and a `supersede` event removes one. A record is created by a human's choice, and it is removed by a reversal or by a Scopus match. Writing removal as a second `register` would mix the two meanings in one kind, and every reader of `register` would have to check which one it was. The two kinds are kept apart so that the count of `register` events is the count of records ever created, and the count of active registrations is that count less the removals.
 - `source_payload_ref` is a Layer 0 `PayloadRef` (the type Stage 3 uses for `source_payload_ref`). Because only level 4 is accepted, it always names an OpenAlex payload in Layer 0. A manual payload is a Layer 2 event, not a Layer 0 payload, so it has no `PayloadRef` into Layer 0 and never reaches this field.
 - The `registered_records` table that holds these records in Layer 1 is specified by ADR 0032. The loader derives it, as the only writer of Layer 1 (ADR 0028 Decision 3), by folding this file and reading the referenced payloads.

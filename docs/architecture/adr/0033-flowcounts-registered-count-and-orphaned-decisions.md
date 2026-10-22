@@ -116,7 +116,7 @@ Three counts are reported with the diagram but are not `FlowCounts` fields:
 - **`numbers.json` keys.** `identified`, `registered` and the resolved-unregistered count are separate keys. No export puts
   `registered` into a key named `identified` (ADR 0029 §3). Every function named `identified` returns the Scopus value alone.
 
-**`numbers.json` always carries `registered`.** A Scopus-only project writes `"registered": 0`. This is an owner decision. The key
+**`numbers.json` always carries `registered`.** A Scopus-only project writes `"registered": 0`. This is an owner decision, taken 2026-10-22. The key
 is never omitted, because a key whose presence depends on the data reads "absent" where it means "zero". ADR 0028 Resolved item 6 rejects
 the same confusion for field values, and the Alternatives below reject the data-dependent key.
 
@@ -153,7 +153,7 @@ same snapshot, and it does not change which decisions are counted.
 
 ### 4. Reversal and supersession
 
-**Reversal (`reverse`, ADR 0029 §7).** `reason` is one of a closed set, validated on write (owner decision): `wrong_doi`,
+**Reversal (`reverse`, ADR 0029 §7).** `reason` is one of a closed set, validated on write (owner decision, 2026-10-22): `wrong_doi`,
 `wrong_title`, `duplicate_of_scopus`, `not_eligible`, or `other`. The writer refuses any other value, and `other` requires a
 non-empty note. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
 orphaned and are reported. `registered` drops by one. If the paper had reached `included`, `included` drops by one, and the diagram shows
@@ -219,17 +219,36 @@ record, so the restated contract is the one that the code and its tests read.
    methods must state it.
 5. Orphaned decisions appear in the methods text, so a reader can see that a reversal or supersession happened after screening began.
 6. `AppendOnlyLog` gains `append_if` in ADR 0029 §8, and a reversal or supersession uses it. This record does not change that mechanism.
+7. The docstring of `compute_flow_counts` (`prisma/flow.py` lines 474-485) says that `after_automated` is derived from Layer 1's
+   `records` rows and that equation 1 is a cross-check. Both statements go stale once registrations join `S_raw`. The
+   implementation PR updates that docstring.
+
+## Deviations from the frozen contract
+
+Each deviation rests on the same basis: the project's ADR rule, BUILD_PLAN §2.6 (line 301). Each needs the owner's acceptance
+under this record.
+
+1. **The `FlowCounts` contract (BUILD_PLAN lines 976-993, as amended by ADR 0007, 0013 and 0016).** Equation 1 gains the
+   `registered` term, and ADR 0007 is superseded in full (Status). Basis: BUILD_PLAN §2.6 (line 301).
+2. **ADR 0029 §2, the `reverse` reason.** ADR 0029 §2 makes `reason` mandatory and leaves its content open. This record narrows
+   it to the closed set in Decision 4 and adds a `note`, required when the reason is `other`. ADR 0029 is not edited in its body.
+   A dated pointer note is added under its §2 reverse rule. Basis: BUILD_PLAN §2.6 (line 301).
+3. **The shape of `numbers.json`.** The `registered` key is always written, so every project's file gains a key (Consequence 2).
+   The values of existing keys are unchanged for a project without registrations. Basis: BUILD_PLAN §2.6 (line 301).
+4. **The `corpus.*` scalars and the venue tables.** `corpus.size`, `corpus.year_min`, `corpus.year_max` and `venues.*` count
+   registrations (owner decision A, 2026-10-22). This changes what those keys mean for a project with registrations. Basis:
+   BUILD_PLAN §2.6 (line 301).
 
 ## Open questions for the owner
 
-None. The owner has decided the reason-code set (Decision 4), the `corpus.*` counts (Decision 2), and the `numbers.json` key
-(§2). The acceptance of this record is decided by the dedicated review named in Status.
+None. The owner has decided the reason-code set (Decision 4), the `corpus.*` counts (§2), and the `numbers.json` key
+(§2), each on 2026-10-22. The acceptance of this record is decided by the dedicated review named in Status.
 
 ## Verification the implementation must include
 
 1. `test_flow_counts__registrations_absent__identity_unchanged`: with no registrations, every field equals its value before this change,
    except `registered = 0`.
-2. `test_flow_counts__one_registration__identity_closes_with_registered_term`: the worked check in Decision 1, with the term included.
+2. `test_flow_counts__one_registration__identity_closes_with_registered_term`: the worked check in §1, with the term included.
 3. `test_flow_counts__negative_registered__assert_consistent_raises`: the precondition in Decision 1 fires.
 4. `test_flow_counts__registered_ids_in_S_raw__equal_registered`: the snapshot-consistency check in Decision 1. `test_raw_set__registered_id__is_in_S_raw` asserts that `raw_set` returns the registered id, so the automated filters see it.
 5. `test_orphaned_decisions__reversed_registration__reported_not_folded`: a current decision on a reversed registration is listed by
