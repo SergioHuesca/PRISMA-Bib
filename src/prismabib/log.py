@@ -394,6 +394,7 @@ _LOCK_BACKEND: _LockBackend = _select_lock_backend()
 
 
 TEvent = TypeVar("TEvent", bound=BaseModel)
+R = TypeVar("R")
 
 
 class AppendOnlyLog(Generic[TEvent]):
@@ -544,7 +545,7 @@ class AppendOnlyLog(Generic[TEvent]):
         """
         self.append_if(event, lambda _existing: None)
 
-    def append_if(self, event: TEvent, check: Callable[[Sequence[TEvent]], None]) -> None:
+    def append_if(self, event: TEvent, check: Callable[[Sequence[TEvent]], R]) -> R:
         """Run ``check`` on the confirmed events, then append ``event``, under one lock.
 
         ADR 0029 section 8. The lock is not re-entrant, so a caller cannot
@@ -560,12 +561,18 @@ class AppendOnlyLog(Generic[TEvent]):
                 nothing is written. It must not touch this log (the lock
                 is held).
 
+        Returns:
+            Whatever ``check`` returned, handed back once the event is
+            durably appended (so a caller can, for example, return the
+            record the check resolved). Nothing is returned when ``check``
+            raises.
+
         Raises:
             LogError: As :meth:`write_event`.
         """
         with self._locked("exclusive") as fd:
             confirmed, existing = self._verify_and_load_locked(fd)
-            check(existing)
+            result = check(existing)
             new_id = self._event_id(event)
             if new_id in {self._event_id(existing_event) for existing_event in existing}:
                 # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
@@ -579,6 +586,7 @@ class AppendOnlyLog(Generic[TEvent]):
             os.write(fd, line_bytes)
             os.fsync(fd)
             self._write_checksum_sidecar(confirmed + line_bytes)
+            return result
 
     # -- locking and low-level I/O --------------------------------------------
 

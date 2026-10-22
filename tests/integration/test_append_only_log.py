@@ -8,6 +8,8 @@ The decision-log behaviour of the shared machinery is covered in
 from __future__ import annotations
 
 import hashlib
+import subprocess
+import sys
 import threading
 from collections.abc import Sequence
 from pathlib import Path
@@ -134,4 +136,75 @@ def test_append_if__two_handles_same_candidate__exactly_one_event_is_written(
         thread.join(timeout=60)
 
     assert sorted(outcomes) == ["appended", "refused"]
+    assert len(_log(path).load()) == 1
+
+
+@pytest.mark.integration
+def test_append_if__check_returns_a_value__the_value_is_handed_back(tmp_path: Path) -> None:
+    log = _log(tmp_path / "registrations.jsonl")
+    log.write_event(_Reg(event_id="e1", candidate_id="c1"))
+
+    result = log.append_if(_Reg(event_id="e2", candidate_id="c2"), lambda existing: len(existing))
+
+    assert (result, len(log.load())) == (1, 2)
+
+
+_CHILD = """
+import sys, time
+from pathlib import Path
+from pydantic import BaseModel
+from prismabib.log import AppendOnlyLog
+
+
+class Reg(BaseModel):
+    schema_version: int = 1
+    event_id: str
+    candidate_id: str
+
+
+path, go, event_id = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+log = AppendOnlyLog(
+    path, model=Reg, current_schema_version=1, event_id=lambda e: e.event_id,
+    noun="registration", event_description="registration", recovery_hint="x",
+    writer_name="x", labour="x",
+)
+
+
+def refuse_duplicate(existing):
+    if any(e.candidate_id == "c1" for e in existing):
+        raise ValueError("already registered")
+
+
+while not go.exists():
+    time.sleep(0.001)
+try:
+    log.append_if(Reg(event_id=event_id, candidate_id="c1"), refuse_duplicate)
+except ValueError:
+    print("refused")
+else:
+    print("appended")
+"""
+
+
+@pytest.mark.integration
+def test_append_if__two_processes_same_candidate__exactly_one_event_is_written(
+    tmp_path: Path,
+) -> None:
+    """The same race as the thread test, across real processes (ADR 0029 V5)."""
+    path, go = tmp_path / "registrations.jsonl", tmp_path / "go"
+    children = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CHILD, str(path), str(go), event_id],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        for event_id in ("e1", "e2")
+    ]
+    go.touch()
+    outputs = [child.communicate(timeout=120)[0].strip() for child in children]
+
+    assert (sorted(outputs), [child.returncode for child in children]) == (
+        ["appended", "refused"],
+        [0, 0],
+    )
     assert len(_log(path).load()) == 1

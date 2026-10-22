@@ -345,7 +345,7 @@ reports as green.
 
 BUILD_PLAN §5 risk 12 names the hazard: *high coverage with weak assertions — tests that
 execute code without checking it.* Likelihood high, impact high. The coverage gate on
-`prisma/engine.py`, `prisma/log.py`, and `prisma/flow.py` is 100% line **and** 100% branch,
+`prisma/engine.py`, `prisma/log.py`, `log.py` (the append-only machinery moved there by ADR 0029 §8), and `prisma/flow.py` is 100% line **and** 100% branch,
 which sounds absolute and is not: a test that calls `compute_flow_counts()` and asserts the
 result is not `None` covers every line in the module and asserts nothing worth knowing.
 
@@ -444,7 +444,7 @@ documented equivalence — never a weaker suite.
 
 ## Testing a platform you do not have (Phase 0b+)
 
-`prisma/log.py` locks `decisions.jsonl` through one of two backends, chosen on
+`log.py` (moved from `prisma/log.py` by ADR 0029 §8) locks `decisions.jsonl` through one of two backends, chosen on
 `sys.platform`: `fcntl.flock` on POSIX, `msvcrt.locking` on Windows (ADR 0010). Every
 routine CI job and every developer machine on this project is POSIX, so the Windows
 backend needs a way to be exercised on a machine that has no `msvcrt`.
@@ -509,7 +509,7 @@ Coverage is a floor, not a goal. These gates are enforced in CI:
 
 | Path | Line | Branch | Rationale |
 | --- | --- | --- | --- |
-| `prisma/engine.py`, `prisma/log.py`, `prisma/flow.py` | 100% | **100%** | Every number derives from these |
+| `prisma/engine.py`, `prisma/log.py`, `log.py`, `prisma/flow.py` | 100% | **100%** | Every number derives from these |
 | `store/`, `taxonomy/` | ≥ 95% | ≥ 90% | Silent miscounts originate here |
 | `bibliometrics/`, `report/` | ≥ 90% | — | Arithmetic |
 | `sources/`, `fulltext/` | ≥ 85% | — | I/O-heavy; contract tests carry weight |

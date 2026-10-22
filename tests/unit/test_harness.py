@@ -108,6 +108,8 @@ def test_coverage_config__gates__match_the_build_plan() -> None:
         "global": {"line": 85},
         "src/prismabib/prisma/engine.py": {"line": 100, "branch": 100},
         "src/prismabib/prisma/log.py": {"line": 100, "branch": 100},
+        # Moved from prisma/log.py by ADR 0029 section 8 (BUILD_PLAN stays frozen).
+        "src/prismabib/log.py": {"line": 100, "branch": 100},
         "src/prismabib/prisma/flow.py": {"line": 100, "branch": 100},
         "src/prismabib/store": {"line": 95, "branch": 90},
         "src/prismabib/taxonomy": {"line": 95, "branch": 90},

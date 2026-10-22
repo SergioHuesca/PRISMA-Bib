@@ -660,7 +660,7 @@ class Project:
         ADR 0023 Consequence 2: the one taxonomy artefact this stage produces
         that cannot be recomputed from ``(corpus, rule files)`` alone, so it
         gets the same append-only, checksum-sidecar treatment as
-        :attr:`decisions_path` (via :class:`~prismabib.prisma.log.AppendOnlyLog`,
+        :attr:`decisions_path` (via :class:`~prismabib.log.AppendOnlyLog`,
         reused rather than reimplemented) and the same ``.gitignore``
         allowlisting.
 

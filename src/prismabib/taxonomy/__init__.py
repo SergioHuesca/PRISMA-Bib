@@ -15,7 +15,7 @@ command in this stage, and none of the five modules below imports
   Decision 1: assignments are computed, never stored).
 - :mod:`prismabib.taxonomy.overrides` -- the append-only human-override event
   log (ADR 0023 Decision 3; reuses
-  :class:`prismabib.prisma.log.AppendOnlyLog`, the same machinery
+  :class:`prismabib.log.AppendOnlyLog`, the same machinery
   ``decisions.jsonl`` uses).
 - :mod:`prismabib.taxonomy.review` -- the review priority queue and the
   coverage/audit report.
