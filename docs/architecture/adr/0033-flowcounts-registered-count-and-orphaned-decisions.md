@@ -6,17 +6,18 @@ Proposed — 2026-10-22.
 
 This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test (`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`)
 scans the ADR directory of whichever checkout runs it, and fails any ADR whose Status reads `Proposed`
-there. On this branch, this record and ADR 0032 fail that test by design. The owner accepts this record
-on merge by changing the line to `Accepted — <date>` in the pull request that enacts it, so `main` never
-holds `Proposed`.
+there. On this branch, this record and ADR 0032 fail that test by design.
+
+**Acceptance is decided by a dedicated reviewer, not by this draft.** The owner has asked for that review. This record
+stays `Proposed` through this revision. When the review passes, the Status line is changed to `Accepted — <date>` in
+PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
 
 This record depends on [ADR 0032](0032-registered-records-table-and-classification-map.md), which must be accepted
 first, because the registered records it counts come from the table and view that ADR 0032 specifies.
 
-The change to the `FlowCounts` contract is a Stage 4 deviation, governed by the project rule in `CLAUDE.md` that
-contracts need a new ADR (§2.6), as ADR 0029 (Context, "the spec clauses") relies on. BUILD_PLAN line 301 covers
-only §1.2, so it is not the basis. The contract is BUILD_PLAN lines 976-993 as amended by ADR 0007, ADR 0013 and
-ADR 0016.
+The change to the `FlowCounts` contract is a Stage 4 deviation. Its basis is the project's ADR rule, BUILD_PLAN §2.6
+(line 301), as ADR 0029 (Context, "the spec clauses") applies it to Stage 2 and Stage 3. The contract is BUILD_PLAN lines
+976-993 as amended by ADR 0007, ADR 0013 and ADR 0016.
 
 **This record supersedes [ADR 0007](0007-flow-counts-unsure-fields.md) in full.** ADR 0007's Decision says that
 further amending the `FlowCounts` contract requires a new ADR that supersedes it (ADR 0007, closing paragraph).
@@ -119,7 +120,14 @@ Three counts are reported with the diagram but are not `FlowCounts` fields:
 is never omitted, because a key whose presence depends on the data reads "absent" where it means "zero". ADR 0028 Resolved item 6 rejects
 the same confusion for field values, and the Alternatives below reject the data-dependent key.
 
-The change to `numbers.json` bytes is listed under Consequences. The values of every existing key are unchanged.
+The change to `numbers.json` bytes is listed under Consequences. The values of every existing key are unchanged for a project
+with no registrations.
+
+**Registrations in the corpus scalars (owner decision A).** `corpus.size`, `corpus.year_min` and `corpus.year_max` count Scopus
+and registered records together, and the venue tables count registrations under their `venue_name` (ADR 0032 Decision 1). Each
+registration is a record under ADR 0029, so this is the consequence of that status. The methods state the registered count beside
+those numbers, in one sentence: "N records, of which M are registrations from a manual Google Scholar search (ADR 0029)". The `registered`
+key in `numbers.json` is the same M, so the number is written once as data and once in the text.
 
 ### 3. Orphaned decisions: reported, not deleted, not re-attached
 
@@ -145,7 +153,9 @@ same snapshot, and it does not change which decisions are counted.
 
 ### 4. Reversal and supersession
 
-**Reversal (`reverse`, ADR 0029 §7).** The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
+**Reversal (`reverse`, ADR 0029 §7).** `reason` is one of a closed set, validated on write (owner decision): `wrong_doi`,
+`wrong_title`, `duplicate_of_scopus`, `not_eligible`, or `other`. The writer refuses any other value, and `other` requires a
+non-empty note. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
 orphaned and are reported. `registered` drops by one. If the paper had reached `included`, `included` drops by one, and the diagram shows
 that. A correction to a wrong DOI or title is a reversal followed by a new registration, which has a new `record_id` (ADR 0029 §4), so
 the old decisions are never reused.
@@ -212,10 +222,8 @@ record, so the restated contract is the one that the code and its tests read.
 
 ## Open questions for the owner
 
-1. **The reason on a reversal.** ADR 0029 §2 makes `reason` mandatory but does not say what it may contain. Options: (a) free text, non-empty;
-   (b) a fixed set of codes, such as `wrong_doi`, `wrong_title`, `duplicate_of_scopus`, `not_eligible`, and `other` with a free-text note,
-   validated against the codes the project declares, as BUILD_PLAN Stage 4 line 974 requires for `reason_code`. **Recommendation: (b).** The
-   reasons are reported in the methods, and free text cannot be counted or checked.
+None. The owner has decided the reason-code set (Decision 4), the `corpus.*` counts (Decision 2), and the `numbers.json` key
+(§2). The acceptance of this record is decided by the dedicated review named in Status.
 
 ## Verification the implementation must include
 
@@ -231,7 +239,9 @@ record, so the restated contract is the one that the code and its tests read.
 7. `test_numbers_json__registered_key__always_present`: a Scopus-only project writes `"registered": 0`, and `numbers_keys.json` lists it.
 8. Each test above is shown to fail against the current `FlowCounts` (no `registered` field), following the project rule that a test which
    covers a line proves nothing until it fails on the original defect.
-9. The suite runs under `pytest -n auto` and in a single process, and the golden re-baseline is named in the pull request.
+9. `test_reversal__reason_outside_closed_set__is_refused`: a `reverse` event with a reason outside the codes in Decision 4 is refused
+   on write, and `other` without a note is refused. The log's bytes and checksum are unchanged.
+10. The suite runs under `pytest -n auto` and in a single process, and the golden re-baseline is named in the pull request.
 
 ## Related decisions
 

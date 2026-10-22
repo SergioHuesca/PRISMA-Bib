@@ -6,14 +6,16 @@ Proposed — 2026-10-22.
 
 This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test (`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`)
 scans the ADR directory of whichever checkout runs it, and fails any ADR whose Status reads `Proposed`
-there. On this branch, this record and ADR 0033 fail that test by design. The owner accepts this record
-on merge by changing the line to `Accepted — <date>` in the pull request that enacts it, so `main` never
-holds `Proposed`.
+there. On this branch, this record and ADR 0033 fail that test by design.
 
-The deviations are listed under Consequences. Items (i) and (iii) to (vii) rest on the project rule in
-`CLAUDE.md` that contracts, schemas and acceptance criteria need a new ADR (§2.6), as
-[ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) (Context, "the spec clauses") relies on.
-Item (ii), the metadata source at BUILD_PLAN line 54, is a §1.2 item, so BUILD_PLAN line 301 applies to it.
+**Acceptance is decided by a dedicated reviewer, not by this draft.** The owner has asked for that review. This
+record stays `Proposed` through this revision. When the review passes, the Status line is changed to
+`Accepted — <date>` in PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
+
+The deviations are listed under Consequences. Every deviation rests on the same basis: the project's ADR rule,
+BUILD_PLAN §2.6 (line 301). That line names §1.2 explicitly, and item (ii), the metadata source at BUILD_PLAN line 54,
+is a §1.2 item. The other items apply the same rule to Stage 3 and Stage 4 contracts, as
+[ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) (Context, "the spec clauses") does.
 
 This record is the precondition that ADR 0029 names for registration code. The owner's answers to the
 earlier draft are stated here as decisions, not as open questions.
@@ -23,9 +25,10 @@ earlier draft are stated here as decisions, not as open questions.
 [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) lets a reviewer register a candidate
 resolved at level 4 (OpenAlex) as a record. Its "Split records" section states what this record must
 specify, and its Decision 2 names the `register` event fields that depend on it, `subject_map_version`
-and `subject_map_sha256`. Three inputs must be derivable for a registered record before it can enter
-`S_raw`: `doc_type`, `language`, and a subject area. ADR 0029 says a registered record without them
-"cannot be classified and must not enter S_raw".
+and `subject_map_sha256`. ADR 0029 (Split records) names three inputs that a registered record needs before it can enter
+`S_raw`: `doc_type`, `language`, and a subject area. ADR 0029 says a registered record without them "cannot be classified
+and must not enter S_raw". This record keeps `doc_type`, `venue_type` and the subject area, and drops `language` (Decision 2).
+That is a change to ADR 0029's requirement, listed as deviation (viii).
 
 **The frozen Stage 3 schema has no place for registered records.** BUILD_PLAN lines 853-873 define
 `records` (filled from Scopus payloads), `venues`, `subject_areas(record_id, area_code)` and `runs`. A
@@ -51,11 +54,13 @@ be recorded for it. `Corpus.records` (`store/load.py`, lines 2508-2537) runs `SE
 - `venue_type` on a Scopus record comes from `prism:aggregationType` through a closed set of
   `journal`, `conference`, `book` and `other` (`store/load.py`, lines 194 and 216-220).
 - `language` on a Scopus record is a language name such as `English`. `_passes_language` compares it
-  case-insensitively with `criteria.yaml` (`prisma/engine.py`, lines 357-377).
+  case-insensitively with `criteria.yaml` (`prisma/engine.py`, lines 357-377). In the two stores the owner measured,
+  every stored Scopus record has `language` NULL (1,293 of 1,293 and 1,864 of 1,864), so the language filter has never
+  excluded anything in them, and no language table can be checked against stored values.
 - `subject_areas.area_code` holds a four-digit ASJC code (`2202`), matched at grouping level through
   `asjc.area_abbrev` (`asjc.py`, line 74; [ADR 0017](0017-subject-areas-match-by-asjc-grouping.md)).
 - OpenAlex gives `type` (26 values, verified against the OpenAlex Work types page), `language` as an ISO 639-1
-  code that OpenAlex detects from the title and abstract and may leave unset, `primary_location.source.type`
+  code that is not used by this record (Decision 2), `primary_location.source.type`
   (seven values, verified against the OpenAlex Sources page), and `topics`. The OpenAlex Work object page
   states that `primary_topic` is the first entry of `topics`, that `topics` holds up to three topics, and
   that each carries `subfield`, `field` and `domain`. It also states that the second and third scores are
@@ -63,9 +68,9 @@ be recorded for it. `Corpus.records` (`store/load.py`, lines 2508-2537) runs `SE
 
 **The current OpenAlex select does not carry those fields.** `sources/openalex.py` line 52 sets
 `_SELECT = "id,doi,title,publication_year,abstract_inverted_index,authorships,topics"`. It has no `type`,
-`language`, `primary_location` or `primary_topic`. [ADR 0031](0031-openalex-responses-are-layer0-runs.md)
-Context (line 44) lists that select, and the owner has approved adding the four fields (ADR 0031 note of
-2026-10-22).
+`primary_location` or `primary_topic`. [ADR 0031](0031-openalex-responses-are-layer0-runs.md)
+Context (line 44) lists that select. The owner has approved adding `type`, `primary_location` and `primary_topic`, but not
+`language` (ADR 0031 note of 2026-10-22).
 
 **Scopus's no-data rule does not carry over.** A Scopus record with no `subject_areas` rows, or a `NULL`
 language, is never excluded on that dimension (`prisma/engine.py`, module docstring, lines 72-84). ADR 0029
@@ -88,7 +93,7 @@ CREATE TABLE registered_records (
   abstract TEXT,                      -- nullable: OpenAlex may have no abstract (as Scopus may not)
   year INTEGER NOT NULL,
   doc_type TEXT NOT NULL,             -- description form, derived per Decision 2
-  language TEXT NOT NULL,             -- Scopus language name, derived per Decision 2
+  language TEXT,                      -- always NULL in this version (Decision 2)
   venue_type TEXT NOT NULL,           -- closed set journal, conference, book, other (Decision 2)
   venue_name TEXT NOT NULL,           -- the OpenAlex source display name
   openalex_id TEXT NOT NULL,          -- the work's OpenAlex id
@@ -124,57 +129,90 @@ CREATE VIEW records_all AS
 
 The view has 16 columns: the 13 columns of `records` (BUILD_PLAN lines 853-857), plus `origin`, `venue_type` and
 `venue_name`. The Scopus half keeps the `COALESCE` that `_fetch_record_attributes` uses today, so Scopus rows are read as they
-are now. Every reader of the record set moves to `records_all`:
+are now.
+
+**The readers that move to `records_all`**, each with what it does for a registration:
 
 - `prisma/engine.py` `raw_set` (lines 726-744), the `S_raw` universe. `automated_set` and `language_set` then filter
-  registrations too.
-- `prisma/engine.py` `_fetch_record_attributes` (lines 210-241).
-- `screening/ui.py` `load_records` (lines 195-227). Its `venues` join is replaced by the view's `venue_name`.
+  registrations too. A registration that fails the automated set is counted in `excluded_automated` (ADR 0033).
+- `prisma/engine.py` `_fetch_record_attributes` (lines 210-241). Registrations take the conference whitelist from their
+  own `venue_type` and `venue_name` (Decision 5).
+- `screening/ui.py` `load_records` (lines 195-227). Its `venues` join is replaced by the view's `venue_name`, so a reviewer
+  can load a registered id and record a decision on it.
 - `store/load.py` `Corpus.records` (lines 2508-2537). For `PrismaStage.RAW` it runs `SELECT * FROM records_all`. For the other
   stages it filters `records_all` by the engine's record ids.
+- `store/load.py` `Corpus.venues` (lines 2646-2655). Its inner join `records r JOIN venues v` drops every registration, because a
+  registration has no `venues` row. It reads `records_all` instead, and a registration is grouped by its `venue_name`. Owner
+  decision A: registrations count in the venue tables.
+- `report/numbers.py` `corpus scalars` (lines 100-103). `corpus.size`, `corpus.year_min` and `corpus.year_max` are computed from
+  `records` today. They read `records_all`, so they count registrations. Owner decision A.
+- `fulltext/run.py` (lines 201-205). It reads each target's DOI from `records`. A registration is a target once it is included at
+  title and abstract screening, and today it would be given no DOI, so it could not be resolved. It reads `records_all` instead.
+- `fulltext/coverage.py` (lines 129-136). Its inner join `fulltext_assets a JOIN records r` drops registrations from the coverage
+  counts. It reads `records_all` instead, so a registration's attempts are counted.
+- `scripts/fulltext_missing.py` (lines 74-80). It builds the lookup `meta[record_id]` from `records` and then indexes it for every
+  sought id, so a registration raises `KeyError` today. It reads `records_all` instead.
+- `scripts/fetch_assist.py` (lines 315-327). It reads `records` for the batch and silently drops any id missing from it. It reads
+  `records_all` instead.
+
+**The readers that do not move.** Each reads a fact that a registration does not have, and each stays on its table:
+
+- `prisma/flow.py` `_unloadable_count` (lines 362-374). It counts `malformed_entries` whose `record_id` is absent from `records`.
+  Malformed entries come from Layer 0 payloads that failed to parse, and a registration has none (a registration is refused
+  unless its OpenAlex body parses). The check is benign for registrations, and it is unchanged.
+- `store/load.py` build statistics (lines 2084-2096). `records_loaded` counts the Scopus rows the loader wrote, which is what
+  the build did. Registrations are loaded by the registration fold, which is a separate count, so `records_loaded` stays
+  Scopus-only, and the methods report the registered count separately.
+- `runs`, `run_duplicates`, `citation_snapshots`, `malformed_entries` and the authors, affiliations and keyword tables are
+  Scopus facts and are unchanged.
 
 **What `Corpus.records` returns for a registration.** A registered row has the same 16 columns. `run_id`, `cover_date`,
 `venue_id` and `open_access` are NULL, because a registration has no run, no cover date, no `venues` row and no open-access flag.
 `abstract` is the OpenAlex abstract when the work has one, and NULL when it does not. `payload_file` and `payload_line` name the
 OpenAlex response file (Decision 6), so `payload_line` is 0. `origin` is `registered`. A caller that joins on `venue_id` gets NULL
-for a registration, and this is part of deviation (iii). The other readers keep their tables. Registered records have no citation snapshot, and their `cited_by_count` is
-reported as `unavailable` (ADR 0029 Consequence 7). The names `registered_records` and `records_all` are
-naming choices, and the owner may rename them in review.
+for a registration, and this is part of deviation (iii). Registered records have no citation snapshot, and their `cited_by_count`
+is reported as `unavailable` (ADR 0029 Consequence 7). The names `registered_records` and `records_all` are naming choices,
+and the owner may rename them in review.
+
+**Full text for registrations.** Registrations are targets of the full-text stage on the same terms as Scopus records, because
+they are members of `M_abs` once included at title and abstract. Their DOI comes from `records_all` (above). Their assets are
+attempted and counted in coverage, and the resolvers see the registration's DOI, as they see a Scopus record's.
 
 ### 2. How each input is derived
 
-The loader derives all four inputs from the stored OpenAlex body that the `register` event references. No
-reviewer types them, and no client return value is read (ADR 0031 Decision 9). Each value must come from the
-fixed tables in Decision 3. A value that a table does not cover is a refusal (Decision 4).
+The loader derives the inputs from the stored OpenAlex body that the `register` event references. No reviewer types
+them, and no client return value is read (ADR 0031 Decision 9). Each value must come from the fixed tables in Decision 3.
+A value that a table does not cover is a refusal (Decision 4).
 
 | Input | Stored body field | Rule | Stored value |
 |---|---|---|---|
 | `doc_type` | `type` | `TYPE_TO_DOC_TYPE` (Decision 3b) | description form, as the engine compares it, for example `article` or `conference paper` |
 | `venue_type` | `primary_location.source.type` | `SOURCE_TYPE_TO_VENUE_TYPE` (Decision 3c) | `journal`, `conference`, `book` or `other` |
 | `venue_name` | `primary_location.source.display_name` | copied verbatim | string |
-| `language` | `language` | `ISO639_TO_LANGUAGE` (Decision 3d) | Scopus language name |
 | subject area | `primary_topic.subfield.id` | `SUBFIELD_TO_ASJC` (Decision 3a) | four-digit ASJC code, one row in `subject_areas` |
 
 The subject area takes **`primary_topic` only** (owner decision). The second and third topics are not
 read.
 
+**Language is not derived (owner decision).** `language` is not a registration input and is not in `registered_records`
+with a value. The stored column is always NULL in this version. Its reason is the measured fact in Context: every stored Scopus
+record has `language` NULL, so no language table could be checked against stored data. A NULL language passes the language
+filter by the existing no-data rule (`_passes_language`, `prisma/engine.py` lines 372-375), the same as every Scopus record in the
+two stores. ADR 0029 Split records (line 217) named language as an input, and this is deviation (viii).
+
 **Refusal is at registration.** ADR 0029 §5 names the registration writer as the enforcement point for every
-refusal, so the writer checks all five inputs before the append. The loader also refuses a `register` event
+refusal, so the writer checks every input in the table above before the append. The loader also refuses a `register` event
 whose referenced body cannot yield them, so a mis-built event cannot enter `S_raw`. The refusal names the
 input and its value, for example `type 'preprint' is not in classification map version 1`.
-
-**Language is a detector's guess.** OpenAlex derives `language` from the title and abstract, so the value can
-be wrong for a short or mixed-language text. The methods must say that the language of each registered record
-came from OpenAlex's detector.
 
 ### 3. The classification map: one fixed, versioned file, checked
 
 The classification map is one Python module, `src/prismabib/openalex_map.py`, in the style of `asjc.py`. It
-holds four tables, (a) to (d) below. Two constants name it:
+holds three tables, (a) to (c) below. Two constants name it:
 
 - `MAP_VERSION`, a string. The version of this draft is `"1"`, dated 2026-10-22. Any change to any table
   bumps it.
-- `MAP_SHA256`, the SHA-256 of the canonical JSON of the four tables:
+- `MAP_SHA256`, the SHA-256 of the canonical JSON of the three tables:
   `json.dumps(tables, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`, encoded as UTF-8. The
   digest is computed when the module is written, and it is pinned in the same commit. It is not computed in
   this draft.
@@ -185,7 +223,7 @@ OpenAlex subfield to ASJC code, not from topic.** This record changes that wordi
 and in line 218. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. The change is
 listed under Consequences as deviation (i). The field names
 `subject_map_version` and `subject_map_sha256` keep their ADR 0029 meaning. They name the whole file that gave
-the record its subject area, and the file now holds four tables.
+the record its subject area, and the file now holds three tables.
 
 **Versions are kept, never replaced.** Every version the code has shipped stays in the module. A `register`
 event names the version it was derived under, so a rebuild reproduces the same codes after a later change. A
@@ -469,7 +507,7 @@ targets are the description strings the engine compares with (`_DOC_TYPE_CODE_TO
 
 | OpenAlex `type` | `doc_type` | Note |
 |---|---|---|
-| `article` | `article` | Conference papers hosted in a conference source keep this value (open question 2). |
+| `article` | `article` | Conference papers hosted in a conference source keep this value (open question 1). |
 | `review` | `review` | |
 | `editorial` | `editorial` | |
 | `letter` | `letter` | |
@@ -499,24 +537,16 @@ A `primary_location` with no source, or a source type outside this table, is ref
 work carries it under `primary_location.source` is an implementation check against the Works attributes page, as
 ADR 0031 does for its header. If the path is absent, the registration is refused, not guessed.
 
-**(d) ISO 639-1 to `language`: version 1, partial, unverified.** The Scopus spellings below are not checked against
-the Scopus language values in any store. Each row is `unverified`, and the owner must check them against the
-language names the existing Scopus stores hold (open question 1). A code outside the table is refused.
-
-`en` English · `zh` Chinese · `de` German · `fr` French · `es` Spanish · `pt` Portuguese · `it` Italian · `nl` Dutch ·
-`ru` Russian · `ja` Japanese · `ko` Korean · `pl` Polish · `tr` Turkish · `sv` Swedish · `no` Norwegian · `da` Danish ·
-`fi` Finnish · `cs` Czech · `hu` Hungarian · `ro` Romanian · `he` Hebrew · `ar` Arabic · `fa` Persian · `id` Indonesian ·
-`uk` Ukrainian · `th` Thai · `vi` Vietnamese · `hr` Croatian · `sr` Serbian · `sk` Slovak · `sl` Slovenian ·
-`bg` Bulgarian · `ca` Catalan · `el` Greek · `et` Estonian · `lt` Lithuanian · `lv` Latvian
+**Language: no table.** Language is not in the map (Decision 2).
 
 **Checks, all in the test suite:**
 
-1. `MAP_SHA256` equals the recomputed digest of the four tables. A table edit without a version bump fails.
+1. `MAP_SHA256` equals the recomputed digest of the three tables. A table edit without a version bump fails.
 2. Every ASJC value in `SUBFIELD_TO_ASJC` passes `asjc.area_abbrev(code)[1]`, so the matcher knows it (ADR 0017,
    Constraints).
-3. Every subfield id, `type`, source `type` and language code that the map contains appears in a **recorded**
-   OpenAlex response fixture. A table checked only against itself proves nothing (ADR 0017, Constraints).
-4. Every `type`, source `type` and language value in those fixtures is either mapped or is a tested refusal.
+3. Every subfield id, `type` and source `type` that the map contains appears in a **recorded** OpenAlex response fixture.
+   A table checked only against itself proves nothing (ADR 0017, Constraints).
+4. Every `type` and source `type` value in those fixtures is either mapped or is a tested refusal.
 5. The 252 rows of table (a) match the OpenAlex subfield count in `meta.count`. A row count that differs fails.
 
 ### 4. Records without a mapping
@@ -539,8 +569,9 @@ The engine reads `records_all` (Decision 1), so this holds without a `venues` ro
 
 **`venue_name` for a registration** is the OpenAlex `primary_location.source.display_name`, and it is NOT NULL. A conference
 registration is matched against the whitelist exactly as a Scopus conference is: a casefold substring match on `venue_name`
-(`_passes_conference_whitelist`, `prisma/engine.py` lines 315-320). An empty or missing `venue_name` is **refused** at registration,
-for every venue type. The refusal, not a silent pass or exclusion, is the rule, because an empty name would otherwise fail every
+(`_passes_conference_whitelist`, `prisma/engine.py` lines 315-320). A `venue_name` that is missing, or empty after `strip()`, is **refused** at
+registration, for every venue type. The engine does not strip the name (`prisma/engine.py` lines 319-320), so the refusal must
+do it: a whitespace-only name would otherwise fail every token and exclude a registered conference paper silently. The refusal, not a silent pass or exclusion, is the rule, because an empty name would otherwise fail every
 token and exclude a registered conference paper with no record of why.
 
 Scopus records with a `NULL` `venue_id` keep today's behaviour, which passes the whitelist. This record does not
@@ -568,9 +599,10 @@ payloads. Two sources would write one table, which the loader's rules do not all
 **Put the map version and checksum on the `registered_records` row.** Rejected. ADR 0029 puts them on the `register` event.
 A copy would be derived data that can drift.
 
-**Use the OpenAlex type and language strings unchanged.** Rejected. `language` would be `en` for registrations and `English`
-for Scopus records, so `_passes_language` would exclude every registration against an `English` list. The engine would
-silently treat one population differently.
+**Derive `language` from OpenAlex's ISO 639-1 code through a map.** Rejected by owner decision. Every stored Scopus record has
+`language` NULL (1,293 of 1,293 and 1,864 of 1,864, Context), so the Scopus spelling of each language cannot be checked against
+any stored value. A map of about 37 unverified rows would be a plausible wrong table. The field stays NULL instead, and the existing
+no-data rule applies to it.
 
 **Map from topic (about 4,500 values) rather than subfield.** Rejected by owner decision. The subfield level gives 252
 reviewable rows, and every topic belongs to one subfield.
@@ -593,37 +625,44 @@ between subject areas, and an old published number could not be reproduced.
    registrations. Refused candidates are counted (Decision 4), not hidden.
 6. Registered records carry no author, affiliation or keyword rows in this version, so the screening view shows the title, the
    abstract and the venue only. Authors and keywords for registrations need their own decision.
+7. A registration's `language` is NULL, so `_passes_language` passes it. Every Scopus record in the two measured stores already
+   behaves this way, so the language filter has no effect on either population in this version. The methods must say so.
+8. **Counts (owner decision A).** Registrations count in `corpus.size`, `corpus.year_min` and `corpus.year_max` (`numbers.json`),
+   and in the venue tables (`Corpus.venues`). The methods report the registered count next to those numbers, in one sentence:
+   "N records, of which M are registrations from a manual Google Scholar search (ADR 0029)". The same number is the `registered`
+   key that ADR 0033 adds to `numbers.json`, so the count appears once in the data and once in the text.
 
-**Deviations from the frozen contract (§2.6).** Items (i) and (iii) to (vii) rest on CLAUDE.md's §2.6 rule. Item (ii) rests on BUILD_PLAN line 301, as stated in it. Each is named here, and each needs the owner's acceptance under this record:
+**Deviations from the frozen contract (§2.6).** Every item rests on the same basis, the project's ADR rule, BUILD_PLAN §2.6
+(line 301). Each is named here, and each needs the owner's acceptance under this record:
 
 - **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 231) and Split records (line 218) say "OpenAlex
-  topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: CLAUDE.md §2.6.
+  topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: BUILD_PLAN §2.6 (line 301).
 - **(ii) BUILD_PLAN §1.2, metadata source (line 54).** §1.2 fixes the metadata source as "Scopus API (institutional key)".
-  Registered records bring OpenAlex-derived metadata (`doc_type`, `language`, `venue_type`, subject area, title and
-  DOI) into Layer 1, next to Scopus records. Under BUILD_PLAN line 301, this is a deviation from §1.2 that needs this
-  record.
+  Registered records bring OpenAlex-derived metadata (`doc_type`, `venue_type`, subject area, title and DOI) into Layer 1,
+  next to Scopus records. Under BUILD_PLAN line 301, this is a deviation from §1.2 that needs this record.
 - **(iii) BUILD_PLAN `Corpus.records` (lines 893-895), and the readers of the record set.** The signature is unchanged, but
   `records(stage)` changes what it returns. It now includes registered records in `S_raw` and in each later stage, and its rows
-  have 16 columns, not 13 (Decision 1). `raw_set`, `_fetch_record_attributes` and `load_records` change with it, as Decision 1
-  lists. Every caller that assumed a Scopus-only set or the 13 columns needs review. Basis: CLAUDE.md §2.6.
+  have 16 columns, not 13 (Decision 1). `raw_set`, `_fetch_record_attributes`, `load_records`, `Corpus.venues`, the `numbers.py` corpus
+  scalars, `fulltext/run.py`, `fulltext/coverage.py`, `scripts/fulltext_missing.py` and `scripts/fetch_assist.py` change with
+  it, as Decision 1 lists. Two of these are defects today, not only changes: `fulltext/run.py` gives a registration no DOI, and
+  `scripts/fulltext_missing.py` raises `KeyError` on one. Every caller that assumed a Scopus-only set or the 13 columns needs review. Basis: BUILD_PLAN §2.6 (line 301).
 - **(iv) BUILD_PLAN Stage 3 schema (lines 853-873).** The new table `registered_records` and the view `records_all` are
-  additions to a frozen schema (ADR 0012 rule). Basis: CLAUDE.md §2.6.
+  additions to a frozen schema (ADR 0012 rule). Basis: BUILD_PLAN §2.6 (line 301).
 - **(v) `subject_areas` provenance.** The schema of `subject_areas` is unchanged, but its rows now hold OpenAlex-derived
   four-digit ASJC codes as well as Scopus ones. The criteria matching is unchanged, but the source of a row is no longer
-  always Scopus. Basis: CLAUDE.md §2.6.
-- **(vi) ADR 0031 select.** Adding `type`, `language`, `primary_location` and `primary_topic` changes the OpenAlex select
-  that ADR 0031 Context (line 44) names. The owner approved the change, and ADR 0031 has a dated note. Basis: CLAUDE.md §2.6. Bodies captured
+  always Scopus. Basis: BUILD_PLAN §2.6 (line 301).
+- **(vi) ADR 0031 select.** Adding `type`, `primary_location` and `primary_topic` changes the OpenAlex select
+  that ADR 0031 Context (line 44) names. `language` is not added (deviation viii). The owner approved the change, and ADR 0031 has a dated note. Basis: BUILD_PLAN §2.6 (line 301). Bodies captured
   earlier lack the fields, and the loader refuses a registration that references one.
 - **(vii) ADR 0029 example.** The `payload_line` example in ADR 0029 (line 77) is superseded by ADR 0031 Decision 2, as
   Decision 6 above states.
+- **(viii) ADR 0029 Split records, the `language` input (line 217).** ADR 0029 names `language` as a registration input. This
+  record drops it, by owner decision (Decision 2), because every stored Scopus record has `language` NULL. A registration's
+  `language` is NULL, and the existing no-data rule passes it. Basis: BUILD_PLAN §2.6 (line 301).
 
 ## Open questions for the owner
 
-1. **Language table completeness.** Table (d) is partial, and every row is unverified. Options: (a) the owner supplies the
-   Scopus language names from the existing stores, so each row is checked, and the table is extended to the codes those
-   stores need; (b) keep the partial table, so every other language is refused. **Recommendation: (a).** Each language
-   name must match Scopus's spelling exactly, or the criterion silently misses.
-2. **`doc_type` for an article in a conference source.** OpenAlex types a conference paper as `conference-paper` when it
+1. **`doc_type` for an article in a conference source.** OpenAlex types a conference paper as `conference-paper` when it
    reports one, and sometimes as `article`. Options: (a) take `doc_type` from `type` alone, so `venue_type` carries the
    conference status (the rule in Decision 2); (b) also set `doc_type` to `conference paper` when the source is a
    conference. **Recommendation: (a).** It keeps `doc_type` a single rule from one field, and the whitelist still reads the
