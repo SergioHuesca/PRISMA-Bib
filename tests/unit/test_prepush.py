@@ -6,6 +6,7 @@ No test runs a real tool or touches the network; the step runner takes an inject
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,11 @@ prepush = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(prepush)
 
 KNOWN = 'src\\prismabib\\log.py:166: error: Module has no attribute "flock"  [attr-defined]'
-KNOWN_LOCK = "src/prismabib/log.py:170: error: Module has no attribute LOCK_SH  [attr-defined]"
+KNOWN_LOCK = 'src/prismabib/log.py:170: error: Module has no attribute "LOCK_SH"  [attr-defined]'
+ASSIGNMENT = (
+    "src\\prismabib\\log.py:201: error: Incompatible types in assignment "
+    '(expression has type "flock", variable has type "int")  [assignment]'
+)
 UNKNOWN = "src\\prismabib\\log.py:12: error: Incompatible return value type  [return-value]"
 OTHER_FILE = 'src\\prismabib\\store.py:9: error: Module has no attribute "flock"  [attr-defined]'
 
@@ -92,17 +97,77 @@ def test_ruff_filter__exe002_on_win32_passes_but_other_rules_fail() -> None:
 
 @pytest.mark.unit
 def test_changed_files__diff_and_porcelain__are_merged_without_deleted_files() -> None:
-    porcelain = ' M src/prismabib/log.py\n?? scripts/new.py\nR  old.py -> renamed.py\n D gone.py\n?? "docs/with space.md"'
+    porcelain = ' M src/prismabib/log.py\x00?? scripts/new.py\x00R  renamed.py\x00old.py\x00 D gone.py\x00?? we"ird name.py\x00?? café.py'
 
-    got = prepush.parse_changed_files("src/prismabib/log.py\nREADME.md\n", porcelain)
+    got = prepush.parse_changed_files("src/prismabib/log.py\0README.md\0", porcelain + "\0")
 
     assert got == [
         "README.md",
-        "docs/with space.md",
+        "café.py",
         "renamed.py",
         "scripts/new.py",
         "src/prismabib/log.py",
+        'we"ird name.py',
     ]
+
+
+@pytest.mark.unit
+def test_git_args__committed_changes__use_three_dot_diff_and_nul_output() -> None:
+    assert prepush.DIFF_ARGS == ["diff", "-z", "--name-only", "origin/main...HEAD"]
+    assert "-z" in prepush.STATUS_ARGS
+    assert "--porcelain" in prepush.STATUS_ARGS
+
+
+@pytest.mark.unit
+def test_build_steps__option_like_file_name__is_separated_by_double_dash() -> None:
+    step = _build(secrets_files=["-evil.py", "b.py"])[2]
+
+    cmd = step.cmd  # type: ignore[attr-defined]
+    assert cmd[cmd.index("-evil.py") - 1] == "--"
+
+
+@pytest.mark.unit
+def test_secrets_evaluator__failure_without_location__echoes_raw_output_truncated() -> None:
+    out = "\n".join(f"line {i}" for i in range(100))
+
+    ok, note = prepush.secrets_evaluator(3, out)
+
+    assert not ok
+    assert "exit 3" in note
+    assert "line 0" in note
+    assert "line 39" in note
+    assert "line 40" not in note
+
+
+@pytest.mark.unit
+def test_mypy_filter__assignment_error_mentioning_flock__is_not_dropped() -> None:
+    ok, _ = prepush.mypy_evaluator("win32")(1, f"{KNOWN}\n{ASSIGNMENT}")
+
+    assert not ok
+
+
+@pytest.mark.unit
+def test_run_steps__timeout__fails_with_a_clear_note() -> None:
+    results = prepush.run_steps([prepush.Step("slow", ["x"])], lambda _c: (124, "x exceeded"))
+    text, code = prepush.summarize(results)
+
+    assert code == 1
+    assert "timed out" in text
+
+
+@pytest.mark.unit
+def test_run__missing_binary__returns_not_found_code_not_a_traceback() -> None:
+    rc, out = prepush._run(["no-such-binary-prepush-xyz"], ".")
+
+    assert rc == prepush.NOT_FOUND_RC
+    assert "no-such-binary-prepush-xyz" in out
+
+
+@pytest.mark.unit
+def test_run__command_over_timeout__returns_timeout_code() -> None:
+    rc, _ = prepush._run([sys.executable, "-c", "import time; time.sleep(30)"], ".", timeout=0.5)
+
+    assert rc == prepush.TIMEOUT_RC
 
 
 @pytest.mark.unit
@@ -163,6 +228,15 @@ def test_select_tests__mapped_modules__are_selected_else_full_run() -> None:
     assert prepush.select_tests(["src/prismabib/nomap.py"], exists) is None
     assert prepush.select_tests(["src/prismabib/log.py", "pyproject.toml"], exists) is None
     assert prepush.select_tests([], exists) is None
+
+
+@pytest.mark.unit
+def test_select_tests__deleted_test_file__is_not_passed_and_falls_back_to_full_set() -> None:
+    exists = {"tests/unit/test_log.py"}.__contains__
+
+    both = ["tests/unit/test_gone.py", "tests/unit/test_log.py"]
+    assert prepush.select_tests(both, exists) == ["tests/unit/test_log.py"]
+    assert prepush.select_tests(["tests/unit/test_gone.py"], exists) is None
 
 
 @pytest.mark.unit

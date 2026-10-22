@@ -5,6 +5,7 @@ mypy --strict and the unit + contract tests, then prints a summary listing every
 with the exact command to re-run it. It never commits, pushes or changes a tracked file.
 
     python scripts/prepush.py [--quick] [--changed] [--workers N] [--skip-mypy] [--fail-fast]
+                                 [--timeout N]
 
 Project tools are invoked through this interpreter (``sys.executable -m ...``).
 """
@@ -23,6 +24,14 @@ from pathlib import Path
 from typing import NamedTuple
 
 BASE_REF = "origin/main"
+DEFAULT_TIMEOUT = 900
+TIMEOUT_RC = 124  # same convention as coreutils `timeout`
+NOT_FOUND_RC = 127  # same convention as a shell for "command not found"
+RAW_OUTPUT_LINES = 40
+
+# Three dots: only what this branch changed since it left origin/main, not what others merged.
+DIFF_ARGS = ["diff", "-z", "--name-only", f"{BASE_REF}...HEAD"]
+STATUS_ARGS = ["status", "--porcelain", "-z", "--untracked-files=all"]
 
 # Mirrors the `exclude` of the detect-secrets hook in .pre-commit-config.yaml.
 SECRETS_EXCLUDE = re.compile(
@@ -36,7 +45,10 @@ SECRETS_EXCLUDE = re.compile(
 # and fcntl does not exist (mypy errors in log.py). Linux CI never sees either.
 RUFF_KNOWN_WIN32 = re.compile(r"^\S.*:\d+:\d+: EXE002 ")
 RUFF_FINDING = re.compile(r"^\S.*:\d+:\d+: [A-Z]+\d+ ")
-MYPY_KNOWN_WIN32 = re.compile(r"^src[/\\]prismabib[/\\]log\.py:\d+: error: .*(?:flock|LOCK_|fcntl)")
+MYPY_KNOWN_WIN32 = re.compile(
+    r"^src[/\\]prismabib[/\\]log\.py:\d+: error: "
+    r'Module has no attribute "(?:flock|LOCK_SH|LOCK_EX|LOCK_UN)"\s+\[attr-defined\]\s*$'
+)
 MYPY_FINDING = re.compile(r"^\S.*:\d+: error: ")
 SECRET_LOCATION = re.compile(r"^Location:\s+(.+):(\d+)\s*$", re.MULTILINE)
 
@@ -94,14 +106,22 @@ def mypy_evaluator(platform: str) -> Evaluator:
     return _evaluator(MYPY_KNOWN_WIN32, MYPY_FINDING, platform)
 
 
-def parse_changed_files(diff_names: str, porcelain: str) -> list[str]:
-    """Union of ``git diff --name-only`` and ``git status --porcelain`` paths (sorted)."""
-    paths = {ln.strip() for ln in diff_names.splitlines() if ln.strip()}
-    for line in porcelain.splitlines():
-        if len(line) < 4 or "D" in line[:2]:
+def parse_changed_files(diff_z: str, porcelain_z: str) -> list[str]:
+    """Union of ``git diff -z --name-only`` and ``git status --porcelain -z`` paths (sorted).
+
+    NUL-delimited, so names with spaces, quotes or non-ASCII characters arrive unquoted.
+    Porcelain v1 entries are ``XY path``; a rename or copy is ``XY new`` followed by an extra
+    ``old`` field, which is skipped (the old path no longer exists).
+    """
+    paths = {p for p in diff_z.split("\0") if p}
+    entries = iter(porcelain_z.split("\0"))
+    for entry in entries:
+        if len(entry) < 4:
             continue
-        path = line[3:].split(" -> ")[-1].strip().strip('"')
-        if path:
+        status, path = entry[:2], entry[3:]
+        if status[0] in "RC" or status[1] in "RC":
+            next(entries, None)
+        if "D" not in status:
             paths.add(path)
     return sorted(paths)
 
@@ -121,7 +141,12 @@ def secrets_evaluator(rc: int, out: str) -> tuple[bool, str]:
         lines = [f"  {path}:{line}" for path, line in findings]
         hint = "false positive? append `# pragma: allowlist secret` to that line"
         return False, "possible secret(s) at:\n" + "\n".join(lines) + "\n  " + hint
-    return rc == 0, ""
+    if rc == 0:
+        return True, ""
+    # Stale baseline, exit 3, a crash: never fail silently. The hook prints types and
+    # locations, not secret values, so echoing its output is safe.
+    raw = "\n".join(out.splitlines()[:RAW_OUTPUT_LINES])
+    return False, f"hook failed (exit {rc}) without a parseable finding; raw output:\n{raw}"
 
 
 def select_tests(changed: Sequence[str], exists: Callable[[str], bool]) -> list[str] | None:
@@ -129,7 +154,8 @@ def select_tests(changed: Sequence[str], exists: Callable[[str], bool]) -> list[
     selected: set[str] = set()
     for path in changed:
         if path.startswith("tests/") and Path(path).name.startswith("test_"):
-            selected.add(path)
+            if exists(path):  # a deleted or renamed-away test must never reach pytest
+                selected.add(path)
         elif path.startswith("src/prismabib/") and path.endswith(".py"):
             candidate = f"tests/unit/test_{Path(path).stem}.py"
             if not exists(candidate):
@@ -164,7 +190,7 @@ def build_steps(
         steps.append(
             Step(
                 "detect-secrets",
-                [py, "-c", hook, "--baseline", baseline, *secrets_files],
+                [py, "-c", hook, "--baseline", baseline, "--", *secrets_files],
                 secrets_evaluator,
             )
         )
@@ -187,7 +213,10 @@ def run_steps(steps: Sequence[Step], runner: Runner, fail_fast: bool = False) ->
     results: list[StepResult] = []
     for step in steps:
         rc, out = runner(step.cmd)
-        ok, note = step.evaluate(rc, out) if step.evaluate else (rc == 0, "")
+        if rc == TIMEOUT_RC:
+            ok, note = False, f"timed out: {out.strip()}"
+        else:
+            ok, note = step.evaluate(rc, out) if step.evaluate else (rc == 0, "")
         results.append(StepResult(step.name, step.cmd, ok, note, out))
         if fail_fast and not ok:
             break
@@ -214,9 +243,16 @@ def summarize(results: Sequence[StepResult]) -> tuple[str, int]:
     return "\n".join(lines), 1 if failed else 0
 
 
-def _run(cmd: Sequence[str], cwd: str) -> tuple[int, str]:
-    proc = subprocess.run(list(cmd), cwd=cwd, capture_output=True, text=True, check=False)
-    return proc.returncode, proc.stdout + proc.stderr
+def _run(cmd: Sequence[str], cwd: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[int, str]:
+    """Run ``cmd``; a timeout or a missing binary becomes an exit code, not a traceback."""
+    try:
+        proc = subprocess.run(list(cmd), cwd=cwd, capture_output=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return TIMEOUT_RC, f"{cmd[0]} step exceeded the {timeout:g}s timeout (--timeout N)"
+    except FileNotFoundError:
+        return NOT_FOUND_RC, f"command not found: {cmd[0]}"
+    # UTF-8 explicitly: git -z emits raw UTF-8 paths whatever the console code page is.
+    return proc.returncode, (proc.stdout + proc.stderr).decode("utf-8", errors="replace")
 
 
 def _git(root: str, *args: str) -> tuple[int, str]:
@@ -230,19 +266,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=2, help="pytest-xdist workers (default 2)")
     ap.add_argument("--skip-mypy", action="store_true", help="skip mypy (CI will still run it)")
     ap.add_argument("--fail-fast", action="store_true", help="stop at the first failed step")
+    ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds per step")
     args = ap.parse_args(argv)
 
     rc, top = _run(["git", "rev-parse", "--show-toplevel"], ".")
+    if rc == NOT_FOUND_RC:
+        print("git is not installed or not on PATH", file=sys.stderr)
+        return 2
     if rc != 0:
         print("not inside a git checkout", file=sys.stderr)
         return 2
     root = top.strip()
 
-    rc, diff = _git(root, "diff", "--name-only", BASE_REF)
+    rc, diff = _git(root, *DIFF_ARGS)
     if rc != 0:
         print(f"warning: {BASE_REF} not found (git fetch origin?); using local changes only")
         diff = ""
-    _, porcelain = _git(root, "status", "--porcelain", "--untracked-files=all")
+    _, porcelain = _git(root, *STATUS_ARGS)
     changed = parse_changed_files(diff, porcelain)
 
     def exists(p: str) -> bool:
@@ -267,7 +307,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline=baseline,
             test_paths=test_paths,
         )
-        results = run_steps(steps, lambda cmd: _run(cmd, root), args.fail_fast)
+        results = run_steps(steps, lambda cmd: _run(cmd, root, args.timeout), args.fail_fast)
 
     for r in results:
         if not r.ok and r.name != "detect-secrets":  # secrets output is never echoed
