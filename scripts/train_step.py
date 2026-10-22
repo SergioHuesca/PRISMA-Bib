@@ -5,13 +5,15 @@ Pure logic: no GitHub or git calls. The workflow feeds it the output of
 and executes the action it returns. Subcommands:
 
 ``candidate --merge-train on|off``
-    Prints ``<pr> <head sha>`` for the train head, whose net patch id the workflow must
-    compute before ``decide``. Prints nothing when there is no head to check.
+    Prints ``<pr> <head sha> <reviewed sha>`` for the train head when its single
+    ``reviewed:<40 hex>`` label is valid. Prints nothing otherwise.
 
-``decide --merge-train on|off [--patch-id N:PID ...] [--closed FILE]``
-    FILE is ``gh pr list --state closed --search "is:unmerged"`` output; without it a train halts.
-    Prints one JSON object ``{"action", "pr", "head_sha", "reason", "mode"}``. action is one
-    of none, update, merge, halt, wait; mode is train, update or none.
+``decide --merge-train on|off [--closed FILE] [--head-pr N --head-check FILE]``
+    FILE for --closed is ``gh pr list --state closed --search "is:unmerged"`` output; without
+    it a train halts. FILE for --head-check is the JSON of train_verify_head.py for PR N;
+    without it the head halts. Prints one JSON object
+    ``{"action", "pr", "head_sha", "reason", "mode"}``. action is one of none, update, merge,
+    halt, wait; mode is train, update or none.
 
 The rules are in the header of .github/workflows/update-behind-prs.yml and in
 docs/how-to/merge-train.md. Malformed input exits 2 (ValueError): a bad response must
@@ -40,10 +42,10 @@ HALTED = "train:halted"
 LIST_LIMIT = 100
 # fullmatch, not match: `$` would accept a trailing newline in a label or argument.
 _TRAIN_RE = re.compile(r"train:[0-9]{1,3}")
-# 20 hex = 80 bits of sha256 over the PR's exact changed lines (see train_patch_id.py).
-_REVIEWED_RE = re.compile(r"reviewed:[0-9a-f]{20}")
+# The reviewed label is the reviewed head commit itself. 9 + 40 = 49 chars, within GitHub's
+# 50-char label limit.
+_REVIEWED_RE = re.compile(r"reviewed:[0-9a-f]{40}")
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
-_PATCH_ARG_RE = re.compile(r"([0-9]{1,9}):([0-9a-f]{20})")
 _PASS_CONCLUSIONS = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 _PENDING_STATES = frozenset({"PENDING", "EXPECTED"})
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -52,10 +54,10 @@ PASS, RUNNING, BAD = "pass", "running", "bad"
 
 
 class InputError(ValueError):
-    """The input is not the shape that ``gh pr list --json`` produces."""
+    """The input is not the shape that the workflow produces."""
 
 
-def _clean(text: str, limit: int = 60) -> str:
+def clean_text(text: str, limit: int = 60) -> str:
     """Make untrusted text (a check name, set by PR CI) safe for stdout, the step summary and
     a comment: no control characters (CR/LF end a workflow command), no workflow-command
     ``::``, no markdown links or mentions, and a bounded length."""
@@ -142,7 +144,7 @@ def _rollup(pr: dict[str, Any]) -> tuple[str, str]:
     A failing check outranks a running one: the train stops rather than waits for it.
     """
     outcomes = [
-        (_outcome(check), _clean(str(check.get("name") or check.get("context") or "unnamed")))
+        (_outcome(check), clean_text(str(check.get("name") or check.get("context") or "unnamed")))
         for check in pr["statusCheckRollup"] or []
     ]
     for outcome, name in outcomes:
@@ -178,7 +180,7 @@ def _update_only(open_prs: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def _head(pr: dict[str, Any], patch_ids: dict[int, str]) -> dict[str, Any]:
+def _head(pr: dict[str, Any], head_check: dict[str, Any] | None) -> dict[str, Any]:
     """Apply rules 2 and 4 to the train head. Every branch that is not an explicit merge,
     update or wait is a halt."""
     n = pr["number"]
@@ -191,19 +193,16 @@ def _head(pr: dict[str, Any], patch_ids: dict[int, str]) -> dict[str, Any]:
 
     if pr["isDraft"]:
         return halt("the head is a draft; batch PRs must be marked ready before the train starts")
-    reviewed = [name for name in _names(pr) if _REVIEWED_RE.fullmatch(name)]
+    reviewed = [name for name in _names(pr) if name.startswith("reviewed:")]
     if not reviewed:
-        return halt("missing reviewed:<patch id> label")
-    if len(reviewed) > 1:
-        return halt("more than one reviewed: label")
-    if n not in patch_ids:
-        return halt("net patch id was not computed for the head")
-    reviewed_id = reviewed[0].removeprefix("reviewed:")
-    if reviewed_id != patch_ids[n]:
-        return halt(
-            f"patch id mismatch: reviewed {reviewed_id}, current {patch_ids[n]}; "
-            "the content changed after review"
-        )
+        return halt("missing reviewed:<40 hex> label")
+    if len(reviewed) > 1 or not _REVIEWED_RE.fullmatch(reviewed[0]):
+        return halt("reviewed: label must be exactly one reviewed:<40 lowercase hex> label")
+    if head_check is None or head_check.get("pr") != n:
+        return halt("no head verification for this PR: the verify step did not run")
+    if head_check.get("ok") is not True:
+        reason = clean_text(str(head_check.get("reason") or "no reason given"), limit=200)
+        return halt(f"head verification failed: {reason}")
     outcome, failed = _rollup(pr)
     if outcome == BAD:
         return halt(f"check '{failed}' is not passing")
@@ -218,15 +217,13 @@ def _head(pr: dict[str, Any], patch_ids: dict[int, str]) -> dict[str, Any]:
             return act("wait", "checks are still running")
         if not pr["statusCheckRollup"]:
             return halt("CLEAN but no checks were reported")
-        return act(
-            "merge", "all checks pass, the branch is CLEAN and the net patch matches its review"
-        )
+        return act("merge", "all checks pass, the branch is CLEAN and the head is verified")
     if state == "BEHIND":
         if running:
             return act("wait", "BEHIND with checks running")
         return act(
             "update",
-            "BEHIND with checks finished; updating from main, the net patch is verified before merge",
+            "BEHIND with checks finished; updating from main, the head is verified before merge",
         )
     if state == "BLOCKED":
         # BLOCKED while required checks are pending is normal; with none reported yet, wait
@@ -267,12 +264,14 @@ def _closed_hit(closed: list[dict[str, Any]], head_n: int) -> str | None:
 
 def decide(
     prs: Any,
-    patch_ids: dict[int, str],
+    head_check: dict[str, Any] | None,
     merge_train_on: bool,
     closed: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """``closed`` is the closed PRs (number, labels, mergedAt). None means not supplied, which
-    halts the train: it cannot rule out a closed-unmerged PR promoting the next one."""
+    """``head_check`` is ``{"pr": N, "ok": bool, "reason": str}`` from train_verify_head.py for
+    the candidate head, or None (not run, or it failed: the head halts). ``closed`` is the
+    closed PRs (number, labels, mergedAt); None halts the train, since it cannot rule out a
+    closed-unmerged PR promoting the next one."""
     prs = _validate(prs)
     if closed is not None:
         closed = _validate_closed(closed)
@@ -326,11 +325,12 @@ def decide(
     hit = _closed_hit(closed, head_n)
     if hit is not None:
         return halt_on(head, hit)
-    return _head(head, patch_ids)
+    return _head(head, head_check)
 
 
-def candidate(prs: Any, merge_train_on: bool) -> tuple[int, str] | None:
-    """The train head (number, head sha) whose net patch id the workflow must compute."""
+def candidate(prs: Any, merge_train_on: bool) -> tuple[int, str, str] | None:
+    """The train head (number, head sha, reviewed sha) whose verification the workflow runs.
+    None when there is no head, or its reviewed label is not exactly one valid label."""
     prs = _validate(prs)
     open_prs = [pr for pr in prs if pr.get("state", OPEN) == OPEN]
     if not merge_train_on or any(name.lower() == HALTED for pr in open_prs for name in _names(pr)):
@@ -345,17 +345,18 @@ def candidate(prs: Any, merge_train_on: bool) -> tuple[int, str] | None:
     if not numbered:
         return None
     _, head = min(numbered, key=lambda item: item[0])
-    return head["number"], head["headRefOid"]
+    reviewed = [name for name in _names(head) if name.startswith("reviewed:")]
+    if len(reviewed) != 1 or not _REVIEWED_RE.fullmatch(reviewed[0]):
+        return None
+    return head["number"], head["headRefOid"], reviewed[0][len("reviewed:") :]
 
 
-def _patch_ids(args: list[str]) -> dict[int, str]:
-    ids: dict[int, str] = {}
-    for arg in args:
-        match = _PATCH_ARG_RE.fullmatch(arg)
-        if not match:
-            raise InputError(f"bad --patch-id {arg!r}; expected N:<20 hex>")
-        ids[int(match.group(1))] = match.group(2)
-    return ids
+def _head_check(pr_number: int, path: str) -> dict[str, Any]:
+    """Wrap the verify script's JSON with the PR number it was run for."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise InputError("head check must be a JSON object")
+    return {"pr": pr_number, "ok": data.get("ok") is True, "reason": str(data.get("reason", ""))}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -366,8 +367,9 @@ def main(argv: list[str] | None = None) -> int:
         # Any value other than "on" means off: an unset repository variable must not fail.
         p.add_argument("--merge-train", default="off")
         if name == "decide":
-            p.add_argument("--patch-id", action="append", default=[], metavar="N:PID")
             p.add_argument("--closed", metavar="FILE", help="JSON list of closed PRs")
+            p.add_argument("--head-pr", type=int, metavar="N")
+            p.add_argument("--head-check", metavar="FILE", help="verify output for --head-pr")
     args = parser.parse_args(argv)
     try:
         prs = json.load(sys.stdin)
@@ -375,13 +377,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "candidate":
             found = candidate(prs, merge_on)
             if found is not None:
-                print(f"{found[0]} {found[1]}")
+                print(f"{found[0]} {found[1]} {found[2]}")
         else:
             closed = None
             if args.closed is not None:
                 closed = json.loads(Path(args.closed).read_text(encoding="utf-8"))
-            result = decide(prs, _patch_ids(args.patch_id), merge_on, closed)
-            print(json.dumps(result))
+            head_check = None
+            if args.head_check is not None:
+                if args.head_pr is None:
+                    raise InputError("--head-check needs --head-pr")
+                head_check = _head_check(args.head_pr, args.head_check)
+            print(json.dumps(decide(prs, head_check, merge_on, closed)))
     except ValueError as exc:  # includes json.JSONDecodeError and InputError
         print(f"train_step: {exc}", file=sys.stderr)
         return 2

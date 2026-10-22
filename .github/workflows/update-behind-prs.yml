@@ -22,17 +22,18 @@
 # MERGE TRAIN (scripts/train_step.py). Off unless the repository variable MERGE_TRAIN is "on".
 # A batch is the open PRs labelled train:1, train:2, ... (drafts until the batch starts).
 # Starting = set MERGE_TRAIN to on and dispatch this workflow. A run acts only on the train
-# head, the lowest N among open PRs. The head is squash-merged (pinned to its head sha) only
-# when all hold: it is not a draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED
-# or NEUTRAL and none is queued or running; and it carries reviewed:<20 hex> equal to the id
-# recomputed from its head (scripts/train_patch_id.py: sha256 of the exact +/- lines of
-# origin/main...<head>, so whitespace counts). No batch PR may sit below the head in a closed,
-# unmerged state (the closed list is checked too). Lists are capped at 100; a full list halts.
-# Otherwise: BEHIND with no running check -> update-branch; running
-# checks -> wait; anything unexpected -> halt: label the head train:halted and post one
-# comment with the reason. While any open PR has train:halted, every run does nothing.
-# Resume = fix it, remove the label, dispatch. The train never skips a PR, never merges out
-# of order, and never retries a failed check. Full rules: docs/how-to/merge-train.md.
+# head, the lowest N among open PRs. Its single label reviewed:<40 hex> names the commit a
+# reviewer approved. scripts/train_verify_head.py decides whether the head is that commit plus
+# only verified update merges of main (byte-exact diffs, no other change, no overlap with the
+# PR's own edits). The head is squash-merged, pinned to its head sha, only when it is not a
+# draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED or NEUTRAL with none queued
+# or running; and the verification passed. No batch PR may sit below the head closed unmerged
+# (the closed list is checked). Lists are capped at 100; a full list halts.
+# Otherwise: BEHIND with no running check -> update-branch; running checks -> wait; anything
+# unexpected -> halt: label the head train:halted and post one comment with the reason. While
+# any open PR has train:halted, every run does nothing. Resume = fix it, remove the label,
+# dispatch. The train never skips a PR, never merges out of order, and never retries a failed
+# check. Full rules: docs/how-to/merge-train.md.
 #
 # Update-only mode (no train:N labels, or MERGE_TRAIN not on). Rule (scripts/next_pr_to_update.py):
 # only the head of the queue is ever updated. The head is the lowest-numbered open PR targeting
@@ -71,7 +72,7 @@ jobs:
       # No `ref:` on purpose. On workflow_run the default checkout is the default branch
       # (main), so the scripts and this workflow are main's code. Passing the triggering
       # run's ref would check out PR-controlled code while the App token is in scope.
-      # fetch-depth 0: the patch id diffs against origin/main, which needs full history.
+      # fetch-depth 0: the verification walks main's history and merge bases.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -113,20 +114,23 @@ jobs:
             jq --argjson r "$rec" 'map(if .number == $r.number then $r else . end)' "$prs" > "$prs.new" && mv "$prs.new" "$prs"
           done
 
-          # The train head's net patch id, from its fetched head as data. The PR is never
-          # checked out or executed. Failure leaves the id out, and the decision halts the head.
-          pid_arg=()
+          # The train head's verification. PR content is fetched as data and never checked out
+          # or executed. A failed fetch or verify leaves the head check out, and decide halts it.
+          verify=()
           cand=$(python3 scripts/train_step.py candidate --merge-train "${MERGE_TRAIN:-off}" < "$prs")
           if [ -n "$cand" ]; then
-            read -r n sha <<<"$cand"
-            if git fetch --no-tags --quiet origin "pull/$n/head" && pid=$(python3 scripts/train_patch_id.py "$sha"); then
-              pid_arg=(--patch-id "$n:$pid")
+            read -r n sha rsha <<<"$cand"
+            vout="$RUNNER_TEMP/verify.json"
+            if git fetch --no-tags --quiet origin main &&
+               git fetch --no-tags --quiet origin "pull/$n/head" &&
+               python3 scripts/train_verify_head.py "$rsha" "$sha" --main origin/main > "$vout"; then
+              verify=(--head-pr "$n" --head-check "$vout")
             else
-              echo "::warning::PR #$n: could not compute the net patch id; the decision halts it"
+              echo "::warning::PR #$n: head verification did not run; the decision halts it"
             fi
           fi
 
-          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" "${pid_arg[@]}" < "$prs")
+          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" "${verify[@]}" < "$prs")
           action=$(jq -r .action <<<"$out")
           pr=$(jq -r '.pr // empty' <<<"$out")
           sha=$(jq -r '.head_sha // empty' <<<"$out")
@@ -135,7 +139,8 @@ jobs:
           echo "$action (mode $mode): $reason"
           echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
 
-          # A halt labels the head and says why. The reason is our own text, passed quoted.
+          # A halt labels the head and says why. The reason is sanitised by the script, and it
+          # is passed quoted.
           halt() {
             gh pr edit "$pr" --add-label train:halted &&
               gh pr comment "$pr" --body "Merge train halted: $1. Fix it, remove the train:halted label, then dispatch the update-behind workflow to resume."
@@ -155,7 +160,7 @@ jobs:
               ;;
             update)
               if [ "$mode" = train ]; then
-                note="Merge train updated this branch from main at ${GITHUB_SHA}. The net patch will be verified against its reviewed label before merge."
+                note="Merge train updated this branch from main at ${GITHUB_SHA}. The head is verified against its reviewed commit before merge."
               else
                 note="Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."
               fi
