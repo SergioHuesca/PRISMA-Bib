@@ -1,8 +1,8 @@
-"""Choose the one PR that update-behind-prs.yml brings up to date after a push to main.
+"""Choose the one PR that update-behind-prs.yml brings up to date.
 
 Reads ``gh pr list --json number,isDraft,mergeStateStatus,statusCheckRollup`` output
-on stdin and prints the number of the next PR to merge, or nothing. The definition
-lives in the header of the ``update`` job in ``.github/workflows/update-behind-prs.yml``.
+on stdin and prints the number of the PR to update, or nothing. The rule is documented
+in the header of ``.github/workflows/update-behind-prs.yml``.
 """
 
 from __future__ import annotations
@@ -10,6 +10,10 @@ from __future__ import annotations
 import json
 import sys
 from typing import Any
+
+# Drafts are eligible to be the next PR to merge. Flip to False to skip them; the
+# head of the queue is then the lowest-numbered non-draft PR.
+INCLUDE_DRAFTS = True
 
 # A check run that has not COMPLETED (QUEUED, IN_PROGRESS, PENDING, WAITING, REQUESTED)
 # or a commit status still PENDING/EXPECTED counts as running. Anything else does not.
@@ -26,12 +30,24 @@ def has_running_check(pr: dict[str, Any]) -> bool:
 
 
 def select_next_pr(prs: list[dict[str, Any]]) -> int | None:
-    eligible = [
-        pr["number"]
-        for pr in prs
-        if not pr["isDraft"] and pr["mergeStateStatus"] == "BEHIND" and not has_running_check(pr)
-    ]
-    return min(eligible, default=None)
+    # Only the head of the queue is ever updated. Updating any other PR makes it BEHIND
+    # again after the next merge and wastes CI. A CLEAN or CI-running head means nothing
+    # to do now; the workflow_run trigger re-evaluates when that CI finishes. DIRTY
+    # (conflicts) cannot be fixed by a bot update, so it leaves the queue.
+    queue = sorted(
+        (
+            pr
+            for pr in prs
+            if pr["mergeStateStatus"] != "DIRTY" and (INCLUDE_DRAFTS or not pr["isDraft"])
+        ),
+        key=lambda pr: pr["number"],
+    )
+    if not queue:
+        return None
+    head = queue[0]
+    if head["mergeStateStatus"] != "BEHIND" or has_running_check(head):
+        return None
+    return head["number"]
 
 
 def main() -> None:

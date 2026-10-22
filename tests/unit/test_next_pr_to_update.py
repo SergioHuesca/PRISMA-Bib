@@ -1,8 +1,9 @@
 """The next-PR rule of update-behind-prs.yml (``scripts/next_pr_to_update.py``).
 
-After a push to main only one PR is brought up to date: the lowest-numbered open,
-non-draft PR that is BEHIND and has no running checks. Each filter below guards a
-case that, if dropped, updates the wrong PR (or a draft, or a PR mid-CI).
+Only the head of the queue is ever updated: the lowest-numbered open PR targeting main,
+drafts included, excluding DIRTY (conflicts). It is updated only when it is BEHIND with no
+running checks. Each test below guards a case that, if the rule changed, would update the
+wrong PR, update a PR mid-CI, or cascade updates onto PRs that the next merge re-breaks.
 """
 
 from __future__ import annotations
@@ -51,17 +52,72 @@ def _running(status: str) -> dict[str, Any]:
 
 
 @pytest.mark.unit
-def test_next_pr__mixed_candidates__picks_lowest_eligible_regardless_of_order() -> None:
-    prs = [
-        _pr(6),  # eligible, higher number
-        _pr(4, "UNKNOWN"),  # not known to be BEHIND
-        _pr(3, "CLEAN"),  # nothing to update
-        _pr(2, checks=[_running("IN_PROGRESS")]),  # required CI still running
-        _pr(1, draft=True),  # drafts are never updated
-        _pr(5),  # eligible, lowest eligible
-    ]
+def test_next_pr__head_behind_with_finished_checks__selected() -> None:
+    prs = [_pr(6), _pr(5)]
+    assert select_next_pr(prs) == 5
+
+
+@pytest.mark.unit
+def test_next_pr__shuffled_input__same_head() -> None:
+    # PR 4 has conflicts (DIRTY), so it leaves the queue and PR 5 becomes the head.
+    prs = [_pr(6), _pr(4, "DIRTY"), _pr(5), _pr(9, "UNKNOWN")]
     assert select_next_pr(prs) == 5
     assert select_next_pr(list(reversed(prs))) == 5
+
+
+@pytest.mark.unit
+def test_next_pr__head_is_draft__still_selected() -> None:
+    prs = [_pr(3, draft=True), _pr(4)]
+    assert select_next_pr(prs) == 3
+
+
+@pytest.mark.unit
+def test_next_pr__head_clean__nothing_selected_even_if_later_pr_behind() -> None:
+    # No cascade: PR 2 is BEHIND, but updating it would make it BEHIND again after the
+    # next merge. Only the head is considered.
+    prs = [_pr(1, "CLEAN"), _pr(2)]
+    assert select_next_pr(prs) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "check",
+    [
+        _running("QUEUED"),
+        _running("IN_PROGRESS"),
+        _running("PENDING"),
+        _running("WAITING"),
+        _running("REQUESTED"),
+        {"__typename": "StatusContext", "context": "ci", "state": "PENDING"},
+        {"__typename": "StatusContext", "context": "ci", "state": "EXPECTED"},
+    ],
+    ids=[
+        "queued",
+        "in-progress",
+        "check-pending",
+        "waiting",
+        "requested",
+        "status-pending",
+        "status-expected",
+    ],
+)
+def test_next_pr__head_with_running_check__nothing_selected(check: dict[str, Any]) -> None:
+    prs = [_pr(1, checks=[_DONE_CHECK, check]), _pr(2)]
+    assert select_next_pr(prs) is None
+
+
+@pytest.mark.unit
+def test_next_pr__head_dirty__skipped_and_next_lowest_becomes_head() -> None:
+    # A bot update cannot fix conflicts, so DIRTY leaves the queue.
+    assert select_next_pr([_pr(1, "DIRTY"), _pr(2)]) == 2
+    # The new head is CLEAN, so nothing is updated: DIRTY did not make PR 3 eligible.
+    assert select_next_pr([_pr(1, "DIRTY"), _pr(2, "CLEAN"), _pr(3)]) is None
+
+
+@pytest.mark.unit
+def test_next_pr__head_unknown__nothing_selected() -> None:
+    # UNKNOWN is not BEHIND. The head is not skipped in favour of a later PR either.
+    assert select_next_pr([_pr(1, "UNKNOWN"), _pr(2)]) is None
 
 
 @pytest.mark.unit
@@ -73,8 +129,8 @@ def test_next_pr__null_check_rollup__is_treated_as_no_running_checks() -> None:
 
 
 @pytest.mark.unit
-def test_next_pr__failed_checks_only__still_eligible() -> None:
-    # Only *running* checks exclude a PR; a red PR is still the next one to merge.
+def test_next_pr__failed_checks_only__still_selected() -> None:
+    # Only *running* checks hold a PR back; a red head is still the next one to merge.
     failed = {
         "__typename": "CheckRun",
         "name": "lint",
@@ -85,32 +141,16 @@ def test_next_pr__failed_checks_only__still_eligible() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "check",
-    [
-        _running("QUEUED"),
-        _running("PENDING"),
-        _running("WAITING"),
-        {"__typename": "StatusContext", "context": "ci", "state": "PENDING"},
-        {"__typename": "StatusContext", "context": "ci", "state": "EXPECTED"},
-    ],
-    ids=["queued", "check-pending", "waiting", "status-pending", "status-expected"],
-)
-def test_next_pr__any_running_check__excluded(check: dict[str, Any]) -> None:
-    prs = [_pr(1, checks=[_DONE_CHECK, check]), _pr(2)]
-    assert select_next_pr(prs) == 2
+def test_next_pr__empty_list__returns_none() -> None:
+    assert select_next_pr([]) is None
 
 
 @pytest.mark.unit
-def test_next_pr__nothing_eligible__returns_none() -> None:
-    prs = [
-        _pr(1, draft=True),
-        _pr(2, "CLEAN"),
-        _pr(3, "UNKNOWN"),
-        _pr(4, checks=[_running("IN_PROGRESS")]),
-    ]
-    assert select_next_pr(prs) is None
-    assert select_next_pr([]) is None
+def test_next_pr__include_drafts_false__draft_head_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The INCLUDE_DRAFTS switch: with drafts excluded, the head is the lowest non-draft.
+    monkeypatch.setattr(_module, "INCLUDE_DRAFTS", False)
+    assert select_next_pr([_pr(1, draft=True), _pr(2)]) == 2
+    assert select_next_pr([_pr(1, draft=True)]) is None
 
 
 @pytest.mark.integration
@@ -125,5 +165,6 @@ def test_next_pr__cli__prints_number_or_nothing() -> None:
         )
         return proc.stdout
 
-    assert run([_pr(9), _pr(8, draft=True)]) == "9\n"
+    assert run([_pr(9), _pr(8, draft=True)]) == "8\n"
+    assert run([_pr(9)]) == "9\n"
     assert run([_pr(8, "CLEAN")]) == ""

@@ -1,4 +1,4 @@
-# Keep open PRs current with main, one PR per push to main.
+# Keep the next PR to merge current with main.
 #
 # !! OWNER SETUP REQUIRED !!
 # Pushes made with the default GITHUB_TOKEN do NOT trigger new workflow runs, so updated
@@ -11,6 +11,19 @@
 # A failed update or comment is reported as a warning and a step-summary note; it does not
 # fail the run. A failed listing call or token step still fails the job, so real faults stay
 # visible. The job never blocks main. It never merges, closes, approves, or edits PR contents.
+#
+# Triggers: push to main (a merge changes the queue); workflow_run of CI completing (a PR's
+# checks finishing is what ends "CI running", so the queue can change); workflow_dispatch.
+# No trigger here checks out or runs PR-controlled code, and the App token never sees one.
+#
+# Rule (scripts/next_pr_to_update.py): only the head of the queue is ever updated. The head
+# is the lowest-numbered open PR targeting main, drafts included (INCLUDE_DRAFTS in the
+# script), skipping PRs whose mergeStateStatus is DIRTY (conflicts a bot update cannot fix).
+# The head is updated if and only if it is BEHIND and has no queued or in-progress checks.
+#
+# Starvation caveat: a permanently red or conflicting PR at the head blocks automation for
+# the others until it merges or is closed. DIRTY PRs are skipped, so only red or stalled
+# non-conflicting PRs can block. Red PRs are not skipped by design.
 
 name: Update behind PRs
 
@@ -18,6 +31,9 @@ on:
   push:
     branches:
       - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -27,18 +43,14 @@ concurrency:
 permissions: {}
 
 jobs:
-  # Definition of "next PR to merge" (selected by scripts/next_pr_to_update.py): among open,
-  # non-draft PRs targeting main whose mergeStateStatus is BEHIND and that have no queued or
-  # in-progress check runs, the one with the lowest PR number. Drafts and PRs whose CI is still
-  # running are never updated; they are picked up by a later push to main. UNKNOWN is polled
-  # for ~60s per PR, and a PR still UNKNOWN is not a candidate in this run.
-  # Only that one PR is updated: each update re-runs CI and asks a reviewer to re-confirm, so
-  # updating every BEHIND PR spends runs on PRs that the next merge makes BEHIND again.
   update:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      # No `ref:` on purpose. On workflow_run the default checkout is the default branch
+      # (main), so the script and this workflow are main's code. Passing the triggering
+      # run's ref would check out PR-controlled code while the App token is in scope.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -58,8 +70,8 @@ jobs:
           prs="$RUNNER_TEMP/prs.json"
           gh pr list --base main --state open --limit 500 \
             --json number,isDraft,mergeStateStatus,statusCheckRollup > "$prs"
-          # mergeStateStatus is computed lazily: re-read each non-draft UNKNOWN PR, up to ~60s (6 x 10s).
-          for n in $(jq -r '.[] | select(.isDraft | not) | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
+          # mergeStateStatus is computed lazily: re-read each UNKNOWN PR, up to ~60s (6 x 10s).
+          for n in $(jq -r '.[] | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
             for i in 1 2 3 4 5 6; do
               rec=$(gh pr view "$n" --json number,isDraft,mergeStateStatus,statusCheckRollup)
               if [ "$(jq -r .mergeStateStatus <<<"$rec")" != UNKNOWN ]; then break; fi
@@ -73,7 +85,7 @@ jobs:
           done
           next=$(python3 scripts/next_pr_to_update.py < "$prs")
           if [ -z "$next" ]; then
-            echo "No open PR is BEHIND, non-draft and free of running checks; nothing to update."
+            echo "Nothing to update: the next PR to merge is not BEHIND, or its checks are still running."
             exit 0
           fi
           echo "Next PR to merge: #$next is BEHIND; updating"
@@ -81,6 +93,6 @@ jobs:
             gh pr comment "$next" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
             :
           else
-            echo "::warning::PR #$next: update or comment failed; it stays BEHIND until a later push to main"
+            echo "::warning::PR #$next: update or comment failed; it stays BEHIND until the next trigger"
             echo "PR #$next: update or comment failed" >> "$GITHUB_STEP_SUMMARY"
           fi
