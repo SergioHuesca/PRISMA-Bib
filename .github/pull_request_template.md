@@ -20,7 +20,7 @@ All boxes must be checked. These are non-negotiable, applied to every stage.
 
 - [ ] `ruff check` and `ruff format --check` clean.
 - [ ] `mypy --strict src/prismabib` clean.
-- [ ] `pytest` green; coverage gates met (§3.7.6: ≥ 85% default; ≥ 95% for `store`, `prisma`, `taxonomy`; 100% branch on `prisma/engine.py` and `prisma/log.py`).
+- [ ] `pytest` green; coverage gates met (§3.7.6: ≥ 85% default; ≥ 95% for `store`, `prisma`, `taxonomy`; 100% branch on `prisma/engine.py`, `prisma/log.py` and `log.py`).
 - [ ] Every acceptance criterion in the stage carries at least one test marked `@pytest.mark.acceptance("S<NN>-AC<n>")`; `pytest --acceptance-report` shows no unclaimed criterion.
 - [ ] No new test is skipped, `xfail`-without-reason, or marked `flaky`.
 - [ ] Public functions have docstrings (Google style) and appear in `docs/reference/`.

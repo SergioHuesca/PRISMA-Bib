@@ -315,6 +315,7 @@ pretty_print = true
 global = {line = 85}
 "src/prismabib/prisma/engine.py" = {line = 100, branch = 100}
 "src/prismabib/prisma/log.py" = {line = 100, branch = 100}
+"src/prismabib/log.py" = {line = 100, branch = 100}
 "src/prismabib/prisma/flow.py" = {line = 100, branch = 100}
 "src/prismabib/store" = {line = 95, branch = 90}
 "src/prismabib/taxonomy" = {line = 95, branch = 90}
@@ -381,7 +382,7 @@ fail_under = 90
 # silently becoming zero, with the gate no longer able to report it.
 source_paths = ["src/prismabib"]
 # "src/prismabib/taxonomy/*" added at Stage 8 (BUILD_PLAN line 580 names it as in scope).
-only_mutate = ["src/prismabib/prisma/*", "src/prismabib/taxonomy/*"]
+only_mutate = ["src/prismabib/prisma/*", "src/prismabib/taxonomy/*", "src/prismabib/log.py"]
 # Mutants are only worth generating for code the PRISMA/taxonomy suites exercise, and the
 # whole test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read
 # repository files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part

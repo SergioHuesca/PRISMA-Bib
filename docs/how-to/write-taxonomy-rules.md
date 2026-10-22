@@ -178,7 +178,7 @@ the way through to the coverage report's `uncoded`/`reviewed_none` split.
 
 Overrides are appended, never edited, using the identical machinery `decisions.jsonl` uses
 (locking, per-write `fsync`, a `.sha256` checksum sidecar) —
-`prismabib.prisma.log.AppendOnlyLog`, reused rather than
+`prismabib.log.AppendOnlyLog`, reused rather than
 reimplemented. Bump the rule file's `version`, re-run `code()`, and every override you have
 recorded survives untouched: that is the entire value proposition of rules-plus-override
 ([ADR 0005](../architecture/adr/0005-rules-plus-override-taxonomy.md)).

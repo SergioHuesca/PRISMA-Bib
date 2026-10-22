@@ -12,7 +12,7 @@ is materially different from "nobody looked" (:mod:`prismabib.taxonomy.coder`
 keeps the two distinct: see :attr:`~prismabib.taxonomy.coder.CodingResult.human_reviewed`).
 
 **Reuses ADR 0002's append-only machinery, not a second implementation of
-it.** :class:`OverrideLog` composes :class:`prismabib.prisma.log.AppendOnlyLog`
+it.** :class:`OverrideLog` composes :class:`prismabib.log.AppendOnlyLog`
 -- the exact same locking, per-write ``fsync``, checksum-sidecar and
 crash-safety guarantees ``decisions.jsonl`` has -- because ADR 0023
 Consequence 2 makes this the one taxonomy artefact this stage produces that
@@ -40,8 +40,8 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_serializer, fi
 from pydantic import ValidationError as PydanticValidationError
 
 from prismabib.errors import LogError, ValidationError
+from prismabib.log import AppendOnlyLog
 from prismabib.prisma.events import IdFactory, MonotonicUlidFactory
-from prismabib.prisma.log import AppendOnlyLog
 from prismabib.project import Project
 from prismabib.taxonomy.schema import TaxonomySchema
 
@@ -65,7 +65,7 @@ class OverrideEvent(BaseModel):
             produces. Sort order over this field is what breaks a ``ts`` tie
             during folding, exactly as for :class:`~prismabib.prisma.events.DecisionEvent`.
         schema_version: Defaults to :data:`CURRENT_OVERRIDE_SCHEMA_VERSION`;
-            :class:`~prismabib.prisma.log.AppendOnlyLog` rejects any other
+            :class:`~prismabib.log.AppendOnlyLog` rejects any other
             value found while reading a file.
         ts: The instant the override was recorded. Must be timezone-aware;
             stored (and serialised to JSON) normalised to UTC.
@@ -197,7 +197,7 @@ def fold_override_events(events: Iterable[OverrideEvent]) -> dict[OverrideFoldKe
 class OverrideLog:
     """The append-only, checksum-guarded taxonomy override log for one project.
 
-    Reuses :class:`prismabib.prisma.log.AppendOnlyLog` for every append-only
+    Reuses :class:`prismabib.log.AppendOnlyLog` for every append-only
     guarantee (see the module docstring). What is specific to an override
     lives here: the dimension/category cross-check against a
     :class:`~prismabib.taxonomy.schema.TaxonomySchema`, and the

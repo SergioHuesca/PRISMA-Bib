@@ -8,6 +8,14 @@ names a technology stack and no operating system, and the decision-log rules of 
 provides them. What this ADR records is a decision that changes observable behaviour on
 one platform, and the one place where the two platforms deliberately differ.
 
+> **Note added 2026-10-22 (PR for ADR 0029; this note does not change the record above).**
+> [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) §8 moved `AppendOnlyLog`,
+> the lock backends and `_select_lock_backend` from `src/prismabib/prisma/log.py` to
+> `src/prismabib/log.py`. The 100% line and branch gate and the mutation scope that this ADR
+> and BUILD_PLAN §3.7.6 attach to the append-only log now apply to `src/prismabib/log.py`;
+> `prisma/log.py` keeps its own gate for `DecisionLog` and `fold_events`. BUILD_PLAN stays
+> frozen.
+
 ## Context
 
 `src/prismabib/prisma/log.py` opened with a module-level `import fcntl`. That module does

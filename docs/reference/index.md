@@ -304,6 +304,14 @@ set definitions and the flow-diagram audit table.
       show_source: true
       members_order: source
 
+### log
+
+::: prismabib.log
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ### prisma.log
 
 ::: prismabib.prisma.log
