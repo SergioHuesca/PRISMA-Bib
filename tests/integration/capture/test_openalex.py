@@ -394,14 +394,16 @@ def test_capture_openalex__key_in_header_not_params__reaches_no_stored_file(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("encoded", [False, True], ids=["raw", "percent-encoded"])
+@pytest.mark.parametrize("status", [200, 401], ids=["ok", "refused"])
+@pytest.mark.parametrize("form", _KEY_FORMS, ids=["raw", "percent-encoded", "json-escaped"])
 def test_capture_openalex__body_carrying_the_key__is_refused_unwritten_and_unsealed(
-    tmp_path: Path, encoded: bool
+    tmp_path: Path, form: str, status: int
 ) -> None:
     project = _project(tmp_path)
-    leaked = quote_plus(_KEY, safe="") if encoded else _KEY
-    body = json.dumps({"results": [], "echo": leaked}).encode()
-    fake = Fake(lambda _r: httpx.Response(200, content=body))
+    leaked = form
+    # Built by hand so each form appears in the body exactly as parametrised.
+    body = b'{"results":[],"echo":"' + leaked.encode() + b'"}'
+    fake = Fake(lambda _r: httpx.Response(status, content=body))
     with pytest.raises(ApiKeyInBodyError) as caught:
         _run(project, fake, key=_KEY, dois=["10.1/a"])
     assert "response-0000.jsonl" in str(caught.value)
@@ -455,6 +457,37 @@ def test_capture_openalex__interrupted_run__resumes_without_rerequesting_written
     for name in ("response-0000.jsonl", "response-0001.jsonl"):
         assert (run_dir / name).read_bytes() == first_bytes[name]
     assert is_sealed(run_dir) and len(_runs(project)) == 1
+
+
+@pytest.mark.integration
+def test_capture_openalex__retried_unit_makes_fewer_requests__orphan_files_are_deleted(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    works = {"10.1/a": _work("10.1/a"), "10.1/b": _work("10.1/b")}
+    inner = _serve(works)
+    calls = {"n": 0}
+
+    def crash_in_singles(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(404, content=b"{}")  # batch 404 -> singles
+        if calls["n"] == 3:
+            raise httpx.ConnectError("dropped")
+        return inner(request)
+
+    with pytest.raises(httpx.ConnectError):
+        _run(project, Fake(crash_in_singles), dois=["10.1/a", "10.1/b"])
+    [run_dir] = _runs(project)
+    assert sorted(p.name for p in run_dir.glob("response-*")) == [
+        "response-0000.jsonl",
+        "response-0001.jsonl",
+    ]
+
+    manifest = _run(project, Fake(inner), dois=["10.1/a", "10.1/b"])  # one batch request now
+    assert manifest is not None and manifest.run_id == run_dir.name
+    assert manifest.payload_files == ["response-0000.jsonl"]
+    assert sorted(p.name for p in run_dir.iterdir()) == ["manifest.json", "response-0000.jsonl"]
 
 
 @pytest.mark.integration

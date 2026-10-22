@@ -26,8 +26,10 @@ from prismabib.sources.openalex import (
     OpenAlexWork,
     Refused,
     TopicKeyword,
+    _HttpxKeyRedactionFilter,
     authorships_to_fields,
     field_outcomes,
+    lookup_outcome,
     rebuild_abstract,
     topics_to_keywords,
 )
@@ -468,3 +470,38 @@ def test_refusal__in_opt_in_run__is_not_written_to_or_served_from_the_cache(
     assert first == {_DOI_ONE: Refused(401)}
     assert route.call_count == 2  # the refusal was not replayed from the cache
     assert isinstance(second[_DOI_ONE], OpenAlexWork)
+
+
+def _scrub(keys: set[str], message: str) -> str:
+    """Run one record through a fresh (not process-wide) redaction filter."""
+    redaction = _HttpxKeyRedactionFilter()
+    redaction.keys = keys
+    record = logging.LogRecord("httpx", logging.INFO, __file__, 1, message, None, None)
+    redaction.filter(record)
+    return record.getMessage()
+
+
+@pytest.mark.unit
+def test_httpx_filter__key_that_contains_another__longest_is_redacted_first() -> None:
+    # Shortest-first would turn "abcdef" into "***def", leaking its tail.
+    assert _scrub({"abc", "abcdef"}, "GET /x?k=abcdef&j=abc") == "GET /x?k=***&j=***"
+
+
+@pytest.mark.unit
+def test_lookup_outcome__doi_and_title__match_exactly_and_report_absent_fields() -> None:
+    bare = OpenAlexWork("W1", "10.1/a", "Deep Learning!", 2021)
+    other = OpenAlexWork("W2", "10.1/b", "Deep Learning Again", 2021)
+    assert lookup_outcome([other, bare], doi="HTTPS://doi.org/10.1/A") == (
+        bare,
+        ["abstract", "authors", "affiliations", "keywords"],
+    )
+    assert lookup_outcome([other, bare], title="deep learning", year=2021)[0] is bare
+    assert lookup_outcome([other, bare], title="deep learning", year=2020) == (None, [])
+    assert lookup_outcome([other], title="deep learning") == (None, [])
+
+
+@pytest.mark.unit
+def test_httpx_filter__empty_key__leaves_the_message_intact() -> None:
+    # replace("", "***") would insert *** between every character.
+    assert _scrub({"", "secret"}, "HTTP Request: GET /x?k=secret") == "HTTP Request: GET /x?k=***"
+    assert _scrub({""}, "HTTP Request: GET /x") == "HTTP Request: GET /x"

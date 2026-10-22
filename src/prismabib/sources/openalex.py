@@ -73,7 +73,8 @@ class _HttpxKeyRedactionFilter(logging.Filter):
         """Rewrite the record's message with each key replaced by ``***``; keep the record."""
         message = record.getMessage()
         # Longest first: a short key that is a substring of a longer one must not mangle it.
-        for key in sorted(self.keys, key=len, reverse=True):
+        # An empty key is skipped: replace("", "***") would garble every line.
+        for key in sorted(filter(None, self.keys), key=len, reverse=True):
             message = message.replace(key, "***").replace(quote_plus(key, safe=""), "***")
         record.msg, record.args = message, None
         return True
@@ -213,7 +214,44 @@ def field_outcomes(result: OpenAlexWork | NotFound | Refused) -> dict[str, Field
     return {n: FieldOutcome("value", v) if v else FieldOutcome("absent") for n, v in values.items()}
 
 
-def _parse_work(raw: Mapping[str, Any]) -> OpenAlexWork:
+def lookup_outcome(
+    works: Iterable[OpenAlexWork],
+    *,
+    doi: str | None = None,
+    title: str | None = None,
+    year: int | None = None,
+) -> tuple[OpenAlexWork | None, list[str]]:
+    """The one place a work is matched to an identifier and classified (ADR 0031 Decision 4).
+
+    Match by normalised ``doi``, or else by exact normalised ``title`` with the
+    same ``year`` (ADR 0028 Decision 4); a near miss is not a match.
+
+    Returns:
+        ``(work, absent_fields)``. ``work`` is ``None`` for ``not_found``; for a
+        ``value`` ``absent_fields`` lists, in order, the empty fields among
+        ``abstract``, ``authors``, ``affiliations``, ``keywords``.
+    """
+    wanted = normalise_title(title) if title is not None else None
+    found = next(
+        (
+            w
+            for w in works
+            if (doi is not None and w.doi == normalise_doi(doi))
+            or (
+                wanted is not None
+                and w.title
+                and w.publication_year == year
+                and normalise_title(w.title) == wanted
+            )
+        ),
+        None,
+    )
+    if found is None:
+        return None, []
+    return found, [n for n, o in field_outcomes(found).items() if o.outcome == "absent"]
+
+
+def parse_work(raw: Mapping[str, Any]) -> OpenAlexWork:
     year = raw.get("publication_year")
     doi = raw.get("doi")
     return OpenAlexWork(
@@ -237,7 +275,7 @@ def _parse_results(body: bytes, *, single: bool = False) -> list[OpenAlexWork]:
     results = parsed.get("results") if isinstance(parsed, dict) else None
     if not isinstance(results, list):
         raise ValidationError("OpenAlex response has no 'results' list")
-    return [_parse_work(r) for r in results if isinstance(r, dict)]
+    return [parse_work(r) for r in results if isinstance(r, dict)]
 
 
 class OpenAlexClient:
@@ -335,8 +373,7 @@ class OpenAlexClient:
                 # A 404 on the whole batch says nothing about any one DOI.
                 singles.extend(batch)
             elif isinstance(result, list):
-                by_doi = {w.doi: w for w in result if w.doi}
-                found.update({d: by_doi.get(d, NotFound()) for d in batch})
+                found.update({d: lookup_outcome(result, doi=d)[0] or NotFound() for d in batch})
             else:
                 found.update(dict.fromkeys(batch, result))
         for doi in singles:
@@ -376,15 +413,7 @@ class OpenAlexClient:
             return result
         if result is None:
             return None
-        wanted = normalise_title(title)
-        return next(
-            (
-                w
-                for w in result
-                if w.title and w.publication_year == year and normalise_title(w.title) == wanted
-            ),
-            None,
-        )
+        return lookup_outcome(result, title=title, year=year)[0]
 
     def _get_works(
         self, params: Mapping[str, str], *, fallback_opt_in: bool, url: str | None = None
@@ -456,8 +485,10 @@ __all__ = [
     "TopicKeyword",
     "authorships_to_fields",
     "field_outcomes",
+    "lookup_outcome",
     "normalise_doi",
     "normalise_title",
+    "parse_work",
     "rebuild_abstract",
     "topics_to_keywords",
 ]

@@ -18,8 +18,13 @@ is the seal. An unsealed run resumes only when its plan (identifiers in order,
 ``fallback_opt_in`` and ``refresh``) is identical and it holds no refusal.
 Resumption is by *unit* (a DOI batch, a single DOI, or one title search), so a
 finished unit is never requested again. A unit interrupted part-way (a batch 404
-whose single lookups did not all finish) is asked again and its orphaned files are
-rewritten; ``progress.json`` never named them.
+whose single lookups did not all finish) is asked again; on resume its orphaned
+files (index at or past the recorded requests) are deleted, so a sealed run holds
+exactly the files its manifest names.
+
+**Empty bodies.** A zero-byte body is stored verbatim as a lone ``\\n``, i.e. a blank
+JSONL line. Readers must skip blank lines (and treat the response as having no
+works).
 
 **The key.** The manifest holds ``api_key_used`` and ``params`` without
 ``api_key``. A body that contains the key (raw or percent-encoded) is never
@@ -56,16 +61,17 @@ from prismabib.capture.manifest import (
     OpenAlexRunManifest,
     OpenAlexTitle,
 )
-from prismabib.capture.writer import _payload_sha256
+from prismabib.capture.writer import payload_sha256
 from prismabib.config import Settings
 from prismabib.errors import ValidationError
 from prismabib.project import Project
 from prismabib.sources.openalex import (
     OpenAlexClient,
     OpenAlexWork,
-    field_outcomes,
+    lookup_outcome,
     normalise_doi,
     normalise_title,
+    parse_work,
 )
 from prismabib.sources.ratelimit import RateLimiter
 
@@ -135,25 +141,19 @@ def _encode_line(body: bytes) -> tuple[bytes, Literal["verbatim", "compact"], st
     return line + b"\n", "compact", hashlib.sha256(body).hexdigest()
 
 
-def _parse_work(raw: dict[str, Any]) -> OpenAlexWork:
-    # Mirrors the client's private `_parse_work`; kept local so this module
-    # depends only on the client's public interface.
-    year = raw.get("publication_year")
-    doi = raw.get("doi")
-    return OpenAlexWork(
-        openalex_id=raw.get("id"),
-        doi=normalise_doi(doi) if isinstance(doi, str) else None,
-        title=raw.get("title"),
-        publication_year=year if isinstance(year, int) else None,
-        abstract_inverted_index=raw.get("abstract_inverted_index") or None,
-        authorships=raw.get("authorships") or (),
-        topics=raw.get("topics") or (),
-    )
-
-
-def _found(identifier: str | OpenAlexTitle, status: int, raw: dict[str, Any]) -> OpenAlexOutcome:
-    absent = [n for n, o in field_outcomes(_parse_work(raw)).items() if o.outcome == "absent"]
-    oid = raw.get("id")
+def _outcome(
+    identifier: str | OpenAlexTitle,
+    status: int,
+    works: list[OpenAlexWork],
+) -> OpenAlexOutcome:
+    """One identifier's outcome, classified by the client module's `lookup_outcome`."""
+    if isinstance(identifier, OpenAlexTitle):
+        work, absent = lookup_outcome(works, title=identifier.title, year=identifier.year)
+    else:
+        work, absent = lookup_outcome(works, doi=identifier)
+    if work is None:
+        return OpenAlexOutcome(identifier=identifier, outcome="not_found", http_status=status)
+    oid = work.openalex_id
     return OpenAlexOutcome(
         identifier=identifier,
         outcome="value",
@@ -161,10 +161,6 @@ def _found(identifier: str | OpenAlexTitle, status: int, raw: dict[str, Any]) ->
         openalex_id=oid if isinstance(oid, str) else None,
         absent_fields=absent,
     )
-
-
-def _missing(identifier: str | OpenAlexTitle, status: int) -> OpenAlexOutcome:
-    return OpenAlexOutcome(identifier=identifier, outcome="not_found", http_status=status)
 
 
 def _outcomes(
@@ -181,7 +177,7 @@ def _outcomes(
         ], None
     if status == 404:
         # A batch 404 says nothing about any one DOI; the singles that follow do.
-        return ([] if lookup == "doi_batch" else [_missing(i, status) for i in ids]), None
+        return ([] if lookup == "doi_batch" else [_outcome(i, status, []) for i in ids]), None
     try:
         parsed = json.loads(body)
     except ValueError:
@@ -189,36 +185,12 @@ def _outcomes(
     if lookup == "doi_single":
         if not isinstance(parsed, dict):
             return [], None
-        work = _parse_work(parsed)
-        hit = work.doi == ids[0]
-        return [_found(ids[0], status, parsed) if hit else _missing(ids[0], status)], None
+        return [_outcome(ids[0], status, [parse_work(parsed)])], None
     results = parsed.get("results") if isinstance(parsed, dict) else None
     if not isinstance(results, list):
         return [], None
-    works = [r for r in results if isinstance(r, dict)]
-    out: list[OpenAlexOutcome] = []
-    if lookup == "doi_batch":
-        by_doi = {w["doi"]: w for w in works if isinstance(w.get("doi"), str)}
-        by_doi = {normalise_doi(k): v for k, v in by_doi.items()}
-        for i in ids:
-            hit_work = by_doi.get(str(i))
-            out.append(_found(i, status, hit_work) if hit_work else _missing(i, status))
-        return out, len(results)
-    for i in ids:
-        assert isinstance(i, OpenAlexTitle)
-        wanted = normalise_title(i.title)
-        match = next(
-            (
-                w
-                for w in works
-                if isinstance(w.get("title"), str)
-                and w.get("publication_year") == i.year
-                and normalise_title(w["title"]) == wanted
-            ),
-            None,
-        )
-        out.append(_found(i, status, match) if match else _missing(i, status))
-    return out, len(results)
+    works = [parse_work(r) for r in results if isinstance(r, dict)]
+    return [_outcome(i, status, works) for i in ids], len(results)
 
 
 class _Recorder:
@@ -368,7 +340,7 @@ def _seal(
         refresh=progress.refresh,
         requests=progress.requests,
         payload_files=files,
-        payload_sha256=_payload_sha256(run_dir, files),
+        payload_sha256=payload_sha256(run_dir, files),
         client_version=_CLIENT_VERSION,
         criteria_version=criteria_version,
     )
@@ -450,8 +422,13 @@ def capture_openalex(
         progress = _Progress.model_validate_json(
             (run_dir / PROGRESS_FILENAME).read_text(encoding="utf-8")
         )
-        # Requests of a half-finished unit are orphans: asked again, rewritten.
+        # Requests of a half-finished unit are orphans: asked again. Their files are
+        # deleted so a sealed run holds exactly the files its manifest and
+        # payload_sha256 name (the unit may now make fewer requests than it crashed at).
         progress.requests = progress.requests[: progress.requests_in_done_units]
+        for orphan in run_dir.glob("response-*.jsonl"):
+            if int(orphan.stem.removeprefix("response-")) >= len(progress.requests):
+                orphan.unlink()
         logger.info(
             "openalex.capture.run_resumed", run_id=run_dir.name, units_done=progress.units_done
         )
