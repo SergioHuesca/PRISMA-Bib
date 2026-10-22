@@ -17,6 +17,7 @@ import pytest
 from prismabib.bibliometrics.keywords import keyword_frequency
 from prismabib.capture.layout import NON_RUN_DIRNAMES, OPENALEX_DIRNAME
 from prismabib.errors import StoreError
+from prismabib.prisma.flow import compute_flow_counts
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import table_checksums
@@ -334,6 +335,32 @@ def test_build_store__malformed_openalex_body__is_recorded_not_skipped_silently(
     # loader must report the unreadable body itself.
     stats = build_store(project, rebuild=True)
     assert stats.malformed_entries_skipped == (f"openalex/{_OA_RUN_1}/response-0000.jsonl:0",)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "bad_body", [b"not json\n", b"[" * 100_000 + b"\n"], ids=["invalid_json", "deeply_nested"]
+)
+def test_build_store__malformed_openalex_body__is_audited_but_moves_no_flow_count(
+    tmp_path: Path, bad_body: bytes
+) -> None:
+    plain = _project(tmp_path / "plain")
+    broken = _project(tmp_path / "broken")
+    write_sealed_openalex_run(
+        broken.raw_dir,
+        _OA_RUN_1,
+        [{"lookup": "doi_batch", "identifiers": [_DOI_1], "raw_bytes": bad_body}],
+    )
+    build_store(plain, rebuild=True)
+    stats = build_store(broken, rebuild=True)  # (a) the build succeeds
+    connection = connect(broken, read_only=True)
+    try:
+        rows = connection.execute("SELECT run_id, record_id FROM malformed_entries").fetchall()
+    finally:
+        connection.close()
+    assert rows == [(_OA_RUN_1, None)]  # (b) kept for audit
+    assert stats.malformed_entries_skipped
+    assert compute_flow_counts(broken) == compute_flow_counts(plain)  # (c)
 
 
 @pytest.mark.integration

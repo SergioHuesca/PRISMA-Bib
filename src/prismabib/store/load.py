@@ -1713,7 +1713,7 @@ def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) 
             text = (run_dir / request.file).read_text(encoding="utf-8").strip()
             try:
                 parsed = _openalex_body_works(json.loads(text)) if text else []
-            except ValueError:
+            except (ValueError, RecursionError):  # a 100000-deep body recurses json out
                 parsed = None
             if parsed is None:
                 acc.malformed_entries.append(
@@ -2056,7 +2056,10 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     Raises:
         StoreError: If the skipped share trips either rule.
     """
-    skipped = len(acc.malformed_entries)
+    # OpenAlex rows are enrichment audit, not search entries (`entries_seen` counts
+    # search entries only), so they never trip this guard.
+    malformed = [r for r in acc.malformed_entries if r[4] != _REASON_MALFORMED_OPENALEX_BODY]
+    skipped = len(malformed)
     seen = acc.entries_seen
     if skipped == 0 or seen == 0:
         return
@@ -2066,7 +2069,7 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     if not (nothing_loaded or systematic):
         return
 
-    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in acc.malformed_entries]
+    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in malformed]
     shown = ", ".join(named[:_MAX_LOGGED_MALFORMED_ENTRIES])
     if len(named) > _MAX_LOGGED_MALFORMED_ENTRIES:
         shown += f", ... and {len(named) - _MAX_LOGGED_MALFORMED_ENTRIES:,} more"

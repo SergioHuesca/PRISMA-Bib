@@ -356,6 +356,10 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
         # `records` (ADR 0012 predicts exactly this: "a row here does not imply
         # a lost record").
         #
+        # An OpenAlex row (`reason = 'malformed_openalex_body'`, ADR 0031) is
+        # audit only: OpenAlex enriches, it identifies no record, so it never
+        # counts as a lost one.
+        #
         # A `missing_eid` row carries no record_id -- nothing identifies the
         # paper it was -- so each is counted individually as its own loss.
         """
@@ -368,7 +372,10 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
                 AND m.record_id NOT IN (SELECT record_id FROM records)
             )
           )
-          + (SELECT count(*) FROM malformed_entries WHERE record_id IS NULL)
+          + (
+            SELECT count(*) FROM malformed_entries
+            WHERE record_id IS NULL AND reason <> 'malformed_openalex_body'
+          )
         """
     ).fetchone()
     return int(row[0]) if row is not None else 0
