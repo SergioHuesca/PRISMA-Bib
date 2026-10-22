@@ -2,15 +2,9 @@
 
 ## Status
 
-Proposed — 2026-10-22.
-
-This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test (`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`)
-scans the ADR directory of whichever checkout runs it, and fails any ADR whose Status reads `Proposed`
-there. On this branch, this record and ADR 0033 fail that test by design.
-
-**Acceptance is decided by a dedicated reviewer, not by this draft.** The owner has asked for that review. This
-record stays `Proposed` through this revision. When the review passes, the Status line is changed to
-`Accepted — <date>` in PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
+Accepted — 2026-10-22, on the merge of PR #150, which the owner approves. A dedicated acceptance review passed at head
+`4251834` (PR #150 comment 6331004926). Until the merge, this record was `Proposed` on the branch
+`docs/adr-0032-0033-drafts`.
 
 This PR also adds a dated supersession note to ADR 0007 and a dated note to ADR 0027, as ADR 0033 requires. Neither body is changed.
 The deviations are listed under Consequences. Each deviation cites the project rule in `CLAUDE.md`, which says:

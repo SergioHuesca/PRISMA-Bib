@@ -2,18 +2,11 @@
 
 ## Status
 
-Proposed — 2026-10-22.
+Accepted — 2026-10-22, on the merge of PR #150, which the owner approves. A dedicated acceptance review passed at head
+`4251834` (PR #150 comment 6331004926). Until the merge, this record was `Proposed` on the branch
+`docs/adr-0032-0033-drafts`.
 
-This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test (`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`)
-scans the ADR directory of whichever checkout runs it, and fails any ADR whose Status reads `Proposed`
-there. On this branch, this record and ADR 0032 fail that test by design.
-
-**Acceptance is decided by a dedicated reviewer, not by this draft.** The owner has asked for that review. This record
-stays `Proposed` through this revision. When the review passes, the Status line is changed to `Accepted — <date>` in
-PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
-
-This record depends on [ADR 0032](0032-registered-records-table-and-classification-map.md), which must be accepted
-first, because the registered records it counts come from the table and view that ADR 0032 specifies.
+This record depends on [ADR 0032](0032-registered-records-table-and-classification-map.md), which is accepted in the same PR, because the registered records it counts come from the table and view that ADR 0032 specifies.
 
 The change to the `FlowCounts` contract is a Stage 4 deviation. Its basis is the project rule in `CLAUDE.md`: "Contracts,
 schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." ADR 0029 (Context, "the spec clauses") applies
@@ -22,9 +15,8 @@ the same rule to Stage 2 and Stage 3. The contract is BUILD_PLAN lines
 
 **This record supersedes [ADR 0007](0007-flow-counts-unsure-fields.md) in full.** ADR 0007's Decision says that
 further amending the `FlowCounts` contract requires a new ADR that supersedes it (ADR 0007, closing paragraph).
-The restated contract is in Decision 1. A dated supersession note is added to ADR 0007 in this PR, body and Status unchanged. Its Status line changes to
-`Superseded by ADR 0033` in PR #150, when this record is accepted.
-The dated note to ADR 0007 is part of this PR, and its body is unchanged.
+The restated contract is in Decision 1. A dated supersession note is added to ADR 0007 in this PR, and its Status line now reads
+`Superseded by ADR 0033`. Its body is unchanged.
 
 ## Context
 

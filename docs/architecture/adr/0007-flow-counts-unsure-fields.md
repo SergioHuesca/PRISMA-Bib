@@ -2,6 +2,7 @@
 
 ## Status
 
+Superseded by [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md) — 2026-10-22. Previously
 Accepted — Stage 4, 2026-08-24. Deviation from the frozen `FlowCounts` contract, explicitly
 approved by the project owner before implementation (§2.6 requires an ADR for any deviation
 from a frozen contract).
