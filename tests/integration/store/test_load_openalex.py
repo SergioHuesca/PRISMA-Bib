@@ -322,6 +322,32 @@ def test_build_store__manifest_disagrees_with_bytes__fails_loudly(tmp_path: Path
 
 
 @pytest.mark.integration
+def test_build_store__sealed_run_with_invalid_manifest__fails_loudly(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    write_sealed_openalex_run(project.raw_dir, _OA_RUN_1, [_doi_request(_alpha(["Topic"]))])
+    manifest = project.raw_dir / OPENALEX_DIRNAME / _OA_RUN_1 / "manifest.json"
+    manifest.write_text('{"not": "an OpenAlexRunManifest"}', encoding="utf-8")
+    with pytest.raises(StoreError):
+        build_store(project, rebuild=True)
+    assert not project.db_path.exists()
+
+
+@pytest.mark.unit
+def test_flow_lost_paper_count__excludes_the_loaders_openalex_reason__same_literal() -> None:
+    # prisma/flow.py cannot import the loader's constant (Stage 4 must not depend on the store
+    # build), so it spells the reason out. If the two drift, OpenAlex audit rows would silently
+    # count as lost papers again.
+    import inspect
+
+    from prismabib.prisma import flow
+    from prismabib.store import load as loader
+
+    # The comment above the SQL also names the reason, so assert the predicate itself.
+    predicate = f"reason <> '{loader._REASON_MALFORMED_OPENALEX_BODY}'"
+    assert predicate in inspect.getsource(flow._unloadable_count)
+
+
+@pytest.mark.integration
 def test_build_store__malformed_openalex_body__is_recorded_not_skipped_silently(
     tmp_path: Path,
 ) -> None:
