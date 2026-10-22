@@ -311,7 +311,7 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
     atomic_write_bytes(run_dir / meta_name, encoded_meta.encode("utf-8"))
 
 
-def _payload_sha256(run_dir: Path, payload_files: list[str]) -> str:
+def payload_sha256(run_dir: Path, payload_files: list[str]) -> str:
     """Hash the concatenation of every page file, in fetch order.
 
     Args:
@@ -493,7 +493,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         )
 
     finished_at = datetime.now(UTC)
-    payload_sha256 = _payload_sha256(run_dir, payload_files)
+    payload_digest = payload_sha256(run_dir, payload_files)
     manifest = RunManifest(
         run_id=run_id,
         started_at=started_at,
@@ -504,7 +504,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         total_results=total_results,
         pages_fetched=len(payload_files),
         payload_files=payload_files,
-        payload_sha256=payload_sha256,
+        payload_sha256=payload_digest,
         client_version=_CLIENT_VERSION,
         criteria_version=project.criteria.version,
     )
@@ -527,7 +527,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         endpoint=endpoint,
         total_results=total_results,
         pages_fetched=len(payload_files),
-        payload_sha256=payload_sha256,
+        payload_sha256=payload_digest,
     )
     return manifest
 

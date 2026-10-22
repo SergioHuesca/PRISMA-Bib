@@ -22,8 +22,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from prismabib.errors import LogError, ValidationError
+from prismabib.log import AppendOnlyLog
 from prismabib.models import normalise_doi as _models_normalise_doi
-from prismabib.prisma.log import AppendOnlyLog
 
 CURRENT_CANDIDATE_SCHEMA_VERSION = 1
 CURRENT_DOI_ENRICHMENT_SCHEMA_VERSION = 1
