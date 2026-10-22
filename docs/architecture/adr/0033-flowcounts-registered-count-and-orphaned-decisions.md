@@ -137,6 +137,10 @@ Stage 4 (lines 970-972: append-only, later events supersede earlier ones by `ts`
 current decision whose `record_id` is not in `S_raw` (`records_all`). Earlier events for the same key are history, and they are not
 counted.
 
+An orphan can also arise without any registration. A rebuild that no longer holds a Scopus `record_id`, for example after a
+search is removed, leaves that record's current decisions orphaned. Their reported reason is then "record not in S_raw". The
+reasons "reversal" and "supersession" apply only to registrations.
+
 **Reporting.** The count of orphaned decisions, and the `event_id` of each, is written:
 
 - beside the flow diagram, as a count;
@@ -173,7 +177,7 @@ reviewer decides it again. The diagram then shows that screening is in progress 
 1. `registered = 1`, the paper is `included`, `included = 1`.
 2. A second search finds the same DOI as a Scopus record. `identified` rises by that search's total (ADR 0013). The build writes
    `supersede`, and `registered = 0`.
-3. The reviewer's decision on the `registered:` record is orphaned and reported. The Scopus record is in `S_raw` with no decision, so
+3. The reviewer's decision on the `registered:` record is orphaned and reported. Assuming the new Scopus record passes the automated and language filters, it is in `S_raw` with no decision, so
    `unsure_title_abstract` rises by one, and `included` falls by one.
 4. The identity still closes by the mechanism of any second search (ADR 0013): `identified` and the Scopus side of `S_raw` move together,
    and `registered` falls by the one superseded registration. Verification 6 checks the closure on a fixture of this shape, and this
@@ -221,7 +225,8 @@ record, so the restated contract is the one that the code and its tests read.
    methods must state it.
 5. Orphaned decisions appear in the methods text, so a reader can see that a reversal or supersession happened after screening began.
 6. `AppendOnlyLog` gains `append_if` in ADR 0029 §8, and a reversal or supersession uses it. This record does not change that mechanism.
-7. The docstring of `compute_flow_counts` (`prisma/flow.py` lines 474-485) says that `after_automated` is derived from Layer 1's
+7. The docstring of `compute_flow_counts` (`prisma/flow.py` lines 474-485) says that `identified` "comes from the earliest run's
+   server-reported total", whereas ADR 0013 and `_identified_count` (lines 299-317) sum one total per distinct query. It also says that `after_automated` is derived from Layer 1's
    `records` rows and that equation 1 is a cross-check. Both statements go stale once registrations join `S_raw`. The
    implementation PR updates that docstring. The comment in `src/prismabib/cli.py` lines 982-986 describes equation 1 as a check of
    `total_results` against the rows in Layer 1. Once registrations join `S_raw`, those rows include them, so that comment is stale
@@ -230,7 +235,7 @@ record, so the restated contract is the one that the code and its tests read.
 ## Deviations from the frozen contract
 
 Each deviation cites the project rule in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without
-a new ADR (§2.6)." Each needs the owner's acceptance under this record.
+a new ADR (§2.6)." Each is part of this record, accepted on the merge of PR #150, which the owner approves, after the dedicated review passed.
 
 1. **The `FlowCounts` contract (BUILD_PLAN lines 976-993, as amended by ADR 0007, 0013 and 0016).** Equation 1 gains the
    `registered` term, and ADR 0007 is superseded in full (Status). Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
@@ -246,7 +251,7 @@ a new ADR (§2.6)." Each needs the owner's acceptance under this record.
 ## Open questions for the owner
 
 None. The owner has decided the reason-code set (Decision 4), the `corpus.*` counts (§2), and the `numbers.json` key
-(§2), each on 2026-10-22. The acceptance of this record is decided by the dedicated review named in Status.
+(§2), each on 2026-10-22. This record is accepted on the merge of PR #150, which the owner approves, after the dedicated review passed.
 
 ## Verification the implementation must include
 

@@ -262,7 +262,7 @@ read.
 with a value. The stored column is always NULL in this version. Its reason is the measured fact in Context: every stored Scopus
 record has `language` NULL, so no language table could be checked against stored data. A NULL language passes the language
 filter by the existing no-data rule (`_passes_language`, `prisma/engine.py` lines 372-375), the same as every Scopus record in the
-two stores. ADR 0029's Split records bullet (line 231) names language as an input, and this is deviation (viii).
+two stores. ADR 0029's Split records bullet (line 236) names language as an input, and this is deviation (viii).
 
 **Refusal is at registration.** This follows ADR 0029 §5, "What registration cannot do, and where each limit is enforced"
 (accepted 2026-10-21), which names the registration writer as the enforcement point for every
@@ -283,7 +283,7 @@ holds three tables, (a) to (c) below. Two constants name it:
   digest is computed when the module is written, and it is pinned in the same commit. It is not computed in
   this draft.
 
-ADR 0029 Owner decision 4 (line 251) and the register bullet (line 62) describe the mapping as "a fixed, versioned
+ADR 0029 Owner decision 4 (line 256) and the register bullet (line 62) describe the mapping as "a fixed, versioned
 mapping table from OpenAlex topics to ASJC codes". **The owner decided the granularity on 2026-10-22: the map is from
 OpenAlex subfield to ASJC code, not from topic.** This record changes that wording in ADR 0029 Owner decision 4
 and in line 62. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. The change is
@@ -720,9 +720,9 @@ between subject areas, and an old published number could not be reproduced.
 
 **Deviations from the frozen contract.** Each item cites the project rule quoted in Status: "Contracts, schemas, and acceptance
 criteria are not renegotiable without a new ADR (§2.6)." Item (ii) also cites BUILD_PLAN line 301. Each is named here, and each
-needs the owner's acceptance under this record:
+is part of this record, accepted on the merge of PR #150, which the owner approves, after the dedicated review passed:
 
-- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 251) and the register bullet (line 62) say "OpenAlex
+- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 256) and the register bullet (line 62) say "OpenAlex
   topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(ii) BUILD_PLAN §1.2, metadata source (line 54).** §1.2 fixes the metadata source as "Scopus API (institutional key)".
   Registered records bring OpenAlex-derived metadata (`doc_type`, `venue_type`, subject area, title and DOI) into Layer 1,
@@ -743,14 +743,14 @@ needs the owner's acceptance under this record:
   earlier lack the fields, and the loader refuses a registration that references one.
 - **(vii) ADR 0029 example.** The `payload_line` example in ADR 0029 (line 91) is superseded by ADR 0031 Decision 2, as
   §6 above states. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
-- **(viii) ADR 0029 Split records, the `language` input (line 231).** ADR 0029 names `language` as a registration input. This
+- **(viii) ADR 0029 Split records, the `language` input (line 236).** ADR 0029 names `language` as a registration input. This
   record drops it, by owner decision (Decision 2), because every stored Scopus record has `language` NULL. A registration's
   `language` is NULL, and the existing no-data rule passes it. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 
 ## Open questions for the owner
 
 None. The owner decided the open question of a conference-hosted article on 2026-10-22 (§3, row (b)). The acceptance of
-this record is decided by the dedicated review named in Status.
+this record is accepted on the merge of PR #150, which the owner approves, after the dedicated review passed.
 
 ## Related decisions
 
@@ -761,7 +761,7 @@ this record is decided by the dedicated review named in Status.
   against recorded pairs.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the loader is the only Layer 1 writer (Decision 3). The separation of OpenAlex topics from ASJC is stated in Context of this record, not in ADR 0028.
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the registration this record makes possible. Its
-  Owner decision 4 (line 251) and line 62 are changed by this record (deviation i).
+  Owner decision 4 (line 256) and line 62 are changed by this record (deviation i).
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the stored OpenAlex body, the `PayloadRef` form, and the select
   amendment (deviation vi).
 - [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md): the Stage 4 counts that read `records_all`.
