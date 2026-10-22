@@ -131,6 +131,7 @@ nav:
       - Write Taxonomy Rules: how-to/write-taxonomy-rules.md
       - Refresh Citations: how-to/refresh-citations.md
       - Figure Gallery: how-to/figure-gallery.md
+      - Merge Train: how-to/merge-train.md
   - Testing: testing.md
   - API Reference: reference/index.md
 
