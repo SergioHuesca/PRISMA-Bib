@@ -1,4 +1,4 @@
-# Keep open PRs current with main after every squash-merge.
+# Keep open PRs current with main, one PR per push to main.
 #
 # !! OWNER SETUP REQUIRED !!
 # Pushes made with the default GITHUB_TOKEN do NOT trigger new workflow runs, so updated
@@ -8,10 +8,8 @@
 # numeric App ID; the owner must ADD this) and APP_PRIVATE_KEY. This workflow does not
 # create or store any secret. Until they exist, the token step fails the job.
 #
-# An UNKNOWN PR is polled for ~60s, then skipped with a warning and a step-summary note
-# (the job does not fail), so it can stay BEHIND until the next push to main.
-# Any failed update fails the job at the end.
-# It never merges, closes, approves, or edits PR contents.
+# Failed updates are reported as warnings and a step-summary note; they do not fail the run
+# and never block main. It never merges, closes, approves, or edits PR contents.
 
 name: Update behind PRs
 
@@ -28,12 +26,21 @@ concurrency:
 permissions: {}
 
 jobs:
+  # Definition of "next PR to merge" (selected by scripts/next_pr_to_update.py): among open,
+  # non-draft PRs targeting main whose mergeStateStatus is BEHIND and that have no queued or
+  # in-progress check runs, the one with the lowest PR number. Drafts and PRs whose CI is still
+  # running are never updated; they are picked up by a later push to main. UNKNOWN is polled
+  # for ~60s per PR, and a PR still UNKNOWN is not a candidate in this run.
+  # Only that one PR is updated: each update re-runs CI and asks a reviewer to re-confirm, so
+  # updating every BEHIND PR spends runs on PRs that the next merge makes BEHIND again.
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # actions/create-github-app-token v3.3.0
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         id: app
@@ -42,31 +49,37 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - name: Update BEHIND pull requests
+      - name: Update the next PR to merge
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          failed=0
-          for n in $(gh pr list --base main --state open --json number --jq '.[].number'); do
-            # mergeStateStatus is computed lazily: poll UNKNOWN up to ~60s (6 x 10s).
+          prs="$RUNNER_TEMP/prs.json"
+          gh pr list --base main --state open --limit 500 \
+            --json number,isDraft,mergeStateStatus,statusCheckRollup > "$prs"
+          # mergeStateStatus is computed lazily: re-read each non-draft UNKNOWN PR, up to ~60s (6 x 10s).
+          for n in $(jq -r '.[] | select(.isDraft | not) | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
             for i in 1 2 3 4 5 6; do
-              s=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus)
-              [ "$s" != "UNKNOWN" ] && break
+              rec=$(gh pr view "$n" --json number,isDraft,mergeStateStatus,statusCheckRollup)
+              if [ "$(jq -r .mergeStateStatus <<<"$rec")" != UNKNOWN ]; then break; fi
               echo "PR #$n: UNKNOWN, retry $i/6"; sleep 10
             done
-            if [ "$s" = "UNKNOWN" ]; then
-              echo "::warning::PR #$n still UNKNOWN after 60s; needs a manual check"
-              echo "PR #$n: still UNKNOWN, needs a manual check" >> "$GITHUB_STEP_SUMMARY"
-              continue
+            if [ "$(jq -r .mergeStateStatus <<<"$rec")" = UNKNOWN ]; then
+              echo "::warning::PR #$n still UNKNOWN after 60s; not a candidate this run"
+              echo "PR #$n: still UNKNOWN after 60s; needs a manual check" >> "$GITHUB_STEP_SUMMARY"
             fi
-            if [ "$s" != "BEHIND" ]; then echo "PR #$n: $s, skipping"; continue; fi
-            echo "PR #$n: BEHIND, updating"
-            if gh pr update-branch "$n" &&
-              gh pr comment "$n" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
-              :
-            else
-              echo "::error::PR #$n: update or comment failed"; failed=1
-            fi
+            jq --argjson r "$rec" 'map(if .number == $r.number then $r else . end)' "$prs" > "$prs.new" && mv "$prs.new" "$prs"
           done
-          exit "$failed"
+          next=$(python3 scripts/next_pr_to_update.py < "$prs")
+          if [ -z "$next" ]; then
+            echo "No open PR is BEHIND, non-draft and free of running checks; nothing to update."
+            exit 0
+          fi
+          echo "Next PR to merge: #$next is BEHIND; updating"
+          if gh pr update-branch "$next" &&
+            gh pr comment "$next" --body "Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."; then
+            :
+          else
+            echo "::warning::PR #$next: update or comment failed; it stays BEHIND until a later push to main"
+            echo "PR #$next: update or comment failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
