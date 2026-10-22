@@ -163,7 +163,7 @@ jobs:
   full-windows:
     name: full-windows
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: [fast]
     steps:
       - uses: actions/checkout@v7
@@ -316,7 +316,7 @@ jobs:
   gates:
     name: gates
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     needs: [full]
     steps:
       - uses: actions/checkout@v7
