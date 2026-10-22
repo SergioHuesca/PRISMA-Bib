@@ -8,7 +8,8 @@ and executes the action it returns. Subcommands:
     Prints ``<pr> <head sha>`` for the train head, whose net patch id the workflow must
     compute before ``decide``. Prints nothing when there is no head to check.
 
-``decide --merge-train on|off [--patch-id N:PID ...]``
+``decide --merge-train on|off [--patch-id N:PID ...] [--closed FILE]``
+    FILE is ``gh pr list --state closed --search "is:unmerged"`` output; without it a train halts.
     Prints one JSON object ``{"action", "pr", "head_sha", "reason", "mode"}``. action is one
     of none, update, merge, halt, wait; mode is train, update or none.
 
@@ -34,19 +35,36 @@ from next_pr_to_update import select_next_pr
 
 OPEN = "OPEN"
 HALTED = "train:halted"
+# The workflow asks gh for at most this many PRs. A full list may be cut short, so the
+# train refuses to decide rather than miss a label.
+LIST_LIMIT = 100
 # fullmatch, not match: `$` would accept a trailing newline in a label or argument.
 _TRAIN_RE = re.compile(r"train:[0-9]{1,3}")
-_REVIEWED_RE = re.compile(r"reviewed:[0-9a-f]{12}")
+# 20 hex = 80 bits of sha256 over the PR's exact changed lines (see train_patch_id.py).
+_REVIEWED_RE = re.compile(r"reviewed:[0-9a-f]{20}")
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
-_PATCH_ARG_RE = re.compile(r"([0-9]{1,9}):([0-9a-f]{12})")
+_PATCH_ARG_RE = re.compile(r"([0-9]{1,9}):([0-9a-f]{20})")
 _PASS_CONCLUSIONS = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 _PENDING_STATES = frozenset({"PENDING", "EXPECTED"})
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 PASS, RUNNING, BAD = "pass", "running", "bad"
 
 
 class InputError(ValueError):
     """The input is not the shape that ``gh pr list --json`` produces."""
+
+
+def _clean(text: str, limit: int = 60) -> str:
+    """Make untrusted text (a check name, set by PR CI) safe for stdout, the step summary and
+    a comment: no control characters (CR/LF end a workflow command), no workflow-command
+    ``::``, no markdown links or mentions, and a bounded length."""
+    text = _CONTROL_RE.sub(" ", text)
+    while "::" in text:
+        text = text.replace("::", ": :")
+    text = text.replace("`", "'").replace("@", "(at)")
+    text = text.translate({ord("<"): "(", ord(">"): ")", ord("["): "(", ord("]"): ")"})
+    return text[:limit]
 
 
 def _validate(prs: Any) -> list[dict[str, Any]]:
@@ -80,6 +98,22 @@ def _validate(prs: Any) -> list[dict[str, Any]]:
     return prs
 
 
+def _validate_closed(closed: Any) -> list[dict[str, Any]]:
+    if not isinstance(closed, list):
+        raise InputError("expected a JSON list of closed PR records")
+    for pr in closed:
+        if not isinstance(pr, dict) or type(pr.get("number")) is not int or pr["number"] < 1:
+            raise InputError("a closed PR record has a bad number")
+        labels = pr.get("labels")
+        if not isinstance(labels, list) or not all(
+            isinstance(label, dict) and isinstance(label.get("name"), str) for label in labels
+        ):
+            raise InputError(f"#{pr['number']}: labels must be a list of {{name}} objects")
+        if pr.get("mergedAt") is not None and not isinstance(pr.get("mergedAt"), str):
+            raise InputError(f"#{pr['number']}: mergedAt must be a string or null")
+    return closed
+
+
 def _names(pr: dict[str, Any]) -> list[str]:
     return [label["name"] for label in pr["labels"]]
 
@@ -108,7 +142,7 @@ def _rollup(pr: dict[str, Any]) -> tuple[str, str]:
     A failing check outranks a running one: the train stops rather than waits for it.
     """
     outcomes = [
-        (_outcome(check), str(check.get("name") or check.get("context") or "unnamed"))
+        (_outcome(check), _clean(str(check.get("name") or check.get("context") or "unnamed")))
         for check in pr["statusCheckRollup"] or []
     ]
     for outcome, name in outcomes:
@@ -207,8 +241,41 @@ def _head(pr: dict[str, Any], patch_ids: dict[int, str]) -> dict[str, Any]:
     return halt(f"unexpected mergeStateStatus {state}")
 
 
-def decide(prs: Any, patch_ids: dict[int, str], merge_train_on: bool) -> dict[str, Any]:
+def _check_open_limit(open_prs: list[dict[str, Any]]) -> None:
+    if len(open_prs) >= LIST_LIMIT:
+        raise InputError(
+            f"{LIST_LIMIT} or more open PRs: the list is cut at the gh limit, "
+            "so the train cannot see every label"
+        )
+
+
+def _closed_hit(closed: list[dict[str, Any]], head_n: int) -> str | None:
+    """A closed-unmerged PR whose train label sits below the head: the batch was broken."""
+    for pr in closed:
+        if pr["mergedAt"] is not None:
+            continue
+        for name in _train_names(pr):
+            if not _TRAIN_RE.fullmatch(name):
+                return f"#{pr['number']} was closed unmerged with a malformed train label"
+            if int(name[len("train:") :]) < head_n:
+                return (
+                    f"#{pr['number']} was closed unmerged as {name}, below the head "
+                    f"train:{head_n}; the batch is broken"
+                )
+    return None
+
+
+def decide(
+    prs: Any,
+    patch_ids: dict[int, str],
+    merge_train_on: bool,
+    closed: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """``closed`` is the closed PRs (number, labels, mergedAt). None means not supplied, which
+    halts the train: it cannot rule out a closed-unmerged PR promoting the next one."""
     prs = _validate(prs)
+    if closed is not None:
+        closed = _validate_closed(closed)
     open_prs = [pr for pr in prs if pr.get("state", OPEN) == OPEN]
     if not open_prs:
         return _out("none", None, "no open PRs", "none")
@@ -222,6 +289,7 @@ def decide(prs: Any, patch_ids: dict[int, str], merge_train_on: bool) -> dict[st
             )
     if not merge_train_on:
         return _update_only(open_prs)
+    _check_open_limit(open_prs)
 
     def halt_on(pr: dict[str, Any], reason: str) -> dict[str, Any]:
         return _out("halt", pr, f"#{pr['number']}: {reason}", "train")
@@ -248,6 +316,16 @@ def decide(prs: Any, patch_ids: dict[int, str], merge_train_on: bool) -> dict[st
     gaps = [n for n in range(head_n, numbered[-1][0] + 1) if n not in present]
     if gaps:
         return halt_on(head, f"train:{gaps[0]} is missing; train numbers must be consecutive")
+    if closed is None:
+        return halt_on(head, "the closed PR list was not supplied; cannot rule out a broken batch")
+    if len(closed) >= LIST_LIMIT:
+        return halt_on(
+            head,
+            f"the closed PR list is at the {LIST_LIMIT}-PR limit; cannot see every closed PR",
+        )
+    hit = _closed_hit(closed, head_n)
+    if hit is not None:
+        return halt_on(head, hit)
     return _head(head, patch_ids)
 
 
@@ -257,6 +335,7 @@ def candidate(prs: Any, merge_train_on: bool) -> tuple[int, str] | None:
     open_prs = [pr for pr in prs if pr.get("state", OPEN) == OPEN]
     if not merge_train_on or any(name.lower() == HALTED for pr in open_prs for name in _names(pr)):
         return None
+    _check_open_limit(open_prs)
     numbered = []
     for pr in open_prs:
         names = _train_names(pr)
@@ -274,7 +353,7 @@ def _patch_ids(args: list[str]) -> dict[int, str]:
     for arg in args:
         match = _PATCH_ARG_RE.fullmatch(arg)
         if not match:
-            raise InputError(f"bad --patch-id {arg!r}; expected N:<12 hex>")
+            raise InputError(f"bad --patch-id {arg!r}; expected N:<20 hex>")
         ids[int(match.group(1))] = match.group(2)
     return ids
 
@@ -288,6 +367,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--merge-train", default="off")
         if name == "decide":
             p.add_argument("--patch-id", action="append", default=[], metavar="N:PID")
+            p.add_argument("--closed", metavar="FILE", help="JSON list of closed PRs")
     args = parser.parse_args(argv)
     try:
         prs = json.load(sys.stdin)
@@ -297,7 +377,11 @@ def main(argv: list[str] | None = None) -> int:
             if found is not None:
                 print(f"{found[0]} {found[1]}")
         else:
-            print(json.dumps(decide(prs, _patch_ids(args.patch_id), merge_on)))
+            closed = None
+            if args.closed is not None:
+                closed = json.loads(Path(args.closed).read_text(encoding="utf-8"))
+            result = decide(prs, _patch_ids(args.patch_id), merge_on, closed)
+            print(json.dumps(result))
     except ValueError as exc:  # includes json.JSONDecodeError and InputError
         print(f"train_step: {exc}", file=sys.stderr)
         return 2

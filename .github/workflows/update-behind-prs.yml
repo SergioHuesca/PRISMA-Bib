@@ -24,9 +24,11 @@
 # Starting = set MERGE_TRAIN to on and dispatch this workflow. A run acts only on the train
 # head, the lowest N among open PRs. The head is squash-merged (pinned to its head sha) only
 # when all hold: it is not a draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED
-# or NEUTRAL and none is queued or running; and it carries reviewed:<12 hex> equal to the net
-# patch id recomputed from its head (scripts/train_patch_id.py, git patch-id --stable of
-# origin/main...<head>). Otherwise: BEHIND with no running check -> update-branch; running
+# or NEUTRAL and none is queued or running; and it carries reviewed:<20 hex> equal to the id
+# recomputed from its head (scripts/train_patch_id.py: sha256 of the exact +/- lines of
+# origin/main...<head>, so whitespace counts). No batch PR may sit below the head in a closed,
+# unmerged state (the closed list is checked too). Lists are capped at 100; a full list halts.
+# Otherwise: BEHIND with no running check -> update-branch; running
 # checks -> wait; anything unexpected -> halt: label the head train:halted and post one
 # comment with the reason. While any open PR has train:halted, every run does nothing.
 # Resume = fix it, remove the label, dispatch. The train never skips a PR, never merges out
@@ -90,8 +92,13 @@ jobs:
           MERGE_TRAIN: ${{ vars.MERGE_TRAIN }}
         run: |
           prs="$RUNNER_TEMP/prs.json"
-          gh pr list --base main --state open --limit 500 \
+          gh pr list --base main --state open --limit 100 \
             --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup > "$prs"
+          # Closed-unmerged PRs: a closed train:K below the head means the batch is broken.
+          # Merged ones are excluded by the search. Passed to decide; a missing file halts.
+          closed="$RUNNER_TEMP/closed.json"
+          gh pr list --base main --state closed --search "is:unmerged" --limit 100 \
+            --json number,labels,mergedAt > "$closed"
           # mergeStateStatus is computed lazily: re-read each UNKNOWN PR, up to ~60s (6 x 10s).
           for n in $(jq -r '.[] | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
             for i in 1 2 3 4 5 6; do
@@ -119,7 +126,7 @@ jobs:
             fi
           fi
 
-          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" "${pid_arg[@]}" < "$prs")
+          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" "${pid_arg[@]}" < "$prs")
           action=$(jq -r .action <<<"$out")
           pr=$(jq -r '.pr // empty' <<<"$out")
           sha=$(jq -r '.head_sha // empty' <<<"$out")

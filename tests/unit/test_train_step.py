@@ -22,11 +22,17 @@ _spec = importlib.util.spec_from_file_location("train_step", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
-decide = _module.decide
 candidate = _module.candidate
 InputError = _module.InputError
 
-PID = "0123456789ab"
+
+def decide(prs, patch_ids, merge_train_on, closed=()):  # type: ignore[no-untyped-def]
+    """Tests supply an empty closed list by default; ``closed=None`` is the missing-list case."""
+    return _module.decide(prs, patch_ids, merge_train_on, None if closed is None else list(closed))
+
+
+# Repeated pattern: a 20-hex literal of high entropy trips detect-secrets in pre-commit.
+PID = "ab" * 10
 _DONE = {"__typename": "CheckRun", "name": "fast", "status": "COMPLETED", "conclusion": "SUCCESS"}
 
 
@@ -227,14 +233,14 @@ def test_train__missing_reviewed_label__halts() -> None:
 
 @pytest.mark.unit
 def test_train__wrong_reviewed_label__halts() -> None:
-    prs = [_pr(9, "CLEAN", labels=("train:1", "reviewed:ffffffffffff"))]
+    prs = [_pr(9, "CLEAN", labels=("train:1", "reviewed:ffffffffffffffffffff"))]
     assert decide(prs, _ids(9), True)["action"] == "halt"
 
 
 @pytest.mark.unit
 def test_train__malformed_reviewed_label_is_not_accepted() -> None:
     # Upper-case hex does not match the regex, so the label does not count: missing, halt.
-    prs = [_pr(9, "CLEAN", labels=("train:1", "reviewed:0123456789AB"))]
+    prs = [_pr(9, "CLEAN", labels=("train:1", f"reviewed:{'AB' * 10}"))]
     assert decide(prs, _ids(9), True)["action"] == "halt"
 
 
@@ -242,7 +248,7 @@ def test_train__malformed_reviewed_label_is_not_accepted() -> None:
 def test_train__patch_id_mismatch__halts_not_merged() -> None:
     # The reviewed id matches the label, but the head content changed since review.
     prs = [_ready(9)]
-    result = decide(prs, {9: "aaaaaaaaaaaa"}, True)
+    result = decide(prs, {9: "aaaaaaaaaaaaaaaaaaaa"}, True)
     assert result["action"] == "halt"
     assert "mismatch" in result["reason"]
 
@@ -390,8 +396,10 @@ def test_cli__malformed_json__exits_nonzero_and_prints_nothing() -> None:
 
 
 @pytest.mark.integration
-def test_cli__decide_and_candidate_round_trip() -> None:
+def test_cli__decide_and_candidate_round_trip(tmp_path: Path) -> None:
     prs = json.dumps([_ready(9)])
+    closed_file = tmp_path / "closed.json"
+    closed_file.write_text("[]", encoding="utf-8")
 
     def run(*args: str) -> str:
         return subprocess.run(
@@ -404,10 +412,108 @@ def test_cli__decide_and_candidate_round_trip() -> None:
 
     assert run("candidate", "--merge-train", "on") == f"9 {_sha(9)}\n"
     assert run("candidate", "--merge-train", "off") == ""
-    out = json.loads(run("decide", "--merge-train", "on", "--patch-id", f"9:{PID}"))
+    out = json.loads(
+        run("decide", "--merge-train", "on", "--closed", str(closed_file), "--patch-id", f"9:{PID}")
+    )
     assert (out["action"], out["pr"]) == ("merge", 9)
     # No patch id supplied: the head fails closed to a halt.
-    assert json.loads(run("decide", "--merge-train", "on"))["action"] == "halt"
+    halt = run("decide", "--merge-train", "on", "--closed", str(closed_file))
+    assert json.loads(halt)["action"] == "halt"
+    # No closed list supplied in train mode: fails closed to a halt.
+    assert (
+        json.loads(run("decide", "--merge-train", "on", "--patch-id", f"9:{PID}"))["action"]
+        == "halt"
+    )
+
+
+# Closed-unmerged PRs: a closed train:K below the head breaks the batch.
+
+
+def _closed(number: int, label: str | None = None, merged: bool = False) -> dict[str, Any]:
+    return {
+        "number": number,
+        "labels": [] if label is None else [{"name": label}],
+        "mergedAt": "2026-10-01T00:00:00Z" if merged else None,
+    }
+
+
+@pytest.mark.unit
+def test_closed__unmerged_train_below_head__halts_and_names_the_pr() -> None:
+    # train:1 was closed unmerged; train:2 must not be promoted to head.
+    prs = [_ready(4, train=2)]
+    result = decide(prs, _ids(4), True, [_closed(2, "train:1")])
+    assert result["action"] == "halt"
+    assert "#2" in result["reason"]
+
+
+@pytest.mark.unit
+def test_closed__merged_train_below_head__proceeds() -> None:
+    prs = [_ready(4, train=2)]
+    assert decide(prs, _ids(4), True, [_closed(2, "train:1", merged=True)])["action"] == "merge"
+
+
+@pytest.mark.unit
+def test_closed__train_above_head__does_not_matter() -> None:
+    prs = [_ready(4, train=2)]
+    assert decide(prs, _ids(4), True, [_closed(5, "train:3")])["action"] == "merge"
+
+
+@pytest.mark.unit
+def test_closed__list_missing_in_train_mode__halts() -> None:
+    assert decide([_ready(9)], _ids(9), True, None)["action"] == "halt"
+
+
+@pytest.mark.unit
+def test_closed__list_missing_in_update_only_mode__not_needed() -> None:
+    assert decide([_pr(5)], {}, False, None)["action"] == "update"
+
+
+@pytest.mark.unit
+def test_closed__malformed_train_label_unmerged__halts() -> None:
+    assert decide([_ready(4, train=2)], _ids(4), True, [_closed(2, "train:x")])["action"] == "halt"
+
+
+@pytest.mark.unit
+def test_closed__list_at_limit__halts_rather_than_guess() -> None:
+    closed = [_closed(100 + i, merged=True) for i in range(100)]
+    assert decide([_ready(9)], _ids(9), True, closed)["action"] == "halt"
+
+
+@pytest.mark.unit
+def test_closed__malformed_record__raises() -> None:
+    with pytest.raises(InputError):
+        decide([_ready(9)], _ids(9), True, [{"number": 2, "labels": "train:1"}])
+
+
+@pytest.mark.unit
+def test_open__list_at_limit_in_train_mode__raises_not_guesses() -> None:
+    # A list cut at the gh limit could hide train:1; the train must refuse to decide.
+    prs = [_pr(n) for n in range(1, 101)]
+    with pytest.raises(InputError):
+        decide(prs, {}, True)
+    assert decide(prs, {}, False)["mode"] == "update"
+
+
+# Sanitising untrusted text (a check name is set by the PR's own CI).
+
+_HOSTILE = "x\n::add-mask::secret @owner [l](u) `cmd` <b>"
+
+
+@pytest.mark.unit
+def test_sanitise__hostile_check_name__cannot_inject_commands_or_markup() -> None:
+    result = decide([_ready(9, checks=[_failed(_HOSTILE)])], _ids(9), True)
+    reason = result["reason"]
+    assert result["action"] == "halt"
+    for bad in ("\n", "\r", "::", "@", "[", "]", "`", "<", ">"):
+        assert bad not in reason, bad
+    assert "add-mask" in reason  # the text survives, neutralised
+
+
+@pytest.mark.unit
+def test_sanitise__long_check_name__truncated_to_60() -> None:
+    result = decide([_ready(9, checks=[_failed("n" * 300)])], _ids(9), True)
+    assert "n" * 61 not in result["reason"]
+    assert "n" * 60 in result["reason"]
 
 
 @pytest.mark.integration

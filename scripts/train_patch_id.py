@@ -1,23 +1,30 @@
-"""Print the 12-hex net patch id of a PR head: the content a reviewer approves.
+"""Print the 20-hex id of a PR's own change: the content a reviewer approves.
 
-Usage: ``train_patch_id.py <40-hex head sha>``. It runs git only on data (diff and
-patch-id), so the PR's code is never checked out or executed. The head object must exist
-locally (``git fetch origin pull/<n>/head``) and ``origin/main`` must include its merge base.
+Usage: ``train_patch_id.py <40-hex head sha>``. It runs git only on data (diff), so the PR's
+code is never checked out or executed. The head object must exist locally
+(``git fetch origin pull/<n>/head``) and ``origin/main`` must include its merge base.
 Used by update-behind-prs.yml and by the orchestrator, so both compute the same id. Exit 1
 if git fails or the head has no net change against main.
+
+The id is sha256 over the exact bytes of the PR's own changed lines (the +/- lines, file
+paths, mode and binary markers), so any byte change in the reviewed content changes it,
+including whitespace, indentation, CRLF and trailing spaces. ``git patch-id`` is not used
+because it ignores whitespace and would accept an indentation change as the same patch.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import sys
 
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
+_ID_LEN = 20
 # Pinned so the id does not depend on the machine's git config. Three-dot: only the PR's own
 # changes since its merge base, so main moving on does not change it. -U0: context lines are
-# not compared, so neighbouring merges do not change it. Rename detection and the diff
-# algorithm change which lines count as changed, so both are fixed.
+# not compared. Rename detection and the diff algorithm change which lines count as changed,
+# so both are fixed.
 _DIFF = [
     "git",
     "diff",
@@ -29,6 +36,19 @@ _DIFF = [
     "--diff-algorithm=myers",
     "--no-indent-heuristic",
 ]
+# Hunk headers (@@), index lines and context lines are dropped: they depend on where the
+# change sits in the file, which moves when main moves. Everything kept is content or a path.
+_KEEP_PREFIXES = (
+    b"+",
+    b"-",
+    b"diff --git ",
+    b"new file mode ",
+    b"deleted file mode ",
+    b"old mode ",
+    b"new mode ",
+    b"Binary files ",
+    b"\\ No newline",
+)
 
 
 def net_patch_id(head_sha: str) -> str:
@@ -37,12 +57,10 @@ def net_patch_id(head_sha: str) -> str:
     diff = subprocess.run(
         [*_DIFF, f"origin/main...{head_sha}"], capture_output=True, check=True
     ).stdout
-    fields = subprocess.run(
-        ["git", "patch-id", "--stable"], input=diff, capture_output=True, check=True
-    ).stdout.split()
-    if not fields:
+    kept = [line for line in diff.split(b"\n") if line.startswith(_KEEP_PREFIXES)]
+    if not kept:
         raise ValueError("no net change against origin/main")
-    return fields[0].decode("ascii")[:12]
+    return hashlib.sha256(b"\n".join(kept)).hexdigest()[:_ID_LEN]
 
 
 def main(argv: list[str] | None = None) -> int:
