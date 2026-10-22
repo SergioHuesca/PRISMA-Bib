@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Scopus enrichment cascade steps, `search_standard_by_dois` and `abstract_meta`, with opt-in
+  handling of refused views (#140, [ADR 0028](docs/architecture/adr/0028-field-level-fallback-cascade.md)).
+- Candidate intake from pasted Google Scholar rows, with DOI enrichment and conflict events
+  (`capture/candidates.py`, #139).
+- An OpenAlex adapter (`sources/openalex.py`) with opt-in fallback and case-insensitive DOI
+  batching (#141).
+- A merge train for a reviewed batch of pull requests (`update-behind-prs.yml`, #158; how-to:
+  `docs/how-to/merge-train.md`). The workflow also keeps the next pull request up to date after
+  each merge and when CI finishes (#142, #143, #151, #157).
+
+### Changed
+
+- ADRs 0028 to 0033 are accepted. They specify the field-level fallback cascade, the
+  registration of a candidate as a record, OpenAlex topics as a keyword kind, OpenAlex responses
+  as Layer 0 runs, the registered-records table and classification map, and the registered
+  count in `FlowCounts`. ADR 0033 supersedes ADR 0007 in full. These are decisions, not
+  implementations: the registration code, the `registered_records` table and the
+  `FlowCounts.registered` field are not built yet.
+- `graphify-out/` and `*.env` files are ignored by git (#135, #137).
+
 ## [1.0.0] — 2026-10-20
 
 **This release is of the software, not of a completed review.** `prismabib` is
@@ -1506,6 +1530,7 @@ run so the socket ban holds.
 - S00-AC5: CI green on a pull request, and that PR cannot be merged while a check is red
 - S00-AC6: a direct `git push origin main` is rejected by branch protection
 
+[Unreleased]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.21.0...v1.0.0
 [0.21.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/SergioHuesca/PRISMA-Bib/compare/v0.19.0...v0.20.0
