@@ -7,9 +7,10 @@ are the hand-written, synthetic cassettes in ``tests/fixtures/openalex/``.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 import httpx
 import pytest
@@ -292,7 +293,10 @@ def test_api_key__sent_on_the_wire_but_absent_from_cache_files(tmp_path: Path) -
         )
         _client(secret, cache=HttpCache(tmp_path)).lookup_dois([_DOI_ONE])
 
-    assert route.calls.last.request.url.params["api_key"] == secret
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == f"Bearer {secret}"
+    assert "api_key" not in request.url.params
+    assert secret not in str(request.url)
     for path in tmp_path.rglob("*"):
         assert secret.encode() not in path.name.encode()
         if path.is_file():
@@ -316,14 +320,14 @@ def test_cache__second_lookup__does_not_hit_the_network_even_with_another_key(
 
 
 @pytest.mark.integration
-def test_no_api_key__sends_no_api_key_param() -> None:
+def test_no_api_key__sends_no_authorization_header() -> None:
     with respx.mock:
         route = respx.get(OpenAlexClient.ENDPOINT).mock(
             return_value=httpx.Response(200, json={"results": []})
         )
         _client().lookup_dois([_DOI_ONE])
 
-    assert "api_key" not in route.calls.last.request.url.params
+    assert "Authorization" not in route.calls.last.request.headers
 
 
 # --- search_title ---------------------------------------------------------
@@ -366,3 +370,101 @@ def test_search_title__401__refused_only_in_opt_in_run_else_raises() -> None:
         assert _client().search_title("Anything", 2021, fallback_opt_in=True) == Refused(401)
         with pytest.raises(AuthError):
             _client().search_title("Anything", 2021)
+
+
+@pytest.mark.integration
+def test_lookup_one__401_by_default__raises_auth_error() -> None:
+    doi = "10.9999/a|b"  # filter syntax forces the single-lookup path
+    with respx.mock:
+        route = respx.get(f"{OpenAlexClient.ENDPOINT}/doi:{quote(doi, safe='')}").mock(
+            return_value=httpx.Response(401)
+        )
+        with pytest.raises(AuthError):
+            _client()._lookup_one(doi, fallback_opt_in=False)
+
+    assert route.call_count == 1
+
+
+@pytest.mark.integration
+def test_lookup_one__401_in_opt_in_run__is_refused() -> None:
+    with respx.mock:
+        respx.route(host="api.openalex.org").mock(return_value=httpx.Response(401))
+        assert _client()._lookup_one(_DOI_ONE, fallback_opt_in=True) == Refused(401)
+
+
+# --- the key never reaches a log, a refusal never reaches the cache -------
+
+_SENTINEL = "sekrit key/with+chars"  # pragma: allowlist secret
+
+
+def _httpx_log_text(caplog: pytest.LogCaptureFixture, *, key_in_query: bool) -> str:
+    """Run a lookup through a real httpx.Client on a MockTransport; return the INFO log."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": []})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as http:
+        client = _client(_SENTINEL, http_client=http)
+        if key_in_query:
+            # Simulate a future regression that moves the key back into the URL.
+            real_get = http.get
+            http.get = lambda url, **kw: real_get(  # type: ignore[method-assign]
+                url, params={**kw["params"], "api_key": _SENTINEL}
+            )
+        with caplog.at_level(logging.INFO, logger="httpx"):
+            client.lookup_dois([_DOI_ONE])
+    return caplog.text
+
+
+@pytest.mark.unit
+def test_httpx_info_log__header_form__never_contains_the_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    text = _httpx_log_text(caplog, key_in_query=False)
+    assert "HTTP Request" in text
+    assert _SENTINEL not in text
+    assert quote_plus(_SENTINEL, safe="") not in text
+
+
+@pytest.mark.unit
+def test_httpx_info_log__query_form__regression__never_contains_the_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    text = _httpx_log_text(caplog, key_in_query=True)
+    assert "HTTP Request" in text
+    assert "api_key=***" in text
+    assert _SENTINEL not in text
+    assert quote_plus(_SENTINEL, safe="") not in text
+
+
+@pytest.mark.unit
+def test_httpx_info_log__two_clients_with_different_keys__neither_key_leaks() -> None:
+    _client("first-key-aaa")
+    _client("second-key-bbb")
+    record = logging.LogRecord(
+        "httpx", logging.INFO, __file__, 1, "GET %s", ("/x?k=first-key-aaa&j=second-key-bbb",), None
+    )
+    for f in logging.getLogger("httpx").filters:
+        f.filter(record)
+    assert record.getMessage() == "GET /x?k=***&j=***"
+
+
+@pytest.mark.integration
+def test_refusal__in_opt_in_run__is_not_written_to_or_served_from_the_cache(
+    tmp_path: Path,
+) -> None:
+    cache = HttpCache(tmp_path)
+    with respx.mock:
+        route = respx.get(OpenAlexClient.ENDPOINT).mock(
+            side_effect=[
+                httpx.Response(401, json={"results": [{"id": "x"}]}),
+                httpx.Response(200, json=_cassette("works_batch.json")),
+            ]
+        )
+        first = _client(cache=cache).lookup_dois([_DOI_ONE], fallback_opt_in=True)
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+        second = _client(cache=cache).lookup_dois([_DOI_ONE], fallback_opt_in=True)
+
+    assert first == {_DOI_ONE: Refused(401)}
+    assert route.call_count == 2  # the refusal was not replayed from the cache
+    assert isinstance(second[_DOI_ONE], OpenAlexWork)

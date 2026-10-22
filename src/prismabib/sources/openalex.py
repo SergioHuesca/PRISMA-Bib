@@ -8,10 +8,11 @@ except in an explicit ``fallback_opt_in`` run, where ADR 0028 (resolved item 1)
 records them as a ``refused`` outcome carrying the HTTP status so the cascade
 can continue to the next level.
 
-**The API key** (``Settings.openalex_api_key``, optional) is sent as the
-``api_key`` query parameter on the wire only. It is deliberately left out of
-the cache's ``params``, so it is never part of a cache key, and it is never
-logged: log lines carry the endpoint without the query string.
+**The API key** (``Settings.openalex_api_key``, optional) travels in the
+``Authorization: Bearer`` request header (ADR 0031 Decision 6), never in the URL
+or ``params``, so it is never part of a cache key or an httpx log line. It is
+registered for structlog redaction, and a process-wide ``logging.Filter`` on the
+``httpx`` logger scrubs it (and its percent-encoded form) as defence in depth.
 
 **Nothing here writes to the store.** :func:`topics_to_keywords` returns the
 ``openalex-topic`` keyword kind as data; persisting it needs a separate ADR
@@ -21,12 +22,13 @@ logged: log lines carry the endpoint without the query string.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Self
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 import httpx
 import structlog
@@ -43,6 +45,7 @@ from prismabib.errors import (
 )
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.sources.scopus import register_secret_for_redaction
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +55,39 @@ _USER_AGENT: Final = f"prismabib/{__version__} (+https://github.com/SergioHuesca
 _SELECT: Final = "id,doi,title,publication_year,abstract_inverted_index,authorships,topics"
 _DOI_PREFIX: Final = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
 KEYWORD_KIND: Final = "openalex-topic"
+
+
+class _HttpxKeyRedactionFilter(logging.Filter):
+    """Scrub registered API keys from httpx's ``HTTP Request: GET <url>`` INFO lines.
+
+    structlog's redaction processor never sees stdlib records, so this is the
+    only guard on that logger (ADR 0031 Decision 6). Process-wide: it holds the
+    keys of every client built so far.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.keys: set[str] = set()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Rewrite the record's message with each key replaced by ``***``; keep the record."""
+        message = record.getMessage()
+        # Longest first: a short key that is a substring of a longer one must not mangle it.
+        for key in sorted(self.keys, key=len, reverse=True):
+            message = message.replace(key, "***").replace(quote_plus(key, safe=""), "***")
+        record.msg, record.args = message, None
+        return True
+
+
+_HTTPX_FILTER: Final = _HttpxKeyRedactionFilter()
+
+
+def _guard_httpx_log(key: str) -> None:
+    """Register ``key`` with the httpx log filter, attaching it to the logger once."""
+    _HTTPX_FILTER.keys.add(key)
+    httpx_logger = logging.getLogger("httpx")
+    if _HTTPX_FILTER not in httpx_logger.filters:
+        httpx_logger.addFilter(_HTTPX_FILTER)
 
 
 class _RetryableUpstreamError(UpstreamError):
@@ -238,6 +274,10 @@ class OpenAlexClient:
         self._owns_http = http_client is None
         self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
         self._cache = cache
+        key = self._settings.openalex_api_key
+        if key is not None:
+            register_secret_for_redaction(key.get_secret_value())
+            _guard_httpx_log(key.get_secret_value())
 
     def __enter__(self) -> Self:
         """Enter the client as a context manager; returns ``self``."""
@@ -349,7 +389,7 @@ class OpenAlexClient:
     def _get_works(
         self, params: Mapping[str, str], *, fallback_opt_in: bool, url: str | None = None
     ) -> list[OpenAlexWork] | Refused | None:
-        """GET works (the cache key excludes the API key); ``None`` means HTTP 404.
+        """GET works (the key is a header, so never in the cache key); ``None`` means HTTP 404.
 
         With ``url`` (a single-work path) the body is one work object, returned
         as a one-item list.
@@ -361,11 +401,7 @@ class OpenAlexClient:
             logger.info("openalex.works", cache="hit")
             return _parse_results(cached, single=single)
 
-        wire = dict(params)
-        key = self._settings.openalex_api_key
-        if key is not None:
-            wire["api_key"] = key.get_secret_value()
-        response = self._request_with_retry(url, wire)
+        response = self._request_with_retry(url, params)
         if response.status_code == 404:
             return None
         if response.status_code in (401, 403):
@@ -393,10 +429,11 @@ class OpenAlexClient:
 
     def _do_request(self, url: str, params: Mapping[str, str]) -> httpx.Response:
         self._rate_limiter.acquire()
-        response = self._http.get(url, params=dict(params))
+        key = self._settings.openalex_api_key
+        headers = {"Authorization": f"Bearer {key.get_secret_value()}"} if key is not None else {}
+        response = self._http.get(url, params=dict(params), headers=headers)
         self._rate_limiter.observe_headers(response.headers)
         status = response.status_code
-        # Endpoint only: the query string may carry the API key.
         if status == 429:
             logger.warning("openalex.request.rate_limited", status=status)
             raise RateLimitError("OpenAlex rate-limited the request (HTTP 429).")
