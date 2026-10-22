@@ -46,9 +46,11 @@ _OPTS = [
     "-c", "diff.mnemonicPrefix=false",
     "-c", "core.autocrlf=false",
 ]  # fmt: skip
+# --ignore-submodules=none: a gitlink (submodule pointer) is compared even when .gitmodules
+# says `ignore = all`, otherwise an evil merge could add or bump a pointer unseen.
 _DIFF = [
     "diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-renames",
-    "--src-prefix=a/", "--dst-prefix=b/",
+    "--ignore-submodules=none", "--src-prefix=a/", "--dst-prefix=b/",
 ]  # fmt: skip
 
 

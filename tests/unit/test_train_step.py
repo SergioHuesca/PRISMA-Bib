@@ -440,6 +440,49 @@ def test_candidate__no_head_to_verify__none(prs: list[dict[str, Any]], on: bool)
     assert candidate(prs, on) is None
 
 
+@pytest.mark.unit
+def test_candidate__output_is_exactly_three_fields() -> None:
+    prs = [_ready(9)]
+    found = candidate(prs, True)
+    assert found is not None
+    line = f"{found[0]} {found[1]} {found[2]}"
+    assert line.split() == [str(9), _sha(9), REVIEWED]
+    assert len(line.split(" ")) == 3
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "label",
+    [
+        "reviewed:" + "AB" * 20,  # upper-case hex
+        "reviewed:" + "ab" * 19,  # 39 hex
+        "reviewed:" + "ab" * 20 + "a",  # 41 hex
+        "reviewed:" + "ab" * 20 + " extra",  # trailing text
+        "reviewed:" + "ab" * 19 + " " + "a",  # a space inside the hex
+        "reviewed:" + "ab" * 20 + "\u200b",  # zero-width space
+        "re\N{CYRILLIC SMALL LETTER IE}wed:" + "ab" * 20,  # Cyrillic e lookalike in the prefix
+        "reviewed:" + "\N{FULLWIDTH LATIN SMALL LETTER A}" * 40,  # full-width hex lookalike
+    ],
+    ids=["upper", "39", "41", "trailing", "inner-space", "zero-width", "lookalike", "fullwidth"],
+)
+def test_candidate__odd_reviewed_label__never_accepted(label: str) -> None:
+    # An odd label gives no output at all: it cannot shift the three fields.
+    assert candidate([_pr(9, labels=("train:1", label))], True) is None
+
+
+@pytest.mark.integration
+def test_cli__odd_label_prints_nothing(tmp_path: Path) -> None:
+    prs = json.dumps([_pr(9, labels=("train:1", "reviewed:" + "ab " * 13 + "ab"))])
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPT), "candidate", "--merge-train", "on"],
+        input=prs,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert proc.stdout == ""
+
+
 # Input validation and the CLI.
 
 

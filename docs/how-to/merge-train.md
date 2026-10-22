@@ -51,6 +51,9 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
 
 Git runs with global and system config disabled and diff options pinned, so a machine's git
 settings do not change the result. Any git failure, or a fetch failure, halts the head.
+Submodules are compared exactly: the diffs use `--ignore-submodules=none`, so a submodule
+pointer (gitlink) added or bumped by a merge is a change, even when `.gitmodules` says
+`ignore = all`. A shallow clone that cannot compute merge bases halts; it is never ok.
 
 A reviewer-approved head stays valid through clean main updates. Any other change to the
 PR, and any overlap with main, needs a fresh review and a new `reviewed:` label.
