@@ -132,6 +132,7 @@ nav:
       - Refresh Citations: how-to/refresh-citations.md
       - Figure Gallery: how-to/figure-gallery.md
       - Merge Train: how-to/merge-train.md
+      - Pre-push Check: how-to/pre-push-check.md
   - Testing: testing.md
   - API Reference: reference/index.md
 
