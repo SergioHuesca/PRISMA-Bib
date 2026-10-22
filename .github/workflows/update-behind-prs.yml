@@ -8,8 +8,9 @@
 # numeric App ID; the owner must ADD this) and APP_PRIVATE_KEY. This workflow does not
 # create or store any secret. Until they exist, the token step fails the job.
 #
-# Failed updates are reported as warnings and a step-summary note; they do not fail the run
-# and never block main. It never merges, closes, approves, or edits PR contents.
+# A failed update or comment is reported as a warning and a step-summary note; it does not
+# fail the run. A failed listing call or token step still fails the job, so real faults stay
+# visible. The job never blocks main. It never merges, closes, approves, or edits PR contents.
 
 name: Update behind PRs
 

@@ -65,6 +65,14 @@ def test_next_pr__mixed_candidates__picks_lowest_eligible_regardless_of_order() 
 
 
 @pytest.mark.unit
+def test_next_pr__null_check_rollup__is_treated_as_no_running_checks() -> None:
+    # GitHub returns null for a PR that has no checks yet; that is not "running".
+    pr = _pr(7)
+    pr["statusCheckRollup"] = None
+    assert select_next_pr([pr]) == 7
+
+
+@pytest.mark.unit
 def test_next_pr__failed_checks_only__still_eligible() -> None:
     # Only *running* checks exclude a PR; a red PR is still the next one to merge.
     failed = {
