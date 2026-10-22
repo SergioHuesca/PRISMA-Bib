@@ -4,10 +4,11 @@
 
 Proposed — 2026-10-22.
 
-This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test
-(`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`) fails any ADR whose
-Status reads `Proposed` on `main`, so this line must not reach `main` as written. The owner accepts this
-record on merge by changing the line to `Accepted — <date>` in the pull request that enacts it.
+This record exists only on the branch `docs/adr-0032-0033-drafts`. The governance test (`tests/unit/test_docs_governance.py`, `test_adr__on_main__is_not_still_proposed`)
+scans the ADR directory of whichever checkout runs it, and fails any ADR whose Status reads `Proposed`
+there. On this branch, this record and ADR 0032 fail that test by design. The owner accepts this record
+on merge by changing the line to `Accepted — <date>` in the pull request that enacts it, so `main` never
+holds `Proposed`.
 
 This record depends on [ADR 0032](0032-registered-records-table-and-classification-map.md), which must be accepted
 first, because the registered records it counts come from the table and view that ADR 0032 specifies.
@@ -99,7 +100,9 @@ as `_assert_flow_counts_consistent` already does for every count.
 **What `registered` counts, and where it comes from.** It is the number of active registrations in the same snapshot as every other
 count. `compute_flow_counts` reads `registrations.jsonl` and its sidecar inside `_capture_snapshot`, on the same connection, so the
 registration count and `S_raw` cannot be read at different moments. A registration active at that moment is in `records_all`
-(ADR 0032 Decision 1), so it is in `S_raw`. A test asserts that the registered ids in `S_raw` number `registered`.
+(ADR 0032 Decision 1), so it is in `S_raw`. A test asserts that the registered ids in `S_raw` number `registered`. `S_raw` is `raw_set` (`prisma/engine.py`, lines 726-744), which
+reads `records` today. ADR 0032 Decision 1 changes it to read `records_all`. Without that change, no registration is in `S_raw`, and this
+count would be zero by construction.
 
 ### 2. What is not an arithmetic term
 
@@ -220,7 +223,7 @@ record, so the restated contract is the one that the code and its tests read.
    except `registered = 0`.
 2. `test_flow_counts__one_registration__identity_closes_with_registered_term`: the worked check in Decision 1, with the term included.
 3. `test_flow_counts__negative_registered__assert_consistent_raises`: the precondition in Decision 1 fires.
-4. `test_flow_counts__registered_ids_in_S_raw__equal_registered`: the snapshot-consistency check in Decision 1.
+4. `test_flow_counts__registered_ids_in_S_raw__equal_registered`: the snapshot-consistency check in Decision 1. `test_raw_set__registered_id__is_in_S_raw` asserts that `raw_set` returns the registered id, so the automated filters see it.
 5. `test_orphaned_decisions__reversed_registration__reported_not_folded`: a current decision on a reversed registration is listed by
    `event_id`, is absent from every set, and is absent from `FlowCounts`.
 6. `test_orphaned_decisions__superseded_registration__scopus_record_is_unsure`: after `supersede`, the Scopus record counts in

@@ -11,7 +11,7 @@ form, and the owner approved each change as a deviation in the section "Deviatio
 contract". The owner's decisions are recorded under "Owner decisions", and the quote check is recorded
 under "Verification record".
 
-> **Note added 2026-10-22 (ADR 0032; this note does not change the record above).** The owner approved adding `type`, `language`, `primary_location` and `primary_topic` to the `select` list named in "What the client asks for today" (Context, line 42). The manifest's `api_view` field (Decision 3) records the select actually sent, so each body captured after this note carries the four new fields. Bodies captured before it do not, and the loader refuses a registration that references one ([ADR 0032](0032-registered-records-table-and-classification-map.md), Decision 2).
+> **Note added 2026-10-22 (ADR 0032; this note does not change the record above).** The owner approved adding `type`, `language`, `primary_location` and `primary_topic` to the `select` list named in "What the client asks for today" (Context, line 44). The manifest's `api_view` field (Decision 3) records the select actually sent, so each body captured after this note carries the four new fields. Bodies captured before it do not, and the loader refuses a registration that references one ([ADR 0032](0032-registered-records-table-and-classification-map.md), Decision 2).
 
 ## Context
 

@@ -230,6 +230,8 @@ Each of the four items below is decided by the owner. ADR 0029, ADR 0032 and ADR
 3. **"Near match" means exactly the two rules in `near_matches`** in `capture/candidates.py`: the same normalised title with a different year, or the same year with one normalised title a whole-word prefix of the other. Nothing wider is a near match.
 4. **Subject area source.** A registered record's subject area comes from a fixed, versioned mapping table from OpenAlex topics to ASJC codes. The table and its version are recorded with each registration. ADR 0032 specifies the mapping.
 
+> **Note added 2026-10-22 (ADR 0032; this note does not change the item above).** ADR 0032 narrows the mapping to OpenAlex **subfield** to ASJC code, by owner decision, and the subject area is derived from the work's `primary_topic` only. The same narrowing applies to "OpenAlex topics to ASJC codes" in Split records (line 218). The mapping is a fixed, versioned table as this item says, and its granularity is the subfield.
+
 ## Related decisions
 
 - [ADR 0002](0002-append-only-decision-log.md): the append-only pattern, applied here to a human-written registration.
