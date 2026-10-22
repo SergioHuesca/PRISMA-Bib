@@ -189,6 +189,10 @@ evidence.
   this ADR adds per-field sources, which 0022 does not have
 - [ADR 0027](0027-what-v1-0-0-claims.md) — what v1.0.0 claims, which this ADR does not change
 
+> **Note added 2026-10-22 (this note does not change the record above).** ADR 0032 was written and accepted on 2026-10-22 in PR #150, so
+> registration code no longer waits for it. The registration PR itself is still pending, and the statement at line 219 is historical
+> on the first point. See [ADR 0032](0032-registered-records-table-and-classification-map.md).
+
 ## Resolved decisions
 
 1. **401 refusals and ADR 0027.** The entitlement request was sent months ago and is still under

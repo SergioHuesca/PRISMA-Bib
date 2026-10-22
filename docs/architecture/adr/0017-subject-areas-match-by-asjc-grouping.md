@@ -8,6 +8,11 @@ Accepted — 2026-09-01. Supersedes the sentence in
 0011 changes: the Abstract Retrieval design, the Layer 0 placement, the entitlement probe and
 the resumability rules all stand. No schema change, no Layer 0 change, and no re-capture.
 
+> **Note added 2026-10-22 (ADR 0032; this note does not change the record above).** The sentence "Layer 1 is meant to hold what Scopus
+> said" (Alternatives, item 1) no longer holds in full. For registered records, `subject_areas` holds codes derived from OpenAlex
+> through the subfield-to-ASJC map of ADR 0032, not codes Scopus assigned. The codes have the same four-digit ASJC form, and the
+> matching rule of this ADR is unchanged (ADR 0032, deviation v).
+
 ## Context
 
 ADR 0011 shipped subject-area enrichment. Scopus's Abstract Retrieval API returns each area

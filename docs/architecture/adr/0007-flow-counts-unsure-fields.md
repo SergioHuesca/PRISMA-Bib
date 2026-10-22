@@ -2,6 +2,7 @@
 
 ## Status
 
+Superseded by [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md) — 2026-10-22. Previously
 Accepted — Stage 4, 2026-08-24. Deviation from the frozen `FlowCounts` contract, explicitly
 approved by the project owner before implementation (§2.6 requires an ADR for any deviation
 from a frozen contract).
@@ -85,6 +86,11 @@ BUILD_PLAN line 973's "`unsure` never resolves to inclusion" is preserved unchan
 **A finished review has both fields at zero.** That is the check a reviewer should run
 before publishing: non-zero `unsure_title_abstract` or `unsure_fulltext` in a diagram means
 the screening it depicts was still in progress.
+
+> **Note added 2026-10-22 (ADR 0033; this note does not change the record above).** Superseded by [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md)
+> in full, as this record's closing paragraph requires: `FlowCounts` gains a `registered` count, equation 1 gains its term, and
+> orphaned decisions are reported. ADR 0033 restates the whole contract. The Status line of this record reads `Superseded by ADR 0033`
+> as of PR #150, which accepts ADR 0033. The governance test accepts that value.
 
 ## Alternatives rejected
 

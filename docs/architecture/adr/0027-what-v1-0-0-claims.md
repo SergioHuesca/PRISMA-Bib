@@ -8,6 +8,11 @@ they are one decision: what the `v1.0.0` release asserts about this project.
 §2.6 requires an ADR for each. Taking them separately would let a reader assemble a claim from
 three documents that none of them makes.
 
+> **Note added 2026-10-22 (ADR 0033; this note does not change the record above).** The `numbers.json` bytes change for every
+> project once the `flow.registered` key is added (ADR 0033, Decision 2 and Consequence 2). The values of every existing key are
+> unchanged for a project with no registrations. The byte-identity claim in Decision 3 therefore applies to the new bytes. The
+> v1.0.0 claim itself is unchanged.
+
 ## Context
 
 Stage 11 is a checklist-execution stage. Its criteria assume a completed systematic review:
