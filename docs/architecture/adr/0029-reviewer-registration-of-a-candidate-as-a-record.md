@@ -63,16 +63,16 @@ The project's `CLAUDE.md` states the rule as: "Contracts, schemas, and acceptanc
   - `reverse`, which removes a record it names. It carries `reviewer`, `reverses` (the `event_id` of the `register` event) and a mandatory `reason`;
   - `supersede`, which removes a record it names, written only by the automatic step in §6. It carries `reverses` (the `event_id` of the `register` event), `scopus_record_id`, `match_rule` (`doi` or `title_year`), and `actor` (`system`).
 
+- **Why `supersede` is a separate kind, not a second `register`.** A `register` event creates a record, and a `supersede` event removes one. A record is created by a human's choice, and it is removed by a reversal or by a Scopus match. Writing removal as a second `register` would mix the two meanings in one kind, and every reader of `register` would have to check which one it was. The two kinds are kept apart so that the count of `register` events is the count of records ever created, and the count of active registrations is that count less the removals.
+- `source_payload_ref` is a Layer 0 `PayloadRef` (the type Stage 3 uses for `source_payload_ref`). Because only level 4 is accepted, it always names an OpenAlex payload in Layer 0. A manual payload is a Layer 2 event, not a Layer 0 payload, so it has no `PayloadRef` into Layer 0 and never reaches this field.
+- The `registered_records` table that holds these records in Layer 1 is specified by ADR 0032. The loader derives it, as the only writer of Layer 1 (ADR 0028 Decision 3), by folding this file and reading the referenced payloads.
+
 > **Note added 2026-10-22 (ADR 0032 and ADR 0033; this note does not change the bullets above).** The `register` bullet's
 > "OpenAlex-topic-to-ASJC mapping table" is narrowed by ADR 0032 to a mapping from OpenAlex subfield to ASJC code, by owner
 > decision of 2026-10-22. The `reverse` bullet's "mandatory `reason`" is narrowed by ADR 0033 (Decision 4) to a closed set of
 > codes (`wrong_doi`, `wrong_title`, `duplicate_of_scopus`, `not_eligible`, `other`), with a required `note` when the reason is
-> `other`, by the same owner decision. Both narrowings are deviations under BUILD_PLAN §2.6 (line 301), listed in ADR 0032 and
-> ADR 0033.
-
-- **Why `supersede` is a separate kind, not a second `register`.** A `register` event creates a record, and a `supersede` event removes one. A record is created by a human's choice, and it is removed by a reversal or by a Scopus match. Writing removal as a second `register` would mix the two meanings in one kind, and every reader of `register` would have to check which one it was. The two kinds are kept apart so that the count of `register` events is the count of records ever created, and the count of active registrations is that count less the removals.
-- `source_payload_ref` is a Layer 0 `PayloadRef` (the type Stage 3 uses for `source_payload_ref`). Because only level 4 is accepted, it always names an OpenAlex payload in Layer 0. A manual payload is a Layer 2 event, not a Layer 0 payload, so it has no `PayloadRef` into Layer 0 and never reaches this field.
-- The `registered_records` table that holds these records in Layer 1 is specified by ADR 0032. The loader derives it, as the only writer of Layer 1 (ADR 0028 Decision 3), by folding this file and reading the referenced payloads.
+> `other`, by the same owner decision. Both narrowings are deviations. Their basis is the project rule in `CLAUDE.md`: "Contracts,
+> schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 
 > **Note added 2026-10-22 (ADR 0032, deviation vii; this note does not change the example below).** The `source_payload_ref` in
 > this example (`raw/run-0007/openalex-0001.jsonl`, `line` 42) is superseded by [ADR 0031](0031-openalex-responses-are-layer0-runs.md)
@@ -230,11 +230,12 @@ Illustrative values, not from a real run. Suppose a review has `identified = 1,2
 - **ADR 0032 (to be written):** the Stage 3 Layer 1 table for registered records, and the view that unites them with Scopus records. This ADR fixes what the table must carry for registered records: `record_id`, `origin`, `doi` (required, since §1 requires a DOI), `title`, `year`, and the following three fields, which are a requirement on ADR 0032 and not an assumption made here:
   - `doc_type`, `language`, and the subject-area input. Criterion A is year, subject area and document type, and criterion L is language (BUILD_PLAN Stage 4). Both are computed from the stored fields, so a registered record without them cannot be classified and must not enter S_raw. ADR 0032 must specify how each is obtained for a registered record. Subject area is decided in the owner decisions below.
 
-> **Note added 2026-10-22 (ADR 0032, deviation viii; this note does not change the bullet above).** ADR 0032 drops `language`
-> as a registration input, by owner decision of 2026-10-22. Every stored Scopus record has `language` NULL, so no language
-> mapping can be checked against stored data, and a registration's `language` is NULL. The deviation rests on the project rule
-> in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
   - Subject area comes from a **fixed, versioned mapping table from OpenAlex topics to ASJC codes**. OpenAlex topics are not ASJC subject areas, and ADR 0028 Decision 2 keeps them separate, and ADR 0017 matches subject areas by ASJC grouping. The mapping table and its version are recorded with each registration (the `register` event's `subject_map_version` and `subject_map_sha256`, §2). ADR 0032 must include the mapping itself, and it does not yet exist, so ADR 0032 is a precondition for registration.
+
+> **Note added 2026-10-22 (ADR 0032, deviation viii; this note does not change the Split records bullets above).** ADR 0032 drops
+> `language` as a registration input, by owner decision of 2026-10-22. Every stored Scopus record has `language` NULL, so no
+> language mapping can be checked against stored data, and a registration's `language` is NULL. The deviation rests on the project
+> rule in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **ADR 0033 (to be written):** the Stage 4 `FlowCounts` change, namely the `registered` field and the identity in §3, and the fold's handling of orphaned decisions.
 
 ## Owner decisions

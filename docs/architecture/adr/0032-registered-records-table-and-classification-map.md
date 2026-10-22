@@ -96,7 +96,7 @@ CREATE TABLE registered_records (
   doc_type TEXT NOT NULL,             -- description form, derived per Decision 2
   language TEXT,                      -- always NULL in this version (Decision 2)
   venue_type TEXT NOT NULL,           -- closed set journal, conference, book, other (Decision 2)
-  venue_name TEXT NOT NULL,           -- the OpenAlex source display name
+  venue_name TEXT NOT NULL,           -- the OpenAlex source display name, stored stripped (§2, §5)
   openalex_id TEXT NOT NULL,          -- the work's OpenAlex id
   payload_file TEXT NOT NULL,         -- PayloadRef file (ADR 0031 Decision 2)
   payload_line INTEGER NOT NULL,      -- always 0 (§6)
@@ -132,8 +132,8 @@ The view has 16 columns: the 13 columns of `records` (BUILD_PLAN lines 853-857),
 `venue_name`. The Scopus half has no `COALESCE`, so a Scopus record with no venue keeps a NULL venue name and type, as
 `screening/ui.py` line 224 (`v.name`) reads them today. `_fetch_record_attributes` keeps its own `COALESCE` (`prisma/engine.py`
 lines 211-212). An earlier draft put `COALESCE` in the view, which would have changed the screening reader's value from NULL to
-`''` for Scopus rows; that draft is withdrawn. The Scopus rows are read
-are now.
+`''` for Scopus rows; that draft is withdrawn. For Scopus rows, `screening/ui.py` reads the same NULL it reads today, and every other column is the
+`records` value, with `origin` added.
 
 **The readers that move to `records_all`**, each with what it does for a registration:
 
@@ -225,7 +225,7 @@ and are fixed by this record (decided 2026-10-22).
   `n` for a project with registrations is therefore the Scopus count plus the registered count.
 - The writer, `store/load.py` line 1955 (`_insert_rows(connection, "records", acc.records)`). It is unchanged by this design. The
   loader still writes Scopus rows only to `records`. Registrations reach Layer 1 through the registration fold into
-  `registered_records`, which is a separate writer.
+  `registered_records`. The fold is part of the loader (`store/load.py`), which is the only writer of Layer 1 (ADR 0028, Decision 3), so no deviation from ADR 0028 is needed.
 
 **Full text for registrations.** Registrations are targets of the full-text stage on the same terms as Scopus records, because
 they are members of `M_abs` once included at title and abstract. Their DOI comes from `records_all` (above). Their assets are
@@ -251,7 +251,7 @@ read.
 with a value. The stored column is always NULL in this version. Its reason is the measured fact in Context: every stored Scopus
 record has `language` NULL, so no language table could be checked against stored data. A NULL language passes the language
 filter by the existing no-data rule (`_passes_language`, `prisma/engine.py` lines 372-375), the same as every Scopus record in the
-two stores. ADR 0029's Split records bullet (line 230) names language as an input, and this is deviation (viii).
+two stores. ADR 0029's Split records bullet (line 231) names language as an input, and this is deviation (viii).
 
 **Refusal is at registration.** ADR 0029 §5 names the registration writer as the enforcement point for every
 refusal, so the writer checks every input in the table above before the append. This refusal is not in code today. It is required of the
@@ -271,7 +271,7 @@ holds three tables, (a) to (c) below. Two constants name it:
   digest is computed when the module is written, and it is pinned in the same commit. It is not computed in
   this draft.
 
-ADR 0029 Owner decision 4 (line 249) and the register bullet (line 62) describe the mapping as "a fixed, versioned
+ADR 0029 Owner decision 4 (line 250) and the register bullet (line 62) describe the mapping as "a fixed, versioned
 mapping table from OpenAlex topics to ASJC codes". **The owner decided the granularity on 2026-10-22: the map is from
 OpenAlex subfield to ASJC code, not from topic.** This record changes that wording in ADR 0029 Owner decision 4
 and in line 62. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. The change is
@@ -596,7 +596,7 @@ A `primary_location` with no source, or a source type outside this table, is ref
 a required test, which does not exist yet: `test_registration__source_type_path__matches_recorded_works_fixture`. This path is
 unverified, and the test is its gate: it must pass before the registration PR merges. The fixture source is as follows. The
 registration PR captures a recorded OpenAlex work response from the live API, with the API key redacted, and saves it under
-`tests/fixtures/openalex/`. It is not hand-written, unlike the existing client cassettes that ADR 0030 (lines 182-184) describes.
+`tests/fixtures/openalex/`. It is not hand-written, unlike the existing client cassettes that ADR 0030 (line 186) describes.
 Its licence is checked before the commit. This record does not verify OpenAlex's licence terms. The fixture does not exist yet.
 If the path is absent in the fixture, the registration is refused, not guessed.
 
@@ -653,7 +653,7 @@ change that, and the limitation should be stated in `docs/methodology/limitation
   filter never sees it with missing data. Its `language` is NULL, and `_passes_language` passes it (Consequence 7).
 - The frozen `records`, `venues`, `subject_areas` and `runs` tables keep their columns.
 - Payload references: a registered record's `payload_line` is `0`. ADR 0029's worked example (`line` 42 in
-  `raw/run-0007/openalex-0001.jsonl`, line 90) is **superseded** by ADR 0031 Decision 2, under which each HTTP response
+  `raw/run-0007/openalex-0001.jsonl`, line 91) is **superseded** by ADR 0031 Decision 2, under which each HTTP response
   is one file, `response-NNNN.jsonl`, holding one line. The example is kept in ADR 0029 unchanged.
 
 ## Alternatives considered
@@ -709,7 +709,7 @@ between subject areas, and an old published number could not be reproduced.
 criteria are not renegotiable without a new ADR (§2.6)." Item (ii) also cites BUILD_PLAN line 301. Each is named here, and each
 needs the owner's acceptance under this record:
 
-- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 249) and the register bullet (line 62) say "OpenAlex
+- **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 250) and the register bullet (line 62) say "OpenAlex
   topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(ii) BUILD_PLAN §1.2, metadata source (line 54).** §1.2 fixes the metadata source as "Scopus API (institutional key)".
   Registered records bring OpenAlex-derived metadata (`doc_type`, `venue_type`, subject area, title and DOI) into Layer 1,
@@ -728,9 +728,9 @@ needs the owner's acceptance under this record:
 - **(vi) ADR 0031 select.** Adding `type`, `primary_location` and `primary_topic` changes the OpenAlex select
   that ADR 0031 Context (line 44) names. `language` is not added (deviation viii). The owner approved the change, and ADR 0031 has a dated note. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." Bodies captured
   earlier lack the fields, and the loader refuses a registration that references one.
-- **(vii) ADR 0029 example.** The `payload_line` example in ADR 0029 (line 90) is superseded by ADR 0031 Decision 2, as
+- **(vii) ADR 0029 example.** The `payload_line` example in ADR 0029 (line 91) is superseded by ADR 0031 Decision 2, as
   §6 above states. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
-- **(viii) ADR 0029 Split records, the `language` input (line 230).** ADR 0029 names `language` as a registration input. This
+- **(viii) ADR 0029 Split records, the `language` input (line 231).** ADR 0029 names `language` as a registration input. This
   record drops it, by owner decision (Decision 2), because every stored Scopus record has `language` NULL. A registration's
   `language` is NULL, and the existing no-data rule passes it. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 
@@ -748,7 +748,7 @@ this record is decided by the dedicated review named in Status.
   against recorded pairs.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the loader is the only Layer 1 writer (Decision 3). The separation of OpenAlex topics from ASJC is stated in Context of this record, not in ADR 0028.
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the registration this record makes possible. Its
-  Owner decision 4 (line 249) and line 62 are changed by this record (deviation i).
+  Owner decision 4 (line 250) and line 62 are changed by this record (deviation i).
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the stored OpenAlex body, the `PayloadRef` form, and the select
   amendment (deviation vi).
 - [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md): the Stage 4 counts that read `records_all`.
