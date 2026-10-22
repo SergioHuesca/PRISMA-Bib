@@ -371,6 +371,141 @@ def write_sealed_abstract_run(
     return run_dir
 
 
+def make_openalex_work(
+    *,
+    openalex_id: str,
+    doi: str | None,
+    title: str,
+    year: int,
+    topics: list[str] | None = None,
+    abstract_words: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build one synthetic OpenAlex work payload (no licensed data; ADR 0031 ``select`` fields).
+
+    Args:
+        openalex_id: The work's ``id``.
+        doi: Bare DOI; written as the ``https://doi.org/`` URL OpenAlex returns.
+        title: ``title``.
+        year: ``publication_year``.
+        topics: Topic ``display_name``s, in the order given (score is fixed).
+        abstract_words: Words placed in ``abstract_inverted_index`` by position.
+    """
+    return {
+        "id": openalex_id,
+        "doi": f"https://doi.org/{doi}" if doi else None,
+        "title": title,
+        "publication_year": year,
+        "abstract_inverted_index": (
+            {word: [i] for i, word in enumerate(abstract_words)} if abstract_words else None
+        ),
+        "authorships": [],
+        "topics": [{"display_name": name, "score": 0.9} for name in topics or []],
+    }
+
+
+def write_sealed_openalex_run(
+    raw_dir: Path,
+    run_id: str,
+    requests: list[dict[str, Any]],
+    *,
+    bad_outcomes: bool = False,
+) -> Path:
+    """Write one sealed ``raw/openalex/<run_id>/`` run by hand (ADR 0031 Decisions 1-4).
+
+    Outcomes are computed from the given works with the capture's own
+    ``openalex.lookup_outcome``, so a test only describes the responses. The
+    manifest is validated through ``OpenAlexRunManifest`` before it is written.
+
+    Args:
+        raw_dir: The project's ``raw/`` directory.
+        run_id: Directory name; must sort after any earlier run.
+        requests: One dict per HTTP response: ``lookup`` (``doi_batch`` etc.),
+            ``identifiers`` (DOIs, or ``{"title", "year"}`` dicts),
+            ``http_status`` (default 200), and either ``works`` (the
+            ``results`` list), ``body`` (written as the JSON value) or
+            ``raw_bytes`` (written as is; its outcomes are ``not_found``).
+        bad_outcomes: Flip every ``value`` outcome's ``absent_fields`` so the
+            manifest disagrees with the bytes.
+    """
+    from prismabib.capture.manifest import OpenAlexRunManifest
+    from prismabib.sources import openalex
+
+    run_dir = raw_dir / "openalex" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    moment = "2025-01-02T00:00:00Z"
+    manifest_requests: list[dict[str, Any]] = []
+    files: list[str] = []
+    for index, spec in enumerate(requests):
+        name = f"response-{index:04d}.jsonl"
+        works: list[dict[str, Any]] = spec.get("works", [])
+        status = spec.get("http_status", 200)
+        if "raw_bytes" in spec:
+            (run_dir / name).write_bytes(spec["raw_bytes"])
+        else:
+            body = spec.get("body", {"results": works})
+            (run_dir / name).write_text(json.dumps(body) + "\n", encoding="utf-8")
+        parsed = [openalex.parse_work(w) for w in works]
+        outcomes: list[dict[str, Any]] = []
+        for identifier in spec["identifiers"]:
+            if status == 200 and "raw_bytes" not in spec:
+                if isinstance(identifier, dict):
+                    found, absent = openalex.lookup_outcome(
+                        parsed, title=identifier["title"], year=identifier["year"]
+                    )
+                else:
+                    found, absent = openalex.lookup_outcome(parsed, doi=identifier)
+            else:
+                found, absent = None, []
+            if bad_outcomes and found is not None:
+                absent = [] if absent else ["abstract"]
+            outcomes.append(
+                {
+                    "identifier": identifier,
+                    "outcome": "value" if found else "not_found",
+                    "http_status": status,
+                    "openalex_id": found.openalex_id if found else None,
+                    "absent_fields": absent,
+                }
+            )
+        files.append(name)
+        manifest_requests.append(
+            {
+                "index": index,
+                "file": name,
+                "sha256": hashlib.sha256((run_dir / name).read_bytes()).hexdigest(),
+                "encoding": "verbatim",
+                "lookup": spec["lookup"],
+                "identifiers": spec["identifiers"],
+                "params": {},
+                "api_view": "id,doi,title",
+                "entitlement_context": {"api_key_used": False, "fallback_opt_in": False},
+                "http_status": status,
+                "retrieved_at": moment,
+                "result_count": len(works),
+                "outcomes": outcomes,
+            }
+        )
+    manifest = OpenAlexRunManifest.model_validate(
+        {
+            "run_id": run_id,
+            "started_at": moment,
+            "finished_at": moment,
+            "endpoint": "https://api.openalex.org/works",
+            "fallback_opt_in": False,
+            "api_key_used": False,
+            "requests": manifest_requests,
+            "payload_files": files,
+            "payload_sha256": hashlib.sha256(
+                b"".join((run_dir / name).read_bytes() for name in files)
+            ).hexdigest(),
+            "client_version": "0.1.0",
+            "criteria_version": "1.0.0",
+        }
+    )
+    (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    return run_dir
+
+
 __all__ = [
     "REFERENCE_PROJECT_DIR",
     "SCHEMA_SQL_PATH",
@@ -378,8 +513,10 @@ __all__ = [
     "create_schema",
     "make_abstract_entry",
     "make_entry",
+    "make_openalex_work",
     "read_reference_entry",
     "reference_run_dir",
     "write_sealed_abstract_run",
+    "write_sealed_openalex_run",
     "write_sealed_run",
 ]

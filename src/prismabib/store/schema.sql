@@ -35,7 +35,12 @@ CREATE TABLE affiliations (afid TEXT PRIMARY KEY, name TEXT, city TEXT, country_
 CREATE TABLE record_affiliations (record_id TEXT, afid TEXT);
 
 CREATE TABLE keywords (keyword_id TEXT PRIMARY KEY, term_raw TEXT, term_norm TEXT);
-CREATE TABLE record_keywords (record_id TEXT, keyword_id TEXT, kind TEXT);  -- author|index
+-- ADR 0030 Decision 3 amends BUILD_PLAN line 871 (author|index): the CHECK adds 'openalex-topic'.
+-- Must match RECORD_KEYWORD_KINDS in store/load.py (a test asserts it).
+CREATE TABLE record_keywords (
+  record_id TEXT, keyword_id TEXT,
+  kind TEXT CHECK (kind IN ('author', 'index', 'openalex-topic'))
+);
 
 CREATE TABLE subject_areas (record_id TEXT, area_code TEXT);
 
