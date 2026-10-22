@@ -12,6 +12,7 @@ there. On this branch, this record and ADR 0033 fail that test by design.
 record stays `Proposed` through this revision. When the review passes, the Status line is changed to
 `Accepted — <date>` in PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
 
+This PR also adds a dated supersession note to ADR 0007 and a dated note to ADR 0027, as ADR 0033 requires. Neither body is changed.
 The deviations are listed under Consequences. Each deviation cites the project rule in `CLAUDE.md`, which says:
 "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." Item (ii) alone also falls
 under BUILD_PLAN line 301, because the metadata source at BUILD_PLAN line 54 is a §1.2 item.
@@ -68,7 +69,7 @@ be recorded for it. `Corpus.records` (`store/load.py`, lines 2508-2537) runs `SE
 **The current OpenAlex select does not carry those fields.** `sources/openalex.py` line 52 sets
 `_SELECT = "id,doi,title,publication_year,abstract_inverted_index,authorships,topics"`. It has no `type`,
 `primary_location` or `primary_topic`. [ADR 0031](0031-openalex-responses-are-layer0-runs.md)
-Context (line 44) lists that select. The owner has approved adding `type`, `primary_location` and `primary_topic`, but not
+Context lists that select at line 44 of the current ADR 0031 file (it was line 42 before the dated note of 2026-10-22 was added). The owner has approved adding `type`, `primary_location` and `primary_topic`, but not
 `language` (ADR 0031 note of 2026-10-22).
 
 **Scopus's no-data rule does not carry over.** A Scopus record with no `subject_areas` rows, or a `NULL`
@@ -559,9 +560,11 @@ targets are the description strings the engine compares with (`_DOC_TYPE_CODE_TO
 | `book-review`, `conference-abstract`, `data-paper`, `dataset`, `dissertation`, `libguides`, `other`, `paratext`, `peer-review`, `preprint`, `reference-entry`, `report`, `retraction`, `software`, `software-paper`, `standard`, `supplementary-materials` | (none) | Refused. Each has no Scopus description in the engine's table. |
 
 **(c) Source type to `venue_type`: version 1, 7 rows.** Source: the OpenAlex Sources page, fetched 2026-10-22. The
-targets are the closed `venue_type` set (`store/load.py` line 194). The collapse of `ebook platform` and
-`book series` into `book`, and of `repository`, `metadata` and `other` into `other`, is a judgement, and the table
-marks it so. The engine reads only `conference`, so the judgement does not change any count.
+targets are the closed `venue_type` set (`store/load.py` line 194). All seven rows are judgement calls chosen by this record's author, and the table marks each one.
+Four of them collapse several OpenAlex source types into one closed value: `ebook platform` and `book series` into `book`,
+and `repository` and `metadata` into `other`. The owner accepts all seven judgement rows with this ADR, dated 2026-10-22.
+They are tightenable in a later ADR. The engine reads only `conference`, so no row here changes a count today except the
+`conference` row.
 
 | OpenAlex source `type` | `venue_type` | Basis |
 |---|---|---|
@@ -576,7 +579,8 @@ marks it so. The engine reads only `conference`, so the judgement does not chang
 A `primary_location` with no source, or a source type outside this table, is refused. The Sources page confirms
 `type` only on the source object, not the path `primary_location.source.type` on a work. The registration PR must include
 a required test, which does not exist yet: `test_registration__source_type_path__matches_recorded_works_fixture`, checked against
-a recorded OpenAlex response. If the path is absent there, the registration is refused, not guessed.
+a recorded OpenAlex response. This path is unverified. It must be checked against a recorded OpenAlex work fixture before the registration PR merges, and
+the test named above is that check. If the path is absent there, the registration is refused, not guessed.
 
 **Language: no table.** Language is not in the map (Decision 2).
 
@@ -657,7 +661,11 @@ between subject areas, and an old published number could not be reproduced.
 
 ## Consequences
 
-1. The schema gains one table and one view. This is a Layer 1 addition under ADR 0012. The golden table-checksum
+1. The schema gains one table and one view. The registration PR touches two files that are not part of this record:
+   `src/prismabib/store/schema.sql`, which gains the DDL for `registered_records` and the view `records_all` (the live-introspection
+   test, BUILD_PLAN line 924, checks it against the database); and `src/prismabib/store/checksums.py`, whose `_TABLE_SORT_KEYS`
+   (lines 50-66) gains `"registered_records": ("record_id",)`, so the table's checksum is computed in key order (ADR 0029 V14).
+   A view has no checksum entry, so `records_all` is not checksummed. This is a Layer 1 addition under ADR 0012. The golden table-checksum
    snapshot gains a key for `registered_records`, which is a deliberate change that the implementation pull request must
    name under BUILD_PLAN line 927.
 2. A Scopus-only store builds an empty `registered_records`. The row checksums of existing tables are unchanged.

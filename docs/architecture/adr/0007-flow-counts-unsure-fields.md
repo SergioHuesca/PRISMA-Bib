@@ -86,6 +86,11 @@ BUILD_PLAN line 973's "`unsure` never resolves to inclusion" is preserved unchan
 before publishing: non-zero `unsure_title_abstract` or `unsure_fulltext` in a diagram means
 the screening it depicts was still in progress.
 
+> **Note added 2026-10-22 (ADR 0033; this note does not change the record above).** Superseded by [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md)
+> in full, as this record's closing paragraph requires: `FlowCounts` gains a `registered` count, equation 1 gains its term, and
+> orphaned decisions are reported. ADR 0033 restates the whole contract. The Status line of this record stays `Accepted` in this
+> pull request, and changes to `Superseded by ADR 0033` in PR #150 when ADR 0033 is accepted. The governance test accepts both values.
+
 ## Alternatives rejected
 
 ### 1. Fold `unsure` into the exclusion counts

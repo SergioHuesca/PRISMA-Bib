@@ -22,8 +22,9 @@ the same rule to Stage 2 and Stage 3. The contract is BUILD_PLAN lines
 
 **This record supersedes [ADR 0007](0007-flow-counts-unsure-fields.md) in full.** ADR 0007's Decision says that
 further amending the `FlowCounts` contract requires a new ADR that supersedes it (ADR 0007, closing paragraph).
-The restated contract is in Decision 1. The merge pull request changes ADR 0007's Status line to `Superseded by ADR 0033`.
-This draft does not edit ADR 0007.
+The restated contract is in Decision 1. A dated supersession note is added to ADR 0007 in this PR, body and Status unchanged. Its Status line changes to
+`Superseded by ADR 0033` in PR #150, when this record is accepted.
+The dated note to ADR 0007 is part of this PR, and its body is unchanged.
 
 ## Context
 
@@ -158,7 +159,7 @@ same snapshot, and it does not change which decisions are counted.
 **Reversal (`reverse`, ADR 0029 §2 for the reason field, §7 for the reversal).** `reason` is one of a closed set (owner decision,
 2026-10-22): `wrong_doi`, `wrong_title`, `duplicate_of_scopus`, `not_eligible`, or `other`. `other` requires a non-empty `note`.
 No writer exists yet. The registration PR must validate the set on write and must include the test
-`test_reversal__reason_outside_closed_set__is_refused` (Verification 9), and no code enforces it today. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
+`test_reversal__reason_outside_closed_set__is_refused` (Verification 9). That test is required of the registration PR and does not exist yet. No code enforces the set today. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
 orphaned and are reported. `registered` drops by one. If the paper had reached `included`, `included` drops by one, and the diagram shows
 that. A correction to a wrong DOI or title is a reversal followed by a new registration, which has a new `record_id` (ADR 0029 §4), so
 the old decisions are never reused.
@@ -210,7 +211,7 @@ record, so the restated contract is the one that the code and its tests read.
 
 1. **ADR 0007 is superseded in full.** The merge pull request changes its Status line to `Superseded by ADR 0033`. Nothing else in ADR 0007
    changes, and its text stays as the record of the earlier contract.
-2. **`numbers.json` changes bytes for every project, including v1.0.0, and its values do not change.** A Scopus-only project's
+2. **`numbers.json` changes bytes for every project, including v1.0.0, and its values do not change.** The dated note to [ADR 0027](0027-what-v1-0-0-claims.md) records the byte change, and the v1.0.0 claim is unchanged. A Scopus-only project's
    `numbers.json` gains the key `"flow.registered": 0`. The reference golden `tests/golden/report/__snapshots__/reference_numbers.json` changes,
    and the golden `tests/golden/report/__snapshots__/numbers_keys.json`, which already exists on main and pins the sorted key list of `numbers.json`, is extended to list `flow.registered`. Both
    changes are deliberate. The implementation pull request names them under BUILD_PLAN line 927. ADR 0027 Decision 3 claims byte-identity of
@@ -261,7 +262,7 @@ None. The owner has decided the reason-code set (Decision 4), the `corpus.*` cou
 7. `test_numbers_json__registered_key__always_present`: a Scopus-only project writes `"flow.registered": 0`, and `numbers_keys.json` lists it.
 8. Each test above is shown to fail against the current `FlowCounts` (no `registered` field), following the project rule that a test which
    covers a line proves nothing until it fails on the original defect.
-9. `test_reversal__reason_outside_closed_set__is_refused`: a `reverse` event with a reason outside the codes in Decision 4 is refused
+9. `test_reversal__reason_outside_closed_set__is_refused` (required of the registration PR; it does not exist yet): a `reverse` event with a reason outside the codes in Decision 4 is refused
    on write, and `other` without a note is refused. The log's bytes and checksum are unchanged.
 10. The suite runs under `pytest -n auto` and in a single process, and the golden re-baseline is named in the pull request.
 
