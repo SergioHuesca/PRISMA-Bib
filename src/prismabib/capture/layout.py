@@ -68,10 +68,13 @@ CACHE_DIRNAME = "_cache"
 #: :class:`~prismabib.capture.manifest.AbstractRunManifest` and its own seal.
 ABSTRACTS_DIRNAME = "abstracts"
 
+#: The OpenAlex response runs under ``raw/openalex/<run_id>/`` (ADR 0031).
+OPENALEX_DIRNAME = "openalex"
+
 #: Every immediate child of ``raw/`` that is not a search run directory. Any
 #: code iterating ``raw/`` looking for runs must skip these by name rather than
 #: relying on their contents to disqualify them.
-NON_RUN_DIRNAMES = frozenset({CACHE_DIRNAME, ABSTRACTS_DIRNAME})
+NON_RUN_DIRNAMES = frozenset({CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME})
 
 
 class SealedRunError(PrismabibError):
@@ -154,6 +157,7 @@ __all__ = [
     "ABSTRACTS_DIRNAME",
     "CACHE_DIRNAME",
     "NON_RUN_DIRNAMES",
+    "OPENALEX_DIRNAME",
     "RUN_MANIFEST_FILENAME",
     "SealedRunError",
     "atomic_write_bytes",
