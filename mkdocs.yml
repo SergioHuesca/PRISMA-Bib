@@ -116,6 +116,8 @@ nav:
           - "ADR 0029: reviewer registration of a candidate as a record": architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md
           - "ADR 0030: OpenAlex topics as a keyword kind": architecture/adr/0030-openalex-topics-as-a-keyword-kind.md
           - "ADR 0031: OpenAlex responses are captured as Layer 0 runs": architecture/adr/0031-openalex-responses-are-layer0-runs.md
+          - "ADR 0032: registered-records table and classification map": architecture/adr/0032-registered-records-table-and-classification-map.md
+          - "ADR 0033: FlowCounts registered count and orphaned decisions": architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
