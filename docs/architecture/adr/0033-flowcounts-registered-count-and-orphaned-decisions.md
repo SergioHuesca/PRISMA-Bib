@@ -15,8 +15,9 @@ PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`
 This record depends on [ADR 0032](0032-registered-records-table-and-classification-map.md), which must be accepted
 first, because the registered records it counts come from the table and view that ADR 0032 specifies.
 
-The change to the `FlowCounts` contract is a Stage 4 deviation. Its basis is the project's ADR rule, BUILD_PLAN §2.6
-(line 301), as ADR 0029 (Context, "the spec clauses") applies it to Stage 2 and Stage 3. The contract is BUILD_PLAN lines
+The change to the `FlowCounts` contract is a Stage 4 deviation. Its basis is the project rule in `CLAUDE.md`: "Contracts,
+schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." ADR 0029 (Context, "the spec clauses") applies
+the same rule to Stage 2 and Stage 3. The contract is BUILD_PLAN lines
 976-993 as amended by ADR 0007, ADR 0013 and ADR 0016.
 
 **This record supersedes [ADR 0007](0007-flow-counts-unsure-fields.md) in full.** ADR 0007's Decision says that
@@ -113,10 +114,11 @@ Three counts are reported with the diagram but are not `FlowCounts` fields:
   not from the record set, so it is not an operand of any identity. ADR 0007's Alternative 3 rejected splitting an identity's
   operands across two objects. This count is not an operand, so that objection does not apply.
 - **Orphaned decisions.** Decision 3 defines them and their count. They are not operands either (ADR 0029 §3).
-- **`numbers.json` keys.** `identified`, `registered` and the resolved-unregistered count are separate keys. No export puts
-  `registered` into a key named `identified` (ADR 0029 §3). Every function named `identified` returns the Scopus value alone.
+- **`numbers.json` keys.** `flow.identified`, `flow.registered` and the resolved-unregistered count are separate keys. No export puts
+  `flow.registered` into a key named `flow.identified` (ADR 0029 §3). Every function named `identified` returns the Scopus value alone.
 
-**`numbers.json` always carries `registered`.** A Scopus-only project writes `"registered": 0`. This is an owner decision, taken 2026-10-22. The key
+**`numbers.json` always carries `flow.registered`.** The key is `flow.registered`, because `numbers.py` emits `flow.<field name>` for
+every `FlowCounts` field (`report/numbers.py` lines 64-67). A Scopus-only project writes `"flow.registered": 0`. This is an owner decision, taken 2026-10-22. The key
 is never omitted, because a key whose presence depends on the data reads "absent" where it means "zero". ADR 0028 Resolved item 6 rejects
 the same confusion for field values, and the Alternatives below reject the data-dependent key.
 
@@ -153,9 +155,10 @@ same snapshot, and it does not change which decisions are counted.
 
 ### 4. Reversal and supersession
 
-**Reversal (`reverse`, ADR 0029 §7).** `reason` is one of a closed set, validated on write (owner decision, 2026-10-22): `wrong_doi`,
-`wrong_title`, `duplicate_of_scopus`, `not_eligible`, or `other`. The writer refuses any other value, and `other` requires a
-non-empty note. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
+**Reversal (`reverse`, ADR 0029 §2 for the reason field, §7 for the reversal).** `reason` is one of a closed set (owner decision,
+2026-10-22): `wrong_doi`, `wrong_title`, `duplicate_of_scopus`, `not_eligible`, or `other`. `other` requires a non-empty `note`.
+No writer exists yet. The registration PR must validate the set on write and must include the test
+`test_reversal__reason_outside_closed_set__is_refused` (Verification 9), and no code enforces it today. The registration becomes inactive, so the record leaves `S_raw`. Its current decisions become
 orphaned and are reported. `registered` drops by one. If the paper had reached `included`, `included` drops by one, and the diagram shows
 that. A correction to a wrong DOI or title is a reversal followed by a new registration, which has a new `record_id` (ADR 0029 §4), so
 the old decisions are never reused.
@@ -208,8 +211,8 @@ record, so the restated contract is the one that the code and its tests read.
 1. **ADR 0007 is superseded in full.** The merge pull request changes its Status line to `Superseded by ADR 0033`. Nothing else in ADR 0007
    changes, and its text stays as the record of the earlier contract.
 2. **`numbers.json` changes bytes for every project, including v1.0.0, and its values do not change.** A Scopus-only project's
-   `numbers.json` gains the key `"registered": 0`. The reference golden `tests/golden/report/__snapshots__/reference_numbers.json` changes,
-   and so does a new golden `tests/golden/report/__snapshots__/numbers_keys.json`, which pins the sorted key list of `numbers.json`. Both
+   `numbers.json` gains the key `"flow.registered": 0`. The reference golden `tests/golden/report/__snapshots__/reference_numbers.json` changes,
+   and the golden `tests/golden/report/__snapshots__/numbers_keys.json`, which already exists on main and pins the sorted key list of `numbers.json`, is extended to list `flow.registered`. Both
    changes are deliberate. The implementation pull request names them under BUILD_PLAN line 927. ADR 0027 Decision 3 claims byte-identity of
    `numbers.json` across two runners, so the claim applies to the new bytes, and the pull request states the re-baseline.
 3. The flow diagram gains a registered line in the other-methods box, and the resolved-unregistered and orphaned-decision counts beside it.
@@ -225,19 +228,19 @@ record, so the restated contract is the one that the code and its tests read.
 
 ## Deviations from the frozen contract
 
-Each deviation rests on the same basis: the project's ADR rule, BUILD_PLAN §2.6 (line 301). Each needs the owner's acceptance
-under this record.
+Each deviation cites the project rule in `CLAUDE.md`: "Contracts, schemas, and acceptance criteria are not renegotiable without
+a new ADR (§2.6)." Each needs the owner's acceptance under this record.
 
 1. **The `FlowCounts` contract (BUILD_PLAN lines 976-993, as amended by ADR 0007, 0013 and 0016).** Equation 1 gains the
-   `registered` term, and ADR 0007 is superseded in full (Status). Basis: BUILD_PLAN §2.6 (line 301).
-2. **ADR 0029 §2, the `reverse` reason.** ADR 0029 §2 makes `reason` mandatory and leaves its content open. This record narrows
+   `registered` term, and ADR 0007 is superseded in full (Status). Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
+2. **ADR 0029 §2, the `reverse` reason.** ADR 0029 §2 (its `reverse` bullet, line 63 of the file) makes `reason` mandatory and leaves its content open. This record narrows
    it to the closed set in Decision 4 and adds a `note`, required when the reason is `other`. ADR 0029 is not edited in its body.
-   A dated pointer note is added under its §2 reverse rule. Basis: BUILD_PLAN §2.6 (line 301).
-3. **The shape of `numbers.json`.** The `registered` key is always written, so every project's file gains a key (Consequence 2).
-   The values of existing keys are unchanged for a project without registrations. Basis: BUILD_PLAN §2.6 (line 301).
+   A dated pointer note is added under its §2 reverse rule. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
+3. **The shape of `numbers.json`.** The `flow.registered` key is always written, so every project's file gains a key (Consequence 2).
+   The values of existing keys are unchanged for a project without registrations. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 4. **The `corpus.*` scalars and the venue tables.** `corpus.size`, `corpus.year_min`, `corpus.year_max` and `venues.*` count
    registrations (owner decision A, 2026-10-22). This changes what those keys mean for a project with registrations. Basis:
-   BUILD_PLAN §2.6 (line 301).
+   CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 
 ## Open questions for the owner
 
@@ -255,7 +258,7 @@ None. The owner has decided the reason-code set (Decision 4), the `corpus.*` cou
    `event_id`, is absent from every set, and is absent from `FlowCounts`.
 6. `test_orphaned_decisions__superseded_registration__scopus_record_is_unsure`: after `supersede`, the Scopus record counts in
    `unsure_title_abstract`, and `included` falls if the paper had been included.
-7. `test_numbers_json__registered_key__always_present`: a Scopus-only project writes `"registered": 0`, and `numbers_keys.json` lists it.
+7. `test_numbers_json__registered_key__always_present`: a Scopus-only project writes `"flow.registered": 0`, and `numbers_keys.json` lists it.
 8. Each test above is shown to fail against the current `FlowCounts` (no `registered` field), following the project rule that a test which
    covers a line proves nothing until it fails on the original defect.
 9. `test_reversal__reason_outside_closed_set__is_refused`: a `reverse` event with a reason outside the codes in Decision 4 is refused
@@ -268,7 +271,7 @@ None. The owner has decided the reason-code set (Decision 4), the `corpus.*` cou
 - [ADR 0007](0007-flow-counts-unsure-fields.md): the `unsure` fields. This record supersedes it in full (Status).
 - [ADR 0013](0013-identified-sums-across-searches.md): `identified` sums `total_results` across searches, and a supersession can raise it.
 - [ADR 0016](0016-automated-exclusion-reasons.md): `excluded_automated_by_reason` and equation 5, which registrations join.
-- [ADR 0028](0028-field-level-fallback-cascade.md): Resolved item 6, the rule against blank values, which the `registered` key applies.
+- [ADR 0028](0028-field-level-fallback-cascade.md): Resolved item 6, the rule against blank values, which the `flow.registered` key applies.
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the registration, reversal and supersession events, and the identity
   this record implements.
 - [ADR 0032](0032-registered-records-table-and-classification-map.md): the table and view that registered records come from.

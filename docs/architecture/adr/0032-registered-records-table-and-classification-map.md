@@ -12,10 +12,9 @@ there. On this branch, this record and ADR 0033 fail that test by design.
 record stays `Proposed` through this revision. When the review passes, the Status line is changed to
 `Accepted — <date>` in PR #150 itself, not in a separate pull request, so `main` never holds `Proposed`.
 
-The deviations are listed under Consequences. Every deviation rests on the same basis: the project's ADR rule,
-BUILD_PLAN §2.6 (line 301). That line names §1.2 explicitly, and item (ii), the metadata source at BUILD_PLAN line 54,
-is a §1.2 item. The other items apply the same rule to Stage 3 and Stage 4 contracts, as
-[ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md) (Context, "the spec clauses") does.
+The deviations are listed under Consequences. Each deviation cites the project rule in `CLAUDE.md`, which says:
+"Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." Item (ii) alone also falls
+under BUILD_PLAN line 301, because the metadata source at BUILD_PLAN line 54 is a §1.2 item.
 
 This record is the precondition that ADR 0029 names for registration code. The owner's answers to the
 earlier draft are stated here as decisions, not as open questions.
@@ -157,7 +156,7 @@ are now.
 
 **The readers that do not move.** Each reads a fact that a registration does not have, and each stays on its table:
 
-- `prisma/flow.py` `_unloadable_count` (lines 362-374). It counts `malformed_entries` whose `record_id` is absent from `records`.
+- `prisma/flow.py` `_unloadable_count` (defined at line 334; its SQL is at lines 362-374). It counts `malformed_entries` whose `record_id` is absent from `records`.
   Malformed entries come from Layer 0 payloads that failed to parse, and a registration has none (a registration is refused
   unless its OpenAlex body parses). The check is benign for registrations, and it is unchanged.
 - `store/load.py` build statistics (lines 2084-2096). `records_loaded` counts the Scopus rows the loader wrote, which is what
@@ -175,6 +174,20 @@ is reported as `unavailable` (ADR 0029 Consequence 7). The names `registered_rec
 and are fixed by this record (decided 2026-10-22).
 
 **Readers of the venue, citation and consumer numbers.** Each reader below is named, with what a registration does in it.
+
+- `taxonomy/analysis.py` (lines 101, 168, `corpus.records`). The taxonomy analysis counts coded records. A registration is coded
+  from its title and abstract, as a Scopus record is, and it is counted in the taxonomy totals.
+- `viz/dashboard.py` line 459 (Corpus browser, `corpus.records`). A registration appears in the browser, with `origin` shown.
+- `viz/dashboard.py` line 256 (`Corpus.citations()` for the snapshot selector). A registration has no snapshot, so it is absent
+  from the snapshot options. No other effect.
+- `screening/ui.py` lines 242-245 (`cited_by` from `citation_snapshots`). A registration has no `cited_by` value, so the screening
+  view shows no citation line for it. Its absence is shown as absence, not as zero.
+- `store/load.py` `Corpus.citations` (defined at line 2577). It returns snapshot rows only, so a registration is absent from it.
+  ADR 0029 Consequence 7 requires the registration to be counted as `unavailable` in every citation denominator. That is the
+  `citations.registered_unavailable` key named below.
+- `store/load.py` lines 2065-2069 (duplicate-DOI statistic, `StoreStats`). It reads `records` only, and it stays Scopus-only.
+  A registration never duplicates a Scopus DOI, because ADR 0029 §6 supersedes the registration when one appears. This is a
+  build statistic, and it is unchanged.
 
 - `report/numbers.py` `_venue_numbers` (`venues.total` and `venues.top<i>`, through `Corpus.venues`). Counted, per owner decision A.
   The `venues.*` keys change for a project with registrations.
@@ -268,7 +281,8 @@ equals an ASJC code in that list. Match status is one of:
 
 Rows are in OpenAlex API order. Result: **252 rows; 239 exact; 13 qualifier; 0 unmapped; 0 unverified.** The
 status is my comparison of two transcribed name lists. It is not a second independent source, and the owner
-should check the 13 qualifier rows and spot-check the rest against the Scopus page before acceptance.
+accepted the 13 qualifier rows as qualified, on 2026-10-22. Each is marked `qualifier` and its mapping is approximate.
+A registered record that carries one is flagged in the methods. The owner may tighten these rows in a later ADR.
 
 | OpenAlex subfield id | OpenAlex subfield | ASJC code | Match |
 |---|---|---|---|
@@ -559,10 +573,10 @@ marks it so. The engine reads only `conference`, so the judgement does not chang
 | `metadata` | `other` | judgement |
 | `other` | `other` | judgement, direct |
 
-A `primary_location` with no source, or a source type outside this table, is refused. The field path
-`primary_location.source.type` is confirmed in the Sources page only as `type` on the source object. Whether the
-work carries it under `primary_location.source` is an implementation check against the Works attributes page, as
-ADR 0031 does for its header. If the path is absent, the registration is refused, not guessed.
+A `primary_location` with no source, or a source type outside this table, is refused. The Sources page confirms
+`type` only on the source object, not the path `primary_location.source.type` on a work. The registration PR must include
+a required test, which does not exist yet: `test_registration__source_type_path__matches_recorded_works_fixture`, checked against
+a recorded OpenAlex response. If the path is absent there, the registration is refused, not guessed.
 
 **Language: no table.** Language is not in the map (Decision 2).
 
@@ -661,36 +675,37 @@ between subject areas, and an old published number could not be reproduced.
    behaves this way, so the language filter has no effect on either population in this version. The methods must say so.
 8. **Counts (owner decision A, 2026-10-22).** Registrations count in `corpus.size`, `corpus.year_min` and `corpus.year_max` (`numbers.json`),
    and in the venue tables (`Corpus.venues`). The methods report the registered count next to those numbers, in one sentence:
-   "N records, of which M are registrations from a manual Google Scholar search (ADR 0029)". The same number is the `registered`
+   "N records, of which M are registrations from a manual Google Scholar search (ADR 0029)". The same number is the `flow.registered`
    key that ADR 0033 adds to `numbers.json`, so the count appears once in the data and once in the text.
 
-**Deviations from the frozen contract (§2.6).** Every item rests on the same basis, the project's ADR rule, BUILD_PLAN §2.6
-(line 301). Each is named here, and each needs the owner's acceptance under this record:
+**Deviations from the frozen contract.** Each item cites the project rule quoted in Status: "Contracts, schemas, and acceptance
+criteria are not renegotiable without a new ADR (§2.6)." Item (ii) also cites BUILD_PLAN line 301. Each is named here, and each
+needs the owner's acceptance under this record:
 
 - **(i) Stage 2 and Stage 3 granularity.** ADR 0029 Owner decision 4 (line 231) and Split records (line 218) say "OpenAlex
-  topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: BUILD_PLAN §2.6 (line 301).
+  topics to ASJC codes". This record changes that to subfield to ASJC, by owner decision. A dated pointer note is added under Owner decision 4 in ADR 0029, and its body is unchanged. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(ii) BUILD_PLAN §1.2, metadata source (line 54).** §1.2 fixes the metadata source as "Scopus API (institutional key)".
   Registered records bring OpenAlex-derived metadata (`doc_type`, `venue_type`, subject area, title and DOI) into Layer 1,
-  next to Scopus records. Under BUILD_PLAN line 301, this is a deviation from §1.2 that needs this record.
+  next to Scopus records. Under BUILD_PLAN line 301, this is a deviation from §1.2 that needs this record. Basis: BUILD_PLAN line 301 (§1.2).
 - **(iii) BUILD_PLAN `Corpus.records` (lines 893-895), and the readers of the record set.** The signature is unchanged, but
   `records(stage)` changes what it returns. It now includes registered records in `S_raw` and in each later stage, and its rows
   have 16 columns, not 13 (Decision 1). `raw_set`, `_fetch_record_attributes`, `load_records`, `Corpus.venues`, the `numbers.py` corpus
   scalars, `fulltext/run.py`, `fulltext/coverage.py`, `scripts/fulltext_missing.py` and `scripts/fetch_assist.py` change with
-  it, as Decision 1 lists. Two of these are defects today, not only changes: `fulltext/run.py` gives a registration no DOI, and
-  `scripts/fulltext_missing.py` raises `KeyError` on one. Every caller that assumed a Scopus-only set or the 13 columns needs review. Basis: BUILD_PLAN §2.6 (line 301).
+  it, as Decision 1 lists. Two of these are latent defects, not defects today, because no registration exists yet: `fulltext/run.py` would give
+  a registration no DOI, and `scripts/fulltext_missing.py` would raise `KeyError` on one. Every caller that assumed a Scopus-only set or the 13 columns needs review. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(iv) BUILD_PLAN Stage 3 schema (lines 853-873).** The new table `registered_records` and the view `records_all` are
-  additions to a frozen schema (ADR 0012 rule). Basis: BUILD_PLAN §2.6 (line 301).
+  additions to a frozen schema (ADR 0012 rule). Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(v) `subject_areas` provenance.** The schema of `subject_areas` is unchanged, but its rows now hold OpenAlex-derived
   four-digit ASJC codes as well as Scopus ones. The criteria matching is unchanged, but the source of a row is no longer
-  always Scopus. Basis: BUILD_PLAN §2.6 (line 301).
+  always Scopus. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(vi) ADR 0031 select.** Adding `type`, `primary_location` and `primary_topic` changes the OpenAlex select
-  that ADR 0031 Context (line 44) names. `language` is not added (deviation viii). The owner approved the change, and ADR 0031 has a dated note. Basis: BUILD_PLAN §2.6 (line 301). Bodies captured
+  that ADR 0031 Context (line 44) names. `language` is not added (deviation viii). The owner approved the change, and ADR 0031 has a dated note. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)." Bodies captured
   earlier lack the fields, and the loader refuses a registration that references one.
 - **(vii) ADR 0029 example.** The `payload_line` example in ADR 0029 (line 77) is superseded by ADR 0031 Decision 2, as
-  §6 above states. Basis: BUILD_PLAN §2.6 (line 301).
+  §6 above states. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 - **(viii) ADR 0029 Split records, the `language` input (line 217).** ADR 0029 names `language` as a registration input. This
   record drops it, by owner decision (Decision 2), because every stored Scopus record has `language` NULL. A registration's
-  `language` is NULL, and the existing no-data rule passes it. Basis: BUILD_PLAN §2.6 (line 301).
+  `language` is NULL, and the existing no-data rule passes it. Basis: CLAUDE.md, "Contracts, schemas, and acceptance criteria are not renegotiable without a new ADR (§2.6)."
 
 ## Open questions for the owner
 
