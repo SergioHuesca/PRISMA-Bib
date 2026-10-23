@@ -185,6 +185,39 @@ def test_orphaned_decisions__with_counts__come_from_one_fold_of_the_log(
 
 
 @pytest.mark.integration
+def test_orphaned_decisions__empty_L_after_reversal__still_listed_and_exported(
+    tmp_path: Path,
+) -> None:
+    from prismabib.report.export import export_project
+
+    project = _project(tmp_path, scopus=0, slug="empty-l")
+    _register(project)
+    _include_through_fulltext(project, REGISTERED)
+    _unregister(project)  # S_raw and L are now both empty; the decisions survive
+
+    counts, orphans = compute_flow_counts_with_orphans(project)
+    svg = (export_project(project).root / "figures" / "prisma_flow.svg").read_text("utf-8")
+
+    assert counts.after_language == 0
+    assert len(orphans) == 2
+    assert len(project_orphaned_decisions(project)) == 2
+    assert "Orphaned decisions (n = 2)" in svg
+
+
+@pytest.mark.integration
+def test_orphaned_decisions__empty_L_and_no_log__none_and_no_file_created(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path, scopus=0, slug="empty-no-log")
+    project.decisions_path.unlink(missing_ok=True)  # the fixture builder seeds one
+
+    _, orphans = compute_flow_counts_with_orphans(project)
+
+    assert orphans == []
+    assert not project.decisions_path.exists()
+
+
+@pytest.mark.integration
 def test_orphaned_decisions__current_is_latest_by_ts_not_file_order(tmp_path: Path) -> None:
     project = _project(tmp_path, scopus=2, slug="latest")
     gone = "scopus:2-s2.0-90000000999"  # a Scopus id a rebuild no longer holds

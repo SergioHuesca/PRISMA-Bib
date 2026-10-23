@@ -36,6 +36,7 @@ from prismabib.prisma.engine import (
     _capture_snapshot,
     _RecordDecision,
 )
+from prismabib.prisma.log import DecisionLog
 from prismabib.prisma.orphans import OrphanedDecision, orphaned_decisions
 from prismabib.project import Project
 from prismabib.store.db import connect
@@ -481,8 +482,10 @@ def compute_flow_counts_with_orphans(
 
     The orphaned decisions (ADR 0033 §3) are listed from the **same** snapshot -- the same
     ``S_raw`` and the same decision-log fold -- as the counts, so the two cannot disagree.
-    Limit: when ``L`` is empty the snapshot deliberately does not read the log (see
-    :func:`~prismabib.prisma.engine._capture_snapshot`), so no orphan is listed then.
+    When ``L`` is empty the snapshot does not read the log (see
+    :func:`~prismabib.prisma.engine._capture_snapshot`), so this function folds an existing
+    ``decisions.jsonl`` itself (never creating one) to keep the orphan list complete; a corrupt
+    existing log therefore raises ``LogError`` from here, not from the counts-only functions.
 
     Every count is recomputed from Layer 1 and the decision log on every
     call -- nothing here is cached or persisted, so three fresh calls
@@ -594,7 +597,13 @@ def compute_flow_counts_with_orphans(
         unsure_fulltext=unsure_fulltext,
         included=included,
     )
-    return counts, orphaned_decisions(raw, snapshot.fold)
+    # An empty `L` makes the snapshot skip the log (engine._capture_snapshot), but orphans need
+    # only a current decision outside `S_raw`: fold an existing log here. Never create one --
+    # `DecisionLog` opens with O_CREAT.
+    fold = snapshot.fold
+    if not fold and not language and project.decisions_path.exists():
+        fold = DecisionLog(project).fold()
+    return counts, orphaned_decisions(raw, fold)
 
 
 __all__ = ["FlowCounts", "compute_flow_counts", "compute_flow_counts_with_orphans"]

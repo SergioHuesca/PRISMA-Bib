@@ -207,7 +207,7 @@ Three things `duplicates_across_searches` is **not**:
 
 Neither count is a remainder. `removed_other_reasons` is a row count over `malformed_entries`
 and `duplicates_across_searches` is a sum over `run_duplicates`, both written by the loader
-from Layer 0. Deriving either as `identified - |S_raw| - the other` would make equation 1 an
+from Layer 0. Deriving either as `identified + registered - |S_raw| - the other` would make equation 1 an
 identity that cannot fail, which would defeat the only check that compares a run's manifest
 against the corpus that run produced. `run_duplicates` also *cannot* be recomputed after the
 load: `records.run_id` keeps only the first run that loaded a record, so nothing in Layer 1
