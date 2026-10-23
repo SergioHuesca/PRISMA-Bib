@@ -169,6 +169,7 @@ import polars as pl
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
+from prismabib.capture.candidates import normalise_title as _candidate_title_key
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
@@ -185,12 +186,20 @@ from prismabib.capture.manifest import (
     OpenAlexTitle,
     RunManifest,
 )
+from prismabib.capture.registrations import (
+    RegistrationRefusal,
+    active_registrations,
+    derive_registration,
+    load_registration_events,
+    supersede_registration,
+)
 from prismabib.countries import normalise_country
-from prismabib.errors import StoreError, ValidationError
+from prismabib.errors import LogError, StoreError, ValidationError
 from prismabib.fulltext.capture import sealed_fulltext_run_dirs
 from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
 from prismabib.fulltext.resolve import _refusal_entitled
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
+from prismabib.openalex_map import ClassificationRefusal
 from prismabib.project import Project
 from prismabib.sources import openalex as _openalex
 from prismabib.stage import PrismaStage
@@ -577,6 +586,9 @@ class _Accumulator:
     #: Identifiers (DOI or title/year) of OpenAlex ``value`` outcomes that matched no
     #: record; logged, since nothing in Layer 1 can hold them (ADR 0031 Decision 8).
     unmatched_openalex_identifiers: set[str] = field(default_factory=set)
+    #: ``registered_records`` rows, in schema column order, from :func:`_fold_registrations`
+    #: (ADR 0032); empty for a store with no registration.
+    registered_rows: list[tuple[Any, ...]] = field(default_factory=list)
 
 
 def _optional_str(value: object) -> str | None:
@@ -2086,6 +2098,77 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     )
 
 
+def _fold_registrations(project: Project, acc: _Accumulator) -> list[str]:
+    """Fold ``registrations.jsonl`` into ``acc.registered_rows`` (ADR 0029 section 6, ADR 0032).
+
+    Runs after every Scopus record is accumulated. Each active registration's columns are
+    derived from the OpenAlex body it references (the loader backstop: a body that is missing,
+    predates the select amendment, or cannot be classified fails the build). A registration
+    whose DOI, or normalised title and year, a loaded Scopus record now holds is superseded:
+    a ``supersede`` event is appended to the log (automatic and listed in the returned ids and
+    the build log), and the registration is not loaded. The log file is not created for a
+    project that has none.
+
+    Returns:
+        The ``event_id`` of every ``supersede`` event this call wrote.
+
+    Raises:
+        StoreError: If an active registration cannot be derived.
+        LogError: If the log fails its own checks, or names an unknown map version.
+    """
+    events = load_registration_events(project.registrations_path)
+    if not events:
+        return []
+    by_doi: dict[str, list[str]] = {}
+    by_title: dict[tuple[str, int], list[str]] = {}
+    for row in acc.records:
+        record_id, doi, title, year = row[0], row[2], row[3], row[5]
+        if doi:
+            by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
+        if title and year is not None:
+            by_title.setdefault((_candidate_title_key(title), year), []).append(record_id)
+    superseded: list[str] = []
+    for event in active_registrations(events):
+        try:
+            derived = derive_registration(project.raw_dir, event)
+        except (RegistrationRefusal, ClassificationRefusal) as exc:
+            raise StoreError(f"registration {event.record_id} cannot be loaded: {exc}") from exc
+        by_doi_hit = by_doi.get(derived.doi)
+        hit = by_doi_hit or by_title.get((_candidate_title_key(derived.title), derived.year))
+        if hit:
+            written = supersede_registration(
+                project,
+                reverses=event.event_id,
+                scopus_record_id=min(hit),
+                match_rule="doi" if by_doi_hit else "title_year",
+            )
+            superseded.append(written.event_id)
+            continue
+        acc.registered_rows.append(
+            (
+                event.record_id,
+                event.event_id,
+                derived.doi,
+                derived.title,
+                derived.abstract,
+                derived.year,
+                derived.doc_type,
+                None,  # language is never derived (ADR 0032 Decision 2)
+                derived.venue_type,
+                derived.venue_name,
+                derived.openalex_id,
+                event.source_payload_ref.file,
+                event.source_payload_ref.line,
+                event.match_rule,
+                event.reviewer,
+                _as_naive_utc(event.ts),
+            )
+        )
+        acc.subject_areas.add((event.record_id, derived.subject_code))
+    acc.registered_rows.sort()
+    return superseded
+
+
 def _insert_rows(
     connection: duckdb.DuckDBPyConnection, table: str, rows: Sequence[tuple[Any, ...]]
 ) -> None:
@@ -2147,6 +2230,9 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
     _insert_rows(connection, "runs", acc.runs)
     _insert_rows(connection, "records", acc.records)
     _insert_rows(connection, "venues", list(acc.venues.values()))
+    # After `records` and `venues`, before the checksums are ever computed (ADR 0032
+    # Consequences); sorted by record_id in `_fold_registrations`.
+    _insert_rows(connection, "registered_records", acc.registered_rows)
     _insert_rows(connection, "authors", list(acc.authors.values()))
     _insert_rows(connection, "record_authors", acc.record_authors)
     _insert_rows(connection, "affiliations", list(acc.affiliations.values()))
@@ -2449,6 +2535,15 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             for fulltext_run_dir in sealed_fulltext_run_dirs(project.fulltext_dir):
                 _load_fulltext_run(accumulator, fulltext_run_dir)
             _finalise_fulltext_sections(accumulator)
+            # Registrations (ADR 0029/0032): after every Scopus record is known, so a
+            # registration a Scopus record now holds is superseded rather than loaded.
+            superseded = _fold_registrations(project, accumulator)
+            if superseded:
+                logger.warning(
+                    "store.load.registrations_superseded",
+                    count=len(superseded),
+                    event_ids=superseded,
+                )
             _write_accumulator(connection, accumulator)
             stats = _stats_from_connection(
                 connection,
@@ -2463,7 +2558,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             )
         finally:
             connection.close()
-    except StoreError:
+    except (StoreError, LogError):
         # A refused build leaves *no* store, not an empty or half-written
         # one. `connect` creates the file before anything is loaded, and a
         # store that exists is a store the next `prismabib build` (no

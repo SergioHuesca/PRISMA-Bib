@@ -1,0 +1,84 @@
+{
+  "_comment": "SYNTHETIC, hand-built, licence-free. NOT recorded from api.openalex.org (ADR 0030 convention; ADR 0032 asked for a recorded response, which needs live access and an API-terms check). It follows the documented OpenAlex Work shape for exactly the fields the select asks for (id, doi, title, publication_year, abstract_inverted_index, type, primary_location, primary_topic). DOIs, titles and venues are invented. Replace with a recorded response when one can be captured.",
+  "meta": {"count": 3, "page": 1, "per_page": 50},
+  "results": [
+    {
+      "id": "https://openalex.org/W2000000001",
+      "doi": "https://doi.org/10.9999/Synthetic.Reg.One",
+      "title": "A Synthetic Registered Article",
+      "publication_year": 2021,
+      "abstract_inverted_index": {"A": [0], "synthetic": [1], "abstract": [2]},
+      "type": "article",
+      "primary_location": {
+        "is_oa": false,
+        "landing_page_url": "https://example.invalid/reg-one",
+        "source": {
+          "id": "https://openalex.org/S3000000001",
+          "display_name": "Journal of Synthetic Registrations",
+          "issn_l": null,
+          "type": "journal"
+        }
+      },
+      "primary_topic": {
+        "id": "https://openalex.org/T10001",
+        "display_name": "Synthetic Topic",
+        "score": 0.99,
+        "subfield": {"id": "https://openalex.org/subfields/1702", "display_name": "Artificial Intelligence"},
+        "field": {"id": "https://openalex.org/fields/17", "display_name": "Computer Science"},
+        "domain": {"id": "https://openalex.org/domains/3", "display_name": "Physical Sciences"}
+      }
+    },
+    {
+      "id": "https://openalex.org/W2000000002",
+      "doi": "https://doi.org/10.9999/synthetic.reg.two",
+      "title": "A Synthetic Conference Paper",
+      "publication_year": 2020,
+      "abstract_inverted_index": null,
+      "type": "conference-paper",
+      "primary_location": {
+        "is_oa": false,
+        "landing_page_url": "https://example.invalid/reg-two",
+        "source": {
+          "id": "https://openalex.org/S3000000002",
+          "display_name": "Proceedings of the Synthetic Conference on Examples",
+          "issn_l": null,
+          "type": "conference"
+        }
+      },
+      "primary_topic": {
+        "id": "https://openalex.org/T10002",
+        "display_name": "Another Synthetic Topic",
+        "score": 0.9,
+        "subfield": {"id": "https://openalex.org/subfields/2208", "display_name": "Electrical and Electronic Engineering"},
+        "field": {"id": "https://openalex.org/fields/22", "display_name": "Engineering"},
+        "domain": {"id": "https://openalex.org/domains/3", "display_name": "Physical Sciences"}
+      }
+    },
+    {
+      "id": "https://openalex.org/W2000000003",
+      "doi": "https://doi.org/10.9999/synthetic.reg.three",
+      "title": "A Synthetic Book Chapter",
+      "publication_year": 2019,
+      "abstract_inverted_index": null,
+      "type": "book-chapter",
+      "primary_location": {
+        "is_oa": false,
+        "landing_page_url": "https://example.invalid/reg-three",
+        "source": {
+          "id": "https://openalex.org/S3000000003",
+          "display_name": "Synthetic Book Series",
+          "issn_l": null,
+          "type": "book series"
+        }
+      },
+      "primary_topic": {
+        "id": "https://openalex.org/T10003",
+        "display_name": "Third Synthetic Topic",
+        "score": 0.8,
+        "subfield": {"id": "https://openalex.org/subfields/3312", "display_name": "Sociology and Political Science"},
+        "field": {"id": "https://openalex.org/fields/33", "display_name": "Social Sciences"},
+        "domain": {"id": "https://openalex.org/domains/2", "display_name": "Social Sciences"}
+      }
+    }
+  ]
+}
