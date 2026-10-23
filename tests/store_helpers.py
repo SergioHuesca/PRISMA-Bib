@@ -458,6 +458,7 @@ def write_sealed_openalex_run(
     requests: list[dict[str, Any]],
     *,
     bad_outcomes: bool = False,
+    api_view: str = "id,doi,title",
 ) -> Path:
     """Write one sealed ``raw/openalex/<run_id>/`` run by hand (ADR 0031 Decisions 1-4).
 
@@ -475,6 +476,7 @@ def write_sealed_openalex_run(
             ``raw_bytes`` (written as is; its outcomes are ``not_found``).
         bad_outcomes: Flip every ``value`` outcome's ``absent_fields`` so the
             manifest disagrees with the bytes.
+        api_view: The ``select`` string recorded for every request.
     """
     from prismabib.capture.manifest import OpenAlexRunManifest
     from prismabib.sources import openalex
@@ -526,7 +528,7 @@ def write_sealed_openalex_run(
                 "lookup": spec["lookup"],
                 "identifiers": spec["identifiers"],
                 "params": {},
-                "api_view": "id,doi,title",
+                "api_view": api_view,
                 "entitlement_context": {"api_key_used": False, "fallback_opt_in": False},
                 "http_status": status,
                 "retrieved_at": moment,

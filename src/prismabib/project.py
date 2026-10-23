@@ -610,6 +610,15 @@ class Project:
         return self.root / "decisions" / "decisions.jsonl"
 
     @property
+    def registrations_path(self) -> Path:
+        """The Layer 2 registration log, ``<root>/decisions/registrations.jsonl`` (ADR 0029 §2).
+
+        Returns:
+            The path. Not created by :meth:`Project.init`; the first registration creates it.
+        """
+        return self.root / "decisions" / "registrations.jsonl"
+
+    @property
     def fulltext_dir(self) -> Path:
         """Where Stage 6 full-text resolution writes fetched bytes, ``<root>/fulltext``.
 
