@@ -868,3 +868,85 @@ def test_build_store__reverse_naming_an_unknown_event__raises_log_error(env: Env
 
     with pytest.raises(LogError, match="not a register event"):
         env.build()
+
+
+@pytest.mark.integration
+def test_reverse_registration__refused_on_a_project_without_a_log__creates_no_file(
+    env: Env,
+) -> None:
+    with pytest.raises(RegistrationRefusal, match="not an active registration"):
+        env.reverse("NOPE")
+    with pytest.raises(RegistrationRefusal, match="not an active registration"):
+        reg.supersede_registration(
+            env.project, reverses="NOPE", scopus_record_id="scopus:1", match_rule="doi"
+        )
+
+    assert not env.project.registrations_path.exists()
+    assert not env.project.registrations_path.with_name("registrations.jsonl.sha256").exists()
+
+
+@pytest.mark.integration
+def test_build_store__failed_build_after_a_pending_supersede__leaves_the_log_untouched(
+    env: Env,
+) -> None:
+    run_two = "20260102T000000Z-bbbbbbbb"
+    second_work = _works()[1]
+    second_doi = "10.9999/synthetic.reg.two"
+
+    def write_second() -> None:
+        write_sealed_openalex_run(
+            env.project.raw_dir,
+            run_two,
+            [{"lookup": "doi_batch", "identifiers": [second_doi], "works": [second_work]}],
+            api_view=SELECT,
+        )
+
+    write_second()
+    env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))  # will match a Scopus DOI below
+    env.register(
+        env.candidate("A Synthetic Conference Paper", 2020, second_doi),
+        payload_file=f"openalex/{run_two}/response-0000.jsonl",
+    )
+    env.scopus_run(
+        "20250102T000000Z-22222222", _scopus("2-s2.0-800000000002", "X", "2020-01-01", DOI_ONE)
+    )
+    second_work["title"] = "Edited after registration"  # the body no longer matches its digest
+    write_second()
+    before = env.snapshot()
+
+    with pytest.raises(StoreError, match="Reversing the registration"):
+        env.build()
+
+    assert env.snapshot() == before
+
+
+@pytest.mark.integration
+def test_build_store__registration_reversed_during_the_supersede_step__is_skipped(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    env.scopus_run(
+        "20250102T000000Z-22222222", _scopus("2-s2.0-800000000002", "X", "2020-01-01", DOI_ONE)
+    )
+    real = load_module.supersede_registration
+
+    def reverse_first(project: Project, **kwargs: Any) -> SupersedeEvent:
+        env.reverse(kwargs["reverses"])  # a reviewer wins the race
+        return real(project, **kwargs)
+
+    monkeypatch.setattr(load_module, "supersede_registration", reverse_first)
+
+    env.build()
+
+    assert env.project.db_path.exists()
+    assert env.registered_ids() == []
+    kinds = [type(e) for e in load_registration_events(env.project.registrations_path)]
+    assert kinds == [RegisterEvent, ReverseEvent]
+
+
+@pytest.mark.integration
+def test_read_response__pre_amendment_select__says_to_recapture(env: Env) -> None:
+    env.write_run(api_view="id,doi,title")
+
+    with pytest.raises(RegistrationRefusal, match="Re-capture the OpenAlex lookup"):
+        reg.read_response(env.project.raw_dir, PAYLOAD)

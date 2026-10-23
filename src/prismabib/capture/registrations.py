@@ -300,7 +300,7 @@ def read_response(raw_dir: Path, file: str) -> StoredResponse:
         raise RegistrationRefusal(
             f"{file!r} was captured before the select amendment: its select {request.api_view!r} "
             f"lacks {sorted(REQUIRED_SELECT_FIELDS - set(request.api_view.split(',')))} "
-            "(ADR 0032 Decision 2)"
+            "(ADR 0032 Decision 2). Re-capture the OpenAlex lookup with the amended select."
         )
     data = path.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
@@ -613,6 +613,7 @@ def reverse_registration(
         reason=cast(ReversalReason, reason),  # checked against REVERSAL_REASONS above
         note=note,
     )
+    _refuse_without_log(project, target)
     registration_log(project.registrations_path).append_if(
         RegistrationRecord(event), _require_active(target)
     )
@@ -637,10 +638,17 @@ def supersede_registration(
         scopus_record_id=scopus_record_id,
         match_rule=match_rule,
     )
+    _refuse_without_log(project, reverses)
     registration_log(project.registrations_path).append_if(
         RegistrationRecord(event), _require_active(reverses)
     )
     return event
+
+
+def _refuse_without_log(project: Project, target: str) -> None:
+    """Refuse before opening the log, which would create an empty file for a refused call."""
+    if not project.registrations_path.is_file():
+        raise RegistrationRefusal(f"{target!r} is not an active registration (no registrations)")
 
 
 def _require_active(target: str) -> Callable[[Sequence[RegistrationRecord]], None]:

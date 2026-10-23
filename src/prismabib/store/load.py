@@ -2098,19 +2098,21 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     )
 
 
-def _fold_registrations(project: Project, acc: _Accumulator) -> list[str]:
+def _fold_registrations(
+    project: Project, acc: _Accumulator
+) -> list[tuple[str, str, Literal["doi", "title_year"]]]:
     """Fold ``registrations.jsonl`` into ``acc.registered_rows`` (ADR 0029 section 6, ADR 0032).
 
     Runs after every Scopus record is accumulated. Each active registration's columns are
     derived from the OpenAlex body it references (the loader backstop: a body that is missing,
     predates the select amendment, or cannot be classified fails the build). A registration
     whose DOI, or normalised title and year, a loaded Scopus record now holds is superseded:
-    a ``supersede`` event is appended to the log (automatic and listed in the returned ids and
-    the build log), and the registration is not loaded. The log file is not created for a
-    project that has none.
+    a ``supersede`` is collected (written later by :func:`_append_supersedes`, once the store
+    is complete) and the registration is not loaded. This function never writes the log, and
+    the log file is not created for a project that has none.
 
     Returns:
-        The ``event_id`` of every ``supersede`` event this call wrote.
+        ``(register event_id, scopus record_id, match rule)`` for each pending supersede.
 
     Raises:
         StoreError: If an active registration cannot be derived.
@@ -2127,22 +2129,19 @@ def _fold_registrations(project: Project, acc: _Accumulator) -> list[str]:
             by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
         if title and year is not None:
             by_title.setdefault((_candidate_title_key(title), year), []).append(record_id)
-    superseded: list[str] = []
+    pending: list[tuple[str, str, Literal["doi", "title_year"]]] = []
     for event in active_registrations(events):
         try:
             derived = derive_registration(project.raw_dir, event)
         except (RegistrationRefusal, ClassificationRefusal) as exc:
-            raise StoreError(f"registration {event.record_id} cannot be loaded: {exc}") from exc
+            raise StoreError(
+                f"registration {event.record_id} cannot be loaded: {exc}. Reversing the "
+                "registration (reverse_registration) unblocks the build."
+            ) from exc
         by_doi_hit = by_doi.get(derived.doi)
         hit = by_doi_hit or by_title.get((_candidate_title_key(derived.title), derived.year))
         if hit:
-            written = supersede_registration(
-                project,
-                reverses=event.event_id,
-                scopus_record_id=min(hit),
-                match_rule="doi" if by_doi_hit else "title_year",
-            )
-            superseded.append(written.event_id)
+            pending.append((event.event_id, min(hit), "doi" if by_doi_hit else "title_year"))
             continue
         acc.registered_rows.append(
             (
@@ -2166,7 +2165,30 @@ def _fold_registrations(project: Project, acc: _Accumulator) -> list[str]:
         )
         acc.subject_areas.add((event.record_id, derived.subject_code))
     acc.registered_rows.sort()
-    return superseded
+    return pending
+
+
+def _append_supersedes(
+    project: Project, pending: Sequence[tuple[str, str, Literal["doi", "title_year"]]]
+) -> list[str]:
+    """Append the ``supersede`` events :func:`_fold_registrations` collected.
+
+    A registration reversed since the fold read the log is skipped: it is already removed,
+    and the build must not fail for it.
+
+    Returns:
+        The ``event_id`` of every ``supersede`` event written.
+    """
+    written: list[str] = []
+    for target, scopus_record_id, rule in pending:
+        try:
+            event = supersede_registration(
+                project, reverses=target, scopus_record_id=scopus_record_id, match_rule=rule
+            )
+        except RegistrationRefusal:
+            continue
+        written.append(event.event_id)
+    return written
 
 
 def _insert_rows(
@@ -2537,13 +2559,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             _finalise_fulltext_sections(accumulator)
             # Registrations (ADR 0029/0032): after every Scopus record is known, so a
             # registration a Scopus record now holds is superseded rather than loaded.
-            superseded = _fold_registrations(project, accumulator)
-            if superseded:
-                logger.warning(
-                    "store.load.registrations_superseded",
-                    count=len(superseded),
-                    event_ids=superseded,
-                )
+            pending_supersedes = _fold_registrations(project, accumulator)
             _write_accumulator(connection, accumulator)
             stats = _stats_from_connection(
                 connection,
@@ -2556,6 +2572,15 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                     sorted(accumulator.unmatched_fulltext_record_ids)
                 ),
             )
+            # Layer 2 is touched only once the store is complete, so a failed build leaves
+            # registrations.jsonl byte-identical.
+            superseded = _append_supersedes(project, pending_supersedes)
+            if superseded:
+                logger.warning(
+                    "store.load.registrations_superseded",
+                    count=len(superseded),
+                    event_ids=superseded,
+                )
         finally:
             connection.close()
     except (StoreError, LogError):
