@@ -2197,6 +2197,7 @@ def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:
     live catalogue from drifting apart
     (`test_schema__sql_file__matches_live_duckdb_introspection`).
     """
+    connection.execute("DROP VIEW IF EXISTS records_all")
     for table in reversed(TABLE_NAMES):
         connection.execute(f'DROP TABLE IF EXISTS "{table}"')
     connection.execute(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -2740,10 +2741,10 @@ class Corpus:
             LogError: See :meth:`_prisma_stage_record_ids`.
         """
         if stage is PrismaStage.RAW:
-            return self._query("SELECT * FROM records ORDER BY record_id")
+            return self._query("SELECT * FROM records_all ORDER BY record_id")
         record_ids = self._prisma_stage_record_ids(stage)
         return self._query(
-            "SELECT * FROM records WHERE record_id = ANY(?) ORDER BY record_id",
+            "SELECT * FROM records_all WHERE record_id = ANY(?) ORDER BY record_id",
             [sorted(record_ids)],
         )
 
@@ -2841,10 +2842,13 @@ class Corpus:
             stage: See :meth:`records`; the same delegation applies.
 
         Returns:
-            One row per record with a matching ``venues`` row --
+            One row per record with a matching ``venues`` row, plus one per
+            registered record (ADR 0032, owner decision A: its ``venue_id``,
+            ``issn``, ``eissn`` and ``abbreviation`` are NULL; ``name`` and
+            ``venue_type`` are its own) --
             ``record_id``, ``venue_id``, ``name``, ``issn``, ``eissn``,
             ``venue_type``, ``abbreviation`` -- ordered by ``record_id``. A
-            record whose ``venue_id`` matches no ``venues`` row (unobserved
+            Scopus record whose ``venue_id`` matches no ``venues`` row (unobserved
             in practice; every loaded entry carries a Scopus ``source-id``)
             is simply absent, matching ``report/tables.py::top_venues_table``'s
             existing ``JOIN`` (not ``LEFT JOIN``).
@@ -2855,14 +2859,19 @@ class Corpus:
             LogError: See :meth:`_prisma_stage_record_ids`.
         """
         select = (
-            "SELECT r.record_id, v.venue_id, v.name, v.issn, v.eissn, v.venue_type, "
-            "v.abbreviation FROM records r JOIN venues v ON r.venue_id = v.venue_id"
+            "SELECT r.record_id, r.venue_id, r.venue_name AS name, v.issn, v.eissn, "
+            "r.venue_type, v.abbreviation FROM records_all r "
+            "LEFT JOIN venues v ON r.venue_id = v.venue_id"
         )
+        # A Scopus row with no matching venues row stays absent (the old inner join);
+        # a registration never has one and is kept (ADR 0032 Decision 1).
+        keep = "(r.origin = 'registered' OR v.venue_id IS NOT NULL)"
         if stage is PrismaStage.RAW:
-            return self._query(f"{select} ORDER BY r.record_id")
+            return self._query(f"{select} WHERE {keep} ORDER BY r.record_id")
         record_ids = self._prisma_stage_record_ids(stage)
         return self._query(
-            f"{select} WHERE r.record_id = ANY(?) ORDER BY r.record_id", [sorted(record_ids)]
+            f"{select} WHERE {keep} AND r.record_id = ANY(?) ORDER BY r.record_id",
+            [sorted(record_ids)],
         )
 
     def affiliations(self, stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:

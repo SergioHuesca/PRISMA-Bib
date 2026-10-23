@@ -220,9 +220,8 @@ def load_records(project: Project, record_ids: Iterable[str]) -> dict[str, Scree
     connection = connect(project, read_only=True)
     try:
         rows = connection.execute(
-            "SELECT r.record_id, r.title, r.abstract, r.year, r.doc_type, v.name "
-            "FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id "
-            "WHERE r.record_id = ANY(?)",
+            "SELECT r.record_id, r.title, r.abstract, r.year, r.doc_type, r.venue_name "
+            "FROM records_all r WHERE r.record_id = ANY(?)",
             [wanted],
         ).fetchall()
         keyword_rows = connection.execute(

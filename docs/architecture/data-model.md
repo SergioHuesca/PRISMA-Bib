@@ -365,7 +365,7 @@ This is tested in Stage 1's acceptance criteria (BUILD_PLAN §Stage 1 line 726):
 
 ## Stage 3 — The Normalised Store (Layer 1)
 
-Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duckdb`) derived from Layer 0's sealed run directories. It contains 11 tables, frozen in the BUILD_PLAN schema (lines 847–879) and never hand-edited. This section describes the ER model, the rationale for key design choices, and the frozen read-facing API.
+Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duckdb`) derived from Layer 0's sealed run directories. It contains the 11 tables frozen in the BUILD_PLAN schema (lines 847–879), the tables that later ADRs added (for example `abstract_runs`, `record_subject_area_coverage` and, empty until registrations exist, `registered_records`, [ADR 0032](adr/0032-registered-records-table-and-classification-map.md)), and the `records_all` view; it is never hand-edited. This section describes the ER model, the rationale for key design choices, and the frozen read-facing API.
 
 ### Layer 1 is reconstructible and disposable
 
@@ -377,7 +377,7 @@ Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duck
 
 ### Entity-Relationship description
 
-The 11 tables are:
+The 11 tables frozen in the BUILD_PLAN are:
 
 #### Core entities
 
@@ -505,6 +505,13 @@ The 11 tables are:
   - Every citation figure must carry the timestamp it was true as of—the only way to achieve reproducibility is to store every (record, timestamp, count) triple.
   - This table is populated only when a run's entries carry a parseable `citedby-count`; a record with no snapshots simply has no rows here.
 - **Retrieval timestamp (BUILD_PLAN loader docstring, lines 68–81):** `retrieved_at` is set to the run's `RunManifest.started_at` (when the Scopus API query began), **never `datetime.now()` at load time**. This is the only choice consistent with byte-stable rebuilds and idempotence: if the load-time wall clock were used, every `build_store(rebuild=True)` call would write a different key and duplicate rows. The snapshot date must describe when the data was retrieved, not when someone rebuilt a derived store.
+
+**`registered_records`** — active reviewer registrations of OpenAlex-resolved candidates (ADR 0029). **Not part of the frozen BUILD_PLAN schema**; added by [ADR 0032](adr/0032-registered-records-table-and-classification-map.md).
+- **Primary key:** `record_id` (`registered:` + the register event's id)
+- **Columns:** `event_id`, `doi`, `title`, `year`, `doc_type` (description form, as the engine compares it), `venue_type` (`journal`, `conference`, `book`, `other`), `venue_name` (stripped, never blank), `openalex_id`, `payload_file`, `payload_line` (always 0), `match_rule`, `reviewer`, `registered_ts` are all `NOT NULL`; `abstract` and `language` are nullable (`language` is always NULL in this version).
+- **Role:** A registration has no run and no `venues` row, so its venue lives here. The table is created empty by every build; the loader's registration fold (a later change) is its only writer. The classification-map version and checksum stay on the `register` event, not here. It is checksummed (sorted by `record_id`); an empty table hashes to the SHA-256 of the empty string.
+
+**`records_all`** (a view, not checksummed) — the one reader of `S_raw`: `records` (origin `scopus`) `UNION ALL` `registered_records` (origin `registered`). It has 16 columns: the 13 `records` columns plus `origin`, `venue_type`, `venue_name`. For a Scopus row `venue_type` and `venue_name` come from a `LEFT JOIN venues` with no `COALESCE`, so a record without a venue keeps NULL. For a registered row `run_id`, `cover_date`, `venue_id` and `open_access` are NULL. `Corpus.records`, `Corpus.venues`, the engine's `raw_set` and attributes, `screening.ui.load_records`, the `corpus.*` numbers, `fulltext/run.py`, `fulltext/coverage.py`, `scripts/fulltext_missing.py` and `scripts/fetch_assist.py` read it. `Corpus.citations`, `StoreStats.records_loaded`, the duplicate-DOI statistic and `prisma/flow.py::_unloadable_count` stay on their own tables (Scopus facts).
 
 ### The read-facing API
 

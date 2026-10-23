@@ -173,7 +173,46 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("text", "VARCHAR", False),
         ("low_confidence", "BOOLEAN", False),
     ),
+    # Not from the BUILD_PLAN schema: added by ADR 0032 Decision 1.
+    "registered_records": (
+        ("record_id", "VARCHAR", True),
+        ("event_id", "VARCHAR", False),
+        ("doi", "VARCHAR", False),
+        ("title", "VARCHAR", False),
+        ("abstract", "VARCHAR", False),
+        ("year", "INTEGER", False),
+        ("doc_type", "VARCHAR", False),
+        ("language", "VARCHAR", False),
+        ("venue_type", "VARCHAR", False),
+        ("venue_name", "VARCHAR", False),
+        ("openalex_id", "VARCHAR", False),
+        ("payload_file", "VARCHAR", False),
+        ("payload_line", "INTEGER", False),
+        ("match_rule", "VARCHAR", False),
+        ("reviewer", "VARCHAR", False),
+        ("registered_ts", "TIMESTAMP", False),
+    ),
 }
+
+# ADR 0032 Decision 1: the 13 `records` columns plus origin, venue_type, venue_name.
+_EXPECTED_RECORDS_ALL: tuple[tuple[str, str, bool], ...] = (
+    ("record_id", "VARCHAR", False),
+    ("origin", "VARCHAR", False),
+    ("run_id", "VARCHAR", False),
+    ("doi", "VARCHAR", False),
+    ("title", "VARCHAR", False),
+    ("abstract", "VARCHAR", False),
+    ("year", "INTEGER", False),
+    ("cover_date", "DATE", False),
+    ("doc_type", "VARCHAR", False),
+    ("language", "VARCHAR", False),
+    ("venue_id", "VARCHAR", False),
+    ("open_access", "BOOLEAN", False),
+    ("payload_file", "VARCHAR", False),
+    ("payload_line", "INTEGER", False),
+    ("venue_type", "VARCHAR", False),
+    ("venue_name", "VARCHAR", False),
+)
 
 
 @pytest.mark.integration
@@ -458,13 +497,24 @@ def test_schema__sql_file__matches_live_duckdb_introspection(tmp_path: Path) -> 
                     f"PRAGMA table_info('{table}')"
                 ).fetchall()
             )
-            for table in TABLE_NAMES
+            for table in (*TABLE_NAMES, "records_all")
+        }
+        not_null = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info('registered_records')").fetchall()
+            if row[3]
         }
     finally:
         connection.close()
 
-    assert live_tables == set(TABLE_NAMES)
+    assert live_tables == {*TABLE_NAMES, "records_all"}  # information_schema lists the view
+    assert live_columns.pop("records_all") == _EXPECTED_RECORDS_ALL
     assert live_columns == _EXPECTED_COLUMNS
+    # ADR 0032: only abstract and language are nullable.
+    assert not_null == {c for c, _, _ in _EXPECTED_COLUMNS["registered_records"]} - {
+        "abstract",
+        "language",
+    }
 
 
 @pytest.mark.integration

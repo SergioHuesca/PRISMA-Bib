@@ -26,7 +26,7 @@ import duckdb
 import pytest
 
 from prismabib.fulltext.coverage import coverage_by_publisher_table, coverage_by_resolver_table
-from tests.store_helpers import create_schema
+from tests.store_helpers import create_schema, insert_registered_record
 
 _RETRIEVED_AT = datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC)
 
@@ -192,3 +192,22 @@ def test_coverage_report__mixed_publishers__counts_by_resolver_and_publisher() -
     assert sum(row[0] for row in publisher_rows.values()) == 10
     # ... and the resolved column still reconciles with the by-resolver table.
     assert sum(row[1] for row in publisher_rows.values()) == 8
+
+
+def test_coverage_by_publisher__registered_record_attempt__is_counted() -> None:
+    """ADR 0032: the coverage join reads `records_all`, so a registration's attempt counts."""
+    connection = _store()
+    try:
+        insert_registered_record(connection, "registered:ev-1", doi="10.1016/j.registered.1")
+        _insert_asset(
+            connection,
+            record_id="registered:ev-1",
+            resolver_name="manual",
+            entitled=True,
+            resolved=True,
+        )
+        rows = coverage_by_publisher_table(connection).rows
+    finally:
+        connection.close()
+
+    assert rows == (("Elsevier", 1, 1, 0, 100.0),)

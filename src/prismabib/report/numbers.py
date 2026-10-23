@@ -98,7 +98,7 @@ def _corpus_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
         a worse outcome than one substituting a zero a reader can question.
     """
     row = connection.execute(
-        "SELECT count(*), COALESCE(min(year), 0), COALESCE(max(year), 0) FROM records"
+        "SELECT count(*), COALESCE(min(year), 0), COALESCE(max(year), 0) FROM records_all"
     ).fetchone()
     size, year_min, year_max = (int(row[0]), int(row[1]), int(row[2])) if row else (0, 0, 0)
     return {
