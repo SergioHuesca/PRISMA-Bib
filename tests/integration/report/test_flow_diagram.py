@@ -64,17 +64,18 @@ DISTINCT_COUNTS = FlowCounts(
     identified=141,
     duplicates_across_searches=5,
     removed_other_reasons=8,
+    registered=14,
     excluded_automated=21,
     # Pairwise distinct, and distinct from every other value in this fixture,
     # for the same reason the integer counts are: a renderer that showed the
     # doc-type count under the subject-area label is an identity error, and
     # only distinct values can catch one. 1 + 2 + 6 + 12 == 21.
     excluded_automated_by_reason={"year": 12, "subject_area": 1, "doc_type": 6, "venue": 2},
-    after_automated=107,
+    after_automated=121,  # 141 + 14 - 5 - 8 - 21
     excluded_language=13,
-    after_language=94,
+    after_language=108,
     excluded_title_abstract=11,
-    unsure_title_abstract=60,
+    unsure_title_abstract=74,
     retrieved_fulltext=23,
     excluded_fulltext={"INACCESSIBLE": 3, "NOT_PRIMARY_RESEARCH": 7},
     unsure_fulltext=4,
@@ -94,6 +95,7 @@ FIELD_TO_LABEL = {
         r"duplicates across searches: {value}(?!\d)",
     ),
     "removed_other_reasons": ("removed-before-screening", r"other reasons: {value}(?!\d)"),
+    "registered": ("identification-other-methods", r"other methods \(n = {value}\)"),
     "excluded_automated": ("after-automated", r"by automated filters: {value}(?!\d)"),
     "after_automated": ("after-automated", r"after automated filters \(n = {value}\)"),
     "excluded_language": ("after-language", r"excluded by language: {value}(?!\d)"),

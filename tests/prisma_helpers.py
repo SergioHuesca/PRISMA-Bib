@@ -317,6 +317,7 @@ def reference_golden() -> FlowCounts:
         identified=REFERENCE_IDENTIFIED,
         duplicates_across_searches=0,
         removed_other_reasons=0,
+        registered=0,
         excluded_automated=REFERENCE_EXCLUDED_AUTOMATED,
         # All 24 are venue exclusions: the fixture's criteria carry a
         # conference whitelist and no year, subject or doc-type restriction that

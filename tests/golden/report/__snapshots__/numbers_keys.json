@@ -23,6 +23,7 @@
   "flow.excluded_title_abstract",
   "flow.identified",
   "flow.included",
+  "flow.registered",
   "flow.removed_other_reasons",
   "flow.retrieved_fulltext",
   "flow.unsure_fulltext",

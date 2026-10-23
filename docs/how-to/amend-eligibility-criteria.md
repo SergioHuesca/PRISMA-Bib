@@ -213,8 +213,8 @@ diagram is derived, not typed. Any manuscript figure or table produced under the
 is now stale and must be regenerated, and the criteria version it was produced under must be
 cited alongside it.
 
-If `assert_consistent()` raises on equation 1 (`identified - duplicates_across_searches -
-removed_other_reasons - excluded_automated == after_automated`), do not adjust a number to
+If `assert_consistent()` raises on equation 1 (`identified + registered -
+duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated`), do not adjust a number to
 make it close — see [PRISMA Mapping — the five consistency
 equations](../methodology/prisma-mapping.md#the-five-consistency-equations) for why that
 equation is a genuine cross-check against Layer 0 rather than an identity, and [when equation

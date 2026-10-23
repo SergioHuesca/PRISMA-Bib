@@ -95,6 +95,10 @@ def test_export__source_csv__reproduces_the_figure_values(project: Project) -> N
         if "." in stage:  # excluded_fulltext.<CODE>
             continue
         assert int(value) == getattr(counts, stage), f"{stage} differs from FlowCounts"
+        if stage == "registered" and not int(value):
+            # Zero registrations draw no "other methods" box (byte-identical to before ADR 0033).
+            assert "identification-other-methods" not in svg
+            continue
         # Anchored to the field's own label, not searched for across the whole
         # document: `value in svg` matches any integer anywhere, including the
         # x/y geometry, which is the inert form this project's diagram test
@@ -272,7 +276,7 @@ def test_export__inconsistent_counts__refuses_to_write(
 
     real = compute_flow_counts(project)
     broken = dataclasses.replace(real, included=real.included + 5)
-    monkeypatch.setattr(export_module, "compute_flow_counts", lambda _p: broken)
+    monkeypatch.setattr(export_module, "compute_flow_counts_with_orphans", lambda _p: (broken, []))
 
     with pytest.raises(ValidationError, match="inconsistent"):
         export_project(project)

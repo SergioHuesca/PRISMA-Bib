@@ -111,7 +111,9 @@ def test_flow_counts__injected_off_by_one__assert_consistent_raises(tmp_path: Pa
     counts = compute_flow_counts(project)
 
     assert counts.identified == 6
-    with pytest.raises(ValidationError, match=r"'identified - duplicates_across_searches"):
+    with pytest.raises(
+        ValidationError, match=r"'identified \+ registered - duplicates_across_searches"
+    ):
         counts.assert_consistent()
 
 
@@ -224,6 +226,7 @@ def test_flow_counts__project_with_no_runs__is_every_count_zero(tmp_path: Path) 
         identified=0,
         duplicates_across_searches=0,
         removed_other_reasons=0,
+        registered=0,
         excluded_automated=0,
         # Every precedence key is always present, including on an empty project:
         # the breakdown's key set is a contract that `numbers.json` and the PRISMA

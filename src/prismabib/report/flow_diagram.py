@@ -187,7 +187,22 @@ def _arrow(x1: int, y1: int, x2: int, y2: int) -> str:
     )
 
 
-def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
+def _plain_line(x1: int, y1: int, x2: int, y2: int) -> str:
+    """A connector segment with no arrowhead (it joins a line that already has one)."""
+    return f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#333333" stroke-width="1.5"/>'
+
+
+def _note_text(x: int, y: int, lines: Sequence[str]) -> str:
+    """Footnote text lines, left-aligned, with no box."""
+    return "".join(
+        f'<text x="{x}" y="{y + index * _LINE_HEIGHT}" '
+        'font-family="Helvetica, Arial, sans-serif" '
+        f'font-size="12">{escape(line)}</text>'
+        for index, line in enumerate(lines)
+    )
+
+
+def flow_diagram_svg(counts: FlowCounts, *, title: str, orphaned_decisions: int = 0) -> str:
     """Render ``counts`` as a PRISMA 2020 flow diagram.
 
     Args:
@@ -195,6 +210,9 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             one of its fields; this function computes none of them, which is
             what makes S10-AC4 assertable rather than aspirational.
         title: The project title, placed above the diagram.
+        orphaned_decisions: How many current decisions name a record outside
+            ``S_raw`` (ADR 0033 §3), shown as a count beside the diagram. Not
+            a :class:`FlowCounts` field and not an arithmetic term.
 
     Returns:
         A complete SVG document as text. The same ``counts`` and ``title``
@@ -250,24 +268,50 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             ],
         ),
     ]
+    # ADR 0029 §3 / ADR 0033: "other methods" is a PARALLEL input (PRISMA 2020 draws it as a
+    # second column), not a stage in the Scopus chain. Absent when nothing was registered, so a
+    # Scopus-only project renders the same bytes as before the field existed (the ADRs do not
+    # say whether it is drawn at zero).
+    side_lines = (
+        [
+            f"Records identified from other methods (n = {counts.registered})",
+            "reviewer registrations from a manual Google Scholar search",
+        ]
+        if counts.registered
+        else None
+    )
 
     body: list[str] = []
     y = _TOP_Y
+    centre = _LEFT_X + _BOX_WIDTH // 2
     for index, (box_id, lines) in enumerate(stages):
         box_height = _box_height(len(lines))
+        row_height = box_height
         body.append(_box(_LEFT_X, y, lines, box_id=box_id))
+        if index == 0 and side_lines is not None:
+            side_x = _LEFT_X + _BOX_WIDTH + 60
+            side_centre = side_x + _BOX_WIDTH // 2
+            side_height = _box_height(len(side_lines))
+            row_height = max(box_height, side_height)
+            body.append(_box(side_x, y, side_lines, box_id="identification-other-methods"))
+            # Its own connector: down, then across to join the main arrow into the next stage.
+            join_y = y + row_height + _GAP_Y // 2
+            body.append(_plain_line(side_centre, y + side_height, side_centre, join_y))
+            body.append(_plain_line(side_centre, join_y, centre, join_y))
         if index < len(stages) - 1:
-            body.append(
-                _arrow(
-                    _LEFT_X + _BOX_WIDTH // 2,
-                    y + box_height,
-                    _LEFT_X + _BOX_WIDTH // 2,
-                    y + box_height + _GAP_Y,
-                )
-            )
-        y += box_height + _GAP_Y
+            body.append(_arrow(centre, y + box_height, centre, y + row_height + _GAP_Y))
+        y += row_height + _GAP_Y
 
     height = y + 20
+    if orphaned_decisions:
+        # A free-standing footnote: orphans are downstream of nothing, so no arrow.
+        note_y = y - _GAP_Y + 30
+        note = [
+            f"Orphaned decisions (n = {orphaned_decisions})",
+            "not counted above; see methods",
+        ]
+        body.append(f'<g id="orphaned-decisions">{_note_text(_LEFT_X, note_y, note)}</g>')
+        height = note_y + _LINE_HEIGHT * len(note) + 20
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_CANVAS_WIDTH}" height="{height}" '
