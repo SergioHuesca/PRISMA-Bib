@@ -921,6 +921,52 @@ def test_build_store__failed_build_after_a_pending_supersede__leaves_the_log_unt
 
 
 @pytest.mark.integration
+def test_build_store__store_write_fails_after_a_pending_supersede__log_unchanged_and_no_store(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    env.scopus_run(
+        "20250102T000000Z-22222222", _scopus("2-s2.0-800000000002", "X", "2020-01-01", DOI_ONE)
+    )
+    before = env.snapshot()
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise StoreError("simulated write failure")
+
+    monkeypatch.setattr(load_module, "_write_accumulator", boom)
+
+    with pytest.raises(StoreError, match="simulated"):
+        env.build()
+
+    assert env.snapshot() == before  # the supersede is appended only after the store is complete
+    assert not env.project.db_path.exists()
+
+
+@pytest.mark.integration
+def test_build_store__scopus_record_id_beginning_registered__is_refused(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(load_module, "_record_id_from_entry", lambda _entry: "registered:X")
+
+    with pytest.raises(StoreError, match="reserved for registered records"):
+        env.build()
+
+    assert not env.project.db_path.exists()
+
+
+@pytest.mark.integration
+def test_register_candidate__level_four_with_a_non_openalex_payload__is_refused(env: Env) -> None:
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+
+    _refused(
+        env,
+        RegistrationRefusal,
+        "is not openalex/",
+        lambda: env.register(cid, source_level=4, payload_file=f"{SEARCH_RUN}/page-0001.jsonl"),
+    )
+
+
+@pytest.mark.integration
 def test_build_store__registration_reversed_during_the_supersede_step__is_skipped(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

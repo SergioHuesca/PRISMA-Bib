@@ -46,6 +46,7 @@ from prismabib.capture.candidates import (
 from prismabib.capture.layout import OPENALEX_DIRNAME, RUN_MANIFEST_FILENAME, is_sealed
 from prismabib.capture.manifest import OpenAlexRequest, OpenAlexRunManifest
 from prismabib.errors import LogError, PrismabibError
+from prismabib.ids import IdFactory, MonotonicUlidFactory
 from prismabib.log import AppendOnlyLog
 from prismabib.openalex_map import (
     MAP_SHA256,
@@ -55,7 +56,6 @@ from prismabib.openalex_map import (
     source_type_to_venue_type,
     work_type_to_doc_type,
 )
-from prismabib.prisma.events import IdFactory, MonotonicUlidFactory
 from prismabib.project import Project
 from prismabib.sources.openalex import parse_work, rebuild_abstract
 
