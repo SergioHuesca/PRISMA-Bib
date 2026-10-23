@@ -52,7 +52,11 @@ logger = structlog.get_logger(__name__)
 JsonDict = dict[str, Any]
 
 _USER_AGENT: Final = f"prismabib/{__version__} (+https://github.com/SergioHuesca/PRISMA-Bib)"
-_SELECT: Final = "id,doi,title,publication_year,abstract_inverted_index,authorships,topics"
+# type, primary_location, primary_topic: ADR 0031 note of 2026-10-22, ADR 0032 Decision 2.
+_SELECT: Final = (
+    "id,doi,title,publication_year,abstract_inverted_index,authorships,topics,"
+    "type,primary_location,primary_topic"
+)
 _DOI_PREFIX: Final = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
 KEYWORD_KIND: Final = "openalex-topic"
 

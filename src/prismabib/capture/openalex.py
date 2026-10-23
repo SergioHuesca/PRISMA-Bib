@@ -372,7 +372,8 @@ def capture_openalex(
         fallback_opt_in: The ADR 0028 opt-in. Recorded in the manifest. Only then
             may a 401/403 be stored as ``refused`` and the run seal.
         refresh: Request identifiers already held by a sealed run again (off by
-            default; ADR 0031 Decision 7).
+            default; ADR 0031 Decision 7). Identifiers captured before the select gained
+            ``type``, ``primary_location`` and ``primary_topic`` need ``refresh=True`` to get them.
         settings: Environment settings (the API key); defaults to ``Settings()``.
         transport: An ``httpx`` transport, for tests.
         rate_limiter: An injectable limiter, for tests.
