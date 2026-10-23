@@ -456,7 +456,7 @@ The 11 tables are:
 
 **`record_keywords`** — junction table linking records to keywords, tagged by kind.
 - **Primary key:** implicit
-- **Columns:** `record_id`, `keyword_id`, `kind` ("author" or "index", per the capture source)
+- **Columns:** `record_id`, `keyword_id`, `kind` ("author", "index" or "openalex-topic", per the capture source; a CHECK constraint enforces the set, ADR 0030)
 - **Role:** Tracks which keywords appear in which records and whether they came from the authors or the index. Enables keyword-based analysis and filtering.
 
 #### Subject areas and citations

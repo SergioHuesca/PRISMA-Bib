@@ -470,6 +470,9 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
         ("subject-area links", stats.subject_area_links_loaded),
         ("citation snapshots", stats.citation_snapshots_loaded),
     )
+    topic_links = stats.record_keyword_links_by_kind.get("openalex-topic", 0)
+    if topic_links:  # ADR 0030 Decision 4: shown only for topic-bearing stores
+        rows = (*rows, ("openalex-topic links", topic_links))
     width = max(len(label) for label, _ in rows)
     for label, count in rows:
         _echo(f"  {label:<{width}}  {count:>9,}")

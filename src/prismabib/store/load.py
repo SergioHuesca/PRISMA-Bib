@@ -167,15 +167,24 @@ import duckdb
 import pandas as pd
 import polars as pl
 import structlog
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
+    OPENALEX_DIRNAME,
     RUN_MANIFEST_FILENAME,
     is_sealed,
 )
-from prismabib.capture.manifest import AbstractRunManifest, FullTextRunManifest, RunManifest
+from prismabib.capture.manifest import (
+    AbstractRunManifest,
+    FullTextRunManifest,
+    OpenAlexOutcome,
+    OpenAlexRequest,
+    OpenAlexRunManifest,
+    OpenAlexTitle,
+    RunManifest,
+)
 from prismabib.countries import normalise_country
 from prismabib.errors import StoreError, ValidationError
 from prismabib.fulltext.capture import sealed_fulltext_run_dirs
@@ -183,6 +192,7 @@ from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedire
 from prismabib.fulltext.resolve import _refusal_entitled
 from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
 from prismabib.project import Project
+from prismabib.sources import openalex as _openalex
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.db import connect
@@ -190,6 +200,10 @@ from prismabib.store.db import connect
 logger = structlog.get_logger(__name__)
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+
+#: The allowed ``record_keywords.kind`` values, written once (ADR 0030 Decision 3).
+#: ``schema.sql``'s CHECK must list exactly these; a test asserts it.
+RECORD_KEYWORD_KINDS: Final = ("author", "index", _openalex.KEYWORD_KIND)
 
 VenueType = Literal["journal", "conference", "book", "other"]
 
@@ -232,6 +246,8 @@ _WHITESPACE_RE = re.compile(r"\s+")
 # out. The message, path and all, goes to the log instead.
 _REASON_MISSING_EID: Final = "missing_eid"
 _REASON_INVALID_FIELD: Final = "invalid_field"
+#: An OpenAlex response body (HTTP 200) that is not the documented shape (ADR 0031 Decision 8).
+_REASON_MALFORMED_OPENALEX_BODY: Final = "malformed_openalex_body"
 
 #: The share of a capture's entries that may be skipped before
 #: :func:`_guard_against_unloadable_capture` refuses to write a store, and the
@@ -313,6 +329,13 @@ class StoreStats(BaseModel):
     record_keyword_links_loaded: int
     """Rows in ``record_keywords`` -- one per (record, keyword, kind)
     occurrence."""
+
+    record_keyword_links_by_kind: dict[str, int] = Field(default_factory=dict, exclude=True)
+    """``record_keywords`` rows per ``kind`` (ADR 0030 Decision 4), only kinds
+    with at least one row. A store with no OpenAlex topics has no
+    ``"openalex-topic"`` key -- visible, not silent. Excluded from
+    ``model_dump`` so the frozen reference golden's ``row_counts`` (a dump of
+    this model) does not change for Scopus-only input (ADR 0030 Decision 5)."""
 
     subject_area_links_loaded: int
     """Rows in ``subject_areas``. ``0`` for a store built purely from Scopus
@@ -546,6 +569,14 @@ class _Accumulator:
     #: gives `unmatched_abstract_record_ids`, for the same reason: a record a
     #: search run stopped identifying, or a stale explicit `record_ids` target.
     unmatched_fulltext_record_ids: set[str] = field(default_factory=set)
+    #: record_id -> the topic names of the latest sealed OpenAlex run whose
+    #: ``keywords`` outcome for it was a ``value`` (ADR 0031 Decision 7: a newer
+    #: ``absent``/``not_found`` never replaces it). Turned into ``record_keywords``
+    #: rows by :func:`_finalise_openalex_topics`, after the Scopus pass.
+    openalex_topics: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Identifiers (DOI or title/year) of OpenAlex ``value`` outcomes that matched no
+    #: record; logged, since nothing in Layer 1 can hold them (ADR 0031 Decision 8).
+    unmatched_openalex_identifiers: set[str] = field(default_factory=set)
 
 
 def _optional_str(value: object) -> str | None:
@@ -617,6 +648,25 @@ def _sealed_abstract_run_dirs(raw_dir: Path) -> list[Path]:
     if not abstracts_dir.is_dir():
         return []
     candidates = [entry for entry in abstracts_dir.iterdir() if entry.is_dir() and is_sealed(entry)]
+    return sorted(candidates, key=lambda path: path.name)
+
+
+def _sealed_openalex_run_dirs(raw_dir: Path) -> list[Path]:
+    """List every sealed OpenAlex run directory under ``raw/openalex/``, oldest first (ADR 0031).
+
+    Args:
+        raw_dir: A project's ``raw/`` directory (``project.raw_dir``).
+
+    Returns:
+        Children of ``raw/openalex/`` carrying ``manifest.json``, sorted by
+        name (run ids sort chronologically, which the latest-wins rule
+        depends on). An unsealed run, including a refused dead end, is skipped.
+        ``[]`` if the directory does not exist.
+    """
+    openalex_dir = raw_dir / OPENALEX_DIRNAME
+    if not openalex_dir.is_dir():
+        return []
+    candidates = [entry for entry in openalex_dir.iterdir() if entry.is_dir() and is_sealed(entry)]
     return sorted(candidates, key=lambda path: path.name)
 
 
@@ -1154,8 +1204,7 @@ def _accumulate_keyword(acc: _Accumulator, *, record_id: str, raw_term: str, kin
         acc: The in-progress load accumulator.
         record_id: The owning record.
         raw_term: The keyword's raw (pre-normalisation) text.
-        kind: ``"author"`` or ``"index"`` (BUILD_PLAN schema comment on
-            ``record_keywords``).
+        kind: One of :data:`RECORD_KEYWORD_KINDS` (the ``record_keywords`` CHECK).
 
     A blank normalised term (e.g. a raw term that is pure punctuation)
     contributes no row -- see `test_load__record_with_zero_keywords`-style
@@ -1569,6 +1618,147 @@ def _finalise_subject_areas(acc: _Accumulator) -> None:
     acc.subject_areas = kept | replaced
 
 
+_OpenAlexIndex = tuple[dict[str, list[str]], dict[tuple[str, int], list[str]]]
+
+
+def _openalex_record_index(acc: _Accumulator) -> _OpenAlexIndex:
+    """Index loaded records by normalised DOI and by (normalised title, year) (ADR 0028 Decision 4)."""
+    by_doi: dict[str, list[str]] = {}
+    by_title: dict[tuple[str, int], list[str]] = {}
+    for row in acc.records:
+        record_id, doi, title, year = row[0], row[2], row[3], row[5]
+        if doi:
+            by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
+        if title and year is not None:
+            by_title.setdefault((_openalex.normalise_title(title), year), []).append(record_id)
+    return by_doi, by_title
+
+
+def _openalex_body_works(body: Any) -> list[dict[str, Any]] | None:
+    """The works in a 200 body: its ``results`` list, or the body itself for a single lookup."""
+    if isinstance(body, dict) and isinstance(body.get("results"), list):
+        return [w for w in body["results"] if isinstance(w, dict)]
+    if isinstance(body, dict) and "id" in body:
+        return [body]
+    return None
+
+
+def _check_openalex_outcome(
+    run_id: str,
+    request: OpenAlexRequest,
+    outcome: OpenAlexOutcome,
+    works: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Recompute one manifest outcome from the stored bytes; raise if they disagree (ADR 0031 Decision 4).
+
+    Matching and the absent-field list come from the capture's own
+    :func:`~prismabib.sources.openalex.lookup_outcome`, so the writer and the
+    loader cannot drift. A ``refused`` outcome has no body to recompute.
+
+    Returns:
+        The matched work's raw dict for a ``value`` outcome, else ``None``.
+    """
+    if outcome.outcome == "refused":
+        return None
+    identifier = outcome.identifier
+    if isinstance(identifier, OpenAlexTitle):
+        found, absent = _openalex.lookup_outcome(
+            (_openalex.parse_work(w) for w in works), title=identifier.title, year=identifier.year
+        )
+    else:
+        found, absent = _openalex.lookup_outcome(
+            (_openalex.parse_work(w) for w in works), doi=identifier
+        )
+    expected = ("value", found.openalex_id, absent) if found else ("not_found", None, [])
+    if (outcome.outcome, outcome.openalex_id, outcome.absent_fields) != expected:
+        raise StoreError(
+            f"OpenAlex run {run_id} request {request.index}: the manifest outcome for "
+            f"{identifier!r} disagrees with the stored response bytes."
+        )
+    if found is None:
+        return None
+    return next(w for w in works if w.get("id") == found.openalex_id)
+
+
+def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) -> None:
+    """Fold one sealed OpenAlex run into ``acc`` (ADR 0031 Decisions 4, 7, 8, 9).
+
+    Writes no ``runs`` row and creates no record: a work attaches only to a
+    record a search run already loaded (a DOI equal to the record's, else the
+    same normalised title and year). For each attached record whose ``keywords``
+    outcome is a ``value``, the run's topic names replace any earlier run's;
+    ``absent``, ``not_found`` and ``refused`` outcomes leave earlier values alone.
+    The manifest's outcomes are recomputed from the stored bytes and a mismatch
+    raises :class:`StoreError`. A blank response file (the capture's form of an
+    empty body) means "no works".
+
+    Args:
+        acc: The accumulator, already holding every search run's records.
+        run_dir: A sealed run from :func:`_sealed_openalex_run_dirs`.
+        index: :func:`_openalex_record_index` of ``acc``.
+    """
+    by_doi, by_title = index
+    try:
+        manifest = OpenAlexRunManifest.model_validate_json(
+            (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+    except ValueError as exc:  # pydantic's ValidationError is a ValueError
+        raise StoreError(f"OpenAlex run {run_dir.name} has an unreadable manifest: {exc}") from exc
+    run_id = manifest.run_id
+
+    for request in manifest.requests:
+        relative_file = f"{OPENALEX_DIRNAME}/{run_id}/{request.file}"
+        works: list[dict[str, Any]] = []
+        if request.http_status == 200:
+            text = (run_dir / request.file).read_text(encoding="utf-8").strip()
+            try:
+                parsed = _openalex_body_works(json.loads(text)) if text else []
+            except (ValueError, RecursionError):  # a 100000-deep body recurses json out
+                parsed = None
+            if parsed is None:
+                acc.malformed_entries.append(
+                    (run_id, relative_file, 0, None, _REASON_MALFORMED_OPENALEX_BODY)
+                )
+                logger.warning(
+                    "store.load.openalex_body_malformed", run_id=run_id, file=request.file
+                )
+                continue
+            works = parsed
+        for outcome in request.outcomes:
+            work = _check_openalex_outcome(run_id, request, outcome, works)
+            if work is None or "keywords" in outcome.absent_fields:
+                continue
+            identifier = outcome.identifier
+            if isinstance(identifier, OpenAlexTitle):
+                key = (_openalex.normalise_title(identifier.title), identifier.year)
+                targets = by_title.get(key, [])
+            else:
+                targets = by_doi.get(_openalex.normalise_doi(identifier), [])
+            if not targets:
+                acc.unmatched_openalex_identifiers.add(str(identifier))
+                continue
+            names = tuple(t.name for t in _openalex.topics_to_keywords(_openalex.parse_work(work)))
+            for record_id in targets:
+                acc.openalex_topics[record_id] = names
+
+
+def _finalise_openalex_topics(acc: _Accumulator) -> None:
+    """Accumulate the winning topics as ``openalex-topic`` keywords (ADR 0030 Decision 3).
+
+    Runs after every Scopus keyword is accumulated, so an author keyword's
+    ``term_raw`` wins over a topic with the same normalised term. Records are
+    visited in sorted order and each record's topics sorted by normalised name,
+    so a topic-only term's first-seen ``term_raw`` does not depend on OpenAlex's
+    array order.
+    """
+    for record_id in sorted(acc.openalex_topics):
+        names = sorted(
+            acc.openalex_topics[record_id], key=lambda n: (_normalise_keyword_term(n), n)
+        )
+        for raw in names:
+            _accumulate_keyword(acc, record_id=record_id, raw_term=raw, kind=_openalex.KEYWORD_KIND)
+
+
 def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
     """Fold one sealed Layer 0 full-text run directory into ``acc`` (ADR 0019 Decision 0).
 
@@ -1866,7 +2056,10 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     Raises:
         StoreError: If the skipped share trips either rule.
     """
-    skipped = len(acc.malformed_entries)
+    # OpenAlex rows are enrichment audit, not search entries (`entries_seen` counts
+    # search entries only), so they never trip this guard.
+    malformed = [r for r in acc.malformed_entries if r[4] != _REASON_MALFORMED_OPENALEX_BODY]
+    skipped = len(malformed)
     seen = acc.entries_seen
     if skipped == 0 or seen == 0:
         return
@@ -1876,7 +2069,7 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     if not (nothing_loaded or systematic):
         return
 
-    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in acc.malformed_entries]
+    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in malformed]
     shown = ", ".join(named[:_MAX_LOGGED_MALFORMED_ENTRIES])
     if len(named) > _MAX_LOGGED_MALFORMED_ENTRIES:
         shown += f", ... and {len(named) - _MAX_LOGGED_MALFORMED_ENTRIES:,} more"
@@ -2092,6 +2285,12 @@ def _stats_from_connection(
         venues_loaded=_count(connection, "venues"),
         keywords_loaded=_count(connection, "keywords"),
         record_keyword_links_loaded=_count(connection, "record_keywords"),
+        record_keyword_links_by_kind={
+            kind: int(n)
+            for kind, n in connection.execute(
+                "SELECT kind, COUNT(*) FROM record_keywords GROUP BY kind ORDER BY kind"
+            ).fetchall()
+        },
         subject_area_links_loaded=_count(connection, "subject_areas"),
         citation_snapshots_loaded=_count(connection, "citation_snapshots"),
         malformed_entries_skipped=tuple(
@@ -2226,6 +2425,18 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             for abstract_run_dir in _sealed_abstract_run_dirs(project.raw_dir):
                 _load_abstract_run(accumulator, abstract_run_dir)
             _finalise_subject_areas(accumulator)
+            # OpenAlex runs (ADR 0031), after the search runs for the same
+            # reason as abstract runs; topics are accumulated last so Scopus
+            # keywords keep their `term_raw` (ADR 0030 Decision 3).
+            openalex_index = _openalex_record_index(accumulator)
+            for openalex_run_dir in _sealed_openalex_run_dirs(project.raw_dir):
+                _load_openalex_run(accumulator, openalex_run_dir, openalex_index)
+            _finalise_openalex_topics(accumulator)
+            if accumulator.unmatched_openalex_identifiers:
+                logger.warning(
+                    "store.load.unmatched_openalex_identifiers",
+                    count=len(accumulator.unmatched_openalex_identifiers),
+                )
             # Full-text runs, same reasoning as abstract runs above: they live
             # under `project.fulltext_dir`, an entirely separate tree from
             # `raw/` (ADR 0019 Decision 0 -- licensed content never sits near
@@ -2542,11 +2753,11 @@ class Corpus:
         """Return keyword occurrences of one kind, for one named PRISMA set.
 
         Args:
-            kind: ``"author"`` or ``"index"`` (BUILD_PLAN schema comment on
-                ``record_keywords``). Not validated against that closed set
-                here -- an unrecognised ``kind`` simply matches no rows,
-                since ``record_keywords.kind`` is plain ``TEXT``, not a
-                DuckDB ``ENUM``.
+            kind: One of :data:`RECORD_KEYWORD_KINDS` (``"author"``,
+                ``"index"``, ``"openalex-topic"``; the ``record_keywords``
+                CHECK, ADR 0030). Not validated here -- an unrecognised
+                ``kind`` simply matches no rows. The default stays
+                ``"author"``: no default reads topics.
             stage: See :meth:`records`; the same delegation applies.
 
         Returns:
