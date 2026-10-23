@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- OpenAlex `select` now also requests `type`, `primary_location` and `primary_topic`, which
+  registrations need ([ADR 0032](docs/architecture/adr/0032-registered-records-table-and-classification-map.md)
+  Decision 2). Captures made before this lack them and cannot back a registration.
 - Scopus enrichment cascade steps, `search_standard_by_dois` and `abstract_meta`, with opt-in
   handling of refused views (#140, [ADR 0028](docs/architecture/adr/0028-field-level-fallback-cascade.md)).
 - Candidate intake from pasted Google Scholar rows, with DOI enrichment and conflict events
