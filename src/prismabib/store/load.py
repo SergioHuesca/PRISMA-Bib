@@ -187,6 +187,7 @@ from prismabib.capture.manifest import (
     RunManifest,
 )
 from prismabib.capture.registrations import (
+    RECORD_ID_PREFIX,
     RegistrationRefusal,
     active_registrations,
     derive_registration,
@@ -2118,6 +2119,12 @@ def _fold_registrations(
         StoreError: If an active registration cannot be derived.
         LogError: If the log fails its own checks, or names an unknown map version.
     """
+    for row in acc.records:
+        if row[0].startswith(RECORD_ID_PREFIX):  # V9: the prefix names registered records only
+            raise StoreError(
+                f"Scopus record id {row[0]!r} begins {RECORD_ID_PREFIX!r}, which is reserved "
+                "for registered records (ADR 0029 V9)"
+            )
     events = load_registration_events(project.registrations_path)
     if not events:
         return []

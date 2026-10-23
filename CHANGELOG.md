@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Registration hygiene: `IdFactory`/`MonotonicUlidFactory` move to the neutral `prismabib.ids`
+  (still re-exported from `prismabib.prisma.events`); the build refuses any Scopus record id
+  beginning `registered:` (V9); tests pin that a failed build never touches
+  `registrations.jsonl` and that a registration needs a sealed OpenAlex body.
 - OpenAlex `select` now also requests `type`, `primary_location` and `primary_topic`, which
   registrations need ([ADR 0032](docs/architecture/adr/0032-registered-records-table-and-classification-map.md)
   Decision 2). Captures made before this lack them and cannot back a registration.

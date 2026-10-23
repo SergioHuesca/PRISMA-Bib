@@ -16,10 +16,10 @@ import pytest
 import time_machine
 from pydantic import ValidationError as PydanticValidationError
 
-from prismabib.prisma.events import (
+from prismabib.ids import (
     _RANDOMNESS_BITS as RANDOMNESS_BITS,
 )
-from prismabib.prisma.events import (
+from prismabib.ids import (
     _RANDOMNESS_MASK as RANDOMNESS_MASK,
 )
 from prismabib.prisma.events import (
