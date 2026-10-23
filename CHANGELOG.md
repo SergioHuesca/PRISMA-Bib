@@ -18,6 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A merge train for a reviewed batch of pull requests (`update-behind-prs.yml`, #158; how-to:
   `docs/how-to/merge-train.md`). The workflow also keeps the next pull request up to date after
   each merge and when CI finishes (#142, #143, #151, #157).
+- The OpenAlex client sends its key in an `Authorization` header and redacts it from httpx logs
+  (#152). A new Layer 0 capture module writes sealed `raw/openalex/<run_id>/` runs, with a
+  manifest, resume and an opt-in record. It refuses to write or seal a body that carries the key
+  ([ADR 0031](docs/architecture/adr/0031-openalex-responses-are-layer0-runs.md)).
+- A pure classification map for registered records: OpenAlex subfields to ASJC codes, work types
+  to document types, and source types to venue types, with a version and digest (#154,
+  [ADR 0032](docs/architecture/adr/0032-registered-records-table-and-classification-map.md)).
+- The store loads OpenAlex topics as a new `openalex-topic` keyword kind
+  (`record_keywords.kind` CHECK) and seals OpenAlex runs (#160). A malformed OpenAlex response
+  body is recorded but changes no PRISMA flow count
+  ([ADR 0030](docs/architecture/adr/0030-openalex-topics-as-a-keyword-kind.md),
+  [ADR 0031](docs/architecture/adr/0031-openalex-responses-are-layer0-runs.md)).
+- Every store has an empty `registered_records` table and a `records_all` view, and the readers
+  moved onto them (#162,
+  [ADR 0032](docs/architecture/adr/0032-registered-records-table-and-classification-map.md)).
+  The registration events, the writer and `FlowCounts.registered` are not built yet, so nothing
+  writes to the table.
+- `scripts/prepush.py`, a local pre-push gate that runs ruff, `ruff format` over the whole tree,
+  the detect-secrets hook, `mypy --strict`, and the unit and contract tests (#161). How-to:
+  `docs/how-to/pre-push-check.md`.
 
 ### Changed
 
@@ -28,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implementations: the registration code, the `registered_records` table and the
   `FlowCounts.registered` field are not built yet.
 - `graphify-out/` is ignored by git (#137).
+- CI cancels superseded runs on pull requests only (`concurrency`), gives every job a
+  `timeout-minutes` sized from its measured run times (about three times the p90, widened for
+  the two slowest jobs), and passes `--durations=15` to the pytest runs (#155).
+- `AppendOnlyLog` moved to `src/prismabib/log.py`, below Stage 3, and gained `append_if`, a check
+  run under the lock whose return value the caller receives
+  ([ADR 0029](docs/architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md),
+  section 8) (#153). The 100% coverage gate and the mutation scope moved with it.
 
 ## [1.0.0] — 2026-10-20
 
