@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from prismabib.prisma.flow import compute_flow_counts
+from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.report.flow_diagram import flow_diagram_svg
 from prismabib.report.numbers import numbers_map
 from prismabib.report.tables import Table, build_tables, to_csv, to_latex, to_markdown
@@ -367,7 +368,11 @@ def export_project(project: Project) -> ExportResult:
     figures.append(
         _write(
             root / "figures" / "prisma_flow.svg",
-            flow_diagram_svg(counts, title=project.title),
+            flow_diagram_svg(
+                counts,
+                title=project.title,
+                orphaned_decisions=len(project_orphaned_decisions(project)),
+            ),
         )
     )
     figures.append(_write(root / "figures" / "prisma_flow.csv", to_csv(_flow_source_rows(counts))))

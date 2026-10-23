@@ -39,6 +39,7 @@ CONSISTENT = FlowCounts(
     identified=100,
     duplicates_across_searches=0,
     removed_other_reasons=0,
+    registered=0,
     excluded_automated=10,
     # Pairwise distinct and summing to `excluded_automated`, so a test that
     # perturbs one reason cannot be satisfied by another's value.
@@ -67,7 +68,7 @@ def test_flow_counts__consistent_counts__assert_consistent_returns_none() -> Non
         pytest.param(
             "after_automated",
             1,
-            "identified - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated",
+            "identified + registered - duplicates_across_searches - removed_other_reasons - excluded_automated == after_automated",
             90,
             91,
             id="equation-1-identification",
@@ -207,7 +208,57 @@ def test_flow_counts__equation_2_violated_by_a_later_field__equation_1_is_not_bl
 
     message = str(excinfo.value)
     assert "after_automated - excluded_language == after_language" in message
-    assert "identified - duplicates_across_searches" not in message
+    assert "identified + registered - duplicates_across_searches" not in message
+
+
+# ---------------------------------------------------------------------------
+# The registered term (ADR 0033, Decision 1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_flow_counts__one_registration__identity_closes_with_registered_term() -> None:
+    """ADR 0033's worked check: 1,294 + 1 - 0 - 0 - 0 == 1,295 == after_automated."""
+    one = FlowCounts(
+        identified=1294,
+        duplicates_across_searches=0,
+        removed_other_reasons=0,
+        registered=1,
+        excluded_automated=0,
+        excluded_automated_by_reason=_NO_AUTOMATED_EXCLUSIONS,
+        after_automated=1295,
+        excluded_language=0,
+        after_language=1295,
+        excluded_title_abstract=0,
+        unsure_title_abstract=1294,
+        retrieved_fulltext=1,
+        excluded_fulltext={},
+        unsure_fulltext=0,
+        included=1,
+    )
+
+    assert one.assert_consistent() is None
+    # Without the term the same numbers must fail: this is what pins equation 1's form.
+    with pytest.raises(ValidationError, match=r"1294 != 1295"):
+        dataclasses.replace(one, registered=0).assert_consistent()
+
+
+@pytest.mark.unit
+def test_flow_counts__negative_registered__assert_consistent_raises() -> None:
+    # Compensated so equation 1 still closes: only the precondition can speak.
+    broken = dataclasses.replace(CONSISTENT, registered=-1, identified=101)
+
+    with pytest.raises(ValidationError, match=r"registered is negative: -1"):
+        broken.assert_consistent()
+
+
+@pytest.mark.unit
+def test_flow_counts__registered_unbalanced__names_equation_1_with_the_term() -> None:
+    broken = dataclasses.replace(CONSISTENT, registered=3)
+
+    with pytest.raises(ValidationError, match=r"identified \+ registered - duplicates") as excinfo:
+        broken.assert_consistent()
+    assert "off by 3" in str(excinfo.value)
 
 
 @pytest.mark.unit
@@ -216,6 +267,7 @@ def test_flow_counts__empty_excluded_fulltext_breakdown__still_closes() -> None:
         identified=3,
         duplicates_across_searches=0,
         removed_other_reasons=0,
+        registered=0,
         excluded_automated=0,
         excluded_automated_by_reason=_NO_AUTOMATED_EXCLUSIONS,
         after_automated=3,
@@ -356,6 +408,7 @@ def test_flow_counts__every_count_zero__is_not_treated_as_negative() -> None:
         identified=0,
         duplicates_across_searches=0,
         removed_other_reasons=0,
+        registered=0,
         excluded_automated=0,
         excluded_automated_by_reason=_NO_AUTOMATED_EXCLUSIONS,
         after_automated=0,

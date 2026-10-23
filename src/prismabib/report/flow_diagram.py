@@ -187,7 +187,7 @@ def _arrow(x1: int, y1: int, x2: int, y2: int) -> str:
     )
 
 
-def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
+def flow_diagram_svg(counts: FlowCounts, *, title: str, orphaned_decisions: int = 0) -> str:
     """Render ``counts`` as a PRISMA 2020 flow diagram.
 
     Args:
@@ -195,6 +195,9 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             one of its fields; this function computes none of them, which is
             what makes S10-AC4 assertable rather than aspirational.
         title: The project title, placed above the diagram.
+        orphaned_decisions: How many current decisions name a record outside
+            ``S_raw`` (ADR 0033 §3), shown as a count beside the diagram. Not
+            a :class:`FlowCounts` field and not an arithmetic term.
 
     Returns:
         A complete SVG document as text. The same ``counts`` and ``title``
@@ -250,6 +253,30 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str) -> str:
             ],
         ),
     ]
+    if counts.registered:
+        # ADR 0029 §3 / ADR 0033: the "other methods" box. Absent when nothing was
+        # registered, so a Scopus-only project renders the same bytes as before the field
+        # existed (the ADRs do not say whether it is drawn at zero).
+        stages.insert(
+            1,
+            (
+                "identification-other-methods",
+                [
+                    f"Records identified from other methods (n = {counts.registered})",
+                    "reviewer registrations from a manual Google Scholar search",
+                ],
+            ),
+        )
+    if orphaned_decisions:
+        stages.append(
+            (
+                "orphaned-decisions",
+                [
+                    f"Orphaned decisions (n = {orphaned_decisions})",
+                    "not counted above; see methods",
+                ],
+            )
+        )
 
     body: list[str] = []
     y = _TOP_Y

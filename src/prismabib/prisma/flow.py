@@ -67,6 +67,12 @@ class FlowCounts:
             :class:`~prismabib.capture.manifest.RunManifest.total_results`
             **only** -- never a row count (see :func:`_identified_count`
             for exactly which run's ``total_results`` this is, and why).
+        duplicates_across_searches: Papers a later search re-found (ADR 0013).
+        removed_other_reasons: Unreadable capture entries (ADR 0012).
+        registered: Active reviewer registrations (ADR 0029 §3, ADR 0033): the
+            rows of ``registered_records``, read in the same snapshot as
+            ``S_raw``. They are members of ``S_raw`` and enter equation 1 as a
+            separate term; they are never added into ``identified``.
         excluded_automated: ``|S_raw| - |S_raw ∩ A|`` -- records removed by
             the automated year/subject/doc-type filter.
         excluded_automated_by_reason: The same removals, broken down by which
@@ -106,6 +112,7 @@ class FlowCounts:
     identified: int
     duplicates_across_searches: int
     removed_other_reasons: int
+    registered: int
     excluded_automated: int
     excluded_automated_by_reason: Mapping[str, int]
     after_automated: int
@@ -157,8 +164,9 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     Then five equations, each checked independently so a failure names
     exactly which step of the diagram does not add up:
 
-    1. ``identified - duplicates_across_searches - removed_other_reasons
-       - excluded_automated == after_automated``
+    1. ``identified + registered - duplicates_across_searches
+       - removed_other_reasons - excluded_automated == after_automated``
+       (the ``registered`` term is ADR 0033's, which supersedes ADR 0007)
     2. ``after_automated - excluded_language == after_language``
     3. ``after_language == excluded_title_abstract +
        unsure_title_abstract + retrieved_fulltext``
@@ -206,6 +214,7 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
         ("identified", flow.identified),
         ("duplicates_across_searches", flow.duplicates_across_searches),
         ("removed_other_reasons", flow.removed_other_reasons),
+        ("registered", flow.registered),
         ("excluded_automated", flow.excluded_automated),
         ("after_automated", flow.after_automated),
         ("excluded_language", flow.excluded_language),
@@ -239,10 +248,11 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     equations = (
         (
             (
-                "identified - duplicates_across_searches - removed_other_reasons "
-                "- excluded_automated == after_automated"
+                "identified + registered - duplicates_across_searches "
+                "- removed_other_reasons - excluded_automated == after_automated"
             ),
             flow.identified
+            + flow.registered
             - flow.duplicates_across_searches
             - flow.removed_other_reasons
             - flow.excluded_automated,
@@ -328,6 +338,22 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
         WHERE (query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)
         """
     ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _registered_count(connection: duckdb.DuckDBPyConnection) -> int:
+    """The number of active reviewer registrations (ADR 0029 §3, ADR 0033).
+
+    ``registered_records`` holds only active registrations (the loader fold
+    drops reversed and superseded ones), so its row count is the number.
+
+    Args:
+        connection: An open Layer 1 connection; not closed here.
+
+    Returns:
+        The row count; ``0`` for a project with no registrations.
+    """
+    row = connection.execute("SELECT count(*) FROM registered_records").fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -480,12 +506,16 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         ``unsure_title_abstract``/``unsure_fulltext`` are each computed as
         the remainder of their partition, not measured independently --
         but equation 1 is a genuine cross-check this function does
-        **not** force to hold: ``identified`` comes from the earliest
-        run's server-reported total (see :func:`_identified_count`) while
-        ``after_automated`` is derived from Layer 1's own ``records`` rows
-        (the snapshot's ``A``), and a project with an
-        incomplete capture or an unexpected duplicate can legitimately
-        make those disagree. Note that ``records`` is **not** deduplicated:
+        **not** force to hold: ``identified`` is the sum, over each
+        distinct query, of that query's earliest run's server-reported
+        ``total_results`` (ADR 0013; see :func:`_identified_count`), and
+        ``registered`` is the number of active registrations (ADR 0033),
+        while ``after_automated`` is derived from ``S_raw`` -- the Scopus
+        ``records`` rows **together with** the registrations
+        (``records_all``, ADR 0032) -- filtered by the automated criteria.
+        A project with an incomplete capture or an unexpected duplicate
+        can legitimately make those disagree. Note that ``records`` is
+        **not** deduplicated:
         duplicates are *reported, not applied* (see
         :mod:`prismabib.store.load`), and only same-``record_id``
         collisions collapse, via the primary key. PRISMA's "duplicate
@@ -506,6 +536,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
     connection = connect(project, read_only=True)
     try:
         identified = _identified_count(connection)
+        registered = _registered_count(connection)
         removed_other_reasons = _unloadable_count(connection)
         duplicates_across_searches = _cross_run_duplicate_count(connection)
         snapshot = _capture_snapshot(project, connection=connection)
@@ -537,6 +568,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         identified=identified,
         duplicates_across_searches=duplicates_across_searches,
         removed_other_reasons=removed_other_reasons,
+        registered=registered,
         excluded_automated=excluded_automated,
         excluded_automated_by_reason=dict(snapshot.layer1.excluded_by_reason),
         after_automated=after_automated,

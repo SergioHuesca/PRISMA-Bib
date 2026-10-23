@@ -56,6 +56,7 @@ def _every_flowcounts_value(counts: FlowCounts) -> set[int]:
         counts.identified,
         counts.duplicates_across_searches,
         counts.removed_other_reasons,
+        counts.registered,
         counts.excluded_automated,
         counts.after_automated,
         counts.excluded_language,

@@ -176,6 +176,7 @@ def test_docs__sample_prisma_diagrams__add_up(page: Path) -> None:
         }, f"{page.name}: printed diagram is missing an automated-exclusion reason: {reasons}"
         counts = FlowCounts(
             **fields,
+            registered=0,
             excluded_fulltext={"REASON": total} if total else {},
             excluded_automated_by_reason={
                 "year": reasons["by publication year"],
