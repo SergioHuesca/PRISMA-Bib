@@ -22,7 +22,11 @@ Consequences for your review:
   however many *search strings* you ran, all of them against Scopus
   ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)). Several searches
   are not several sources, and the per-search breakdown lives in Layer 1's `runs` table, not
-  in the diagram.
+  in the diagram. Records a reviewer registers from a manual Google Scholar search
+  ([ADR 0029](../architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md))
+  are counted separately as `registered` ("other methods"), never added into `identified`;
+  `identified` stays the Scopus total alone
+  ([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md)).
 - Fields Scopus does not index are invisible to the whole pipeline. There is no second
   source to fill a gap with.
 - The "Registers" column of the PRISMA 2020 diagram is empty.

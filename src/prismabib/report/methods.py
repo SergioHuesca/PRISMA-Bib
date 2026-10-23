@@ -3,6 +3,9 @@
 Pure functions of numbers already computed: the sentence quotes
 ``flow.registered`` from the ``numbers.json`` mapping, so the text cannot
 disagree with the data.
+
+No template placeholder is wired to these yet (the repo has no methods generator; manuscripts
+are user templates): follow-up.
 """
 
 from __future__ import annotations

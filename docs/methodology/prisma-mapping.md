@@ -273,7 +273,7 @@ assume it is covered:
 both sides, and the signed difference:
 
 ```
-1.  identified - duplicates_across_searches - removed_other_reasons
+1.  identified + registered - duplicates_across_searches - removed_other_reasons
                       - excluded_automated  == after_automated
 2.  after_automated   - excluded_language   == after_language
 3.  after_language    == excluded_title_abstract + unsure_title_abstract + retrieved_fulltext
@@ -307,7 +307,9 @@ too, and investigate rather than paper over a failure of equation 1.
 
 Note what equation 1 means arithmetically: `excluded_automated` is computed as
 `|S_raw| - |A|`, so equation 1 closes exactly when
-`identified - duplicates_across_searches - removed_other_reasons == |S_raw|`. If a review
+`identified + registered - duplicates_across_searches - removed_other_reasons == |S_raw|`
+(`registered`, ADR 0033, is the count of active reviewer registrations, which are members of
+`S_raw`; it is 0 for a Scopus-only project). If a review
 reports a difference between "records identified" and "records loaded", that difference is
 not an automation exclusion and must not be presented as one.
 

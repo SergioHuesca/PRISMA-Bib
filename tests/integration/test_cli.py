@@ -190,6 +190,18 @@ def test_cli_build__sealed_layer0__builds_the_store_and_reports_counts(tmp_path:
 
 
 @pytest.mark.integration
+def test_cli_build__corrupt_decision_log__still_builds_and_warns(tmp_path: Path) -> None:
+    project = copy_reference_project_with_criteria(tmp_path)
+    project.decisions_path.write_bytes(b"this is not a decision event\n")
+
+    result = runner.invoke(app, ["build", project.slug, "--root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert project.db_path.is_file()
+    assert "orphaned-decision listing skipped" in result.stderr
+
+
+@pytest.mark.integration
 def test_cli_build__store_already_present__says_nothing_was_loaded(tmp_path: Path) -> None:
     project = copy_reference_project_with_criteria(tmp_path)
     build_store(project, rebuild=True)

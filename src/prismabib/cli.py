@@ -50,7 +50,7 @@ from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
-from prismabib.errors import PrismabibError
+from prismabib.errors import LogError, PrismabibError
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
@@ -443,7 +443,15 @@ def build(
         project = Project.open(slug, root=root)
         stats = build_store(project, rebuild=rebuild)
         _print_store_stats(stats, slug=slug, db_path=project.db_path)
-        _print_orphans(project)
+        # The store is built and is the result of this command; a decision log that cannot be
+        # read (flow and export already refuse it) must not turn that into a failure.
+        try:
+            _print_orphans(project)
+        except LogError as exc:
+            _echo_err(
+                "WARNING: orphaned-decision listing skipped: "
+                f"the decision log could not be read ({exc})"
+            )
 
 
 def _print_orphans(project: Project) -> None:

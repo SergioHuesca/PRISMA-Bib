@@ -36,6 +36,7 @@ from prismabib.prisma.engine import (
     _capture_snapshot,
     _RecordDecision,
 )
+from prismabib.prisma.orphans import OrphanedDecision, orphaned_decisions
 from prismabib.project import Project
 from prismabib.store.db import connect
 
@@ -469,7 +470,19 @@ def _excluded_by_reason(
 
 
 def compute_flow_counts(project: Project) -> FlowCounts:
-    """Derive every PRISMA 2020 flow-diagram number for ``project``.
+    """:func:`compute_flow_counts_with_orphans`, without the orphan listing."""
+    return compute_flow_counts_with_orphans(project)[0]
+
+
+def compute_flow_counts_with_orphans(
+    project: Project,
+) -> tuple[FlowCounts, list[OrphanedDecision]]:
+    """Derive every PRISMA 2020 flow-diagram number for ``project``, plus its orphans.
+
+    The orphaned decisions (ADR 0033 §3) are listed from the **same** snapshot -- the same
+    ``S_raw`` and the same decision-log fold -- as the counts, so the two cannot disagree.
+    Limit: when ``L`` is empty the snapshot deliberately does not read the log (see
+    :func:`~prismabib.prisma.engine._capture_snapshot`), so no orphan is listed then.
 
     Every count is recomputed from Layer 1 and the decision log on every
     call -- nothing here is cached or persisted, so three fresh calls
@@ -499,7 +512,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         project: The project to compute flow counts for.
 
     Returns:
-        A :class:`FlowCounts`. Equations 2-4 of
+        ``(counts, orphans)``. ``counts`` is a :class:`FlowCounts`. Equations 2-4 of
         :meth:`FlowCounts.assert_consistent` hold by construction here (over
         one snapshot, so "by construction" is now a property of a single
         consistent read rather than of three reads that happened to agree) --
@@ -564,7 +577,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
     included = len(snapshot.manual_fulltext)
     unsure_fulltext = retrieved_fulltext - sum(excluded_fulltext.values()) - included
 
-    return FlowCounts(
+    counts = FlowCounts(
         identified=identified,
         duplicates_across_searches=duplicates_across_searches,
         removed_other_reasons=removed_other_reasons,
@@ -581,6 +594,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         unsure_fulltext=unsure_fulltext,
         included=included,
     )
+    return counts, orphaned_decisions(raw, snapshot.fold)
 
 
-__all__ = ["FlowCounts", "compute_flow_counts"]
+__all__ = ["FlowCounts", "compute_flow_counts", "compute_flow_counts_with_orphans"]

@@ -12,12 +12,13 @@ from __future__ import annotations
 import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 import time_machine
 
 from prismabib.prisma import engine
-from prismabib.prisma.flow import FlowCounts, compute_flow_counts
+from prismabib.prisma.flow import FlowCounts, compute_flow_counts, compute_flow_counts_with_orphans
 from prismabib.prisma.log import DecisionLog
 from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
@@ -160,6 +161,30 @@ def test_orphaned_decisions__superseded_registration__scopus_record_is_unsure(
 
 
 @pytest.mark.integration
+def test_orphaned_decisions__with_counts__come_from_one_fold_of_the_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path, scopus=3, slug="one-fold")
+    _register(project)
+    _include_through_fulltext(project, REGISTERED)
+    _unregister(project)
+    calls: list[int] = []
+    real_fold = DecisionLog.fold
+
+    def counting_fold(self: DecisionLog) -> object:
+        calls.append(1)
+        return real_fold(self)
+
+    monkeypatch.setattr(DecisionLog, "fold", counting_fold)
+
+    counts, orphans = compute_flow_counts_with_orphans(project)
+
+    assert len(calls) == 1  # a second read would open the TOCTOU window of ADR 0033 §3
+    assert len(orphans) == 2
+    assert counts == compute_flow_counts(project)
+
+
+@pytest.mark.integration
 def test_orphaned_decisions__current_is_latest_by_ts_not_file_order(tmp_path: Path) -> None:
     project = _project(tmp_path, scopus=2, slug="latest")
     gone = "scopus:2-s2.0-90000000999"  # a Scopus id a rebuild no longer holds
@@ -234,3 +259,54 @@ def test_flow_diagram__registered__other_methods_box_only_when_nonzero(tmp_path:
     assert "Records identified from other methods (n = 1)" in with_reg
     assert "Orphaned decisions (n = 2)" in with_reg
     assert "Records identified from Scopus (n = 3)" in with_reg  # identified is not summed
+
+
+def _svg_geometry(svg: str) -> tuple[dict[str, dict[str, float]], list[dict[str, float]]]:
+    ns = "{http://www.w3.org/2000/svg}"
+    root = ElementTree.fromstring(svg)
+    rects = {
+        g.get("id", ""): {
+            k: float(v) for k, v in rect.attrib.items() if k in ("x", "y", "width", "height")
+        }
+        for g in root.iter(f"{ns}g")
+        if (rect := g.find(f"{ns}rect")) is not None
+    }
+    lines = [
+        {k: float(line.get(k, 0)) for k in ("x1", "y1", "x2", "y2")}
+        | {"arrow": 1.0 if line.get("marker-end") else 0.0}
+        for line in root.iter(f"{ns}line")
+    ]
+    return rects, lines
+
+
+@pytest.mark.integration
+def test_flow_diagram__other_methods__parallel_box_with_its_own_connector(tmp_path: Path) -> None:
+    project = _project(tmp_path, scopus=3, slug="parallel")
+    _register(project)
+    svg = flow_diagram_svg(compute_flow_counts(project), title="T", orphaned_decisions=2)
+
+    rects, lines = _svg_geometry(svg)
+    main, side = rects["identification"], rects["identification-other-methods"]
+
+    assert side["y"] == main["y"] and side["x"] > main["x"] + main["width"]  # beside, not below
+    assert rects["removed-before-screening"]["y"] > main["y"] + main["height"]
+    own = [ln for ln in lines if ln["x1"] == side["x"] + side["width"] / 2]
+    assert own, "the other-methods box has no connector of its own"
+    # The chain from Scopus is untouched: one arrow between each pair of the six main boxes.
+    assert sum(ln["arrow"] for ln in lines) == 5
+
+
+@pytest.mark.integration
+def test_flow_diagram__orphan_note__is_a_footnote_with_no_arrow(tmp_path: Path) -> None:
+    project = _project(tmp_path, scopus=3, slug="footnote")
+    counts = compute_flow_counts(project)
+    plain = flow_diagram_svg(counts, title="T")
+    with_note = flow_diagram_svg(counts, title="T", orphaned_decisions=2)
+
+    rects, lines = _svg_geometry(with_note)
+    _, plain_lines = _svg_geometry(plain)
+
+    assert "orphaned-decisions" not in rects  # text only, no box
+    assert len(lines) == len(plain_lines)  # no connector added for the note
+    included_bottom = rects["fulltext"]["y"] + rects["fulltext"]["height"]
+    assert all(ln["y2"] <= included_bottom for ln in lines)  # nothing leaves 'Included'

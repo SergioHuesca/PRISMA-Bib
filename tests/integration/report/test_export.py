@@ -276,7 +276,7 @@ def test_export__inconsistent_counts__refuses_to_write(
 
     real = compute_flow_counts(project)
     broken = dataclasses.replace(real, included=real.included + 5)
-    monkeypatch.setattr(export_module, "compute_flow_counts", lambda _p: broken)
+    monkeypatch.setattr(export_module, "compute_flow_counts_with_orphans", lambda _p: (broken, []))
 
     with pytest.raises(ValidationError, match="inconsistent"):
         export_project(project)
