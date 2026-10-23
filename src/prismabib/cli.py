@@ -50,12 +50,14 @@ from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
-from prismabib.errors import PrismabibError
+from prismabib.errors import LogError, PrismabibError
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
+from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
 from prismabib.report.export import ExportResult, export_project
 from prismabib.report.fill import fill_manuscript
+from prismabib.report.methods import orphaned_decisions_text
 from prismabib.store.load import StoreStats, build_store
 
 #: Exit status for a *known* failure -- any :class:`PrismabibError`. One code
@@ -441,6 +443,23 @@ def build(
         project = Project.open(slug, root=root)
         stats = build_store(project, rebuild=rebuild)
         _print_store_stats(stats, slug=slug, db_path=project.db_path)
+        # The store is built and is the result of this command; a decision log that cannot be
+        # read (flow and export already refuse it) must not turn that into a failure.
+        try:
+            _print_orphans(project)
+        except LogError as exc:
+            _echo_err(
+                "WARNING: orphaned-decision listing skipped: "
+                f"the decision log could not be read ({exc})"
+            )
+
+
+def _print_orphans(project: Project) -> None:
+    """List decisions on records outside ``S_raw`` (ADR 0033 §3); silent when there are none."""
+    text = orphaned_decisions_text(project_orphaned_decisions(project))
+    if text:
+        _echo()
+        _echo(text)
 
 
 def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
@@ -590,6 +609,7 @@ def flow(
         project = Project.open(slug, root=root)
         counts = compute_flow_counts(project)
         _print_flow(counts, slug=slug)
+        _print_orphans(project)
         _warn_if_inconsistent(counts)
 
 
@@ -924,6 +944,8 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     _echo()
     _echo("Identification")
     row("records identified (Scopus total_results)", f"{counts.identified:,}")
+    if counts.registered:  # a separate line, never added into `identified` (ADR 0033)
+        row("registered by a reviewer (other methods)", f"{counts.registered:,}")
     _echo()
     # PRISMA 2020 puts these before screening, not inside it: they are records
     # that never reached a screening decision at all. Rendered even when zero,
@@ -984,8 +1006,10 @@ def _warn_if_inconsistent(counts: FlowCounts) -> None:
 
     Exiting non-zero would be wrong here. The identity this function can
     realistically catch is equation 1, which compares Scopus's own
-    ``total_results`` (summed over the project's distinct searches, less the
-    records removed before screening) against rows actually in Layer 1, and an
+    ``total_results`` (summed over the project's distinct searches), plus the
+    active registrations and less the records removed before screening,
+    against the ``S_raw`` rows actually in Layer 1 (Scopus ``records`` and
+    registrations together, ADR 0032), and an
     *incomplete but perfectly valid* capture (a run interrupted, a build not yet
     re-run) breaks it. That is a state a researcher needs to see
     described, in the middle of a report they can still read -- not one that

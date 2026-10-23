@@ -48,6 +48,7 @@ def _counts(**overrides: object) -> FlowCounts:
         "identified": 1771,
         "duplicates_across_searches": 0,
         "removed_other_reasons": 0,
+        "registered": 0,
         "excluded_automated": 412,
         # Sums to excluded_automated, which equation 5 checks -- so this fixture
         # cannot drift into an inconsistent shape without failing.

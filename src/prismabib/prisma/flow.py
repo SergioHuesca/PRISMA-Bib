@@ -36,6 +36,8 @@ from prismabib.prisma.engine import (
     _capture_snapshot,
     _RecordDecision,
 )
+from prismabib.prisma.log import DecisionLog
+from prismabib.prisma.orphans import OrphanedDecision, orphaned_decisions
 from prismabib.project import Project
 from prismabib.store.db import connect
 
@@ -67,6 +69,12 @@ class FlowCounts:
             :class:`~prismabib.capture.manifest.RunManifest.total_results`
             **only** -- never a row count (see :func:`_identified_count`
             for exactly which run's ``total_results`` this is, and why).
+        duplicates_across_searches: Papers a later search re-found (ADR 0013).
+        removed_other_reasons: Unreadable capture entries (ADR 0012).
+        registered: Active reviewer registrations (ADR 0029 §3, ADR 0033): the
+            rows of ``registered_records``, read in the same snapshot as
+            ``S_raw``. They are members of ``S_raw`` and enter equation 1 as a
+            separate term; they are never added into ``identified``.
         excluded_automated: ``|S_raw| - |S_raw ∩ A|`` -- records removed by
             the automated year/subject/doc-type filter.
         excluded_automated_by_reason: The same removals, broken down by which
@@ -106,6 +114,7 @@ class FlowCounts:
     identified: int
     duplicates_across_searches: int
     removed_other_reasons: int
+    registered: int
     excluded_automated: int
     excluded_automated_by_reason: Mapping[str, int]
     after_automated: int
@@ -157,8 +166,9 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     Then five equations, each checked independently so a failure names
     exactly which step of the diagram does not add up:
 
-    1. ``identified - duplicates_across_searches - removed_other_reasons
-       - excluded_automated == after_automated``
+    1. ``identified + registered - duplicates_across_searches
+       - removed_other_reasons - excluded_automated == after_automated``
+       (the ``registered`` term is ADR 0033's, which supersedes ADR 0007)
     2. ``after_automated - excluded_language == after_language``
     3. ``after_language == excluded_title_abstract +
        unsure_title_abstract + retrieved_fulltext``
@@ -206,6 +216,7 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
         ("identified", flow.identified),
         ("duplicates_across_searches", flow.duplicates_across_searches),
         ("removed_other_reasons", flow.removed_other_reasons),
+        ("registered", flow.registered),
         ("excluded_automated", flow.excluded_automated),
         ("after_automated", flow.after_automated),
         ("excluded_language", flow.excluded_language),
@@ -239,10 +250,11 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
     equations = (
         (
             (
-                "identified - duplicates_across_searches - removed_other_reasons "
-                "- excluded_automated == after_automated"
+                "identified + registered - duplicates_across_searches "
+                "- removed_other_reasons - excluded_automated == after_automated"
             ),
             flow.identified
+            + flow.registered
             - flow.duplicates_across_searches
             - flow.removed_other_reasons
             - flow.excluded_automated,
@@ -328,6 +340,22 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
         WHERE (query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)
         """
     ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _registered_count(connection: duckdb.DuckDBPyConnection) -> int:
+    """The number of active reviewer registrations (ADR 0029 §3, ADR 0033).
+
+    ``registered_records`` holds only active registrations (the loader fold
+    drops reversed and superseded ones), so its row count is the number.
+
+    Args:
+        connection: An open Layer 1 connection; not closed here.
+
+    Returns:
+        The row count; ``0`` for a project with no registrations.
+    """
+    row = connection.execute("SELECT count(*) FROM registered_records").fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -443,7 +471,21 @@ def _excluded_by_reason(
 
 
 def compute_flow_counts(project: Project) -> FlowCounts:
-    """Derive every PRISMA 2020 flow-diagram number for ``project``.
+    """:func:`compute_flow_counts_with_orphans`, without the orphan listing."""
+    return compute_flow_counts_with_orphans(project)[0]
+
+
+def compute_flow_counts_with_orphans(
+    project: Project,
+) -> tuple[FlowCounts, list[OrphanedDecision]]:
+    """Derive every PRISMA 2020 flow-diagram number for ``project``, plus its orphans.
+
+    The orphaned decisions (ADR 0033 §3) are listed from the **same** snapshot -- the same
+    ``S_raw`` and the same decision-log fold -- as the counts, so the two cannot disagree.
+    When ``L`` is empty the snapshot does not read the log (see
+    :func:`~prismabib.prisma.engine._capture_snapshot`), so this function folds an existing
+    ``decisions.jsonl`` itself (never creating one) to keep the orphan list complete; a corrupt
+    existing log therefore raises ``LogError`` from here, not from the counts-only functions.
 
     Every count is recomputed from Layer 1 and the decision log on every
     call -- nothing here is cached or persisted, so three fresh calls
@@ -473,19 +515,23 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         project: The project to compute flow counts for.
 
     Returns:
-        A :class:`FlowCounts`. Equations 2-4 of
+        ``(counts, orphans)``. ``counts`` is a :class:`FlowCounts`. Equations 2-4 of
         :meth:`FlowCounts.assert_consistent` hold by construction here (over
         one snapshot, so "by construction" is now a property of a single
         consistent read rather than of three reads that happened to agree) --
         ``unsure_title_abstract``/``unsure_fulltext`` are each computed as
         the remainder of their partition, not measured independently --
         but equation 1 is a genuine cross-check this function does
-        **not** force to hold: ``identified`` comes from the earliest
-        run's server-reported total (see :func:`_identified_count`) while
-        ``after_automated`` is derived from Layer 1's own ``records`` rows
-        (the snapshot's ``A``), and a project with an
-        incomplete capture or an unexpected duplicate can legitimately
-        make those disagree. Note that ``records`` is **not** deduplicated:
+        **not** force to hold: ``identified`` is the sum, over each
+        distinct query, of that query's earliest run's server-reported
+        ``total_results`` (ADR 0013; see :func:`_identified_count`), and
+        ``registered`` is the number of active registrations (ADR 0033),
+        while ``after_automated`` is derived from ``S_raw`` -- the Scopus
+        ``records`` rows **together with** the registrations
+        (``records_all``, ADR 0032) -- filtered by the automated criteria.
+        A project with an incomplete capture or an unexpected duplicate
+        can legitimately make those disagree. Note that ``records`` is
+        **not** deduplicated:
         duplicates are *reported, not applied* (see
         :mod:`prismabib.store.load`), and only same-``record_id``
         collisions collapse, via the primary key. PRISMA's "duplicate
@@ -506,6 +552,7 @@ def compute_flow_counts(project: Project) -> FlowCounts:
     connection = connect(project, read_only=True)
     try:
         identified = _identified_count(connection)
+        registered = _registered_count(connection)
         removed_other_reasons = _unloadable_count(connection)
         duplicates_across_searches = _cross_run_duplicate_count(connection)
         snapshot = _capture_snapshot(project, connection=connection)
@@ -533,10 +580,11 @@ def compute_flow_counts(project: Project) -> FlowCounts:
     included = len(snapshot.manual_fulltext)
     unsure_fulltext = retrieved_fulltext - sum(excluded_fulltext.values()) - included
 
-    return FlowCounts(
+    counts = FlowCounts(
         identified=identified,
         duplicates_across_searches=duplicates_across_searches,
         removed_other_reasons=removed_other_reasons,
+        registered=registered,
         excluded_automated=excluded_automated,
         excluded_automated_by_reason=dict(snapshot.layer1.excluded_by_reason),
         after_automated=after_automated,
@@ -549,6 +597,13 @@ def compute_flow_counts(project: Project) -> FlowCounts:
         unsure_fulltext=unsure_fulltext,
         included=included,
     )
+    # An empty `L` makes the snapshot skip the log (engine._capture_snapshot), but orphans need
+    # only a current decision outside `S_raw`: fold an existing log here. Never create one --
+    # `DecisionLog` opens with O_CREAT.
+    fold = snapshot.fold
+    if not fold and not language and project.decisions_path.exists():
+        fold = DecisionLog(project).fold()
+    return counts, orphaned_decisions(raw, fold)
 
 
-__all__ = ["FlowCounts", "compute_flow_counts"]
+__all__ = ["FlowCounts", "compute_flow_counts", "compute_flow_counts_with_orphans"]

@@ -23,6 +23,7 @@
   "flow.excluded_title_abstract": 6,
   "flow.identified": 120,
   "flow.included": 5,
+  "flow.registered": 0,
   "flow.removed_other_reasons": 0,
   "flow.retrieved_fulltext": 10,
   "flow.unsure_fulltext": 2,

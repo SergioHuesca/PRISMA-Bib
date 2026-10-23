@@ -926,6 +926,9 @@ class _Snapshot:
     fulltext_decisions: Mapping[str, _RecordDecision]
     manual_abstract: frozenset[str]
     manual_fulltext: frozenset[str]
+    #: The one fold the aggregates above came from (``{}`` when ``L`` is empty, where the log
+    #: is deliberately not read). ADR 0033 §3 lists orphaned decisions from this same fold.
+    fold: Mapping[FoldKey, DecisionEvent]
 
 
 def _build_snapshot(layer1: _Layer1View, fold: Mapping[FoldKey, DecisionEvent]) -> _Snapshot:
@@ -958,6 +961,7 @@ def _build_snapshot(layer1: _Layer1View, fold: Mapping[FoldKey, DecisionEvent]) 
         fulltext_decisions=fulltext_decisions,
         manual_abstract=manual_abstract,
         manual_fulltext=manual_fulltext,
+        fold=fold,
     )
 
 

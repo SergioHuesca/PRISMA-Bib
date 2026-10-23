@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from prismabib.prisma.flow import compute_flow_counts
+from prismabib.prisma.flow import compute_flow_counts_with_orphans
 from prismabib.report.flow_diagram import flow_diagram_svg
 from prismabib.report.numbers import numbers_map
 from prismabib.report.tables import Table, build_tables, to_csv, to_latex, to_markdown
@@ -336,7 +336,8 @@ def export_project(project: Project) -> ExportResult:
             attached.
         StoreError: If no Layer 1 store exists yet.
     """
-    counts = compute_flow_counts(project)
+    # Counts and orphans come from one snapshot (ADR 0033 §3): no second read of the log.
+    counts, orphans = compute_flow_counts_with_orphans(project)
     counts.assert_consistent()
 
     root = project.root / "exports"
@@ -367,7 +368,11 @@ def export_project(project: Project) -> ExportResult:
     figures.append(
         _write(
             root / "figures" / "prisma_flow.svg",
-            flow_diagram_svg(counts, title=project.title),
+            flow_diagram_svg(
+                counts,
+                title=project.title,
+                orphaned_decisions=len(orphans),
+            ),
         )
     )
     figures.append(_write(root / "figures" / "prisma_flow.csv", to_csv(_flow_source_rows(counts))))
