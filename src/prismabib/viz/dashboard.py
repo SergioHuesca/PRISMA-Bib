@@ -457,10 +457,12 @@ class Dashboard:
 
     def _corpus_browser_tab(self) -> pn.viewable.Viewable:
         records = self._corpus_for("Corpus browser").records(self._filter_state.stage)
+        # `origin` is mandatory (ADR 0032): a missing column must fail loudly
+        # here, never vanish from the table.
         columns = [
-            column
-            for column in ("record_id", "origin", "title", "year", "doc_type")
-            if column in records.columns
+            "record_id",
+            "origin",
+            *(column for column in ("title", "year", "doc_type") if column in records.columns),
         ]
         # `polars.DataFrame.to_pandas()` requires `pyarrow`, not a declared
         # dependency (§2.4's closed list) -- `pandas.DataFrame(dict)` over
