@@ -418,7 +418,7 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _satisfying(
+def matching_works(
     candidate: CandidateView, rule: str, works: Sequence[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """The works that satisfy ``rule`` for ``candidate`` (ADR 0029 section 1)."""
@@ -518,7 +518,7 @@ def register_candidate(
         raise RegistrationRefusal(f"unknown candidate {candidate_id!r}")
 
     response = read_response(project.raw_dir, payload_file)
-    matched = _satisfying(candidate, match_rule, response.works)
+    matched = matching_works(candidate, match_rule, response.works)
     if len(matched) != 1:
         raise RegistrationRefusal(
             f"candidate {candidate_id!r} is unresolved under {match_rule!r}: "
@@ -678,6 +678,7 @@ __all__ = [
     "classify_work",
     "derive_registration",
     "load_registration_events",
+    "matching_works",
     "read_response",
     "register_candidate",
     "registration_log",

@@ -465,29 +465,31 @@ def title_match(
     )
 
 
+def near_rule(
+    candidate: CandidateEvent | CandidateRow, title: str, year: int | None
+) -> Literal["same_title_other_year", "title_prefix"] | None:
+    """Which near rule (if any) makes ``(title, year)`` a near match for ``candidate``.
+
+    Two rules, no scoring: ``same_title_other_year`` (same normalised title, not an
+    exact match) or ``title_prefix`` (same year, one normalised title a whole-word
+    prefix of the other, i.e. a truncated subtitle). Exact matches give ``None``.
+    """
+    want, have = normalise_title(candidate.title), normalise_title(title)
+    if not have or not want or title_match(candidate, title, year):
+        return None
+    if have == want:
+        return "same_title_other_year"
+    if year == candidate.year and (have.startswith(want + " ") or want.startswith(have + " ")):
+        return "title_prefix"
+    return None
+
+
 def near_matches(
     candidate: CandidateEvent | CandidateRow,
     records: Iterable[tuple[str, int | None]],
 ) -> list[tuple[str, int | None]]:
-    """Records for the review list: close to the candidate but not exact matches.
-
-    Two rules, no scoring: same normalised title with a different year, or
-    the same year with one normalised title a whole-word prefix of the other
-    (a truncated subtitle). Exact matches are excluded.
-    """
-    want = normalise_title(candidate.title)
-    found: list[tuple[str, int | None]] = []
-    for title, year in records:
-        have = normalise_title(title)
-        if not have or not want or title_match(candidate, title, year):
-            continue
-        same_title_other_year = have == want
-        prefix = year == candidate.year and (
-            have.startswith(want + " ") or want.startswith(have + " ")
-        )
-        if same_title_other_year or prefix:
-            found.append((title, year))
-    return found
+    """Records for the review list: close to the candidate but not exact matches (`near_rule`)."""
+    return [(t, y) for t, y in records if near_rule(candidate, t, y) is not None]
 
 
 __all__ = [
@@ -499,6 +501,7 @@ __all__ = [
     "DoiEnrichmentEvent",
     "candidate_id",
     "near_matches",
+    "near_rule",
     "normalise_doi",
     "normalise_title",
     "parse_pasted_rows",

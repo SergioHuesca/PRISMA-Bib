@@ -18,6 +18,7 @@ from prismabib.capture.candidates import (
     DoiEnrichmentEvent,
     candidate_id,
     near_matches,
+    near_rule,
     normalise_doi,
     normalise_title,
     parse_pasted_rows,
@@ -288,6 +289,24 @@ def test_near_matches__lists_near_misses_not_exact_or_unrelated() -> None:
         ("Deep learning: a survey", 2020),
     ]
     assert not any(title_match(cand, t, y) for t, y in near_matches(cand, records))
+
+
+def test_near_rule__agrees_with_near_matches() -> None:
+    cand = _event("Deep learning", 2020)
+    table: list[tuple[str, int | None, str | None]] = [
+        ("Deep Learning", 2020, None),  # exact
+        ("Deep learning", 2019, "same_title_other_year"),
+        ("Deep learning", None, "same_title_other_year"),
+        ("Deep learning: a survey", 2020, "title_prefix"),
+        ("A deep learning", 2020, None),  # candidate is a suffix, not a prefix
+        ("Deep learning: a survey", 2018, None),
+        ("Deep learnings", 2020, None),
+        ("Shallow", 2020, None),
+        ("!!!", 2020, None),
+    ]
+    records = [(t, y) for t, y, _ in table]
+    assert [near_rule(cand, t, y) for t, y in records] == [r for _, _, r in table]
+    assert near_matches(cand, records) == [(t, y) for t, y, r in table if r is not None]
 
 
 def _references_record(source: str) -> bool:
