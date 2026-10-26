@@ -123,15 +123,31 @@ def test_chain_of_two_valid_updates__ok(repo: Path) -> None:
 
 
 @pytest.mark.integration
-def test_update_where_pr_and_main_edit_same_file__halts_as_overlap(repo: Path) -> None:
-    # The PR changes line 1 and main changes line 10 of the same file: git merges it cleanly,
-    # but the blobs differ, so the update is not main's change alone. It needs a fresh review.
+def test_update_where_pr_and_main_edit_same_file__clean_merge__ok(repo: Path) -> None:
+    # The PR changes line 1 and main changes line 10 of the same file: git merges it cleanly
+    # and the result is git's own merge of the two (rule g).
     reviewed = _pr_change(
         repo, "a.txt", b"PR CHANGE\n" + b"".join(f"line {i}\n".encode() for i in range(2, 11))
     )
     main_version = b"".join(f"line {i}\n".encode() for i in range(1, 10)) + b"MAIN CHANGE\n"
     _advance_main(repo, {"a.txt": main_version})
     head = _update_pr(repo)
+    assert verify(reviewed, head) == {"ok": True}
+
+
+@pytest.mark.integration
+def test_update_where_pr_and_main_edit_same_lines__hand_resolved__halts_as_overlap(
+    repo: Path,
+) -> None:
+    rest = _BASE_A.split(b"\n", 1)[1]
+    reviewed = _pr_change(repo, "a.txt", b"PR CHANGE\n" + rest)
+    _advance_main(repo, {"a.txt": b"MAIN CHANGE\n" + rest})
+    subprocess.run(
+        ["git", "merge", "--no-ff", "--no-commit", "origin/main"],
+        cwd=repo, capture_output=True, check=False,
+    )  # conflicts on purpose  # fmt: skip
+    _write(repo, "a.txt", b"BOTH\n" + rest)
+    head = _commit(repo, "hand-resolved")
     result = verify(reviewed, head)
     assert result["ok"] is False
     assert "overlaps the PR's own edits" in result["reason"]

@@ -344,14 +344,14 @@ def test_attack5__renames_are_not_detected__partial_rename_verified_per_path(rep
 
 
 @pytest.mark.integration
-def test_attack6__same_file_different_content__overlap_halts(repo: Path) -> None:
-    text = "".join(f"line {i}\n" for i in range(2, 11))
+def test_attack6__same_file_conflicting_content__overlap_halts(repo: Path) -> None:
+    # Both sides edit line 1 differently: merge-tree conflicts, so rule g cannot apply and the
+    # hand-resolved merge is an unreviewed overlap.
     sc = Scenario(
-        repo, _A, {b"base.txt": _f("PR\n" + text)},
-        main_extra={b"base.txt": _f(_lines(9) + "MAIN\n")},
+        repo, _A, {b"base.txt": _f(_edit(_L, 0, "PR\n"))},
+        main_extra={b"base.txt": _f(_edit(_L, 0, "MAIN\n"))},
     )  # fmt: skip
-    merged = {**sc.p_entries, b"base.txt": _f("PR\n" + _lines(9)[len("line 1\n") :] + "MAIN\n")}
-    _halts(sc.check(merged), "overlaps the PR's own edits")
+    _halts(sc.check({**sc.p_entries, b"base.txt": _f(_edit(_L, 0, "PR MAIN\n"))}), "overlaps")
 
 
 @pytest.mark.integration

@@ -47,10 +47,25 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
 4. The merge adds only main's own change: `git diff` of the first parent against the merge
    is byte-identical to `git diff` of the merge base against the second parent, computed
    with `--binary --full-index`. Any extra byte in the merge halts.
-5. If the PR and main edited the same file, the update is not main's change alone and it
-   halts with "update overlaps the PR's own edits: needs a fresh review". Relabel after
-   review. The one exception is a change the PR already holds, see "Stacked PRs" below: an
-   overlap that is not an absorbed identical change still halts.
+5. If the PR and main edited the same file, rules 4 and 5 alone would halt with "update
+   overlaps the PR's own edits: needs a fresh review" (relabel after review). Two things
+   pass instead: rule 6, and the change the PR already holds (see "Stacked PRs" below). An
+   overlap that is neither still halts.
+6. **Clean automerge.** The merge commit's tree is exactly the tree of git's own merge of the
+   PR head and main (`git merge-tree --write-tree`, merge base pinned, renames, attributes,
+   merge drivers and user config ignored). It applies only when that merge is clean (no
+   conflict) and the two have a single merge base. Both sides may then edit the same file in
+   different places: the usual case is every PR adding its own bullet to `CHANGELOG.md`.
+   The content is a deterministic function of the reviewed head and main, so no byte can be
+   injected by the author. It is usually the same merge GitHub's "Update branch" produces; if GitHub's differs by even one byte (for example through rename detection, which the verifier turns off), the verifier halts instead of passing.
+
+   Caveat, stated plainly: rule 6 vouches for the bytes, not for the meaning. Two edits that
+   merge cleanly can still be wrong together (for example a changed function and a new caller
+   in another place). The required CI checks, which run on the merged head before the train
+   merges it, are the semantic gate. A merge that conflicts, differs from git's merge by one
+   byte, has two merge bases (a criss-cross history), or was hand-resolved still halts. Two
+   PRs inserting a bullet at the very same place conflict: move one bullet, or resolve by hand
+   and relabel.
 
 Git runs with global and system config disabled and diff options pinned, so a machine's git
 settings do not change the result. Any git failure, or a fetch failure, halts the head.
@@ -97,6 +112,11 @@ unmerged `train:K` below the head still halts.
 - **Halted**: the workflow labels the head `train:halted` and posts one comment with the reason.
 - **Resume**: fix the cause by hand, then `gh pr edit N --remove-label train:halted` and
   `gh workflow run "Update behind PRs"`.
+- **After a rule change**: a head halted by an older verifier is not re-checked on its own,
+  because every run does nothing while `train:halted` is set. Once the new rules are on
+  `main`, remove `train:halted` and dispatch again; the next run verifies the head with the
+  new rules. If the head was halted for an overlap, nothing else is needed (no relabel) when
+  the update merge is now accepted; update the branch from main first if it is `BEHIND`.
 
 ## What the workflow does each run
 
