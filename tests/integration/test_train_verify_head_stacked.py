@@ -449,3 +449,91 @@ def test_rename_detection_off__main_edit_must_not_be_carried_onto_a_renamed_copy
     result = sc.check(sc.p_entries)
     assert result["ok"] is False
     assert "fresh review" in str(result["reason"]) or "omits" in str(result["reason"])
+
+
+# ---- gitattributes / merge drivers must never change the verdict ----------------------
+
+
+def _attr_repo(repo: Path, pr_attrs: dict[str, str], main_attrs: dict[str, str]) -> tuple[str, str]:
+    """base f='1 2 3'; PR edits line 2 (+ attributes); main deletes line 2 (+ attributes).
+    Returns (R, evil M = R's tree with parents R and main: main's deletion reverted).
+    The worktree stays checked out on the PR branch, so its .gitattributes are visible."""
+    _write(repo, "f", "1\n2\n3\n")
+    base = _commit_all(repo, "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    _git(repo, "checkout", "-q", "-b", "pr")
+    for rel, text in pr_attrs.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        _write(repo, rel, text)
+    _write(repo, "f", "1\n2x\n3\n")
+    r = _commit_all(repo, "pr")
+    _git(repo, "checkout", "-q", "main")
+    for rel, text in main_attrs.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        _write(repo, rel, text)
+    _write(repo, "f", "1\n3\n")
+    tip = _commit_all(repo, "main deletes line 2")
+    _git(repo, "update-ref", "refs/remotes/origin/main", tip)
+    _git(repo, "checkout", "-q", "pr")
+    evil = _git(repo, "commit-tree", _tree(repo, r), "-p", r, "-p", tip, "-m", "evil")
+    return r, evil
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("pr_attrs", "main_attrs"),
+    [
+        ({".gitattributes": "* merge=union\n"}, {}),
+        ({".gitattributes": "* merge=ours\n"}, {}),
+        ({".gitattributes": "* -merge\n"}, {}),
+        ({".gitattributes": "*.txt merge=binary\nf merge=binary\n"}, {}),
+        ({".gitattributes": "f merge=union\n"}, {}),
+        ({".gitattributes": "* export-ignore\n"}, {}),
+        ({}, {".gitattributes": "* merge=union\n"}),
+        ({"sub/.gitattributes": "* merge=union\n"}, {}),
+        ({}, {}),
+    ],
+    ids=["union", "ours", "-merge", "binary", "union-on-f", "export-ignore", "main-union",
+         "nested", "none"],
+)  # fmt: skip
+def test_attributes__evil_merge_reverting_main__halts_whatever_the_attributes(
+    repo: Path, pr_attrs: dict[str, str], main_attrs: dict[str, str]
+) -> None:
+    r, evil = _attr_repo(repo, pr_attrs, main_attrs)
+    _halts(verify(r, evil), "")  # any specific halt reason, but never ok
+    result = verify(r, evil)
+    assert "overlaps" in str(result["reason"]) or "omits main's change" in str(result["reason"])
+
+
+@pytest.mark.integration
+def test_attributes__info_attributes_cannot_matter(repo: Path) -> None:
+    (repo / ".git" / "info").mkdir(exist_ok=True)
+    (repo / ".git" / "info" / "attributes").write_text("* merge=union\n")
+    r, evil = _attr_repo(repo, {}, {})
+    with pytest.raises(_module.GitError, match="attributes"):  # fail closed, never ok
+        verify(r, evil)
+
+
+@pytest.mark.integration
+def test_attributes__legit_stacked_update_still_ok_with_and_without_attributes(
+    stack: Path,
+) -> None:
+    repo = stack
+    reviewed = _git(repo, "rev-parse", "b")
+    _squash_into_main(repo, "a")
+    _git(repo, "checkout", "-q", "b")
+    _git(repo, "merge", "--no-ff", "-q", "-m", "update", "origin/main")
+    head = _git(repo, "rev-parse", "HEAD")
+    assert verify(reviewed, head) == {"ok": True}
+    _write(repo, ".gitattributes", "* merge=union\n*.txt export-ignore\n")  # worktree only
+    assert verify(reviewed, head) == {"ok": True}
+
+
+@pytest.mark.integration
+def test_git_version_below_minimum__raises(monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
+    real = _module._git
+    monkeypatch.setattr(
+        _module, "_git", lambda *a: b"git version 2.39.5\n" if a[0] == "version" else real(*a)
+    )
+    with pytest.raises(_module.GitError, match=r"2\.40"):
+        verify("a" * 40, "b" * 40)

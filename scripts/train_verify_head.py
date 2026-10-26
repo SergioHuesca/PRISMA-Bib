@@ -10,14 +10,16 @@ Rules, all of which must hold for ``ok``:
   a. the reviewed commit R is an ancestor of H on H's first-parent chain (or R == H);
   b. every commit from R to H on the first-parent chain is a merge with exactly two parents
      (P first, S second): a one-parent commit is an unreviewed change, an octopus is refused;
-  c. S is an ancestor of main: a merge of any other branch is refused;
+  c. S is an ancestor of main (not necessarily its tip): a merge of any other branch is
+     refused;
   d. the merge adds only main's own change: ``git diff P M`` is byte-identical to
      ``git diff MB S`` (MB = merge-base of P and S), both with --binary --full-index;
   e. if the PR and main edited the same file the two diffs differ; that is reported as an
      overlap and needs a fresh review (fail closed).
   f. stacked PRs: a path that main changed (MB..S) but whose change P already holds is
      ABSORBED, e.g. the parent PR's own commits after the parent was squash-merged. "Holds"
-     means git's own path-wise merge of P and S (merge-tree, renames off, MB pinned) yields
+     means git's own path-wise merge of P and S (merge-tree, renames off, MB pinned, git >= 2.40, gitattributes and merge
+     drivers ignored) yields
      P's entry there: P equals S, or S's hunks are all already in P (the child also edits the
      parent's file). Rule d then applies to the REMAINING paths only: the raw diff of P
      against M must be exactly main's raw diff restricted to them (so M equals P on every
@@ -49,6 +51,10 @@ _ENV = {
     "GIT_CONFIG_NOSYSTEM": "1",
     "GIT_TERMINAL_PROMPT": "0",
 }
+# Merge attributes (`merge=union`, `-merge`, ...) are PR-controlled and would change the merged
+# tree: read attributes from the empty tree, so no .gitattributes anywhere is consulted.
+_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # pragma: allowlist secret
+_MIN_GIT = (2, 40)  # GIT_ATTR_SOURCE, merge-tree --write-tree
 _OPTS = [
     "-c", "core.quotepath=true",
     "-c", "diff.noprefix=false",
@@ -124,13 +130,27 @@ def _raw(a: str, b: str) -> dict[bytes, bytes]:
     return {out[i + 1]: out[i] for i in range(0, len(out), 2)}
 
 
+def _check_git_version() -> None:
+    out = _git("version").decode()
+    m = re.search(r"(\d+)\.(\d+)", out)
+    if m is None or (int(m[1]), int(m[2])) < _MIN_GIT:
+        raise GitError(f"git >= 2.40 is required, found: {out.strip()}")
+
+
+def _check_no_info_attributes() -> None:
+    """GIT_ATTR_SOURCE does not cover $GIT_DIR/info/attributes; a CI clone has none."""
+    path = Path(_git("rev-parse", "--git-path", "info/attributes").decode().strip())
+    if path.is_file() and path.read_bytes().strip():
+        raise GitError(f"{path} sets attributes that would change the merge; remove it")
+
+
 def _merged_tree(p: str, s: str, mb: str) -> str | None:
     """The tree of git's own merge of P and S on base MB, or None if it has conflicts.
     Writes tree objects (no refs). Renames off, so the merge is path-wise like _raw."""
     proc = subprocess.run(
-        ["git", *_OPTS, "-c", "merge.renames=false", "merge-tree", "--write-tree",
-         f"--merge-base={mb}", p, s],
-        env=_ENV, capture_output=True, check=False,
+        ["git", *_OPTS, "-c", "merge.renames=false", "-c", f"core.attributesFile={os.devnull}",
+         "merge-tree", "--write-tree", f"--merge-base={mb}", p, s],
+        env={**_ENV, "GIT_ATTR_SOURCE": _EMPTY_TREE}, capture_output=True, check=False,
     )  # fmt: skip
     if proc.returncode == 1:
         return None
@@ -147,6 +167,8 @@ def _halt(reason: str) -> dict[str, object]:
 def verify(reviewed: str, head: str, main: str = "origin/main") -> dict[str, object]:
     if not _SHA_RE.fullmatch(reviewed) or not _SHA_RE.fullmatch(head):
         raise InputError("both shas must be 40 lowercase hex")
+    _check_git_version()
+    _check_no_info_attributes()
     if not _exists(reviewed):
         return _halt("the reviewed commit is not in this repository")
     if not _exists(head):

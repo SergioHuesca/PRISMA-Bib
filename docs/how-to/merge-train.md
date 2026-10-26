@@ -41,7 +41,8 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
 1. R is an ancestor of the head and lies on the head's first-parent chain (or R is the head).
 2. Every commit from R to the head on the first-parent chain is a merge with exactly two
    parents. A one-parent commit (an unreviewed change) or an octopus merge halts.
-3. The second parent of each merge is an ancestor of `origin/main`. A merge of any other
+3. The second parent of each merge is an ancestor of `origin/main` (any ancestor, not only
+   the tip). A merge of any other
    branch halts.
 4. The merge adds only main's own change: `git diff` of the first parent against the merge
    is byte-identical to `git diff` of the merge base against the second parent, computed
@@ -73,7 +74,7 @@ What the train does: A reaches the head, is verified and squash-merged. B become
 is now `BEHIND` (main has A's squash, B has A's commits). The train updates B from main. That
 merge brings in nothing new for the paths A touched, because B already holds them. The
 verifier calls those paths **absorbed**: a path main changed whose change the PR head already
-holds. Git's own path-wise merge of the PR head and main (renames off, merge base pinned) must
+holds. Git's own path-wise merge of the PR head and main (renames off, merge base pinned, `.gitattributes` and merge drivers ignored; needs git 2.40 or later, older halts) must
 yield the head's entry there. That covers a file identical on both sides (mode, symlink,
 gitlink and deletion included) and a file B also edited on top of A's change. For the paths
 that are not absorbed, rule 4 applies unchanged: the merge must equal main's change on them
