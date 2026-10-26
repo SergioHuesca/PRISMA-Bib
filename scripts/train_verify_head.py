@@ -31,7 +31,7 @@ Rules, all of which must hold for ``ok``:
      attribute-neutral merge-tree as rule f, one merge base, no conflicts). Rules d, e and f
      are then not needed. M is a deterministic function of the reviewed head and main, so no
      byte can be injected; whether the merged result is semantically right is left to the
-     required CI checks that run on the merged head (as for GitHub's update-branch). Checked
+     required CI checks that run on the merged head (as for GitHub's update-branch; if its merge differs, the tree differs and the head halts). Checked
      before any halt of d, e or f; a conflicting merge never passes g.
 
 Git runs with global and system config neutralised and the diff options pinned, so a

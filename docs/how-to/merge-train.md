@@ -57,7 +57,7 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
    conflict) and the two have a single merge base. Both sides may then edit the same file in
    different places: the usual case is every PR adding its own bullet to `CHANGELOG.md`.
    The content is a deterministic function of the reviewed head and main, so no byte can be
-   injected by the author. It is the same merge GitHub's "Update branch" produces.
+   injected by the author. It is usually the same merge GitHub's "Update branch" produces; if GitHub's differs by even one byte (for example through rename detection, which the verifier turns off), the verifier halts instead of passing.
 
    Caveat, stated plainly: rule 6 vouches for the bytes, not for the meaning. Two edits that
    merge cleanly can still be wrong together (for example a changed function and a new caller
