@@ -109,6 +109,19 @@ def test_reversal_confirmation_text__names_count_and_inclusion_or_unknown() -> N
     assert "unknown" in ui.reversal_confirmation_text(None)
 
 
+BANNED = {
+    "DecisionLog",
+    "AppendOnlyLog",
+    "registration_log",
+    "write_event",
+    "append_if",
+    "RegisterEvent",
+    "ReverseEvent",
+    "RegistrationRecord",
+    "reverse_registration",  # PR 4 adds it with reversal_impact
+}
+
+
 @pytest.mark.unit
 def test_view__imports_only_the_two_writers_and_reversal_impact() -> None:
     tree = ast.parse(Path(ui.__file__).read_text(encoding="utf-8"))
@@ -119,19 +132,19 @@ def test_view__imports_only_the_two_writers_and_reversal_impact() -> None:
         elif isinstance(node, ast.Import):
             imported.update({a.name: set() for a in node.names})
     names = set().union(*imported.values())
+    # A module import would let a banned writer in as an attribute (`registrations.write_event`).
+    whole = [n.names[0].name for n in ast.walk(tree) if isinstance(n, ast.Import)]
+    assert not [m for m in whole if m.startswith("prismabib")]
+    assert not names & {
+        "registrations",
+        "capture",
+        "importlib",
+    }  # `from prismabib.capture import registrations`
+    assert {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)} & BANNED == set()
+    assert not [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == "__import__"]
 
     # Panel is allowed solely for the widget layer (ADR 0035 PR 3); the log ban below stands.
-    assert not names & {
-        "DecisionLog",
-        "AppendOnlyLog",
-        "registration_log",
-        "write_event",
-        "append_if",
-        "RegisterEvent",
-        "ReverseEvent",
-        "RegistrationRecord",
-        "reverse_registration",  # PR 4 adds it with reversal_impact
-    }
+    assert not names & BANNED
     assert not [m for m in imported if m in ("prismabib.log", "prismabib.prisma.log")]
     # Of the registration module: the readers, the closed set, and the one writer the view calls.
     assert imported["prismabib.capture.registrations"] <= {

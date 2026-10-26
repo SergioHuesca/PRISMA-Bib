@@ -19,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import panel as pn
 import pytest
 from typer.testing import CliRunner
 
@@ -45,8 +46,15 @@ def _form(env: Env, cid: str, rule: str | None = None) -> ui.RegistrationForm:  
     form.candidate_select.value = cid
     if rule is not None:
         form.rule_select.value = rule
-    assert form.payload_select.value == PAYLOAD  # exactly one response offered
+    assert list(form.payload_select.options.values()) == [PAYLOAD]  # exactly one is offered
+    assert form.payload_select.value is None  # ...and never chosen for the reviewer
+    form.payload_select.value = PAYLOAD
     return form
+
+
+def _alert_text(form: ui.RegistrationForm) -> str:
+    """The alert markup without the per-attempt marker."""
+    return re.sub(r' data-attempt="\d+"', "", html.unescape(str(form.alert.object)))
 
 
 def _events(project: Project) -> list[dict[str, Any]]:
@@ -66,8 +74,23 @@ def _raw_digest(project: Project) -> str:
 
 
 @pytest.mark.integration
-def test_view__register_doi_match__appends_event_equal_to_cli(env: Env, tmp_path: Path) -> None:  # noqa: F811
-    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+@pytest.mark.parametrize(
+    ("year", "doi", "rule", "cli_extra"),
+    [
+        (2021, DOI_ONE, "doi", []),
+        (2021, None, "title_year", ["--match-rule", "title_year"]),
+        (2022, None, "near_confirmed", ["--match-rule", "near_confirmed", "--confirm-near"]),
+    ],
+)
+def test_view__register__appends_event_equal_to_cli(
+    env: Env,  # noqa: F811
+    tmp_path: Path,
+    year: int,
+    doi: str | None,
+    rule: str,
+    cli_extra: list[str],
+) -> None:
+    cid = env.candidate(TITLE_ONE, year, doi)
     other_root = tmp_path / "copy"
     shutil.copytree(env.project.root, other_root / "reg")
     other = Project.open("reg", root=other_root)
@@ -82,18 +105,22 @@ def test_view__register_doi_match__appends_event_equal_to_cli(env: Env, tmp_path
             "sh",
             "--payload",
             PAYLOAD,
+            *cli_extra,
             "--root",
             str(other_root),
         ],
     )
     form = _form(env, cid)
+    assert form.rule_select.value == rule
+    if rule == "near_confirmed":
+        form.tick(True)
     message = form.register()
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     (gui,) = load_registration_events(env.project.registrations_path)
     assert message.startswith("Registered ") and gui.record_id in message
     assert _events(env.project) == _events(other)
-    assert _events(env.project)[0]["match_rule"] == "doi"
+    assert _events(env.project)[0]["match_rule"] == rule
     # The refreshed form now shows the candidate as registered and unselectable.
     assert f"registered ({gui.record_id})" in str(form.candidate_table.object)
     assert not form.candidate_select.options
@@ -115,7 +142,7 @@ def test_view__register_near_without_confirmation__refused_and_log_unchanged(
     message = form.register()
 
     assert message == f"Refused: {writer.value}"
-    assert html.unescape(str(form.alert.object)) == f'<div role="alert">{message}</div>'
+    assert _alert_text(form) == f'<div role="alert">{message}</div>'
     assert env.snapshot() == before  # bytes and checksum sidecar
 
 
@@ -139,6 +166,7 @@ def test_view__near_confirmation__only_source_of_confirmed_near(
 
     form.rule_select.value = "doi"  # selection changes: the tick clears
     form.rule_select.value = "near_confirmed"
+    form.payload_select.value = PAYLOAD
     assert not form.near_checkbox.value and form.register_button.disabled
     form.tick(True)
     form.register()
@@ -248,7 +276,7 @@ def _refused_through_view(
     message = form.register()
 
     assert message == f"Refused: {writer.value}"
-    assert html.unescape(str(form.alert.object)) == f'<div role="alert">{message}</div>'
+    assert _alert_text(form) == f'<div role="alert">{message}</div>'
     assert env.snapshot() == before  # log bytes and checksum sidecar
     assert (before[0] is not None) == wrote_before
 
@@ -301,3 +329,57 @@ def test_view__second_registration_same_candidate__refused(env: Env) -> None:  #
 
     _refused_through_view(env, form, lambda: env.register(cid), wrote_before=True)
     assert len(load_registration_events(env.project.registrations_path)) == 1
+
+
+HOSTILE = "<script>alert(1)</script>\"'& *x* _y_ `z`"
+
+
+@pytest.mark.integration
+def test_view__candidates_with_one_year__stay_selectable_with_unique_labels(
+    env: Env,  # noqa: F811
+) -> None:
+    # candidate_id hashes the normalised title and year, so the same title and year (e.g. re-pasted
+    # with a DOI) is one candidate; distinct ids differ in title and so in label. The id prefix
+    # keeps labels unique regardless.
+    first = env.candidate(TITLE_ONE, 2021)
+    second = env.candidate(TITLE_ONE + " II", 2021, DOI_ONE)
+
+    form = ui.RegistrationForm(env.project, reviewer="sh")
+
+    assert set(form.candidate_select.options.values()) == {first, second}
+    assert all(
+        label.endswith(f"[{cid[:8]}]") for label, cid in form.candidate_select.options.items()
+    )
+
+
+@pytest.mark.integration
+def test_view__hostile_text__is_escaped_and_markdown_stays_literal(env: Env) -> None:  # noqa: F811
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    works = _works()
+    works[0]["title"] = f"{TITLE_ONE} {HOSTILE}"  # third-party text in the match table
+    env.write_run(works)
+    form = ui.RegistrationForm(env.project, reviewer=HOSTILE)
+    form.candidate_select.value = cid
+    form.payload_select.value = PAYLOAD
+    escaped = html.escape(HOSTILE)
+
+    # Rendered to the page: no raw markup, markdown characters kept literally.
+    assert form.view().objects[0].object.count(escaped) == 1  # header
+    assert escaped in str(form.match_pane.object)
+    assert escaped in str(form.confirm_pane.object)
+    form.alert.object = ui._alert_html(f"Refused: {HOSTILE}", 1)  # a writer message echoing input
+    assert escaped in str(form.alert.object)
+    for pane in (form.view().objects[0], form.match_pane, form.confirm_pane, form.alert):
+        assert "<script>" not in str(pane.object)
+    assert isinstance(form.confirm_pane, pn.pane.HTML)  # not Markdown, which would render *x*
+
+
+@pytest.mark.integration
+def test_view__identical_refusals__render_distinct_alert_objects(env: Env) -> None:  # noqa: F811
+    form = _form(env, env.candidate(TITLE_ONE, 2022))  # near without the tick: refused twice
+    form.register()
+    first = form.alert.object
+    form.register()
+
+    assert form.alert.object != first
+    assert _alert_text(form) == re.sub(r' data-attempt="\d+"', "", html.unescape(str(first)))

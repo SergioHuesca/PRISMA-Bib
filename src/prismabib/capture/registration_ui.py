@@ -262,9 +262,18 @@ def reversal_confirmation_text(impact: ReversalImpact | None) -> str:
 # -- the Panel view (widget layer; ADR 0035 sections 1, 3, 5, 6, 8, 10) --------------------------
 
 
-def _alert_html(text: str) -> str:
-    """The persistent alert region; ``role="alert"`` is what a screen reader announces."""
-    return f'<div role="alert">{html.escape(text)}</div>' if text else ""
+def _alert_html(text: str, attempt: int) -> str:
+    """The persistent alert region; ``role="alert"`` is what a screen reader announces.
+
+    ``attempt`` makes two identical refusals distinct objects, so the pane re-renders and the
+    live region announces the second one too.
+    """
+    return f'<div role="alert" data-attempt="{attempt}">{html.escape(text)}</div>' if text else ""
+
+
+def _paragraph_html(text: str) -> str:
+    """Escaped text as a paragraph: third-party titles and DOIs are never markup or markdown."""
+    return f"<p>{html.escape(text)}</p>" if text else ""
 
 
 def _match_html(table: MatchTable) -> str:
@@ -288,6 +297,7 @@ class RegistrationForm:
         self.project, self.reviewer = project, reviewer
         self.candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
         self.near = NearConfirmation()
+        self._attempts = 0
         self.views: dict[str, CandidateView] = {}
         self.options: dict[str, ResponseOption] = {}  # payload value -> option, for the rule
 
@@ -300,7 +310,7 @@ class RegistrationForm:
         self.near_checkbox = pn.widgets.Checkbox(
             name="I confirm this work is this candidate", visible=False
         )
-        self.confirm_pane = pn.pane.Markdown(name="Confirmation")
+        self.confirm_pane = pn.pane.HTML(name="Confirmation")
         self.register_button = pn.widgets.Button(name="Register")
         self.alert = pn.pane.HTML(name="Alert", sizing_mode="stretch_width")
 
@@ -351,7 +361,10 @@ class RegistrationForm:
         )
         keep = self.candidate_select.value
         self.candidate_select.options = {
-            f"{r.title} ({r.year})": r.candidate_id for r in rows if r.selectable
+            # Unique per candidate: same title and year can have several content-hash ids.
+            f"{r.title} ({r.year}) {r.doi or 'no DOI'} [{r.candidate_id[:8]}]": r.candidate_id
+            for r in rows
+            if r.selectable
         }
         if keep not in self.candidate_select.options.values():
             self.candidate_select.value = None
@@ -380,7 +393,10 @@ class RegistrationForm:
         self.payload_select.options = {
             f"{o.label} ({o.api_view}, HTTP {o.http_status})": o.value for o in found.options
         }
-        self.payload_select.value = found.options[0].value if len(found.options) == 1 else None
+        # Registration is the reviewer's act: a response is never chosen for them. Their own
+        # earlier choice survives a reload (e.g. after a refusal) while it is still offered.
+        if self.payload_select.value not in self.options:
+            self.payload_select.value = None
         self.payload_note.object = (
             f"{len(found.options)} response(s) offered; {found.unmatched} with no work or "
             f"several under this rule; {found.unreadable} unreadable."
@@ -401,7 +417,7 @@ class RegistrationForm:
         else:
             table = match_table(view, option.work, selection[2])
             self.match_pane.object = _match_html(table)
-            self.confirm_pane.object = register_confirmation_text(table)
+            self.confirm_pane.object = _paragraph_html(register_confirmation_text(table))
         self._sync_controls()
 
     def tick(self, checked: bool) -> None:
@@ -444,14 +460,19 @@ class RegistrationForm:
                 f"Registered {event.record_id} (event {event.event_id}). "
                 "It takes effect at the next build."
             )
-        self.alert.object = _alert_html(message)
+        self._attempts += 1
+        self.alert.object = _alert_html(message, self._attempts)
         self.reload()  # after any outcome, so the display matches the file
         return message
 
     def view(self) -> pn.viewable.Viewable:
         """The Register section, in reading order."""
         return pn.Column(
-            pn.pane.Markdown(f"## Register a candidate\n\nReviewer: **{self.reviewer}**"),
+            pn.pane.HTML(
+                "<h2>Register a candidate</h2>"
+                f"<p>Reviewer: <b>{html.escape(self.reviewer)}</b></p>",
+                name="Header",
+            ),
             self.alert,
             self.candidate_table,
             self.candidate_select,
