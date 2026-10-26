@@ -271,6 +271,17 @@ def test_numbers_and_methods__registered__agree(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_numbers_map__only_one_of_counts_and_orphans__raises(tmp_path: Path) -> None:
+    project = _project(tmp_path, scopus=2, slug="half")
+    counts = compute_flow_counts(project)
+
+    with pytest.raises(ValueError, match="both"):
+        numbers_map(project, counts=counts)
+    with pytest.raises(ValueError, match="both"):
+        numbers_map(project, orphans=[])
+
+
+@pytest.mark.integration
 def test_numbers_json__orphaned_decisions__text_key_matches_listing(tmp_path: Path) -> None:
     project = _project(tmp_path, scopus=2, slug="orphan-key")
     _register(project)

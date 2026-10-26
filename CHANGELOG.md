@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `numbers.json` keys `citations.registered_unavailable` (ADR 0029 Consequence 7) and
   `methods.registered_sentence` / `methods.orphaned_decisions_text` (ADR 0032 C8, ADR 0033 §3),
   usable as `{{...}}` placeholders; empty string when there is nothing to say. Golden key and
-  value snapshots re-baselined.
+  value snapshots re-baselined. **Breaking for templates: one new required key**,
+  `citations.registered_unavailable`; `fill` now treats the two `methods.*` keys as optional
+  (they may be left uncited).
 - `docs/methodology/limitations.md`: the registered-records limitations ADR 0032 requires;
   `prisma-mapping.md`: what reversal and supersession do to the counts.
 

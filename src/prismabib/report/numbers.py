@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from prismabib.bibliometrics.citations import citation_statistics
 from prismabib.bibliometrics.venues import top_venues
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts_with_orphans
-from prismabib.prisma.orphans import OrphanedDecision, project_orphaned_decisions
+from prismabib.prisma.orphans import OrphanedDecision
 from prismabib.report.methods import orphaned_decisions_text, registered_sentence
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
@@ -213,7 +213,7 @@ def numbers_map(
             log when omitted -- never read from a cache, so this cannot report
             a number the current store does not support.
         orphans: Pre-computed orphaned decisions, from the same snapshot as
-            ``counts``. Read from the project when omitted.
+            ``counts``. Supplied together with ``counts`` or not at all.
 
     Returns:
         A flat ``key -> scalar`` mapping, sorted by key. Sorted because the
@@ -221,6 +221,7 @@ def numbers_map(
         as a change to the numbers.
 
     Raises:
+        ValueError: If exactly one of ``counts`` and ``orphans`` is given.
         ValidationError: If any value is not a JSON scalar. Raised here
             rather than at write time so the offending key is named while the
             code that produced it is still on the stack.
@@ -228,13 +229,13 @@ def numbers_map(
     """
     from prismabib.errors import ValidationError
 
-    found: Sequence[OrphanedDecision] | None = orphans
-    if counts is None:
+    if (counts is None) != (orphans is None):
+        raise ValueError("pass both `counts` and `orphans` (one snapshot), or neither")
+    found: Sequence[OrphanedDecision]
+    if counts is None or orphans is None:
         resolved, found = compute_flow_counts_with_orphans(project)
     else:
-        resolved = counts
-    if found is None:
-        found = project_orphaned_decisions(project)
+        resolved, found = counts, orphans
     numbers: dict[str, Any] = dict(_flow_numbers(resolved))
     numbers["criteria.version"] = project.criteria.version
 

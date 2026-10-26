@@ -317,8 +317,10 @@ not an automation exclusion and must not be presented as one.
 
 Reversing a registration, or a Scopus record superseding it, removes that record from `S_raw`.
 Its current decisions stay in `decisions.jsonl` but are **orphaned**: they are not folded into
-any count, and they are listed (count, `record_id`, stage, reason) in the methods text and
-beside the diagram, never as a `FlowCounts` field
+any count. The diagram footnote shows only their count; the methods text
+(`methods.orphaned_decisions_text`) lists each one with `event_id`, `record_id`, stage and
+decision. The reason is always `record not in S_raw`: nothing yet records whether a
+reversal or a supersession removed the record. Orphans are never a `FlowCounts` field
 ([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md) §3).
 What the counts then do, as the code behaves:
 
@@ -331,8 +333,8 @@ What the counts then do, as the code behaves:
 - Equation 1 still closes: `identified` and the Scopus side of `S_raw` move together, and
   `registered` falls by the superseded registration.
 
-The published `included` can thus fall after a draft quoted it; the build lists each such
-event.
+The published `included` can thus fall after a draft quoted it. Compare the orphan listing
+in the methods text with the draft.
 
 ### When equation 1 does not close
 

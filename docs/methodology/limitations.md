@@ -56,9 +56,10 @@ These records differ from Scopus records, and a review that registers any must s
 - **No authors, affiliations or keywords.** Registrations carry none in this version, so
   they contribute no country, keyword or network node, and the screening view shows title,
   abstract and venue only.
-- **No language filter.** A registration's `language` is NULL and passes the language filter,
-  as every stored Scopus record does in the measured stores; the filter excludes nothing in
-  either population.
+- **Language filter.** A registration's `language` is NULL and passes the language filter.
+  In the two stores ADR 0032 measured, every stored Scopus record also has `language` NULL, so
+  the filter excluded nothing there; that is true of those stores only. A Scopus record with a
+  language set can still be excluded by it.
 - **Asymmetric subject-area filter.** Most Scopus records carry no subject rows and pass the
   subject-area filter; a registered record always carries one and is filtered by it.
 - **Conference whitelist.** Scopus records with no `venue_id` pass the whitelist; a

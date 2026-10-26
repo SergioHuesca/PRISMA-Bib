@@ -61,9 +61,9 @@ ls -lh projects/demo-talk/exports/figures/
 
 **Read this whole step before writing anything.** The obvious short paragraph does not work, and finding that out on stage is the worst possible moment.
 
-`prismabib fill` fails in *both* directions: on a key your manuscript cites that `numbers.json` does not define, **and on a key `numbers.json` defines that your manuscript never cites**. A four-line paragraph cites four keys out of thirty-three, so it exits non-zero with a wall of twenty-nine "unused key" names — before you have had a chance to demonstrate anything.
+`prismabib fill` fails in *both* directions: on a key your manuscript cites that `numbers.json` does not define, **and on a key `numbers.json` defines that your manuscript never cites**. A four-line paragraph cites four keys out of the forty-one required ones (`numbers.json` has 43 keys; the two optional `methods.*` snippet keys may be left uncited), so it exits non-zero with a wall of thirty-seven "unused key" names — before you have had a chance to demonstrate anything.
 
-That is the contract working as designed (a number that stopped being cited may have had its claim edited away with it), but it means **your demo manuscript must cite every key in `numbers.json`.**
+That is the contract working as designed (a number that stopped being cited may have had its claim edited away with it), but it means **your demo manuscript must cite every key in `numbers.json` except the optional `methods.registered_sentence` and `methods.orphaned_decisions_text`.** `citations.registered_unavailable` is required.
 
 Two ways to handle it, and the second is better theatre:
 
@@ -73,7 +73,7 @@ Two ways to handle it, and the second is better theatre:
 python -c "import json,sys; sys.stdout.write(chr(10).join(sorted(json.load(open('projects/demo-talk/exports/numbers.json')))))"
 ```
 
-Then save something like this as `paper-draft.md` (this version cites exactly the 33 keys a Stage 10 export produces):
+Then save something like this as `paper-draft.md` (this version cites exactly the 41 required keys a Stage 10 export of the reference corpus produces):
 
 ```markdown
 ## Methods (excerpt)
@@ -101,10 +101,18 @@ The {{corpus.size}} records span {{corpus.year_min}}-{{corpus.year_max}}
 
 Citation counts were available for {{citations.records_with_a_snapshot}} records,
 totalling {{citations.total}} citations, with a median of {{citations.median}} and a
-maximum of {{citations.max}}.
+maximum of {{citations.max}}; {{citations.registered_unavailable}} registered records
+have no citation count available.
+
+{{flow.registered}} records were registered from other methods. Automated exclusions by
+reason: document type {{flow.excluded_automated.doc_type}}, subject area
+{{flow.excluded_automated.subject_area}}, venue {{flow.excluded_automated.venue}}, year
+{{flow.excluded_automated.year}}. Full-text exclusions: inaccessible
+{{flow.excluded_fulltext.INACCESSIBLE}}, not primary research
+{{flow.excluded_fulltext.NOT_PRIMARY_RESEARCH}}.
 ```
 
-**Or** make the failure the first beat of the demo deliberately: run `fill` with a short paragraph, let it fail, and say *"it refuses because my paper stopped citing twenty-nine numbers the export still produces — that is the drift it exists to catch"*. Then show the complete version passing. This is more convincing than a clean run, because the audience sees the guard fire rather than being told it exists.
+**Or** make the failure the first beat of the demo deliberately: run `fill` with a short paragraph, let it fail, and say *"it refuses because my paper stopped citing thirty-seven numbers the export still produces — that is the drift it exists to catch"*. Then show the complete version passing. This is more convincing than a clean run, because the audience sees the guard fire rather than being told it exists.
 
 Whichever you choose, **rehearse it**. Confirm the passing version exits zero and the broken version exits non-zero, on the machine you will present from.
 

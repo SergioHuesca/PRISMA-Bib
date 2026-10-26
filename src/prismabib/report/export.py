@@ -342,7 +342,7 @@ def export_project(project: Project) -> ExportResult:
 
     root = project.root / "exports"
     _clear_stale_artefacts(root)
-    numbers = numbers_map(project, counts=counts)
+    numbers = numbers_map(project, counts=counts, orphans=orphans)
     manifest = _build_manifest(project, counts)
 
     if manifest["dirty"]:
