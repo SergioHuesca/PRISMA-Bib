@@ -120,14 +120,14 @@ warning is the one confirmation: there is no second dialog."
 
 **What is true.** The refusal `needs the reviewer's confirmation` cannot be reached by a click on Register. The button is
 disabled until the reviewer ticks the box (`RegistrationForm._sync_controls`, `registration_ui.py` lines 437-441). The
-view test clears the tick and calls `form.register()` directly. That is the case the mutation targets, a view that
+view test never ticks the box and calls `form.register()` directly. That is the case the mutation targets, a view that
 passes `confirmed_near=True` regardless of the box. The writer's check is tested at
 `tests/integration/capture/test_registrations.py` lines 387-394, and it still applies if the view is driven some other
 way. The how-to already says of this refusal: "you should not normally see this" (its refusal list, lines 114-116).
 
 **Authority.** `src/prismabib/capture/registrations.py` (the writer's check) and `registration_ui.py` (the disabled button).
 
-### Correction 5: the alert is a Panel HTML pane with `role="alert"`, not an Alert widget
+### Correction 5: the alert is a Panel HTML pane with `role="alert"`, not a `pn.pane.Alert`
 
 **Old text.** ADR 0035 §10, the accessibility bullet (line 224-225):
 
@@ -139,9 +139,9 @@ way. The how-to already says of this refusal: "you should not normally see this"
 The counter makes two identical refusals two different objects, so the pane re-renders and a screen reader announces
 the second one too. The test `test_view__identical_refusals__render_distinct_alert_objects` checks this. The choice of
 the HTML pane follows from a comment in `tests/integration/capture/test_registration_view.py` (lines 255-256), which says
-that Panel's `Alert` widget renders no `role` attribute in the pinned version. The pinned version is Panel 1.9.4
-(`uv.lock`). This record takes that comment as the source. I did not render Panel to confirm the `Alert` claim in this
-session.
+that Panel's alert renders no `role` attribute in the pinned version. The pinned version is Panel 1.9.4 (`uv.lock`).
+Confirmed by rendering on Panel 1.9.4: `pn.pane.Alert` (there is no `pn.widgets.Alert`) emits no `role` and no `aria`
+attribute, while `pn.pane.HTML('<div role="alert">')` keeps the `role` attribute.
 
 **Authority.** `src/prismabib/capture/registration_ui.py` (lines 268-274 and 318) and the rendered-HTML tests in
 `tests/integration/capture/test_registration_view.py` (lines 246-258 and 731).
@@ -215,7 +215,7 @@ It could not be checked without git or network, and no accepted record states it
 4. **Correction 4 (ADR 0035 §11).** The near-match refusal is the writer's, and the disabled button keeps the GUI from
    reaching it. The view test drives the refusal by calling the form directly.
 5. **Correction 5 (ADR 0035 §10).** The alert is a `pn.pane.HTML` carrying `role="alert"` and a `data-attempt` counter.
-   The reason is the `Alert` widget's missing role, as the test comment states.
+   The reason is that `pn.pane.Alert` renders no role (confirmed on Panel 1.9.4, as the test comment states).
 6. **Correction 6 (ADR 0035 Consequence 6).** The how-to has a CLI section. No separate CLI how-to was needed or existed.
 7. **Correction 7 (ADR 0032 Context).** `_SELECT` is at `src/prismabib/sources/openalex.py` lines 56-59, and it carries the
    three registration fields.
@@ -231,13 +231,13 @@ It could not be checked without git or network, and no accepted record states it
    in the frozen records.
 2. `mkdocs.yml` gains a navigation entry for this record, after the entry for ADR 0035, as the ADR 0034 entry does.
 3. No CHANGELOG bullet is added. The Unreleased section has no entry for ADR 0034, which is the errata record before this
-   one, so the in-repository evidence is that an ADR-only errata record did not add one. The `git log -p -S` check was not
-   run, because no shell was available.
+   one, so the in-repository evidence is that an ADR-only errata record did not add one.
 4. **Not corrected here.** Two statements that are not corrected by this record were seen during verification.
    (a) [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md) §3 says that the reason for an orphan is
    "a reversal or a supersession" where one applies. `docs/methodology/prisma-mapping.md` (lines 322-323) says that the
-   reason is always "record not in S_raw", because nothing records which event removed the record. The code was not read
-   for this point, so it is not decided here. (b) The test names in [ADR 0035](0035-gui-registration-of-candidates.md)
+   reason is always "record not in S_raw", because nothing records which event removed the record. `orphans.py` (lines
+   26-30) defines a literal of three reasons, but `project_orphaned_decisions` uses only the default, so the code agrees
+   with the document and ADR 0033 §3 overstates. This record states the finding and does not otherwise change a rule. (b) The test names in [ADR 0035](0035-gui-registration-of-candidates.md)
    §11 differ from the implemented names, and the view refusal test is split into four. These are naming differences and
    no rule changes.
 
