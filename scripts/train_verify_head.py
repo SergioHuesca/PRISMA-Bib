@@ -39,18 +39,30 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from train_step import clean_text
 
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
-_ENV = {
-    **os.environ,
-    "GIT_CONFIG_GLOBAL": os.devnull,
-    "GIT_CONFIG_NOSYSTEM": "1",
-    "GIT_TERMINAL_PROMPT": "0",
-}
+# Owned and empty: git reads $XDG_CONFIG_HOME/git/attributes (default ~/.config/git/attributes)
+# whatever GIT_ATTR_SOURCE says, so point it somewhere with no attributes.
+_EMPTY_XDG = tempfile.TemporaryDirectory(prefix="train-verify-xdg-")
+
+
+def _env() -> dict[str, str]:
+    """The pinned environment of every git call, built per call from the current one."""
+    return {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_ATTR_NOSYSTEM": "1",
+        "XDG_CONFIG_HOME": _EMPTY_XDG.name,
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+
 # Merge attributes (`merge=union`, `-merge`, ...) are PR-controlled and would change the merged
 # tree: read attributes from the empty tree, so no .gitattributes anywhere is consulted.
 _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # pragma: allowlist secret
@@ -78,7 +90,7 @@ class GitError(RuntimeError):
 
 
 def _git(*args: str) -> bytes:
-    proc = subprocess.run(["git", *_OPTS, *args], env=_ENV, capture_output=True, check=False)
+    proc = subprocess.run(["git", *_OPTS, *args], env=_env(), capture_output=True, check=False)
     if proc.returncode != 0:
         raise GitError(f"git {args[0]} failed: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout
@@ -87,7 +99,7 @@ def _git(*args: str) -> bytes:
 def _is_ancestor(a: str, b: str) -> bool:
     proc = subprocess.run(
         ["git", *_OPTS, "merge-base", "--is-ancestor", a, b],
-        env=_ENV,
+        env=_env(),
         capture_output=True,
         check=False,
     )
@@ -99,7 +111,7 @@ def _is_ancestor(a: str, b: str) -> bool:
 def _exists(sha: str) -> bool:
     proc = subprocess.run(
         ["git", *_OPTS, "cat-file", "-e", f"{sha}^{{commit}}"],
-        env=_ENV,
+        env=_env(),
         capture_output=True,
         check=False,
     )
@@ -150,7 +162,7 @@ def _merged_tree(p: str, s: str, mb: str) -> str | None:
     proc = subprocess.run(
         ["git", *_OPTS, "-c", "merge.renames=false", "-c", f"core.attributesFile={os.devnull}",
          "merge-tree", "--write-tree", f"--merge-base={mb}", p, s],
-        env={**_ENV, "GIT_ATTR_SOURCE": _EMPTY_TREE}, capture_output=True, check=False,
+        env={**_env(), "GIT_ATTR_SOURCE": _EMPTY_TREE}, capture_output=True, check=False,
     )  # fmt: skip
     if proc.returncode == 1:
         return None

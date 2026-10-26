@@ -537,3 +537,88 @@ def test_git_version_below_minimum__raises(monkeypatch: pytest.MonkeyPatch, repo
     )
     with pytest.raises(_module.GitError, match=r"2\.40"):
         verify("a" * 40, "b" * 40)
+
+
+@pytest.mark.integration
+def test_attributes__hostile_xdg_attributes__halts(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Redundant with core.attributesFile=devnull (which replaces the XDG default), so the
+    # XDG neutralisation is belt and braces: removing only one of them does not fail this.
+    xdg = tmp_path / "xdg"
+    (xdg / "git").mkdir(parents=True)
+    (xdg / "git" / "attributes").write_text("* merge=union\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    r, evil = _attr_repo(repo, {}, {})
+    _halts(verify(r, evil), "")
+    assert "omits" in str(verify(r, evil)["reason"]) or "overlaps" in str(verify(r, evil)["reason"])
+
+
+@pytest.mark.integration
+def test_attributes__repo_config_attributesfile__halts(repo: Path, tmp_path: Path) -> None:
+    # Only the -c core.attributesFile override stops this: the setting is in the repo config.
+    hostile = tmp_path / "hostile-attributes"
+    hostile.write_text("* merge=union\n")
+    _git(repo, "config", "core.attributesFile", str(hostile))
+    r, evil = _attr_repo(repo, {}, {})
+    assert verify(r, evil)["ok"] is False
+
+
+@pytest.mark.integration
+def test_attributes__merge_tree_env_is_pinned(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A system-wide gitattributes cannot be written in a test; assert the switch is set instead.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "hostile"))
+    seen: list[dict[str, str]] = []
+    real = subprocess.run
+
+    def spy(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if "merge-tree" in cmd:
+            seen.append(kwargs["env"])
+            assert "core.attributesFile=" + os.devnull in cmd
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", spy)
+    r, evil = _attr_repo(repo, {}, {})
+    verify(r, evil)
+    assert seen
+    for env in seen:
+        assert env["GIT_ATTR_NOSYSTEM"] == "1"
+        assert (
+            env["GIT_ATTR_SOURCE"] == "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        )  # pragma: allowlist secret
+        assert env["XDG_CONFIG_HOME"] != str(tmp_path / "hostile")
+
+
+def _criss_cross(repo: Path, s_extra: Change) -> tuple[str, str, Entries]:
+    """P = merge(X, Y) + pr.txt and S = merge(Y, X) + s_extra: two merge bases, X and Y."""
+    m0 = _mkcommit(repo, {b"a.txt": _f("a\n")})
+    x = _mkcommit(repo, {b"a.txt": _f("a\n"), b"x.txt": _f("x\n")}, m0)
+    y = _mkcommit(repo, {b"a.txt": _f("a\n"), b"y.txt": _f("y\n")}, m0)
+    both: Entries = {b"a.txt": _f("a\n"), b"x.txt": _f("x\n"), b"y.txt": _f("y\n")}
+    p_entries = {**both, b"pr.txt": _f("pr\n")}
+    p = _mkcommit(repo, p_entries, x, y)
+    s = _mkcommit(repo, _apply(both, s_extra), y, x)
+    _git(repo, "update-ref", "refs/remotes/origin/main", s)
+    assert len(_git(repo, "merge-base", "--all", p, s).split()) == 2
+    return p, s, p_entries
+
+
+@pytest.mark.integration
+def test_criss_cross__legitimate_update__ok_and_evil_merges_halt(repo: Path) -> None:
+    p, s, p_entries = _criss_cross(repo, {b"z.txt": _f("main z\n")})
+    legit = _mkcommit(repo, {**p_entries, b"z.txt": _f("main z\n")}, p, s)
+    assert verify(p, legit) == {"ok": True}
+    dropped = _mkcommit(repo, p_entries, p, s)  # forgets main's z.txt
+    assert verify(p, dropped)["ok"] is False
+    extra = _mkcommit(repo, {**p_entries, b"z.txt": _f("main z\n"), b"evil": _f("e\n")}, p, s)
+    assert verify(p, extra)["ok"] is False
+
+
+@pytest.mark.integration
+def test_criss_cross__nothing_new_on_main__only_exact_tree_ok(repo: Path) -> None:
+    p, s, p_entries = _criss_cross(repo, {})
+    assert verify(p, _mkcommit(repo, p_entries, p, s)) == {"ok": True}
+    evil = _mkcommit(repo, {**p_entries, b"evil": _f("e\n")}, p, s)
+    assert verify(p, evil)["ok"] is False
