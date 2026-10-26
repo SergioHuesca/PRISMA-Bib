@@ -16,6 +16,7 @@ import io
 import re
 import shutil
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prismabib.capture import registration_ui as ui
+from prismabib.capture.candidates import CandidateEvent, CandidateRow
 from prismabib.capture.registrations import RegistrationRefusal, load_registration_events
 from prismabib.cli import app
 from prismabib.errors import ValidationError
@@ -358,10 +360,20 @@ def test_view__hostile_text__is_escaped_and_markdown_stays_literal(env: Env) -> 
     works = _works()
     works[0]["title"] = f"{TITLE_ONE} {HOSTILE}"  # third-party text in the match table
     env.write_run(works)
+    env.candidates.add(
+        CandidateEvent.from_row(
+            CandidateRow(title=HOSTILE, year=2020, doi=None),
+            reviewer=HOSTILE,
+            pasted_at=datetime(2026, 10, 22, tzinfo=UTC),
+        )
+    )
     form = ui.RegistrationForm(env.project, reviewer=HOSTILE)
     form.candidate_select.value = cid
     form.payload_select.value = PAYLOAD
     escaped = html.escape(HOSTILE)
+
+    table = str(form.candidate_table.object)  # title and pasting reviewer of the hostile row
+    assert table.count(escaped) == 2 and "<script>" not in table
 
     # Rendered to the page: no raw markup, markdown characters kept literally.
     assert form.view().objects[0].object.count(escaped) == 1  # header
@@ -383,3 +395,46 @@ def test_view__identical_refusals__render_distinct_alert_objects(env: Env) -> No
 
     assert form.alert.object != first
     assert _alert_text(form) == re.sub(r' data-attempt="\d+"', "", html.unescape(str(first)))
+
+
+def _picked(env: Env, cid: str) -> ui.RegistrationForm:  # noqa: F811
+    form = ui.RegistrationForm(env.project, reviewer="sh")
+    form.candidate_select.value = cid
+    form.payload_select.value = PAYLOAD
+    assert not form.register_button.disabled or form.rule_select.value == "near_confirmed"
+    return form
+
+
+@pytest.mark.integration
+def test_view__response_choice__survives_a_reload_for_same_candidate_and_rule(
+    env: Env,  # noqa: F811
+) -> None:
+    form = _picked(env, env.candidate(TITLE_ONE, 2021, DOI_ONE))
+
+    form.reload()
+
+    assert form.payload_select.value == PAYLOAD and not form.register_button.disabled
+
+
+@pytest.mark.integration
+def test_view__response_choice__cleared_on_candidate_change(env: Env) -> None:  # noqa: F811
+    a = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    b = env.candidate(TITLE_ONE, 2022)  # the same response is offered for it too
+    form = _picked(env, a)
+
+    form.candidate_select.value = b
+
+    assert PAYLOAD in form.payload_select.options.values()
+    assert form.payload_select.value is None and form.register_button.disabled
+
+
+@pytest.mark.integration
+def test_view__response_choice__cleared_on_rule_change(env: Env) -> None:  # noqa: F811
+    # DOI matches and the same title has another year: `doi` and `near_confirmed` both offer it.
+    form = _picked(env, env.candidate(TITLE_ONE, 2022, DOI_ONE))
+    assert form.rule_select.value == "doi"
+
+    form.rule_select.value = "near_confirmed"
+
+    assert PAYLOAD in form.payload_select.options.values()
+    assert form.payload_select.value is None and form.register_button.disabled

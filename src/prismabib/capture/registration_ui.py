@@ -10,7 +10,7 @@ ADR 0035 PR 4.
 from __future__ import annotations
 
 import html
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final, cast
@@ -314,8 +314,8 @@ class RegistrationForm:
         self.register_button = pn.widgets.Button(name="Register")
         self.alert = pn.pane.HTML(name="Alert", sizing_mode="stretch_width")
 
-        self.candidate_select.param.watch(lambda _e: self._on_candidate(), "value")
-        self.rule_select.param.watch(lambda _e: self._refresh_payloads(), "value")
+        self.candidate_select.param.watch(lambda _e: self._on_change(self._on_candidate), "value")
+        self.rule_select.param.watch(lambda _e: self._on_change(self._refresh_payloads), "value")
         self.payload_select.param.watch(lambda _e: self._on_selection(), "value")
         self.near_checkbox.param.watch(lambda e: self.tick(bool(e.new)), "value")
         self.register_button.on_click(self._on_register)
@@ -369,6 +369,11 @@ class RegistrationForm:
         if keep not in self.candidate_select.options.values():
             self.candidate_select.value = None
         self._on_candidate()
+
+    def _on_change(self, then: Callable[[], None]) -> None:
+        """A new candidate or rule: the reviewer's response choice does not carry over."""
+        self.payload_select.value = None
+        then()
 
     def _candidate(self) -> CandidateView | None:
         return self.views.get(self.candidate_select.value or "")
