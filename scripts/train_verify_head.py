@@ -15,6 +15,15 @@ Rules, all of which must hold for ``ok``:
      ``git diff MB S`` (MB = merge-base of P and S), both with --binary --full-index;
   e. if the PR and main edited the same file the two diffs differ; that is reported as an
      overlap and needs a fresh review (fail closed).
+  f. stacked PRs: a path that main changed (MB..S) but whose change P already holds is
+     ABSORBED, e.g. the parent PR's own commits after the parent was squash-merged. "Holds"
+     means git's own path-wise merge of P and S (merge-tree, renames off, MB pinned) yields
+     P's entry there: P equals S, or S's hunks are all already in P (the child also edits the
+     parent's file). Rule d then applies to the REMAINING paths only: the raw diff of P
+     against M must be exactly main's raw diff restricted to them (so M equals P on every
+     absorbed path and equals S on the rest). Rule e is checked on the remaining paths. If
+     that merge conflicts, only paths where P equals S are absorbed. With no absorbed path,
+     d and e are unchanged.
 
 Git runs with global and system config neutralised and the diff options pinned, so a
 machine's git settings cannot change the result.
@@ -99,6 +108,38 @@ def _changed_paths(a: str, b: str) -> set[bytes]:
     return set(filter(None, _git("diff", "--name-only", "-z", "--no-renames", a, b).split(b"\0")))
 
 
+def _raw(a: str, b: str) -> dict[bytes, bytes]:
+    """path -> ``:oldmode newmode oldsha newsha status`` for every difference of two trees. Full
+    object ids and modes, so equal records mean equal content (a gitlink too). Compared in
+    Python, not through a pathspec: ``git diff`` has no --pathspec-from-file, and a path list
+    on argv has a length limit and pathspec magic."""
+    out = _git(
+        "diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--no-ext-diff",
+        "--ignore-submodules=none", a, b,
+    ).split(b"\0")  # fmt: skip
+    if out and out[-1] == b"":
+        out.pop()
+    if len(out) % 2:
+        raise GitError("unexpected git diff --raw output")
+    return {out[i + 1]: out[i] for i in range(0, len(out), 2)}
+
+
+def _merged_tree(p: str, s: str, mb: str) -> str | None:
+    """The tree of git's own merge of P and S on base MB, or None if it has conflicts.
+    Writes tree objects (no refs). Renames off, so the merge is path-wise like _raw."""
+    proc = subprocess.run(
+        ["git", *_OPTS, "-c", "merge.renames=false", "merge-tree", "--write-tree",
+         f"--merge-base={mb}", p, s],
+        env=_ENV, capture_output=True, check=False,
+    )  # fmt: skip
+    if proc.returncode == 1:
+        return None
+    tree = proc.stdout.splitlines()[0].decode() if proc.stdout else ""
+    if proc.returncode != 0 or not _SHA_RE.fullmatch(tree):
+        raise GitError(f"merge-tree failed: {proc.stderr.decode(errors='replace').strip()}")
+    return tree
+
+
 def _halt(reason: str) -> dict[str, object]:
     return {"ok": False, "reason": clean_text(reason, limit=300)}
 
@@ -129,12 +170,24 @@ def verify(reviewed: str, head: str, main: str = "origin/main") -> dict[str, obj
         if not _is_ancestor(s, main):
             return _halt(f"commit {m[:12]} merges {s[:12]}, which is not on main")
         mb = _git("merge-base", p, s).decode().strip()
-        if _diff(p, m) == _diff(mb, s):
-            continue
-        overlap = _changed_paths(mb, p) & _changed_paths(mb, s)
+        main_raw = _raw(mb, s)
+        # Rule f: paths main changed whose change P already holds.
+        merged = _merged_tree(p, s, mb)
+        absorbed = set(main_raw) - set(_raw(p, merged or s))
+        if absorbed:
+            remaining = {k: v for k, v in main_raw.items() if k not in absorbed}
+            if _raw(p, m) == remaining:
+                continue
+            overlap = _changed_paths(mb, p) & set(remaining)
+        else:
+            if _diff(p, m) == _diff(mb, s):
+                continue
+            overlap = _changed_paths(mb, p) & _changed_paths(mb, s)
         if overlap:
             return _halt("update overlaps the PR's own edits: needs a fresh review")
-        return _halt(f"merge {m[:12]} adds changes that main does not contain")
+        return _halt(
+            f"merge {m[:12]} adds changes that main does not contain or omits main's change"
+        )
     return {"ok": True}
 
 
