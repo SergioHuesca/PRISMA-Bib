@@ -63,8 +63,9 @@ from the reviewer who registered; to reverse under another name, open the view w
 
 4. **Pick the captured OpenAlex response** from **Captured OpenAlex response**. Each entry
    reads `<run>/response-NNNN (<api view>, HTTP <status>)`. The list holds only responses
-   in which **exactly one** work satisfies the chosen rule. If there is only one, the view
-   selects it for you.
+   in which **exactly one** work satisfies the chosen rule. You always choose the response
+   yourself; the view never selects one for you, and the choice is cleared when you change
+   the candidate or the rule.
 
    Responses that were not offered are counted, not hidden. The line under the select
    reads, for example, `2 response(s) offered; 1 with no work or several under this rule; 0
@@ -83,7 +84,7 @@ from the reviewer who registered; to reverse under another name, open the view w
    when it applies.
 8. **Click Register.** Success shows, in the alert region:
 
-   > Registered registered:<event id> (event <event id>). It takes effect at the next build.
+   > Registered registered:<event id> (event <event id>). It takes effect at the next `prismabib build <slug> --rebuild`.
 
    The candidates table then shows the candidate as `registered (...)`, and it leaves the
    Candidate select. The Reverse section gains the new registration at once.
@@ -153,8 +154,8 @@ to the rules, which needs an ADR, not a change to this page.
 5. **Click Reverse.** The click after the warning is the one confirmation: there is no second
    dialog. Success shows:
 
-   > Reversed <register event id> (event <event id>). It takes effect at the next build; the
-   > decisions stay in decisions.jsonl.
+   > Reversed <register event id> (event <event id>). It takes effect at the next
+   > `prismabib build <slug> --rebuild`; the decisions stay in decisions.jsonl.
 
    Reverse is disabled until a reason is picked and, for `other`, a note is entered. A refusal
    that gets past the disabled button reads `Refused: ...` and writes nothing. For example, the
@@ -166,7 +167,7 @@ file, and the register event stays in place. To correct a wrong DOI or title, re
 registration and then register the candidate again, as the **Correcting a registration** note
 in the view says. A candidate that has been reversed is selectable again.
 
-## After a change: the figures move at the next build
+## After a change: the figures move at the next rebuild
 
 A successful Register or Reverse appends one event to `decisions/registrations.jsonl` and
 rewrites its checksum sidecar. Nothing else changes: the raw captures and `decisions.jsonl` are
@@ -187,7 +188,7 @@ uv run prismabib build my-review --rebuild
 uv run prismabib flow my-review
 ```
 
-The success messages say "takes effect at the next build". Until you rebuild, the flow diagram
+The success messages say "takes effect at the next `prismabib build <slug> --rebuild`". Until you rebuild, the flow diagram
 still shows the numbers from before the change, as it does after a command-line registration.
 
 ## The same writer on the command line
@@ -230,8 +231,8 @@ What this does not establish:
     `screener()` installs a listener for keystrokes on the whole page, not only on its own
     cell. It is active on any page that holds the screener, including a cell that holds
     `registration_view`. While a Register or Reverse button has focus, pressing `i`, `e`, `u`,
-    `n`, `p` or `z` can then act as a screening key, and a stray `i` or `e` appends a screening
-    decision to `decisions.jsonl`.
+    `n`, `p` or `z` can then act as a screening key, a stray `i` appends an include decision to
+    `decisions.jsonl`, and `e` followed by a digit appends an exclude.
 
     Run the two views in separate notebooks, or in separate tabs under `panel serve`. Each
     served page has its own listener. The registration view binds no keys, so it does not
