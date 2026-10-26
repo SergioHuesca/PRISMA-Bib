@@ -8,7 +8,7 @@ This page covers the repository workflow only; it is not part of the research pi
 
 | Label | Meaning |
 |---|---|
-| `train:N` (N = 1 to 3 digits) | Position in a batch. The lowest N among open PRs is the head. Inert until the train starts. |
+| `train:N` (N = 1 to 3 digits) | Position in a batch, not a priority. N is unique within the batch and the numbers are consecutive. The lowest N among open PRs is the head. Two PRs with the same N halt the train. Inert until the train starts. |
 | `reviewed:<40 hex>` | The reviewed head commit: the exact commit whose content the reviewer approved. Exactly one per batch PR. |
 | `train:halted` | Set by the workflow on the head when it stops. While any open PR carries it, every run does nothing. |
 
@@ -64,8 +64,8 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
    in another place). The required CI checks, which run on the merged head before the train
    merges it, are the semantic gate. A merge that conflicts, differs from git's merge by one
    byte, has two merge bases (a criss-cross history), or was hand-resolved still halts. Two
-   PRs inserting a bullet at the very same place conflict: move one bullet, or resolve by hand
-   and relabel.
+   PRs inserting a bullet at the same place, or on adjacent lines, conflict: move one bullet,
+   or resolve by hand and relabel.
 
 Git runs with global and system config disabled and diff options pinned, so a machine's git
 settings do not change the result. Any git failure, or a fetch failure, halts the head.
@@ -74,36 +74,82 @@ pointer (gitlink) added or bumped by a merge is a change, even when `.gitmodules
 `ignore = all`. A shallow clone that cannot compute merge bases halts; it is never ok.
 
 A reviewer-approved head stays valid through clean main updates, including the absorption of
-a merged parent PR (next section). Any other change to the
+a merged parent PR (see "Stacked PRs" below). Any other change to the
 PR, and any overlap with main, needs a fresh review and a new `reviewed:` label.
 
-## Stacked PRs: a sprint of dependent PRs in one batch
+## Stacked PRs: what works and what halts
 
-Build the stack by branching B from A's branch, and open both PRs against `main` (not
-against A's branch). Label them `train:1` (A) and `train:2` (B) and give each its own
-`reviewed:<sha>`. Review each PR on its own delta: B's reviewer reads `git diff A..B`, not
+A stacked PR is cut from another batch PR's branch. Build it by branching B from A's branch,
+and open both PRs against `main`, not against A's branch. Label them `train:1` (A) and
+`train:2` (B) and give each its own `reviewed:<sha>`. B's reviewer reads `git diff A..B`, not
 A's changes again. A stacked branch must contain A's final head, so push no further commit to
 A after B was cut.
 
-What the train does: A reaches the head, is verified and squash-merged. B becomes the head and
-is now `BEHIND` (main has A's squash, B has A's commits). The train updates B from main. That
-merge brings in nothing new for the paths A touched, because B already holds them. The
-verifier calls those paths **absorbed**: a path main changed whose change the PR head already
-holds. Git's own path-wise merge of the PR head and main (renames off, merge base pinned, `.gitattributes` and merge drivers ignored; needs git 2.40 or later, older halts) must
-yield the head's entry there. That covers a file identical on both sides (mode, symlink,
-gitlink and deletion included) and a file B also edited on top of A's change. For the paths
-that are not absorbed, rule 4 applies unchanged: the merge must equal main's change on them
-byte for byte, and rule 5 halts on overlap. So an update that also brings an unrelated commit
-from main verifies exactly, and an update that drops or alters main's change, or adds a byte,
-halts. After the update the squash of B is B's own delta on top of main, with the head's tree.
-Three or more deep stacks work the same way, one parent at a time.
+Squash-merging A puts A's change on `main` under a commit that B does not contain. The update
+of B from main (GitHub's "Update branch", or the train) then has to reconcile two copies of A's
+change. Whether that works depends on where B's edits are.
 
-Still halts, by design: B edits the same lines as A (the merge conflicts, `DIRTY`); A changed
-after B was cut (B holds an older A, so the paths differ and count as an overlap); main
-changed a path B holds differently. Fix by hand, review the result, relabel.
+**Works:**
+
+- Independent PRs, and PRs that edit the same file in places that are not next to each other.
+  Git merges these cleanly and rule 6 accepts the merge. The automerge tests cover three PRs
+  that each add a bullet to one `CHANGELOG.md`, with the third stacked on the first and its
+  bullet in a different section.
+- A stacked child whose edits do not touch hunks adjacent to its parent's. The verifier calls
+  the paths the parent already holds **absorbed** (rule f): main's change on them is exactly
+  what the head has. The remaining paths are then checked by rule 6 (clean merge) or by rules
+  4 and 5 (exact, no overlap). Rule f needs git 2.40 or later; older git halts.
+
+**Does not work: adjacent hunks.**
+
+If B edits the same lines as A, or lines next to them, git cannot merge the two copies of A's
+change, because both sides inserted at the same place with different text. This is a textual
+conflict. After A merges, B is `DIRTY` ("the branch conflicts with main") and the train halts
+there. Typical cases in this repository: both PRs add a bullet at the top of the same
+CHANGELOG list, or both append tests to the end of one file. Rules f and g verify a merge that
+exists; they cannot resolve a conflict, and the verifier never creates a merge.
+
+Still halts, by design: A changed after B was cut (B holds an older A, so the paths differ and
+count as an overlap); main changed a path B holds differently. Fix by hand, review the result,
+and relabel.
+
+**What happened on 2026-10-26.** PR #182 added rule f and PR #183 added rule g. PR #177 then
+merged unattended. PR #178, stacked on #177, halted `DIRTY` after #177 was squash-merged. The
+GUI of ADR 0035 was then landed as one PR, #184.
+
+**Recommended practice today:**
+
+1. **Land dependent work as one PR.** Put the net change in one branch cut from `main`, and
+   review it once at its head. The individual deltas can still be reviewed separately, with
+   their verdicts cited in the review of the single PR.
+2. **Or merge in sequential batches, restacking in between.** Merge the parent in its own
+   batch. Then, once `main` holds the parent's squash, restack the child:
+
+   ```bash
+   git fetch origin
+   git rebase --onto origin/main <last parent commit> <child branch>
+   git push --force-with-lease
+   ```
+
+   `<last parent commit>` is the final commit of A that B was cut after. The rebase drops A's
+   commits, which `main` now holds as one squash, and keeps B's own commits. Then review the new
+   head's diff against `main`, which is B's own change. Remove the old `reviewed:` label and add
+   `reviewed:<new head>`: the gate needs exactly one, and the old one names a commit that is no
+   longer on the PR. The restacked head is the reviewed commit, so the verifier needs no update
+   merge unless `main` has moved since.
 
 Nothing else in the train changes: the head is still the lowest `train:N`, and a closed
 unmerged `train:K` below the head still halts.
+
+**Not built (options, not promises):**
+
+- **Automatic restacking**: the train could rebase a child onto `main` after its parent merges.
+  Nothing does this today; the restack above is manual.
+- **GitHub's native stacked PRs**: GitHub offers them as a public preview. Before relying on
+  them, check GitHub's current documentation on each of these points: as of this writing, auto-merge
+  is not supported for them; a rebase changes the head commit, which invalidates a `reviewed:`
+  label; GitHub's documentation does not state whether squash merge is supported; and whether they
+  are available for this repository has not been confirmed.
 
 ## Stop, halt and resume
 
@@ -111,12 +157,14 @@ unmerged `train:K` below the head still halts.
   cancel the running workflow run.
 - **Halted**: the workflow labels the head `train:halted` and posts one comment with the reason.
 - **Resume**: fix the cause by hand, then `gh pr edit N --remove-label train:halted` and
-  `gh workflow run "Update behind PRs"`.
+  `gh workflow run "Update behind PRs"`. The label must be removed first, or every run does
+  nothing.
 - **After a rule change**: a head halted by an older verifier is not re-checked on its own,
-  because every run does nothing while `train:halted` is set. Once the new rules are on
-  `main`, remove `train:halted` and dispatch again; the next run verifies the head with the
-  new rules. If the head was halted for an overlap, nothing else is needed (no relabel) when
-  the update merge is now accepted; update the branch from main first if it is `BEHIND`.
+  because every run does nothing while `train:halted` is set. The workflow checks out the
+  default branch, so the scripts it runs are `main`'s. Once the new rules are on `main`, remove
+  `train:halted` and dispatch again; the next run verifies the head with the new rules. If the
+  head was halted for an overlap, nothing else is needed (no relabel) when the update merge is
+  now accepted; update the branch from main first if it is `BEHIND`.
 
 ## What the workflow does each run
 
@@ -152,7 +200,7 @@ updated, and only when it is BEHIND with no running checks. No PR is ever merged
 | Head verification failed: not an ancestor, not on the first-parent chain, not a two-parent merge, a merge of a non-main branch, extra changes, octopus, unknown commit | The head is not the reviewed commit plus main updates. Review the head, then relabel. |
 | Overlap with the PR's own edits | Main changed a file the PR also edits. Review the merged head, then relabel. |
 | Check `<name>` is not passing | A red or cancelled check. Fix it; the train never retries a failed check. |
-| `DIRTY` | The branch conflicts with main. Resolve by hand. |
+| `DIRTY` | The branch conflicts with main. For a stacked child, its hunks touch its parent's. Restack it or merge the stack as one PR (see "Stacked PRs"). |
 | `BLOCKED` with every check green | An unresolved conversation, often a Copilot review thread. Resolve it. |
 | `UNKNOWN` after about 60 s | GitHub did not compute the state. Look at the PR and re-run. |
 | Closed unmerged `train:K` below the head | A batch PR was closed without merging, so the next PR would jump the queue. See the cleanup step. |
@@ -168,6 +216,8 @@ markup from them and truncates them to 60 characters before they reach the log o
 Remove its `train:*` label as part of closing it:
 `gh pr close N && gh pr edit N --remove-label train:K`.
 Otherwise the closed PR halts a later batch loudly, since the next PR would be promoted past it.
+A closed unmerged PR that still carries its `train:K` label keeps halting later runs until the
+label is removed.
 
 ## Caveats
 
