@@ -459,7 +459,7 @@ class Dashboard:
         records = self._corpus_for("Corpus browser").records(self._filter_state.stage)
         columns = [
             column
-            for column in ("record_id", "title", "year", "doc_type")
+            for column in ("record_id", "origin", "title", "year", "doc_type")
             if column in records.columns
         ]
         # `polars.DataFrame.to_pandas()` requires `pyarrow`, not a declared
