@@ -339,8 +339,8 @@ Small PRs, each green on its own, in this order:
 ## Verification the implementation must include
 
 The tests in Decision 11, each shown to fail on its named mutation, run under `pytest -n auto` and single-process, with `mypy --strict`
-clean on `src/prismabib`. The existing registration tests (`tests/unit/capture/test_registrations.py`,
-`tests/integration/capture/test_registrations.py`, including the `DecisionLog` source check) pass unchanged, and `test_keymap__every_binding__maps_to_a_handler` is untouched.
+clean on `src/prismabib`. The existing registration tests (`tests/unit/capture/test_registrations.py`, which holds the `DecisionLog` source check, and
+`tests/integration/capture/test_registrations.py`) pass unchanged, and `test_keymap__every_binding__maps_to_a_handler` is untouched.
 
 ## Related decisions
 
