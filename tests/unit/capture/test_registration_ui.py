@@ -118,7 +118,6 @@ BANNED = {
     "RegisterEvent",
     "ReverseEvent",
     "RegistrationRecord",
-    "reverse_registration",  # PR 4 adds it with reversal_impact
 }
 
 
@@ -156,8 +155,9 @@ def test_view__imports_only_the_two_writers_and_reversal_impact() -> None:
         "active_registrations",
         "load_registration_events",
         "register_candidate",
+        "reverse_registration",
     }
-    assert imported["prismabib.prisma.impact"] == {"ReversalImpact"}  # PR 4: + reversal_impact
+    assert imported["prismabib.prisma.impact"] == {"ReversalImpact", "reversal_impact"}
 
 
 @pytest.mark.unit

@@ -2,9 +2,8 @@
 
 Everything a reviewer sees or a test asserts is a plain function over plain data (the first
 part of this module), so the widgets (the last section) can be thin. The module imports no log
-class: the only writer it calls is ``register_candidate``, and matching is the writer's own
-:func:`~prismabib.capture.registrations.matching_works`. Reverse and Active registrations are
-ADR 0035 PR 4.
+class: the only writers it calls are ``register_candidate`` and ``reverse_registration``, and
+matching is the writer's own :func:`~prismabib.capture.registrations.matching_works`.
 """
 
 from __future__ import annotations
@@ -29,12 +28,16 @@ from prismabib.capture.registrations import (
     matching_works,
     read_response,
     register_candidate,
+    reverse_registration,
 )
-from prismabib.errors import PrismabibError, ValidationError
-from prismabib.prisma.impact import ReversalImpact
+from prismabib.errors import ConfigError, LogError, PrismabibError, StoreError, ValidationError
+from prismabib.prisma.impact import ReversalImpact, reversal_impact
 from prismabib.project import Project
 from prismabib.sources.openalex import parse_work
 
+# A plain build reuses an existing store and loads nothing (cli.py), so only --rebuild folds in
+# a new registration or reversal.
+REBUILD_COMMAND: Final = "`prismabib build <slug> --rebuild`"
 RULES: Final[tuple[str, ...]] = ("doi", "title_year", "near_confirmed")
 NEAR: Final = "near_confirmed"
 RULE_DEFINITIONS: Final[Mapping[str, str]] = {
@@ -319,6 +322,7 @@ class RegistrationForm:
         self.payload_select.param.watch(lambda _e: self._on_selection(), "value")
         self.near_checkbox.param.watch(lambda e: self.tick(bool(e.new)), "value")
         self.register_button.on_click(self._on_register)
+        self.on_change: Callable[[], None] | None = None  # the sibling section's reload
         self.reload()
 
     def widgets(self) -> list[Any]:
@@ -463,14 +467,16 @@ class RegistrationForm:
         else:
             message = (
                 f"Registered {event.record_id} (event {event.event_id}). "
-                "It takes effect at the next build."
+                f"It takes effect at the next {REBUILD_COMMAND}."
             )
         self._attempts += 1
         self.alert.object = _alert_html(message, self._attempts)
         self.reload()  # after any outcome, so the display matches the file
+        if self.on_change is not None:
+            self.on_change()
         return message
 
-    def view(self) -> pn.viewable.Viewable:
+    def view(self) -> pn.Column:
         """The Register section, in reading order."""
         return pn.Column(
             pn.pane.HTML(
@@ -488,18 +494,185 @@ class RegistrationForm:
             self.near_checkbox,
             self.confirm_pane,
             self.register_button,
-            # ADR 0035 PR 4: the Reverse and Active registrations sections go here.
         )
 
 
+class ReversalForm:
+    """The Reverse and Active registrations sections (ADR 0035 section 4)."""
+
+    def __init__(
+        self, project: Project, *, reviewer: str, register: RegistrationForm | None = None
+    ) -> None:
+        if not reviewer.strip():
+            raise ValidationError("reviewer must not be blank")
+        self.project, self.reviewer = project, reviewer
+        self.candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
+        self.on_change: Callable[[], None] | None = None  # the sibling section's reload
+        self.active: dict[str, Any] = {}  # event_id -> active RegisterEvent
+        self._reloading = False
+        self._register = register  # shares its alert pane and its attempt counter
+        self._attempts = 0
+
+        self.active_table = pn.pane.HTML(name="Active registrations")
+        self.select = pn.widgets.Select(name="Registration to reverse")
+        self.reason_select = pn.widgets.Select(
+            name="Reversal reason", options=list(reason_options()), value=None
+        )
+        self.note_input = pn.widgets.TextAreaInput(name="Note (required when the reason is other)")
+        self.hint = pn.pane.Markdown(
+            name="Correcting a registration",
+            object="To correct a wrong DOI or title, reverse the registration, then register again.",
+        )
+        self.confirm_pane = pn.pane.HTML(name="Reversal confirmation")
+        self.reverse_button = pn.widgets.Button(name="Reverse")
+        self.alert = register.alert if register is not None else pn.pane.HTML(name="Alert")
+
+        self.select.param.watch(lambda _e: self._on_select(), "value")
+        self.reason_select.param.watch(lambda _e: self._sync_controls(), "value")
+        self.note_input.param.watch(lambda _e: self._sync_controls(), "value")
+        self.reverse_button.on_click(self._on_reverse)
+        self.reload()
+
+    def _show(self, message: str) -> None:
+        """Show ``message`` in the alert; the counter is shared so each one is a new object."""
+        owner: Any = self._register if self._register is not None else self
+        owner._attempts += 1
+        self.alert.object = _alert_html(message, owner._attempts)
+
+    def widgets(self) -> list[Any]:
+        """Every input and output control, for the labelled-widget test."""
+        return [
+            self.active_table,
+            self.select,
+            self.reason_select,
+            self.note_input,
+            self.hint,
+            self.confirm_pane,
+            self.reverse_button,
+        ]
+
+    def reload(self) -> None:
+        """Re-read the registration log, so the table and the choices match the file."""
+        titles = {v.event.candidate_id: v.event.title for v in self.candidates.view()}
+        self.active = {
+            e.event_id: e
+            for e in active_registrations(load_registration_events(self.project.registrations_path))
+        }
+        cells = [
+            (
+                e.record_id,
+                titles.get(e.candidate_id, e.candidate_id),
+                e.match_rule,
+                e.reviewer,
+                e.ts.isoformat(),
+            )
+            for e in self.active.values()
+        ]
+        self.active_table.object = (
+            "<table><tr><th>Record</th><th>Candidate</th><th>Rule</th><th>Reviewer</th>"
+            "<th>Time</th></tr>"
+            + "".join(
+                "<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in row) + "</tr>"
+                for row in cells
+            )
+            + "</table>"
+        )
+        self._reloading = True  # the watcher would clear the alert the caller just set
+        try:
+            self.select.options = {
+                f"{c[0]} - {c[1]}": eid for c, eid in zip(cells, self.active, strict=True)
+            }
+            if self.select.value not in self.active:
+                self.select.value = None
+                self.confirm_pane.object = ""
+        finally:
+            self._reloading = False
+        self._sync_controls()
+
+    def _on_select(self) -> None:
+        """Show the impact of reversing the selection; only an active registration is asked about."""
+        if self._reloading:
+            return
+        target = self.select.value
+        self.alert.object = ""
+        self.confirm_pane.object = ""
+        if target in self.active:
+            try:
+                impact: ReversalImpact | None = reversal_impact(
+                    self.project, self.active[target].record_id
+                )
+            except (StoreError, ConfigError, LogError) as exc:
+                impact = None
+                self._show(f"Impact unknown: {exc}")
+            self.confirm_pane.object = _paragraph_html(reversal_confirmation_text(impact))
+        self._sync_controls()
+
+    def _sync_controls(self) -> None:
+        self.reverse_button.disabled = self.select.value not in self.active or not can_reverse(
+            self.reason_select.value or "", self.note_input.value or ""
+        )
+
+    def _on_reverse(self, _event: Any) -> None:
+        self.reverse()
+
+    def reverse(self) -> str:
+        """Call the writer and nothing else; show its message verbatim on a refusal."""
+        try:
+            target = self.select.value
+            if not target:
+                raise ValidationError("choose a registration to reverse first")
+            note = self.note_input.value or ""
+            event = reverse_registration(
+                self.project,
+                reverses=target,
+                reviewer=self.reviewer,
+                reason=self.reason_select.value or "",
+                note=note if note.strip() else None,
+            )
+        except PrismabibError as exc:
+            message, done = f"Refused: {exc}", False
+        else:
+            message = (
+                f"Reversed {event.reverses} (event {event.event_id}). It takes effect at the "
+                f"next {REBUILD_COMMAND}; the decisions stay in decisions.jsonl."
+            )
+            done = True
+        self.reload()  # after any outcome, so the display matches the file
+        if done:
+            self.reason_select.value, self.note_input.value = None, ""
+        self._show(message)
+        if self.on_change is not None:
+            self.on_change()
+        return message
+
+    def view_objects(self) -> list[Any]:
+        """The Reverse and Active registrations sections, in reading order."""
+        return [
+            pn.pane.Markdown("## Reverse a registration"),
+            self.select,
+            self.reason_select,
+            self.note_input,
+            self.hint,
+            self.confirm_pane,
+            self.reverse_button,
+            pn.pane.Markdown("## Active registrations"),
+            self.active_table,
+        ]
+
+
 def registration_view(project: Project, *, reviewer: str) -> pn.viewable.Viewable:
-    """Return the Register form; display in a notebook cell or ``panel serve`` it (ADR 0004).
+    """Return the Register, Reverse and Active registrations sections (ADR 0004).
+
+    Display in a notebook cell or ``panel serve`` it. Both sections share one alert pane.
 
     Raises:
         ValidationError: If ``reviewer`` is blank.
     """
     pn.extension()
-    return RegistrationForm(project, reviewer=reviewer).view().servable()
+    register = RegistrationForm(project, reviewer=reviewer)
+    reverse = ReversalForm(project, reviewer=reviewer, register=register)
+    register.on_change, reverse.on_change = reverse.reload, register.reload
+    return pn.Column(*register.view().objects, *reverse.view_objects()).servable()
 
 
 __all__ = [
@@ -509,6 +682,7 @@ __all__ = [
     "RegistrationForm",
     "ResponseOption",
     "ResponseOptions",
+    "ReversalForm",
     "can_reverse",
     "candidate_rows",
     "match_table",

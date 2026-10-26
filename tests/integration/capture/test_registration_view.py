@@ -26,10 +26,20 @@ from typer.testing import CliRunner
 
 from prismabib.capture import registration_ui as ui
 from prismabib.capture.candidates import CandidateEvent, CandidateRow
-from prismabib.capture.registrations import RegistrationRefusal, load_registration_events
+from prismabib.capture.registrations import (
+    REVERSAL_REASONS,
+    RegistrationRefusal,
+    load_registration_events,
+)
 from prismabib.cli import app
-from prismabib.errors import ValidationError
+from prismabib.errors import StoreError, ValidationError
+from prismabib.prisma.flow import compute_flow_counts
+from prismabib.prisma.impact import reversal_impact
+from prismabib.prisma.log import DecisionLog
+from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
+from prismabib.stage import PrismaStage
+from tests.conftest import SeededIdFactory
 from tests.integration.capture.test_registrations import (
     DOI_ONE,
     PAYLOAD,
@@ -40,6 +50,7 @@ from tests.integration.capture.test_registrations import (
 )
 from tests.store_helpers import make_entry
 
+TA, FT = PrismaStage.TITLE_ABSTRACT, PrismaStage.FULLTEXT
 AUTO_NAME = re.compile(r"^[A-Za-z]+\d{3,}$")  # Panel's default, unlabelled name
 
 
@@ -54,7 +65,7 @@ def _form(env: Env, cid: str, rule: str | None = None) -> ui.RegistrationForm:  
     return form
 
 
-def _alert_text(form: ui.RegistrationForm) -> str:
+def _alert_text(form: ui.RegistrationForm | ui.ReversalForm) -> str:
     """The alert markup without the per-attempt marker."""
     return re.sub(r' data-attempt="\d+"', "", html.unescape(str(form.alert.object)))
 
@@ -438,3 +449,368 @@ def test_view__response_choice__cleared_on_rule_change(env: Env) -> None:  # noq
 
     assert PAYLOAD in form.payload_select.options.values()
     assert form.payload_select.value is None and form.register_button.disabled
+
+
+# -- Reverse and Active registrations (ADR 0035 PR 4) -------------------------------------------
+
+
+def _registered(env: Env) -> tuple[ui.ReversalForm, str, str]:  # noqa: F811
+    """A reverse form over one active registration; returns (form, event_id, record_id)."""
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    form = ui.ReversalForm(env.project, reviewer="rv")
+    form.select.value = event.event_id
+    return form, event.event_id, event.record_id
+
+
+def _all(project: Project) -> list[Any]:
+    return list(load_registration_events(project.registrations_path))
+
+
+def _spy_reverse(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    real = ui.reverse_registration
+    monkeypatch.setattr(
+        ui, "reverse_registration", lambda *a, **k: (calls.append(k), real(*a, **k))[1]
+    )
+    return calls
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("code", REVERSAL_REASONS)
+def test_view__reverse_each_code__appends_reverse_event(env: Env, code: str) -> None:  # noqa: F811
+    form, event_id, _ = _registered(env)
+    form.reason_select.value = code
+    form.note_input.value = "because"
+    assert not form.reverse_button.disabled
+
+    message = form.reverse()
+
+    _register, reverse = _all(env.project)
+    assert (reverse.action, reverse.reverses, reverse.reason) == ("reverse", event_id, code)
+    assert message.startswith("Reversed ")
+    assert "decisions.jsonl" in message
+    assert "next `prismabib build <slug> --rebuild`" in message  # a plain build loads nothing
+    assert "Reversed" in html.unescape(str(form.alert.object))
+
+
+@pytest.mark.integration
+def test_view__reverse_other_without_note__refused_and_log_unchanged(env: Env) -> None:  # noqa: F811
+    form, event_id, _ = _registered(env)
+    form.reason_select.value = "other"
+    form.note_input.value = "   "
+    assert form.reverse_button.disabled  # the predicate disables the button ...
+    before = env.snapshot()
+    with pytest.raises(RegistrationRefusal) as writer:
+        env.reverse(event_id, reason="other")
+    assert env.snapshot() == before
+
+    message = form.reverse()  # ... and the writer still refuses a click that gets through
+
+    assert message == f"Refused: {writer.value}"
+    assert _alert_text(form) == f'<div role="alert">{message}</div>'
+    assert env.snapshot() == before  # bytes and checksum sidecar
+    assert len(_all(env.project)) == 1
+
+
+@pytest.mark.integration
+def test_view__reverse__reviewer_and_note_are_passed_through(
+    env: Env,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    form, event_id, _ = _registered(env)
+    calls = _spy_reverse(monkeypatch)
+    form.reason_select.value = "wrong_title"
+    form.note_input.value = "title was truncated"
+
+    form.reverse()
+
+    (call,) = calls
+    assert call == {
+        "reverses": event_id,
+        "reviewer": "rv",
+        "reason": "wrong_title",
+        "note": "title was truncated",
+    }
+    assert _all(env.project)[-1].reviewer == "rv"
+    assert _all(env.project)[-1].note == "title was truncated"
+
+
+@pytest.mark.integration
+def test_view__reverse_blank_note_for_a_non_other_reason__passes_none(
+    env: Env,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    form, _, _ = _registered(env)
+    calls = _spy_reverse(monkeypatch)
+    form.reason_select.value = "wrong_doi"
+    form.note_input.value = "  "
+
+    form.reverse()
+
+    assert calls[0]["note"] is None and _all(env.project)[-1].note is None
+
+
+def _norm(project: Project) -> list[dict[str, Any]]:
+    """Events modulo event_id/ts/record_id, with ``reverses`` replaced by its register's index."""
+    events = _all(project)
+    registers = [e.event_id for e in events if e.action == "register"]
+    out = []
+    for e in events:
+        row = e.model_dump(mode="json", exclude={"event_id", "ts", "record_id"})
+        if "reverses" in row:
+            row["reverses"] = f"register#{registers.index(row['reverses'])}"
+        out.append(row)
+    return out
+
+
+@pytest.mark.integration
+def test_view__reverse__appends_event_equal_to_cli(env: Env, tmp_path: Path) -> None:  # noqa: F811
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    other_root = tmp_path / "copy"
+    shutil.copytree(env.project.root, other_root / "reg")
+    other = Project.open("reg", root=other_root)
+    # The copy has its own log; its register event is a different object from the view's.
+    cli_target = _all(other)[0].event_id
+    argv = ["reverse", "reg", cli_target, "--reviewer", "rv", "--reason", "other", "--note", "n1"]
+    result = CliRunner().invoke(app, [*argv, "--root", str(other_root)])
+    form = ui.ReversalForm(env.project, reviewer="rv")
+    form.select.value = event.event_id
+    form.reason_select.value, form.note_input.value = "other", "n1"
+
+    form.reverse()
+
+    assert result.exit_code == 0
+    assert _norm(env.project) == _norm(other)
+    assert _norm(env.project)[-1]["reverses"] == "register#0"
+    assert _all(env.project)[-1].reverses == event.event_id
+
+
+@pytest.mark.integration
+def test_view__reverse_after_decision__orphan_count_shown_then_reversed(env: Env) -> None:  # noqa: F811
+    form, event_id, record_id = _registered(env)
+    env.build()  # Layer 1 learns the registration; a decision needs an S_raw record
+    log = DecisionLog(env.project, id_factory=SeededIdFactory(seed=0, prefix="ev"))
+    for stage, reviewer in ((TA, "kp"), (TA, "kp"), (TA, "ab"), (FT, "kp")):
+        log.append(stage=stage, record_id=record_id, reviewer=reviewer, decision="include")
+    form.select.value = None
+    form.select.value = event_id  # re-select: the confirmation reads the decisions
+    impact = reversal_impact(env.project, record_id)
+    decisions = env.project.decisions_path.read_bytes()
+    assert impact.decisions_orphaned == 3  # the superseded kp event is not counted
+
+    # Before the write the confirmation names the count and the inclusion state.
+    text = str(form.confirm_pane.object)
+    included = "is currently included" if impact.currently_included else "is not currently included"
+    assert "orphans 3 current" in text and included in text and record_id in text
+
+    form.reason_select.value = "not_eligible"
+    form.reverse()
+
+    assert env.project.decisions_path.read_bytes() == decisions  # the decisions stay
+    assert record_id not in str(form.active_table.object)
+    assert not form.select.options
+    # Layer 1 changes only at build: rebuild, then the figures move.
+    env.build()
+    assert compute_flow_counts(env.project).registered == 0
+    orphans = project_orphaned_decisions(env.project)
+    assert len(orphans) == impact.decisions_orphaned == 3
+    assert {o.record_id for o in orphans} == {record_id}
+
+
+@pytest.mark.integration
+def test_view__impact_unknown__alert_shown_and_reverse_still_available(env: Env) -> None:  # noqa: F811
+    form, event_id, record_id = _registered(env)  # no store was built: the helper cannot read one
+    with pytest.raises(StoreError) as helper:
+        reversal_impact(env.project, record_id)
+    form.select.value = None
+    form.select.value = event_id
+
+    assert f"Impact unknown: {helper.value}" in html.unescape(str(form.alert.object))
+    assert 'role="alert"' in str(form.alert.object)
+    assert "unknown" in str(form.confirm_pane.object)
+    assert "orphans" not in str(form.confirm_pane.object)  # never a guessed count
+    form.reason_select.value = "wrong_doi"
+    assert not form.reverse_button.disabled
+
+    form.reverse()
+
+    assert [e.action for e in _all(env.project)] == ["register", "reverse"]
+
+
+@pytest.mark.integration
+def test_view__reverse_non_active_or_unknown__never_reaches_reversal_impact(
+    env: Env,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    form, event_id, _ = _registered(env)
+    asked: list[str] = []
+    monkeypatch.setattr(ui, "reversal_impact", lambda _p, rid: asked.append(rid))
+    form.reason_select.value = "wrong_doi"
+    form.select.value = "01NOSUCHEVENT"  # unknown id
+    assert asked == [] and form.reverse_button.disabled and form.confirm_pane.object == ""
+    before = env.snapshot()
+
+    unknown = form.reverse()
+
+    assert unknown.startswith("Refused: ") and env.snapshot() == before
+    form.select.value = event_id  # an active registration: the one legitimate ask
+    asked_for = list(asked)
+    assert len(asked_for) == 1
+    env.reverse(event_id)  # reversed elsewhere while this form is open: now stale
+    stale = form.reverse()
+
+    assert stale.startswith("Refused: ") and len(_all(env.project)) == 2
+    assert asked == asked_for  # the Reverse button never asks
+    assert not form.select.options  # the display was re-read after the attempt
+    form.select.value = event_id  # inactive now: not asked about either
+    assert asked == asked_for
+
+
+@pytest.mark.integration
+def test_view__active_registrations__table_lists_text_and_drops_the_reversed(
+    env: Env,  # noqa: F811
+) -> None:
+    form, event_id, record_id = _registered(env)
+    cells = html.unescape(re.sub(r"<[^>]+>", " ", str(form.active_table.object)))
+
+    for text in (record_id, TITLE_ONE, "doi", "sh", _all(env.project)[0].ts.isoformat()):
+        assert text in cells
+    assert list(form.select.options.values()) == [event_id]
+
+    form.reason_select.value = "wrong_doi"
+    form.reverse()
+
+    assert record_id not in str(form.active_table.object)
+    assert form.select.value is None and form.reason_select.value is None
+
+
+@pytest.mark.integration
+def test_view__register_then_reverse__sections_refresh_each_other(env: Env) -> None:  # noqa: F811
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    column = ui.registration_view(env.project, reviewer="sh")
+    assert any(getattr(o, "name", "") == "Active registrations" for o in column.objects)
+    register = ui.RegistrationForm(env.project, reviewer="sh")
+    reverse = ui.ReversalForm(env.project, reviewer="sh", register=register)
+    register.on_change, reverse.on_change = reverse.reload, register.reload
+    register.candidate_select.value = cid
+    register.payload_select.value = PAYLOAD  # the reviewer picks the response
+
+    register.register()
+    assert list(reverse.select.options.values())  # the new registration is offered at once
+    assert "Registered" in html.unescape(str(register.alert.object))  # reload kept the alert
+
+    reverse.select.value = next(iter(reverse.active))
+    reverse.reason_select.value = "wrong_doi"
+    reverse.reverse()
+
+    assert "Reversed" in html.unescape(str(register.alert.object))  # one shared alert pane
+    assert register.candidate_select.options  # the candidate can be registered again
+
+
+@pytest.mark.integration
+def test_view__reverse__raw_and_decisions_byte_identical(env: Env) -> None:  # noqa: F811
+    form, _, _ = _registered(env)
+    decisions = env.project.root / "decisions" / "decisions.jsonl"
+    before = (_raw_digest(env.project), decisions.exists())
+    form.reason_select.value = "wrong_doi"
+
+    form.reverse()
+
+    assert (_raw_digest(env.project), decisions.exists()) == before
+
+
+@pytest.mark.integration
+def test_view__reverse_refusal__is_role_alert_in_rendered_html(env: Env) -> None:  # noqa: F811
+    form, _, _ = _registered(env)
+    form.reason_select.value = "other"
+    form.reverse()  # refused: 'other' without a note
+
+    out = io.StringIO()
+    pn.Column(*form.view_objects(), form.alert).save(out)
+
+    assert re.search(r"role=(&amp;quot;|&quot;|\\?\")alert", out.getvalue())
+    assert "requires a non-empty note" in html.unescape(html.unescape(out.getvalue()))
+
+
+@pytest.mark.integration
+def test_widgets__reverse_section_all_labelled(env: Env) -> None:  # noqa: F811
+    form = ui.ReversalForm(env.project, reviewer="sh")
+
+    assert form.widgets()
+    for widget in form.widgets():
+        assert widget.name.strip() and not AUTO_NAME.match(widget.name), widget
+    assert tuple(form.reason_select.options) == REVERSAL_REASONS
+
+
+@pytest.mark.integration
+def test_view__reverse_form__blank_reviewer_raises(env: Env) -> None:  # noqa: F811
+    with pytest.raises(ValidationError):
+        ui.ReversalForm(env.project, reviewer=" ")
+
+
+@pytest.mark.integration
+def test_view__register_success__names_the_rebuild_command(env: Env) -> None:  # noqa: F811
+    message = _form(env, env.candidate(TITLE_ONE, 2021, DOI_ONE)).register()
+
+    assert message.startswith("Registered ")
+    assert "next `prismabib build <slug> --rebuild`" in message
+
+
+@pytest.mark.integration
+def test_view__reverse_path__hostile_text_is_escaped(
+    env: Env,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A hostile title and pasting reviewer reach the active table; a hostile impact error and
+    # record id reach the alert and the confirmation.
+    pasted = CandidateEvent.from_row(
+        CandidateRow(title=f"{TITLE_ONE} {HOSTILE}", year=2021, doi=DOI_ONE),
+        reviewer=HOSTILE,
+        pasted_at=datetime(2026, 10, 22, tzinfo=UTC),
+    )
+    env.candidates.add(pasted)
+    cid = pasted.candidate_id
+    works = _works()
+    works[0]["title"] = f"{TITLE_ONE} {HOSTILE}"
+    env.write_run(works)
+    event = env.register(cid, reviewer=HOSTILE)
+    form = ui.ReversalForm(env.project, reviewer=HOSTILE)
+    escaped = html.escape(HOSTILE)
+
+    table = str(form.active_table.object)
+    assert table.count(escaped) == 2 and "<script>" not in table  # candidate title, reviewer
+
+    def unknown(_project: Project, _rid: str) -> object:
+        raise StoreError(HOSTILE)
+
+    monkeypatch.setattr(ui, "reversal_impact", unknown)
+    form.select.value = event.event_id
+    assert escaped in str(form.alert.object) and "<script>" not in str(form.alert.object)
+
+    monkeypatch.setattr(ui, "reversal_impact", lambda _p, _r: ui.ReversalImpact(HOSTILE, True, 2))
+    form.select.value = None
+    form.select.value = event.event_id
+    assert escaped in str(form.confirm_pane.object)
+    assert "<script>" not in str(form.confirm_pane.object)
+    assert isinstance(form.confirm_pane, pn.pane.HTML)  # Markdown would render *x*
+    assert "<script>" not in str(form.view_objects()[0].object)
+
+
+@pytest.mark.integration
+def test_view__shared_alert__attempt_counter_is_monotonic_across_sections(
+    env: Env,  # noqa: F811
+) -> None:
+    register = _form(env, env.candidate(TITLE_ONE, 2022))  # near without the tick: refused
+    reverse = ui.ReversalForm(env.project, reviewer="sh", register=register)
+    seen = []
+
+    register.register()
+    seen.append(str(register.alert.object))
+    reverse.reverse()  # nothing selected: refused
+    seen.append(str(register.alert.object))
+    register.register()
+    seen.append(str(register.alert.object))
+
+    attempts = [int(re.search(r'data-attempt="(\d+)"', a).group(1)) for a in seen]  # type: ignore[union-attr]
+    assert attempts == sorted(set(attempts)) and len(attempts) == 3
+    assert register.alert is reverse.alert
