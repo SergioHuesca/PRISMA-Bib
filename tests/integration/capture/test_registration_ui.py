@@ -67,3 +67,30 @@ def test_response_options__only_exactly_one_match_listed(tmp_path: Path) -> None
     assert ui.response_options(tmp_path / "none", _candidate(), "doi") == ui.ResponseOptions(
         (), 0, 0
     )
+
+
+@pytest.mark.integration
+def test_response_options__two_runs_two_requests__deterministic_order_and_unsealed_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = tmp_path / "raw"
+    one = [_works()[0]]
+    req = [{"lookup": "doi_batch", "identifiers": [], "works": one}] * 2
+    run_a, run_b, run_c = RUN, "20260102T000000Z-bbbbbbbb", "20260103T000000Z-cccccccc"
+    for run in (run_b, run_a, run_c):  # created out of order
+        write_sealed_openalex_run(raw, run, req, api_view=SELECT)
+    (raw / "openalex" / run_c / "manifest.json").unlink()  # unsealed: skipped, not counted
+    for run in (run_a, run_b):  # reverse the manifest's request order too
+        path = raw / "openalex" / run / "manifest.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["requests"].reverse()
+        path.write_text(json.dumps(data), encoding="utf-8")
+    real = Path.iterdir  # NTFS lists sorted already: force the opposite so a dropped sort shows
+    monkeypatch.setattr(Path, "iterdir", lambda self: iter(sorted(real(self), reverse=True)))
+
+    result = ui.response_options(raw, _candidate(), "title_year")
+
+    assert [o.label for o in result.options] == [
+        f"{run}/response-000{i}" for run in (run_a, run_b) for i in (0, 1)
+    ]
+    assert (result.unmatched, result.unreadable) == (0, 0)

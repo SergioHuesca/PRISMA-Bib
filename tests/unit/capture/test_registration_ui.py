@@ -120,14 +120,48 @@ def test_view__imports_only_the_two_writers_and_reversal_impact() -> None:
             imported.update({a.name: set() for a in node.names})
     names = set().union(*imported.values())
 
-    assert not [m for m in imported if m == "panel" or m.startswith("panel.")]
-    assert not names & {"DecisionLog", "AppendOnlyLog", "registration_log", "write_event"}
+    # Panel is allowed solely for the widget layer (ADR 0035 PR 3); the log ban below stands.
+    assert not names & {
+        "DecisionLog",
+        "AppendOnlyLog",
+        "registration_log",
+        "write_event",
+        "append_if",
+        "RegisterEvent",
+        "ReverseEvent",
+        "RegistrationRecord",
+        "reverse_registration",  # PR 4 adds it with reversal_impact
+    }
     assert not [m for m in imported if m in ("prismabib.log", "prismabib.prisma.log")]
-    # Of the registration module only the reader and the closed set; no writer is needed here.
+    # Of the registration module: the readers, the closed set, and the one writer the view calls.
     assert imported["prismabib.capture.registrations"] <= {
         "REVERSAL_REASONS",
         "RegistrationRefusal",
         "matching_works",
         "read_response",
+        "MatchRule",
+        "active_registrations",
+        "load_registration_events",
+        "register_candidate",
     }
-    assert imported["prismabib.prisma.impact"] == {"ReversalImpact"}
+    assert imported["prismabib.prisma.impact"] == {"ReversalImpact"}  # PR 4: + reversal_impact
+
+
+@pytest.mark.unit
+def test_preselected_rule__two_rules_or_two_works_preselect_nothing() -> None:
+    # Same DOI, different year: `doi` and `near_confirmed` both match exactly one work.
+    assert ui.preselected_rule(_view(doi="10.9999/x", year=2020), [WORK]) is None
+    # Two works satisfy `doi`: not exactly one, so nothing is preselected.
+    assert ui.preselected_rule(_view(doi="10.9999/x"), [WORK, dict(WORK)]) is None
+
+
+@pytest.mark.unit
+def test_keymap__registration_actions__not_bound() -> None:
+    from prismabib.screening import ui as screening_ui
+
+    assert not [
+        b.action
+        for b in screening_ui.KEY_MAP
+        if b.action.startswith(("register", "reverse", "registration"))
+    ]
+    assert {b.key for b in screening_ui.KEY_MAP} >= set("ienpz?")

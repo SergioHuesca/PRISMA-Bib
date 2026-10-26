@@ -1,28 +1,38 @@
-"""Pure view models for the registration form (ADR 0035 Decisions 2-4; Panel arrives in a later PR).
+"""Registration form: pure view models plus the thin Panel view (ADR 0035 Decisions 1-6).
 
-Everything a reviewer sees or a test asserts is a plain function over plain data, so the
-widgets can be thin. This module imports no Panel and no log: the writers
-(``register_candidate``, ``reverse_registration``) are called by the view, never here, and
-matching is the writer's own :func:`~prismabib.capture.registrations.matching_works`.
+Everything a reviewer sees or a test asserts is a plain function over plain data (the first
+part of this module), so the widgets (the last section) can be thin. The module imports no log
+class: the only writer it calls is ``register_candidate``, and matching is the writer's own
+:func:`~prismabib.capture.registrations.matching_works`. Reverse and Active registrations are
+ADR 0035 PR 4.
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
-from prismabib.capture.candidates import CandidateView, near_rule
+import panel as pn  # widget layer only; see the last section
+
+from prismabib.capture.candidates import CandidateLog, CandidateView, near_rule
 from prismabib.capture.layout import OPENALEX_DIRNAME, RUN_MANIFEST_FILENAME, is_sealed
 from prismabib.capture.manifest import OpenAlexRunManifest
 from prismabib.capture.registrations import (
     REVERSAL_REASONS,
+    MatchRule,
     RegistrationRefusal,
+    active_registrations,
+    load_registration_events,
     matching_works,
     read_response,
+    register_candidate,
 )
+from prismabib.errors import PrismabibError, ValidationError
 from prismabib.prisma.impact import ReversalImpact
+from prismabib.project import Project
 from prismabib.sources.openalex import parse_work
 
 RULES: Final[tuple[str, ...]] = ("doi", "title_year", "near_confirmed")
@@ -249,10 +259,228 @@ def reversal_confirmation_text(impact: ReversalImpact | None) -> str:
     )
 
 
+# -- the Panel view (widget layer; ADR 0035 sections 1, 3, 5, 6, 8, 10) --------------------------
+
+
+def _alert_html(text: str) -> str:
+    """The persistent alert region; ``role="alert"`` is what a screen reader announces."""
+    return f'<div role="alert">{html.escape(text)}</div>' if text else ""
+
+
+def _match_html(table: MatchTable) -> str:
+    rows = "".join(
+        f"<tr><th>{html.escape(f)}</th><td>{html.escape(c)}</td><td>{html.escape(w)}</td></tr>"
+        for f, c, w in table.rows
+    )
+    near = f"<p>Near rule: {NEAR_RULE_TEXT[table.near_rule]}</p>" if table.near_rule else ""
+    return (
+        f"<p>Rule <b>{html.escape(table.rule)}</b>: {html.escape(table.rule_definition)}</p>"
+        f"<table><tr><th>Field</th><th>Candidate</th><th>Work</th></tr>{rows}</table>{near}"
+    )
+
+
+class RegistrationForm:
+    """The Register section. Handlers are plain methods so tests drive them without a browser."""
+
+    def __init__(self, project: Project, *, reviewer: str) -> None:
+        if not reviewer.strip():
+            raise ValidationError("reviewer must not be blank")
+        self.project, self.reviewer = project, reviewer
+        self.candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
+        self.near = NearConfirmation()
+        self.views: dict[str, CandidateView] = {}
+        self.options: dict[str, ResponseOption] = {}  # payload value -> option, for the rule
+
+        self.candidate_table = pn.pane.HTML(name="Candidates")
+        self.candidate_select = pn.widgets.Select(name="Candidate")
+        self.rule_select = pn.widgets.Select(name="Match rule", options=list(RULES))
+        self.payload_select = pn.widgets.Select(name="Captured OpenAlex response")
+        self.payload_note = pn.pane.Markdown(name="Responses not offered")
+        self.match_pane = pn.pane.HTML(name="Match evidence")
+        self.near_checkbox = pn.widgets.Checkbox(
+            name="I confirm this work is this candidate", visible=False
+        )
+        self.confirm_pane = pn.pane.Markdown(name="Confirmation")
+        self.register_button = pn.widgets.Button(name="Register")
+        self.alert = pn.pane.HTML(name="Alert", sizing_mode="stretch_width")
+
+        self.candidate_select.param.watch(lambda _e: self._on_candidate(), "value")
+        self.rule_select.param.watch(lambda _e: self._refresh_payloads(), "value")
+        self.payload_select.param.watch(lambda _e: self._on_selection(), "value")
+        self.near_checkbox.param.watch(lambda e: self.tick(bool(e.new)), "value")
+        self.register_button.on_click(self._on_register)
+        self.reload()
+
+    def widgets(self) -> list[Any]:
+        """Every input and output control, for the labelled-widget test."""
+        return [
+            self.candidate_table,
+            self.candidate_select,
+            self.rule_select,
+            self.payload_select,
+            self.payload_note,
+            self.match_pane,
+            self.near_checkbox,
+            self.confirm_pane,
+            self.register_button,
+            self.alert,
+        ]
+
+    # -- state -----------------------------------------------------------------------------------
+
+    def reload(self) -> None:
+        """Re-read the candidate and registration logs, so the display matches the files."""
+        events = load_registration_events(self.project.registrations_path)
+        registered = {e.candidate_id: e.record_id for e in active_registrations(events)}
+        views = self.candidates.view()
+        self.views = {v.event.candidate_id: v for v in views}
+        rows = candidate_rows(views, registered)
+        self.candidate_table.object = (
+            "<table><tr><th>Title</th><th>Year</th><th>DOI</th><th>Pasted by</th>"
+            "<th>Pasted at</th><th>State</th></tr>"
+            + "".join(
+                "<tr>"
+                + "".join(
+                    f"<td>{html.escape(str(c))}</td>"
+                    for c in (r.title, r.year, r.doi or "", r.reviewer, r.pasted_at, r.state)
+                )
+                + "</tr>"
+                for r in rows
+            )
+            + "</table>"
+        )
+        keep = self.candidate_select.value
+        self.candidate_select.options = {
+            f"{r.title} ({r.year})": r.candidate_id for r in rows if r.selectable
+        }
+        if keep not in self.candidate_select.options.values():
+            self.candidate_select.value = None
+        self._on_candidate()
+
+    def _candidate(self) -> CandidateView | None:
+        return self.views.get(self.candidate_select.value or "")
+
+    def _on_candidate(self) -> None:
+        view = self._candidate()
+        if view is not None:
+            usable = [r for r in RULES if response_options(self.project.raw_dir, view, r).options]
+            if len(usable) == 1 and usable[0] != self.rule_select.value:  # preselect if unambiguous
+                self.rule_select.value = usable[0]  # its watcher refreshes the payloads
+                return
+        self._refresh_payloads()
+
+    def _refresh_payloads(self) -> None:
+        view = self._candidate()
+        found = (
+            ResponseOptions((), 0, 0)
+            if view is None
+            else response_options(self.project.raw_dir, view, self.rule_select.value)
+        )
+        self.options = {o.value: o for o in found.options}
+        self.payload_select.options = {
+            f"{o.label} ({o.api_view}, HTTP {o.http_status})": o.value for o in found.options
+        }
+        self.payload_select.value = found.options[0].value if len(found.options) == 1 else None
+        self.payload_note.object = (
+            f"{len(found.options)} response(s) offered; {found.unmatched} with no work or "
+            f"several under this rule; {found.unreadable} unreadable."
+        )
+        self._on_selection()
+
+    def _selection(self) -> tuple[str, str, str] | None:
+        cid, payload = self.candidate_select.value, self.payload_select.value
+        return None if not cid or not payload else (cid, payload, self.rule_select.value)
+
+    def _on_selection(self) -> None:
+        selection = self._selection()
+        self.near = self.near.select(selection)  # clears the tick on any change
+        view = self._candidate()
+        option = self.options.get(self.payload_select.value or "")
+        if selection is None or view is None or option is None:
+            self.match_pane.object = self.confirm_pane.object = ""
+        else:
+            table = match_table(view, option.work, selection[2])
+            self.match_pane.object = _match_html(table)
+            self.confirm_pane.object = register_confirmation_text(table)
+        self._sync_controls()
+
+    def tick(self, checked: bool) -> None:
+        """The near-match checkbox; the only source of ``confirmed_near=True``."""
+        self.near = self.near.tick(checked)
+        self._sync_controls()
+
+    def _sync_controls(self) -> None:
+        self.near_checkbox.visible = self.near.offered
+        self.near_checkbox.value = self.near.checked
+        ready = self._selection() is not None and (not self.near.offered or self.near.checked)
+        self.register_button.disabled = not ready
+
+    # -- the one write ---------------------------------------------------------------------------
+
+    def _on_register(self, _event: Any) -> None:
+        self.register()
+
+    def register(self) -> str:
+        """Call the writer and nothing else; show its message verbatim on a refusal."""
+        selection = self._selection()
+        try:
+            if selection is None:
+                raise ValidationError("choose a candidate and a captured response first")
+            cid, payload, rule = selection
+            event = register_candidate(
+                self.project,
+                self.candidates,
+                candidate_id=cid,
+                reviewer=self.reviewer,
+                payload_file=payload,
+                match_rule=cast(MatchRule, rule),
+                source_level=4,
+                confirmed_near=self.near.confirmed_near,
+            )
+        except PrismabibError as exc:
+            message = f"Refused: {exc}"
+        else:
+            message = (
+                f"Registered {event.record_id} (event {event.event_id}). "
+                "It takes effect at the next build."
+            )
+        self.alert.object = _alert_html(message)
+        self.reload()  # after any outcome, so the display matches the file
+        return message
+
+    def view(self) -> pn.viewable.Viewable:
+        """The Register section, in reading order."""
+        return pn.Column(
+            pn.pane.Markdown(f"## Register a candidate\n\nReviewer: **{self.reviewer}**"),
+            self.alert,
+            self.candidate_table,
+            self.candidate_select,
+            self.rule_select,
+            self.payload_select,
+            self.payload_note,
+            self.match_pane,
+            self.near_checkbox,
+            self.confirm_pane,
+            self.register_button,
+            # ADR 0035 PR 4: the Reverse and Active registrations sections go here.
+        )
+
+
+def registration_view(project: Project, *, reviewer: str) -> pn.viewable.Viewable:
+    """Return the Register form; display in a notebook cell or ``panel serve`` it (ADR 0004).
+
+    Raises:
+        ValidationError: If ``reviewer`` is blank.
+    """
+    pn.extension()
+    return RegistrationForm(project, reviewer=reviewer).view().servable()
+
+
 __all__ = [
     "CandidateRowView",
     "MatchTable",
     "NearConfirmation",
+    "RegistrationForm",
     "ResponseOption",
     "ResponseOptions",
     "can_reverse",
@@ -261,6 +489,7 @@ __all__ = [
     "preselected_rule",
     "reason_options",
     "register_confirmation_text",
+    "registration_view",
     "response_options",
     "reversal_confirmation_text",
 ]
