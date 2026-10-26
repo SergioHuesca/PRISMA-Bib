@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ADR 0035 PR 1 (no behaviour change): `capture.candidates.near_rule` names which near rule fired (`same_title_other_year`, `title_prefix` or `None`) and `near_matches` is now a filter over it; the writer's private `_satisfying` is the public `capture.registrations.matching_works`. Tests pin both against the writer and each other.
 - Dashboard Corpus browser shows an `origin` column (`scopus` or `registered`, from the `records_all` view; ADR 0032 consequence on `viz/dashboard.py`).
 - CLI: `prismabib register`, `reverse` and `registrations` over the registration writer (ADR 0029/0032/0033): register a pasted candidate from a captured OpenAlex response (`--payload`, `--match-rule`, `--confirm-near`), reverse by event id with a closed `--reason` (`--note` when `other`), and list active registrations read-only. `supersede` stays build-time only.
 - `numbers.json` keys `citations.registered_unavailable` (ADR 0029 Consequence 7) and

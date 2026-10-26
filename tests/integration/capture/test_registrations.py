@@ -28,6 +28,7 @@ from prismabib.capture.registrations import (
     ReverseEvent,
     SupersedeEvent,
     load_registration_events,
+    matching_works,
     register_candidate,
     registration_log,
     reverse_registration,
@@ -269,6 +270,37 @@ def test_register_candidate__near_match_with_confirmation__registers(env: Env) -
     event = env.register(cid, match_rule="near_confirmed", confirmed_near=True)
 
     assert event.match_rule == "near_confirmed"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("title", "year", "doi", "rule", "resolves"),
+    [
+        ("Anything", 2021, DOI_ONE, "doi", True),
+        ("Anything", 2021, "10.9999/absent", "doi", False),
+        (TITLE_ONE, 2021, None, "title_year", True),
+        (TITLE_ONE, 2021, DOI_ONE, "title_year", False),  # a DOI'd candidate never title-matches
+        (TITLE_ONE, 2022, None, "title_year", False),
+        (TITLE_ONE, 2022, None, "near_confirmed", True),
+        (TITLE_ONE, 2021, None, "near_confirmed", False),  # exact is not near
+    ],
+)
+def test_matching_works__same_result_as_writer(
+    env: Env, title: str, year: int, doi: str | None, rule: str, resolves: bool
+) -> None:
+    cid = env.candidate(title, year, doi)
+    view = next(v for v in env.candidates.view() if v.event.candidate_id == cid)
+    works = reg.read_response(env.project.raw_dir, PAYLOAD).works
+
+    matched = matching_works(view, rule, works)
+
+    assert (len(matched) == 1) is resolves
+    if resolves:
+        event = env.register(cid, match_rule=rule, confirmed_near=(rule == "near_confirmed"))
+        assert event.doi == reg.classify_work(matched[0]).doi
+    else:
+        with pytest.raises(RegistrationRefusal, match="unresolved"):
+            env.register(cid, match_rule=rule, confirmed_near=(rule == "near_confirmed"))
 
 
 @pytest.mark.integration
