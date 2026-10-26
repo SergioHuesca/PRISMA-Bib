@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Merge train: a sprint of stacked (dependent) PRs now merges in one batch with no manual rebase. `scripts/train_verify_head.py` treats a path that main changed but the PR head already holds (the parent PR's own commits after its squash-merge) as absorbed, and still requires every other path to equal main's change byte for byte; overlaps that are not absorbed still halt. `docs/how-to/merge-train.md` documents how to build a stack.
+
 - ADRs 0028 to 0033 are accepted. They specify the field-level fallback cascade, the
   registration of a candidate as a record, OpenAlex topics as a keyword kind, OpenAlex responses
   as Layer 0 runs, the registered-records table and classification map, and the registered

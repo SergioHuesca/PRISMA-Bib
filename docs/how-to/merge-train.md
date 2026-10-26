@@ -41,13 +41,16 @@ main and nothing else. `scripts/train_verify_head.py <R> <head>` decides this. I
 1. R is an ancestor of the head and lies on the head's first-parent chain (or R is the head).
 2. Every commit from R to the head on the first-parent chain is a merge with exactly two
    parents. A one-parent commit (an unreviewed change) or an octopus merge halts.
-3. The second parent of each merge is an ancestor of `origin/main`. A merge of any other
+3. The second parent of each merge is an ancestor of `origin/main` (any ancestor, not only
+   the tip). A merge of any other
    branch halts.
 4. The merge adds only main's own change: `git diff` of the first parent against the merge
    is byte-identical to `git diff` of the merge base against the second parent, computed
    with `--binary --full-index`. Any extra byte in the merge halts.
-5. If the PR and main edited the same file, the update is not main's change alone. It halts
-   with "update overlaps the PR's own edits: needs a fresh review". Relabel after review.
+5. If the PR and main edited the same file, the update is not main's change alone and it
+   halts with "update overlaps the PR's own edits: needs a fresh review". Relabel after
+   review. The one exception is a change the PR already holds, see "Stacked PRs" below: an
+   overlap that is not an absorbed identical change still halts.
 
 Git runs with global and system config disabled and diff options pinned, so a machine's git
 settings do not change the result. Any git failure, or a fetch failure, halts the head.
@@ -55,8 +58,37 @@ Submodules are compared exactly: the diffs use `--ignore-submodules=none`, so a 
 pointer (gitlink) added or bumped by a merge is a change, even when `.gitmodules` says
 `ignore = all`. A shallow clone that cannot compute merge bases halts; it is never ok.
 
-A reviewer-approved head stays valid through clean main updates. Any other change to the
+A reviewer-approved head stays valid through clean main updates, including the absorption of
+a merged parent PR (next section). Any other change to the
 PR, and any overlap with main, needs a fresh review and a new `reviewed:` label.
+
+## Stacked PRs: a sprint of dependent PRs in one batch
+
+Build the stack by branching B from A's branch, and open both PRs against `main` (not
+against A's branch). Label them `train:1` (A) and `train:2` (B) and give each its own
+`reviewed:<sha>`. Review each PR on its own delta: B's reviewer reads `git diff A..B`, not
+A's changes again. A stacked branch must contain A's final head, so push no further commit to
+A after B was cut.
+
+What the train does: A reaches the head, is verified and squash-merged. B becomes the head and
+is now `BEHIND` (main has A's squash, B has A's commits). The train updates B from main. That
+merge brings in nothing new for the paths A touched, because B already holds them. The
+verifier calls those paths **absorbed**: a path main changed whose change the PR head already
+holds. Git's own path-wise merge of the PR head and main (renames off, merge base pinned, `.gitattributes` and merge drivers ignored; needs git 2.40 or later, older halts) must
+yield the head's entry there. That covers a file identical on both sides (mode, symlink,
+gitlink and deletion included) and a file B also edited on top of A's change. For the paths
+that are not absorbed, rule 4 applies unchanged: the merge must equal main's change on them
+byte for byte, and rule 5 halts on overlap. So an update that also brings an unrelated commit
+from main verifies exactly, and an update that drops or alters main's change, or adds a byte,
+halts. After the update the squash of B is B's own delta on top of main, with the head's tree.
+Three or more deep stacks work the same way, one parent at a time.
+
+Still halts, by design: B edits the same lines as A (the merge conflicts, `DIRTY`); A changed
+after B was cut (B holds an older A, so the paths differ and count as an overlap); main
+changed a path B holds differently. Fix by hand, review the result, relabel.
+
+Nothing else in the train changes: the head is still the lowest `train:N`, and a closed
+unmerged `train:K` below the head still halts.
 
 ## Stop, halt and resume
 
