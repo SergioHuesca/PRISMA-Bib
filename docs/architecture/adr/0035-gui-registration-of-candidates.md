@@ -2,15 +2,15 @@
 
 ## Status
 
-Proposed — 2026-10-26. The owner accepts it later. This record adds no code. It decides how a graphical view will sit on the
+Accepted — 2026-10-26, on the merge of the pull request that adds this record, which the owner approves. Until the merge, this record was `Proposed` on the branch `docs/adr-0035-gui-registration`. This record adds no code. It decides how a graphical view will sit on the
 registration writer that already exists, so that the implementation PRs (Follow-up implementation outline) have nothing left to decide.
 
 It builds on [ADR 0028](0028-field-level-fallback-cascade.md) (candidates), [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md)
 (registration, reversal), [ADR 0031](0031-openalex-responses-are-layer0-runs.md) (sealed OpenAlex responses),
 [ADR 0032](0032-registered-records-table-and-classification-map.md) (the derived table) and
 [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md) (the closed reversal reasons, orphaned decisions). It changes
-none of their contracts and makes no deviation from the frozen BUILD_PLAN. ADRs 0001 to 0033 are not edited. There is no ADR 0034 in
-the repository; the number 0035 was assigned by the owner's task and is kept.
+none of their contracts and makes no deviation from the frozen BUILD_PLAN. ADRs 0001 to 0034 are not edited. It follows
+[ADR 0034](0034-errata-to-adr-0031-and-0033.md), which corrects two statements in ADR 0031 and ADR 0033.
 
 ## Context
 
@@ -163,8 +163,8 @@ ADR and their own dead-key test over their own map.
   version renders with that role; the PR checks the rendered HTML). The confirmation step is text, not a tooltip.
 - Controls follow reading order, so Tab order is correct without `tabindex` values. Every action is a button reachable by keyboard.
 - Tables expose their data as text (`<run>/response-NNNN` and counts), not as an image or colour chip.
-- Scope of the claim: a unit test checks that each widget has a non-empty `name`. A screen-reader pass is a manual check in the last
-  PR's checklist. This record does not claim WCAG conformance.
+- Scope of the claim: a unit test checks that each widget has a non-empty `name`. The alert uses `role="alert"`, asserted on the
+  rendered HTML. The owner decided that no manual screen-reader pass is required. This record does not claim WCAG conformance.
 
 ### 11. Test strategy
 
@@ -239,12 +239,15 @@ with the `ui.py` rule against assertion-free render tests.
 6. `docs/methodology/prisma-mapping.md` describes registration by its rules and needs no change. The how-to for the CLI gains a GUI section in the last PR.
 7. Identity is a typed name, so two people can register under one name. That is existing behaviour and is not made worse here.
 
-## Open questions for the owner
+## Decisions taken by the owner
 
-1. Should reversal in the GUI ask for a second confirmation when the paper is currently included? Section 4 proposes a warning with the
-   count and one click. Recommendation: warning only, because reversal is an allowed reviewer act (ADR 0033).
-2. Module location: `capture/` (recommended, it follows the writer) or `screening/`.
-3. Is a manual screen-reader pass required before accepting the implementation, or is the labelled-widget unit test enough?
+Decided on 2026-10-26, before acceptance:
+
+1. Reversal in the GUI of a paper that is currently `included` shows a warning with the orphaned-decision count and needs one
+   confirmation, no second one. Reversal is an allowed reviewer act (ADR 0033).
+2. The module lives in `capture/registration_ui.py`, next to the writer.
+3. Accessibility is checked by the labelled-widget unit test and the rendered `role="alert"` assertion. No manual screen-reader
+   pass is required.
 
 ## Follow-up implementation outline
 
