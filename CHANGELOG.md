@@ -64,9 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Merge train docs: `docs/how-to/merge-train.md` now says what stacked PRs can and cannot do. A stacked child whose edits touch hunks adjacent to its parent's conflicts with `main` once the parent is squash-merged (`DIRTY`, and the train halts); rules f and g verify a merge but cannot resolve a conflict. The page now recommends one PR for dependent work or a restack between sequential batches, and documents the `train:N` position rule, the closed-unmerged label cleanup, and the resume order (`train:halted` removed before a run). The 2026-10-26 run (#177 to #184) is recorded there.
 - Merge train: rule g, clean automerge. An update merge whose tree is exactly git's own clean, attribute-neutral merge of the PR head and main now passes even when both edited the same file (every PR adding a `CHANGELOG.md` bullet no longer halts the batch at the second PR). Conflicts, extra bytes, hand resolution and criss-cross histories still halt; the required CI checks on the merged head are the semantic gate. The verifier tests that expected an overlap halt on a clean merge now expect `ok`.
 
-- Merge train: a sprint of stacked (dependent) PRs now merges in one batch with no manual rebase. `scripts/train_verify_head.py` treats a path that main changed but the PR head already holds (the parent PR's own commits after its squash-merge) as absorbed, and still requires every other path to equal main's change byte for byte; overlaps that are not absorbed still halt. `docs/how-to/merge-train.md` documents how to build a stack.
+- Merge train: a stacked (dependent) PR whose edits do not touch hunks adjacent to its parent's now merges in one batch with no manual rebase. `scripts/train_verify_head.py` treats a path that main changed but the PR head already holds (the parent PR's own commits after its squash-merge) as absorbed, and still requires every other path to equal main's change byte for byte; overlaps that are not absorbed still halt. `docs/how-to/merge-train.md` documents what works and what halts.
 
 - ADRs 0028 to 0033 are accepted. They specify the field-level fallback cascade, the
   registration of a candidate as a record, OpenAlex topics as a keyword kind, OpenAlex responses
