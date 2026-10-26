@@ -1,15 +1,21 @@
 """ADR 0035 Decision 11: the Register form drives the writer and nothing else (headless handlers).
 
+Source levels 1 to 3 are unreachable from the view (it has no level control and always passes
+4), so ADR 0035 Decision 11's "levels 1 to 3" refusal is covered at the writer only
+(`test_registrations.py`), not here.
+
 Reuses the synthetic OpenAlex run and ``env`` fixture of ``test_registrations.py``; no network.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import html
 import io
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +23,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prismabib.capture import registration_ui as ui
-from prismabib.capture.registrations import load_registration_events
+from prismabib.capture.registrations import RegistrationRefusal, load_registration_events
 from prismabib.cli import app
 from prismabib.errors import ValidationError
 from prismabib.project import Project
@@ -26,8 +32,10 @@ from tests.integration.capture.test_registrations import (
     PAYLOAD,
     TITLE_ONE,
     Env,
+    _works,
     env,  # noqa: F401  (pytest fixture)
 )
+from tests.store_helpers import make_entry
 
 AUTO_NAME = re.compile(r"^[A-Za-z]+\d{3,}$")  # Panel's default, unlabelled name
 
@@ -222,3 +230,74 @@ def test_view__blank_reviewer__raises_validation_error(env: Env) -> None:  # noq
     with pytest.raises(ValidationError):
         ui.registration_view(env.project, reviewer="  ")
     assert "sh" in str(ui.registration_view(env.project, reviewer="sh").objects[0].object)
+
+
+def _refused_through_view(
+    env: Env,  # noqa: F811
+    form: ui.RegistrationForm,
+    writer_call: Callable[[], object],
+    *,
+    wrote_before: bool = False,
+) -> None:
+    """The view shows the writer's exact refusal text and writes nothing."""
+    before = env.snapshot()
+    with pytest.raises(RegistrationRefusal) as writer:
+        writer_call()
+    assert env.snapshot() == before
+
+    message = form.register()
+
+    assert message == f"Refused: {writer.value}"
+    assert html.unescape(str(form.alert.object)) == f'<div role="alert">{message}</div>'
+    assert env.snapshot() == before  # log bytes and checksum sidecar
+    assert (before[0] is not None) == wrote_before
+
+
+@pytest.mark.integration
+def test_view__refusal_no_doi__surfaces_the_writer_message(env: Env) -> None:  # noqa: F811
+    cid = env.candidate(TITLE_ONE, 2021)
+    form = _form(env, cid)
+    works = _works()
+    works[0]["doi"] = None
+    env.write_run(works)  # the sealed response changes under the open form
+
+    _refused_through_view(env, form, lambda: env.register(cid, match_rule="title_year"))
+
+
+@pytest.mark.integration
+def test_view__refusal_two_matching_works__surfaces_the_writer_message(
+    env: Env,  # noqa: F811
+) -> None:
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    form = _form(env, cid)
+    works = _works()
+    twin = copy.deepcopy(works[0])
+    twin["id"] = "https://openalex.org/W2999999999"
+    env.write_run([*works, twin])
+
+    _refused_through_view(env, form, lambda: env.register(cid))
+
+
+@pytest.mark.integration
+def test_view__refusal_duplicate_of_scopus_record__surfaces_the_writer_message(
+    env: Env,  # noqa: F811
+) -> None:
+    env.scopus_run(
+        "20250102T000000Z-22222222",
+        make_entry(eid="2-s2.0-800000000002", title="Other", cover_date="2020-01-01", doi=DOI_ONE),
+    )
+    env.build()
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    form = _form(env, cid)
+
+    _refused_through_view(env, form, lambda: env.register(cid))
+
+
+@pytest.mark.integration
+def test_view__second_registration_same_candidate__refused(env: Env) -> None:  # noqa: F811
+    cid = env.candidate(TITLE_ONE, 2021, DOI_ONE)
+    form = _form(env, cid)
+    env.register(cid)  # registered elsewhere (CLI, another tab) while this form is open
+
+    _refused_through_view(env, form, lambda: env.register(cid), wrote_before=True)
+    assert len(load_registration_events(env.project.registrations_path)) == 1
