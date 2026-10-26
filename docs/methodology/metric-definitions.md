@@ -190,6 +190,14 @@ Unlike CAGR, an all-zero citation table on an empty corpus is a real,
 reportable state (ADR 0022 Decision 10) — every field is `0`/`0.0`, not an
 error.
 
+### Registered records — `citations.registered_unavailable`
+
+`numbers.json` key (ADR 0029 Consequence 7, ADR 0032): the number of active registrations,
+all of which lack a citation snapshot. `citation_statistics` inner-joins snapshots, so these
+records are outside `records_with_a_snapshot`, `total`, `median` and `max`; this key counts
+them explicitly so a denominator can be reconciled with `corpus.size`. Their citation count
+is unavailable, never zero and never imputed. `0` for a project with no registrations.
+
 ### Citations by year — `citations_by_year(corpus, *, stage=INCLUDED, at=None)`
 
 `data`: `year`, `mean_citations`, `records`. `report/numbers.py::_citation_numbers`

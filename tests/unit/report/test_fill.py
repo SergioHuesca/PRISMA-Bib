@@ -62,6 +62,15 @@ def test_fill__unused_key__raises_naming_it() -> None:
 
 
 @pytest.mark.unit
+def test_fill__uncited_methods_keys__are_optional() -> None:
+    numbers = {"corpus.size": 96, "methods.registered_sentence": "", "methods.x": "y"}
+
+    assert fill_manuscript("We screened {{corpus.size}}.", numbers) == "We screened 96."
+    with pytest.raises(FillError, match=r"never cites.*geography.share.CHN"):
+        fill_manuscript("{{corpus.size}}", {**numbers, "geography.share.CHN": 0.3})
+
+
+@pytest.mark.unit
 def test_fill__both_directions_wrong__reports_both_at_once() -> None:
     """One run reports both problems; fixing one must not reveal the other."""
     with pytest.raises(FillError) as excinfo:

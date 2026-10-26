@@ -114,6 +114,10 @@ def _require_mapping(numbers: object) -> Mapping[str, Any]:
     return numbers
 
 
+#: Keys under this prefix may go uncited without tripping the unused-key check.
+_OPTIONAL_PREFIX = "methods."
+
+
 def fill_manuscript(text: str, numbers: Mapping[str, Any], *, escape_latex: bool = False) -> str:
     """Substitute every placeholder in ``text`` from ``numbers``.
 
@@ -145,7 +149,8 @@ def fill_manuscript(text: str, numbers: Mapping[str, Any], *, escape_latex: bool
 
     Raises:
         FillError: If the manuscript cites a key ``numbers`` does not define,
-            or if ``numbers`` defines a key the manuscript never cites. The
+            or if ``numbers`` defines a key the manuscript never cites (``methods.*``
+            keys are optional and exempt). The
             message lists both sets in sorted order.
         ValidationError: If ``numbers`` is not a mapping of scalars.
     """
@@ -173,7 +178,8 @@ def fill_manuscript(text: str, numbers: Mapping[str, Any], *, escape_latex: bool
 
         out_lines.append(_PLACEHOLDER.sub(replace, line))
 
-    unused = set(numbers) - cited
+    # `methods.*` snippets are optional: a template without registrations has nothing to say.
+    unused = {key for key in numbers if key not in cited and not key.startswith(_OPTIONAL_PREFIX)}
     if unknown or unused:
         problems: list[str] = []
         if unknown:

@@ -4,8 +4,10 @@ Pure functions of numbers already computed: the sentence quotes
 ``flow.registered`` from the ``numbers.json`` mapping, so the text cannot
 disagree with the data.
 
-No template placeholder is wired to these yet (the repo has no methods generator; manuscripts
-are user templates): follow-up.
+Both are exposed to manuscript templates as ``{{methods.registered_sentence}}`` and
+``{{methods.orphaned_decisions_text}}`` through ``numbers.json``
+(:func:`~prismabib.report.numbers.numbers_map`); each is ``""`` when there is nothing to say.
+There is no methods generator beyond these two snippets: manuscripts are user templates.
 """
 
 from __future__ import annotations

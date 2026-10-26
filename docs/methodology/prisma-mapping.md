@@ -313,6 +313,29 @@ Note what equation 1 means arithmetically: `excluded_automated` is computed as
 reports a difference between "records identified" and "records loaded", that difference is
 not an automation exclusion and must not be presented as one.
 
+### When a registration is reversed or superseded
+
+Reversing a registration, or a Scopus record superseding it, removes that record from `S_raw`.
+Its current decisions stay in `decisions.jsonl` but are **orphaned**: they are not folded into
+any count. The diagram footnote shows only their count; the methods text
+(`methods.orphaned_decisions_text`) lists each one with `event_id`, `record_id`, stage and
+decision. The reason is always `record not in S_raw`: nothing yet records whether a
+reversal or a supersession removed the record. Orphans are never a `FlowCounts` field
+([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md) §3).
+What the counts then do, as the code behaves:
+
+- `registered` falls by one, and so does every count the record contributed to, at whichever
+  stage its decisions had taken it. `included` falls only if the paper had reached `included`;
+  a paper excluded at title and abstract lowers `excluded_title_abstract` instead.
+- After a **supersession** the Scopus record enters `S_raw` with no decisions. It counts in
+  `unsure_title_abstract` (it is not excluded, and not included) until a reviewer decides it
+  again; decisions are never transferred. `included` therefore stays lower by one until then.
+- Equation 1 still closes: `identified` and the Scopus side of `S_raw` move together, and
+  `registered` falls by the superseded registration.
+
+The published `included` can thus fall after a draft quoted it. Compare the orphan listing
+in the methods text with the draft.
+
 ### When equation 1 does not close
 
 This is the list to work through when a diagram will not add up. It is not closed — a cause

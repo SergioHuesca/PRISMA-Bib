@@ -22,11 +22,14 @@ appearance a reviewable diff rather than a surprise.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from prismabib.bibliometrics.citations import citation_statistics
 from prismabib.bibliometrics.venues import top_venues
-from prismabib.prisma.flow import FlowCounts, compute_flow_counts
+from prismabib.prisma.flow import FlowCounts, compute_flow_counts_with_orphans
+from prismabib.prisma.orphans import OrphanedDecision
+from prismabib.report.methods import orphaned_decisions_text, registered_sentence
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus
@@ -195,7 +198,12 @@ def _venue_numbers(corpus: Corpus) -> dict[str, Any]:
     return numbers
 
 
-def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[str, Any]:
+def numbers_map(
+    project: Project,
+    *,
+    counts: FlowCounts | None = None,
+    orphans: Sequence[OrphanedDecision] | None = None,
+) -> dict[str, Any]:
     """Every scalar ``project``'s manuscript may cite, as a flat mapping.
 
     Args:
@@ -204,6 +212,8 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
             caller already has them. Recomputed from Layer 1 and the decision
             log when omitted -- never read from a cache, so this cannot report
             a number the current store does not support.
+        orphans: Pre-computed orphaned decisions, from the same snapshot as
+            ``counts``. Supplied together with ``counts`` or not at all.
 
     Returns:
         A flat ``key -> scalar`` mapping, sorted by key. Sorted because the
@@ -211,6 +221,7 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
         as a change to the numbers.
 
     Raises:
+        ValueError: If exactly one of ``counts`` and ``orphans`` is given.
         ValidationError: If any value is not a JSON scalar. Raised here
             rather than at write time so the offending key is named while the
             code that produced it is still on the stack.
@@ -218,7 +229,13 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
     """
     from prismabib.errors import ValidationError
 
-    resolved = counts if counts is not None else compute_flow_counts(project)
+    if (counts is None) != (orphans is None):
+        raise ValueError("pass both `counts` and `orphans` (one snapshot), or neither")
+    found: Sequence[OrphanedDecision]
+    if counts is None or orphans is None:
+        resolved, found = compute_flow_counts_with_orphans(project)
+    else:
+        resolved, found = counts, orphans
     numbers: dict[str, Any] = dict(_flow_numbers(resolved))
     numbers["criteria.version"] = project.criteria.version
 
@@ -239,6 +256,12 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
         numbers.update(_venue_numbers(corpus))
     finally:
         connection.close()
+
+    # ADR 0029 C7: a registration has no citation snapshot, so every one is unavailable.
+    numbers["citations.registered_unavailable"] = resolved.registered
+    # Methods snippets for `{{methods.*}}` placeholders; "" when there is nothing to say.
+    numbers["methods.registered_sentence"] = registered_sentence(numbers)
+    numbers["methods.orphaned_decisions_text"] = orphaned_decisions_text(found)
 
     for key, value in numbers.items():
         if not isinstance(value, _SCALAR_TYPES):
