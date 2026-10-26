@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Merge train: rule g, clean automerge. An update merge whose tree is exactly git's own clean, attribute-neutral merge of the PR head and main now passes even when both edited the same file (every PR adding a `CHANGELOG.md` bullet no longer halts the batch at the second PR). Conflicts, extra bytes, hand resolution and criss-cross histories still halt; the required CI checks on the merged head are the semantic gate. The verifier tests that expected an overlap halt on a clean merge now expect `ok`.
+
 - Merge train: a sprint of stacked (dependent) PRs now merges in one batch with no manual rebase. `scripts/train_verify_head.py` treats a path that main changed but the PR head already holds (the parent PR's own commits after its squash-merge) as absorbed, and still requires every other path to equal main's change byte for byte; overlaps that are not absorbed still halt. `docs/how-to/merge-train.md` documents how to build a stack.
 
 - ADRs 0028 to 0033 are accepted. They specify the field-level fallback cascade, the

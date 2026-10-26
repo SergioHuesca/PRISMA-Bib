@@ -26,7 +26,8 @@
 # reviewer approved. scripts/train_verify_head.py decides whether the head is that commit plus
 # only verified update merges of main (byte-exact diffs, no other change, no overlap with the
 # PR's own edits; except paths main changed that the head already holds, e.g. a merged parent
-# PR of a stacked PR, which are absorbed: rule f). The head is squash-merged, pinned to its
+# PR of a stacked PR, which are absorbed: rule f; or the whole update is exactly git's clean
+# automatic merge of the head and main, rule g). The head is squash-merged, pinned to its
 # head sha, only when it is not a
 # draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED or NEUTRAL with none queued
 # or running; and the verification passed. No batch PR may sit below the head closed unmerged
