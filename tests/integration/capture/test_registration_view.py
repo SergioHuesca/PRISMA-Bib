@@ -32,7 +32,7 @@ from prismabib.capture.registrations import (
     load_registration_events,
 )
 from prismabib.cli import app
-from prismabib.errors import StoreError, ValidationError
+from prismabib.errors import ConfigError, LogError, StoreError, ValidationError
 from prismabib.prisma.flow import compute_flow_counts
 from prismabib.prisma.impact import reversal_impact
 from prismabib.prisma.log import DecisionLog
@@ -547,7 +547,27 @@ def test_view__reverse_blank_note_for_a_non_other_reason__passes_none(
 
     form.reverse()
 
-    assert calls[0]["note"] is None and _all(env.project)[-1].note is None
+    assert calls[0]["note"] == "  "  # the view passes it verbatim; the writer normalises
+    assert _all(env.project)[-1].note is None
+
+
+@pytest.mark.integration
+def test_view__reverse_blank_note__logs_the_same_as_cli(env: Env, tmp_path: Path) -> None:  # noqa: F811
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    other_root = tmp_path / "copy"
+    shutil.copytree(env.project.root, other_root / "reg")
+    other = Project.open("reg", root=other_root)
+    argv = ["reverse", "reg", _all(other)[0].event_id, "--reviewer", "rv", "--reason", "wrong_doi"]
+    result = CliRunner().invoke(app, [*argv, "--note", "   ", "--root", str(other_root)])
+    form = ui.ReversalForm(env.project, reviewer="rv")
+    form.select.value = event.event_id
+    form.reason_select.value, form.note_input.value = "wrong_doi", "   "
+
+    form.reverse()
+
+    assert result.exit_code == 0
+    assert _norm(env.project) == _norm(other)
+    assert _all(env.project)[-1].note == _all(other)[-1].note is None
 
 
 def _norm(project: Project) -> list[dict[str, Any]]:
@@ -586,22 +606,34 @@ def test_view__reverse__appends_event_equal_to_cli(env: Env, tmp_path: Path) -> 
 
 
 @pytest.mark.integration
-def test_view__reverse_after_decision__orphan_count_shown_then_reversed(env: Env) -> None:  # noqa: F811
+@pytest.mark.parametrize(
+    ("with_fulltext", "orphans_expected", "included_text"),
+    [(True, 3, "is currently included"), (False, 2, "is not currently included")],
+)
+def test_view__reverse_after_decision__orphan_count_shown_then_reversed(
+    env: Env,  # noqa: F811
+    with_fulltext: bool,
+    orphans_expected: int,
+    included_text: str,
+) -> None:
     form, event_id, record_id = _registered(env)
     env.build()  # Layer 1 learns the registration; a decision needs an S_raw record
     log = DecisionLog(env.project, id_factory=SeededIdFactory(seed=0, prefix="ev"))
-    for stage, reviewer in ((TA, "kp"), (TA, "kp"), (TA, "ab"), (FT, "kp")):
+    steps = [(TA, "kp"), (TA, "kp"), (TA, "ab")] + ([(FT, "kp")] if with_fulltext else [])
+    for stage, reviewer in steps:
         log.append(stage=stage, record_id=record_id, reviewer=reviewer, decision="include")
     form.select.value = None
     form.select.value = event_id  # re-select: the confirmation reads the decisions
     impact = reversal_impact(env.project, record_id)
     decisions = env.project.decisions_path.read_bytes()
-    assert impact.decisions_orphaned == 3  # the superseded kp event is not counted
+    assert impact.currently_included is with_fulltext  # the setup really is in M_full, or not
+    assert impact.decisions_orphaned == orphans_expected  # the superseded kp event is not counted
 
     # Before the write the confirmation names the count and the inclusion state.
     text = str(form.confirm_pane.object)
-    included = "is currently included" if impact.currently_included else "is not currently included"
-    assert "orphans 3 current" in text and included in text and record_id in text
+    assert f"orphans {orphans_expected} current" in text and record_id in text
+    assert included_text in text
+    assert ("is not currently included" in text) is (not with_fulltext)
 
     form.reason_select.value = "not_eligible"
     form.reverse()
@@ -613,19 +645,27 @@ def test_view__reverse_after_decision__orphan_count_shown_then_reversed(env: Env
     env.build()
     assert compute_flow_counts(env.project).registered == 0
     orphans = project_orphaned_decisions(env.project)
-    assert len(orphans) == impact.decisions_orphaned == 3
+    assert len(orphans) == impact.decisions_orphaned == orphans_expected
     assert {o.record_id for o in orphans} == {record_id}
 
 
 @pytest.mark.integration
-def test_view__impact_unknown__alert_shown_and_reverse_still_available(env: Env) -> None:  # noqa: F811
-    form, event_id, record_id = _registered(env)  # no store was built: the helper cannot read one
-    with pytest.raises(StoreError) as helper:
-        reversal_impact(env.project, record_id)
+@pytest.mark.parametrize("error", [StoreError, ConfigError, LogError])
+def test_view__impact_unknown__alert_shown_and_reverse_still_available(
+    env: Env,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    error: type[Exception],
+) -> None:
+    form, event_id, _ = _registered(env)
+
+    def broken(_project: Project, _record_id: str) -> None:
+        raise error(f"{error.__name__} boom")
+
+    monkeypatch.setattr(ui, "reversal_impact", broken)
     form.select.value = None
     form.select.value = event_id
 
-    assert f"Impact unknown: {helper.value}" in html.unescape(str(form.alert.object))
+    assert f"Impact unknown: {error.__name__} boom" in html.unescape(str(form.alert.object))
     assert 'role="alert"' in str(form.alert.object)
     assert "unknown" in str(form.confirm_pane.object)
     assert "orphans" not in str(form.confirm_pane.object)  # never a guessed count
