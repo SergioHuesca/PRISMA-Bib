@@ -32,7 +32,11 @@ be typed without looking at the work. The requirement is met in letter by the fl
 **The reviewer already works in a Panel view.** `screener(project, stage=, reviewer=, blind=)` in `src/prismabib/screening/ui.py`
 is a notebook cell that `panel serve` also serves (ADR 0004). `Screener` takes its behaviour from `KEY_MAP`, and
 `test_keymap__every_binding__maps_to_a_handler` (`tests/integration/screening/test_ui.py`) fails on a binding without a handler, or a
-handler without a binding. There is no dashboard module under `src/prismabib`; "dashboard" in the docs means the notebook flow.
+handler without a binding.
+
+**A dashboard also exists.** `src/prismabib/viz/dashboard.py` is the Stage 9 Panel dashboard, `dashboard(project, *, corpus=None)`,
+with the same notebook-or-`panel serve` contract as `screener()`. It has tabs (Overview, PRISMA, Trends and others) built on a
+read-only `Corpus` and on `compute_flow_counts`. It reads Layer 1 and the logs and writes nothing.
 
 **The rules a GUI must not weaken**, all already in code:
 
@@ -51,11 +55,12 @@ writer functions, which it calls and does not re-implement. It has no global key
 
 | Option | For | Against |
 |---|---|---|
-| A. A tab inside `Screener` | One window | `Screener` is the blind, keyboard-first, per-record view with bias controls (ADR 0004; the `ui.py` module docstring). Registration is a different task on a different object (a candidate, not a queue item). The document-level `keydown` listener (`keymap_javascript`) would fire while the reviewer types a note. `Screener` is built over a `ScreeningQueue`, which registration does not have. |
-| B. A new dashboard application | Could also show flow counts | None exists. It would be a new deployment surface for a three-form task. |
-| C. A separate Panel view with its own factory | Same hosting as `screener()` (notebook or `panel serve`); no coupling to the queue | Two things to open. |
+| A. A tab inside `Screener` | One window | `Screener` is the blind, keyboard-first, per-record view with bias controls (ADR 0004; the `ui.py` module docstring). Registration is a different task on a different object (a candidate, not a queue item). `Screener` is built over a `ScreeningQueue`, which registration does not have. Its page-global `keydown` listener (`keymap_javascript`) would also sit on a page whose buttons write irreversible events (section 9). |
+| B. A tab in the existing `viz/dashboard.py` dashboard | The PRISMA tab already shows `registered`, so a reviewer sees the effect beside the action; one place for the project | The dashboard is read-only by construction: it is built on a read-only `Corpus` and renders results. A write tab would break that property, and every dashboard test and review would need to re-establish it. Registration writes events that feed Layer 1 at the next build, so the dashboard's numbers would not change when the reviewer acts (consequence 5), which is confusing beside a write control. It also loads a whole corpus to show a form that needs only the candidate log and Layer 0 manifests. |
+| C. A separate Panel view with its own factory | Same hosting as `screener()` and `dashboard()` (notebook or `panel serve`); no coupling to the queue or the read-only corpus; the read-only and write surfaces stay separate | Two things to open. |
 
-**Recommendation: C.** Module `src/prismabib/capture/registration_ui.py`, beside `registrations.py`, which it wraps. It is not under
+**Recommendation: C.** The deciding reason is the read/write split: `dashboard()` is the read-only reporting surface and `screener()` is the
+decision-writing surface, and registration is a third kind of write (Layer 1-feeding events) that belongs to neither. Module `src/prismabib/capture/registration_ui.py`, beside `registrations.py`, which it wraps. It is not under
 `screening/`, because registration is not screening and creates no decision. The factory follows `screener()`:
 `registration_view(project: Project, *, reviewer: str) -> pn.viewable.Viewable`, ending in `.servable()`. It has three sections:
 Register, Reverse, Active registrations. As in `ui.py`, everything assertable (the candidate rows, the match table, the reason options,
@@ -71,10 +76,12 @@ the confirmation text) is a pure function over plain data, and the widgets are b
   response with the writer's own matching, and offers only the responses where **exactly one** work satisfies a rule. It also shows a count of
   responses with none or several, so "nothing found" is visible and explained and not silent. The string handed to the writer is the
   same `openalex/<run>/response-NNNN.jsonl` the CLI takes.
-- **One shared matching function.** The matching in `_satisfying` (`registrations.py`) is private today. The first PR makes it a public
-  pure function, `matching_works(candidate, rule, works)`, and `register_candidate` calls that name. The view calls the same function,
-  so what the form shows as a match and what the writer accepts are one function. Listing responses only reads Layer 0 (manifests, and
-  bodies through `read_response`).
+- **One shared matching function.** The matching in `_satisfying(candidate, rule: str, works)` (`registrations.py` line 421) is
+  private today and has exactly one call site, in `register_candidate` (line 521). PR 1 renames it to the public `matching_works`
+  and adds it to `__all__`; `mypy --strict` then checks every call site. Before the rename, PR 1 greps `src` and `tests` for
+  `_satisfying` (today only the definition and that call site match). The view calls the same function, so what the form shows as a
+  match and what the writer accepts are one function. Listing responses only reads Layer 0 (manifests, and bodies through
+  `read_response`).
 
 ### 3. Match rules and the near-match confirmation
 
@@ -83,7 +90,11 @@ order. It preselects a rule only when exactly one rule applies. For the chosen w
 and DOI, the work's title, year and DOI, and the rule by name with its one-line definition from ADR 0029 section 1.
 
 For `near_confirmed` the view states which near rule fired (same normalised title with a different year, or one title a whole-word
-prefix of the other) and shows the two titles and years. Register is enabled only after the reviewer ticks "I confirm this work is
+prefix of the other) and shows the two titles and years. `near_matches` (`capture/candidates.py` line 468) returns only
+`(title, year)` pairs and does not say which rule fired, and `matching_works` returns works, not reasons. PR 1 therefore also adds one
+small pure function, `near_rule(candidate, title, year)`, returning `"same_title_other_year"`, `"title_prefix"` or `None`, and rewrites
+`near_matches` as a filter over it so the two cannot disagree. A test asserts that `near_matches` and `near_rule` agree on a table of
+cases. Register is enabled only after the reviewer ticks "I confirm this work is
 this candidate". That checkbox is the only source of `confirmed_near=True`. It is cleared whenever the selection changes, and it is not
 shown for `doi` and `title_year`. The writer refuses `near_confirmed` without it, so the GUI is a convenience and the rule stays in the
 writer. A last confirmation step shows DOI, title, year and rule (ADR 0029 section 1) before the call is made.
@@ -97,9 +108,36 @@ DOI, registering reviewer, time. The reviewer selects one, then:
   interfaces together;
 - enters a **note**, a text area that is marked required when the reason is `other` (the button stays disabled while it is empty or
   blank) and is optional otherwise;
-- reads a confirmation that states how many current decisions on that record will become orphaned (ADR 0033 Decision 3) and whether the
-  paper is currently included, using the existing orphan-listing code read-only. Reversal stays allowed after decisions exist
-  (ADR 0029 section 5); the text warns and does not forbid.
+- reads a confirmation that states how many current decisions on that record a reversal would orphan (ADR 0033 Decision 3) and
+  whether the paper is currently included. Reversal stays allowed after decisions exist (ADR 0029 section 5); the text warns, needs one
+  confirmation and does not forbid.
+
+**The reversal-impact helper.** The existing `orphaned_decisions` and `project_orphaned_decisions` (`prisma/orphans.py`) are
+retrospective: they list decisions whose record is already outside `S_raw`, so before the reversal they return nothing for this
+record. The view needs a prospective figure, so this record adds one named read-only function in `prisma/`, in a new module
+`prisma/impact.py`:
+
+```python
+@dataclass(frozen=True)
+class ReversalImpact:
+    record_id: str
+    currently_included: bool  # as defined below
+    decisions_orphaned: int  # current decisions that a reversal would orphan
+
+
+def reversal_impact(project: Project, record_id: str) -> ReversalImpact: ...
+```
+
+- `decisions_orphaned` is the number of entries in `DecisionLog(project).fold()` whose `record_id` is the argument: the current
+  decision per `(stage, record_id, reviewer)`, which is exactly what `orphaned_decisions` would list once the record left `S_raw`.
+- `currently_included` is true when the record is in `M_full`, the set whose size is `FlowCounts.included` (`included =
+  len(snapshot.manual_fulltext)`, `prisma/flow.py` line 580), computed under the same fold and aggregation `compute_flow_counts` uses.
+  PR 2 obtains that membership from the engine's own function, and adds a small read-only accessor in `prisma/` if none is exposed
+  today. A test asserts that the number of `currently_included` records equals `FlowCounts.included` on a fixture, so the helper cannot
+  drift from the diagram. An `unsure` or excluded record is not included.
+- It only reads: it folds `decisions.jsonl` without appending, opens Layer 1 read-only, and creates no file (like
+  `project_orphaned_decisions`, a project without `decisions.jsonl` yields zero and creates nothing).
+- The view shows these two figures from the helper and computes nothing itself.
 
 On confirm the view calls `reverse_registration`. Correcting a wrong DOI or title is the existing reversal followed by a new
 registration, and the view says so beside the reason list. There is no edit action and no delete.
@@ -110,11 +148,23 @@ registration, and the view says so beside the reason list. There is no edit acti
    `ReverseEvent` or `RegistrationRecord`, never touches `AppendOnlyLog`, and never calls `write_event` or `append_if`.
 2. The CLI commands and the view pass the same keyword arguments. Neither adds a rule the other lacks. A rule that matters belongs in
    the writer, as today.
-3. A test enforces the boundary structurally: parsing `registration_ui.py` with `ast`, the only write-capable names it imports from
-   `prismabib.capture.registrations` are the two functions, and it imports neither `DecisionLog` nor `AppendOnlyLog`. (The ADR 0029
-   no-`DecisionLog` test is extended to the new module.)
-4. A parity test drives the same accepted and refused scenarios through the CLI (`CliRunner`) and through the view's handler
-   functions, and asserts equal `registrations.jsonl` content. The writer takes injected `now` and `new_id`, so the whole event is equal, not only part of it.
+3. A test enforces the boundary structurally: parsing `registration_ui.py` with `ast`, the only names it may import from
+   `prismabib.capture.registrations` that can write are the two functions, and the only name it may import from `prismabib.prisma` that
+   touches the decision log is `reversal_impact`. It imports neither `DecisionLog` nor `AppendOnlyLog`. `reversal_impact` is read-only
+   (section 4), and its module is the only new place that reads `DecisionLog`.
+   - The existing check `test_registrations_module__source__never_imports_decisionlog_or_calls_write_event`
+     (`tests/unit/capture/test_registrations.py`) reads the raw source of `registrations.py` alone (`registrations.__file__`) and
+     asserts the substring `DecisionLog` is absent. It stays valid and unchanged, because `registrations.py` imports nothing from
+     `prisma/impact.py`. It does not cover `registration_ui.py`; the `ast` test above does, with the one allowance.
+4. The view passes `source_level=4`, which is the writer's default and the only registrable level (ADR 0029 section 1; the sealed OpenAlex
+   response is a level-4 source, ADR 0031). The view has no control for the level.
+5. A parity test drives the same accepted and refused scenarios through the CLI (`CliRunner`) and through the view's handler
+   functions on two identical copies of a project. The CLI commands pass no `now` or `new_id`, and the writer binds its defaults
+   (`now=_utc_now`, `new_id=_default_ids`) at definition time, so injection through the CLI is not possible and the test does not
+   rely on it. It reads each event back from the log, as `tests/integration/capture/test_registrations_cli.py` does, and asserts the
+   events are equal after setting `event_id`, `ts` and `record_id` (which is `registered:` plus `event_id`) aside, and that for a
+   `reverse` event `reverses` names the corresponding register event of its own project. Refused scenarios assert equal refusal
+   text and unchanged bytes and sidecar.
 
 ### 6. Refusals and errors
 
@@ -144,14 +194,17 @@ name an event will be written. A reversal records the reversing reviewer, who ma
 
 **None, by decision.** `KEY_MAP` keeps `i e u n p z ?` and the reason digits. Reasons:
 
-- The `KEY_MAP` listener is document-level and capturing. Registration has free-text input (the note), so a global single-letter key
-  would act while the reviewer types.
+- Registration is not a screening action. `KEY_MAP` is the screening view's single source of truth for what each key does
+  (`ui.py` module docstring), and registration actions do not belong in it. The listener already ignores key presses whose target is an
+  `input`, `textarea`, `select` or content-editable element, so typing a note is safe, but it is page-global and still acts on a
+  keypress when focus is on a button or the page body. Any registration binding would be a single key that writes an irreversible event
+  from those positions.
 - Registration is rare and screening is frequent. A single-key irreversible write buys nothing here, and a stray keypress that
   registers a record is a worse failure than a slow form.
 - The two views are separate pages, so no key collides.
 
 The registration view uses native form controls only (Tab, Shift+Tab, Space, Enter, arrows in a select), which need no listener. The
-`KEY_MAP` dead-key test is therefore untouched. A new test, `test_keymap__registration_actions__not_bound`, asserts that no `KEY_MAP` action
+`KEY_MAP` dead-key test, `test_keymap__every_binding__maps_to_a_handler`, is therefore untouched. A new test, `test_keymap__registration_actions__not_bound`, asserts that no `KEY_MAP` action
 name starts with `register`, `reverse` or `registration`, so a later PR cannot add one by accident. Shortcuts, if wanted later, need a new
 ADR and their own dead-key test over their own map.
 
@@ -179,21 +232,28 @@ Unit (pure functions, no Panel server):
 - `test_reason_options__equal_REVERSAL_REASONS`. *Mutation:* add a code in the view only.
 - `test_note_required__only_for_other`: the can-submit predicate per code, with empty and whitespace notes. *Mutation:* drop `.strip()`.
 - `test_near_confirmation__cleared_on_selection_change` and `test_near_confirmation__not_offered_for_doi`.
-- `test_view__imports_only_the_two_writers` (section 5.3). *Mutation:* import `registration_log` in the view.
+- `test_view__imports_only_the_two_writers_and_reversal_impact` (section 5.3). *Mutation:* import `registration_log` or `DecisionLog` in the view.
+- `test_near_rule__agrees_with_near_matches` (section 3). *Mutation:* change one branch of `near_rule` only.
+- `test_reversal_impact__counts_current_decisions_and_included`: `decisions_orphaned` equals the number of current decisions on the
+  record (an earlier superseded event is not counted); `currently_included` is true for a record in `M_full` and false for an `unsure`
+  or excluded one; the count of included records equals `FlowCounts.included`; the call appends nothing and creates no file.
+  *Mutation:* count every event instead of the folded ones.
 - `test_keymap__registration_actions__not_bound` (section 9).
 - `test_widgets__all_labelled`.
 
-Integration (real project fixture under `tmp_path`, injected `now` and `new_id`, no network):
+Integration (real project fixture under `tmp_path`, no network; the view's handlers may take injected `now` and `new_id`, the CLI
+cannot, so parity is by equality modulo `event_id`, `ts` and `record_id`, section 5.5):
 
-- `test_view__register_doi_match__appends_event_equal_to_cli`: the parity test (section 5.4). *Mutation:* the view always passes
+- `test_view__register_doi_match__appends_event_equal_to_cli`: the parity test (section 5.5). *Mutation:* the view always passes
   `match_rule="doi"`.
 - `test_view__register_near_without_confirmation__refused_and_log_unchanged`: bytes and sidecar equal. *Mutation:* the view always passes
   `confirmed_near=True`.
 - `test_view__refusals__surface_the_writer_message`: levels 1 to 3, no DOI, two matching works, duplicate of a Scopus record, second
   active registration for the candidate. Each shows the exact refusal text and writes nothing.
 - `test_view__reverse_other_without_note__refused_and_log_unchanged` and `test_view__reverse_each_code__appends_reverse_event`.
-- `test_view__reverse_after_decision__orphan_count_shown_then_reversed`: the confirmation names the count, the decision stays in
-  `decisions.jsonl`, and `compute_flow_counts` shows `registered` one lower.
+- `test_view__reverse_after_decision__orphan_count_shown_then_reversed`: the confirmation, before the reversal, names the count from
+  `reversal_impact` and says whether the paper is included; after it the decision stays in `decisions.jsonl`, the helper's count
+  equals what `project_orphaned_decisions` then lists, and `compute_flow_counts` shows `registered` one lower.
 - `test_view__register_and_reverse__raw_and_decisions_byte_identical`.
 - `test_view__second_registration_same_candidate__refused`.
 
@@ -229,8 +289,9 @@ with the `ui.py` rule against assertion-free render tests.
 ## Consequences
 
 1. A reviewer can register and reverse without reading a hash or a path, and sees the evidence ADR 0029 requires before the write.
-2. `matching_works` becomes a public name in `capture/registrations.py` (a rename of a private helper and one call site). It is the only
-   change to existing code outside new files, and it preserves behaviour.
+2. `matching_works` becomes a public name in `capture/registrations.py` (a rename of a private helper and its one call site), and
+   `near_matches` is rewritten as a filter over the new `near_rule`. These are the only changes to existing code outside new files, and
+   both preserve behaviour. The new files are `capture/registration_ui.py` and `prisma/impact.py`.
 3. Panel stays the only UI technology (ADR 0004). The new module falls under the `ui.py` rule on assertion-free render tests.
 4. The CLI stays supported as the scripting and CI path. The parity test covers both interfaces, so a later change to the writer is
    tested through both.
@@ -253,13 +314,15 @@ Decided on 2026-10-26, before acceptance:
 
 Small PRs, each green on its own, in this order:
 
-1. **Shared matching.** Rename `_satisfying` to the public `matching_works`; add `test_matching_works__same_result_as_writer`. No behaviour
-   change; the existing CLI tests pass untouched.
-2. **Pure view models.** `capture/registration_ui.py`: candidate rows, response options (sealed runs, exactly-one filter), match table,
-   near-confirmation state, reason options, note predicate, confirmation text. Unit tests with mutation checks. No Panel yet.
-3. **Register form.** The Panel widgets and `registration_view` for Register, calling `register_candidate`; refusal surfacing; the
-   integration and parity tests; the `ast` import-boundary test; the `KEY_MAP` guard test.
-4. **Reverse and list.** The Reverse and Active registrations sections, the orphan-count confirmation, and their tests.
+1. **Shared matching.** Grep `src` and `tests` for `_satisfying`; rename it to the public `matching_works` and export it; add
+   `near_rule` and rewrite `near_matches` over it; add `test_matching_works__same_result_as_writer` and
+   `test_near_rule__agrees_with_near_matches`. No behaviour change; the existing CLI tests pass untouched.
+2. **Pure view models and the impact helper.** `prisma/impact.py` (`reversal_impact`, with the `M_full` accessor if none is exposed) and
+   `capture/registration_ui.py`: candidate rows, response options (sealed runs, exactly-one filter), match table, near-confirmation
+   state, reason options, note predicate, confirmation text. Unit tests with mutation checks. No Panel yet.
+3. **Register form.** The Panel widgets and `registration_view` for Register, calling `register_candidate` with `source_level=4`;
+   refusal surfacing; the integration and parity tests; the `ast` import-boundary test; the `KEY_MAP` guard test.
+4. **Reverse and list.** The Reverse and Active registrations sections, the confirmation fed by `reversal_impact`, and their tests.
 5. **Docs.** How-to section, accessibility checklist, `docs/getting-started.md` row, a dated note under this record when it becomes
    Accepted, and `.claude/PROGRESS.md`.
 
@@ -267,7 +330,7 @@ Small PRs, each green on its own, in this order:
 
 The tests in Decision 11, each shown to fail on its named mutation, run under `pytest -n auto` and single-process, with `mypy --strict`
 clean on `src/prismabib`. The existing registration tests (`tests/unit/capture/test_registrations.py`,
-`tests/integration/capture/test_registrations.py`) pass unchanged, and `test_keymap__every_binding__maps_to_a_handler` is untouched.
+`tests/integration/capture/test_registrations.py`, including the `DecisionLog` source check) pass unchanged, and `test_keymap__every_binding__maps_to_a_handler` is untouched.
 
 ## Related decisions
 
