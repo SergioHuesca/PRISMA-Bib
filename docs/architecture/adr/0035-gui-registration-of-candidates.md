@@ -132,11 +132,15 @@ def reversal_impact(project: Project, record_id: str) -> ReversalImpact: ...
   decision per `(stage, record_id, reviewer)`, which is exactly what `orphaned_decisions` would list once the record left `S_raw`.
 - `currently_included` is true when the record is in `M_full`, the set whose size is `FlowCounts.included` (`included =
   len(snapshot.manual_fulltext)`, `prisma/flow.py` line 580), computed under the same fold and aggregation `compute_flow_counts` uses.
-  PR 2 obtains that membership from the engine's own function, and adds a small read-only accessor in `prisma/` if none is exposed
-  today. A test asserts that the number of `currently_included` records equals `FlowCounts.included` on a fixture, so the helper cannot
+  The source is `manual_fulltext_set(project) -> frozenset[str]` in `prisma/engine.py` (line 1025), which reads the same snapshot as
+  `compute_flow_counts`; `currently_included` is `record_id in manual_fulltext_set(project)`. `reversal_impact` reads the decision fold
+  and that set as two reads, which is harmless: it is a warning figure, and neither read writes. A test asserts that the number of `currently_included` records equals `FlowCounts.included` on a fixture, so the helper cannot
   drift from the diagram. An `unsure` or excluded record is not included.
 - It only reads: it folds `decisions.jsonl` without appending, opens Layer 1 read-only, and creates no file (like
   `project_orphaned_decisions`, a project without `decisions.jsonl` yields zero and creates nothing).
+- If the helper raises `StoreError` (no Layer 1 store) or `ConfigError` (unreadable criteria), the view shows the error in the
+  persistent alert (section 6) and offers no impact figure. It never shows a guessed or zero count. Whether the reversal button stays
+  enabled then is the reviewer's choice: the writer does not need the store, and the message says the impact is unknown.
 - The view shows these two figures from the helper and computes nothing itself.
 
 On confirm the view calls `reverse_registration`. Correcting a wrong DOI or title is the existing reversal followed by a new
@@ -201,7 +205,12 @@ name an event will be written. A reversal records the reversing reviewer, who ma
   from those positions.
 - Registration is rare and screening is frequent. A single-key irreversible write buys nothing here, and a stray keypress that
   registers a record is a worse failure than a slow form.
-- The two views are separate pages, so no key collides.
+- The registration view binds no keys. In a notebook, though, `screener()` installs a document-level capture listener
+  (`window.__prismabib_screener_keydown`, `keymap_javascript`) that stays active on the whole page, including a cell that holds
+  `registration_view`. With focus on a Register or Reverse button, pressing `i`, `e`, `u`, `n`, `p` or `z` could fire a screener action.
+  **Residual risk:** a notebook that runs both views is exposed to this. Run them in separate notebooks or browser tabs (under
+  `panel serve`, each is its own page and the listener is not shared). The how-to says so (PR 5). This record does not change the
+  screener's listener.
 
 The registration view uses native form controls only (Tab, Shift+Tab, Space, Enter, arrows in a select), which need no listener. The
 `KEY_MAP` dead-key test, `test_keymap__every_binding__maps_to_a_handler`, is therefore untouched. A new test, `test_keymap__registration_actions__not_bound`, asserts that no `KEY_MAP` action
@@ -252,8 +261,9 @@ cannot, so parity is by equality modulo `event_id`, `ts` and `record_id`, sectio
   active registration for the candidate. Each shows the exact refusal text and writes nothing.
 - `test_view__reverse_other_without_note__refused_and_log_unchanged` and `test_view__reverse_each_code__appends_reverse_event`.
 - `test_view__reverse_after_decision__orphan_count_shown_then_reversed`: the confirmation, before the reversal, names the count from
-  `reversal_impact` and says whether the paper is included; after it the decision stays in `decisions.jsonl`, the helper's count
-  equals what `project_orphaned_decisions` then lists, and `compute_flow_counts` shows `registered` one lower.
+  `reversal_impact` and says whether the paper is included; after it the decision stays in `decisions.jsonl`. Layer 1 changes only at build (section 7, consequence 5), so
+  the test rebuilds the store (`build_store`) between the reversal and the remaining assertions: that the helper's count equals what
+  `project_orphaned_decisions` then lists, and that `compute_flow_counts` shows `registered` one lower.
 - `test_view__register_and_reverse__raw_and_decisions_byte_identical`.
 - `test_view__second_registration_same_candidate__refused`.
 
@@ -317,14 +327,14 @@ Small PRs, each green on its own, in this order:
 1. **Shared matching.** Grep `src` and `tests` for `_satisfying`; rename it to the public `matching_works` and export it; add
    `near_rule` and rewrite `near_matches` over it; add `test_matching_works__same_result_as_writer` and
    `test_near_rule__agrees_with_near_matches`. No behaviour change; the existing CLI tests pass untouched.
-2. **Pure view models and the impact helper.** `prisma/impact.py` (`reversal_impact`, with the `M_full` accessor if none is exposed) and
+2. **Pure view models and the impact helper.** `prisma/impact.py` (`reversal_impact`, over the existing `manual_fulltext_set`) and
    `capture/registration_ui.py`: candidate rows, response options (sealed runs, exactly-one filter), match table, near-confirmation
    state, reason options, note predicate, confirmation text. Unit tests with mutation checks. No Panel yet.
 3. **Register form.** The Panel widgets and `registration_view` for Register, calling `register_candidate` with `source_level=4`;
    refusal surfacing; the integration and parity tests; the `ast` import-boundary test; the `KEY_MAP` guard test.
 4. **Reverse and list.** The Reverse and Active registrations sections, the confirmation fed by `reversal_impact`, and their tests.
-5. **Docs.** How-to section, accessibility checklist, `docs/getting-started.md` row, a dated note under this record when it becomes
-   Accepted, and `.claude/PROGRESS.md`.
+5. **Docs.** How-to section, accessibility checklist, `docs/getting-started.md` row, the separate-notebooks warning (section 9), and
+   `.claude/PROGRESS.md`. This record is already Accepted at the merge that adds it, so no later status note is needed.
 
 ## Verification the implementation must include
 
