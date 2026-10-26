@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ADR 0035 PR 2 (no Panel yet): `prisma.impact.reversal_impact` (read-only count of current decisions a reversal would orphan, and whether the record is in `M_full`) and the pure view models in `capture.registration_ui` (candidate rows, exactly-one response options, match table, near-confirmation state, reason options, note predicate, confirmation text). Tests pin them against `FlowCounts.included`, `REVERSAL_REASONS` and an `ast` import boundary.
 - ADR 0035 PR 1 (no behaviour change): `capture.candidates.near_rule` names which near rule fired (`same_title_other_year`, `title_prefix` or `None`) and `near_matches` is now a filter over it; the writer's private `_satisfying` is the public `capture.registrations.matching_works`. Tests pin both against the writer and each other.
 - Dashboard Corpus browser shows an `origin` column (`scopus` or `registered`, from the `records_all` view; ADR 0032 consequence on `viz/dashboard.py`).
 - CLI: `prismabib register`, `reverse` and `registrations` over the registration writer (ADR 0029/0032/0033): register a pasted candidate from a captured OpenAlex response (`--payload`, `--match-rule`, `--confirm-near`), reverse by event id with a closed `--reason` (`--note` when `other`), and list active registrations read-only. `supersede` stays build-time only.
