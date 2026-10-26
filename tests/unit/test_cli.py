@@ -40,6 +40,7 @@ runner = CliRunner()
 #: library function behind them today. `code` are named there too
 #: and are deliberately not implemented (see the cli.py module docstring).
 _IMPLEMENTED_COMMANDS = {"init", "search", "build", "flow", "enrich", "fulltext", "export", "fill"}
+_IMPLEMENTED_COMMANDS |= {"register", "reverse", "registrations"}
 
 
 def _counts(**overrides: object) -> FlowCounts:
