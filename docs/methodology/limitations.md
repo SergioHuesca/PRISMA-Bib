@@ -35,6 +35,40 @@ If your protocol requires multi-database coverage — most methodological guidan
 you will need to run the other databases separately and merge outside prismabib. Which
 brings up the next entry.
 
+## Registered records: a second, manual population
+
+**Current state, and deliberate.** A reviewer may register a paper found by a manual Google
+Scholar search as a record
+([ADR 0029](../architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md),
+[ADR 0032](../architecture/adr/0032-registered-records-table-and-classification-map.md)).
+These records differ from Scopus records, and a review that registers any must say so:
+
+- **Selection risk.** The reviewer chooses which resolved candidates to register. The corpus
+  therefore depends on what a person pasted and resolved, not only on the Scopus query.
+- **OpenAlex-derived classification.** A registered record's `doc_type`, venue type and
+  subject area come from its OpenAlex work through a fixed, versioned map (OpenAlex type and
+  source type to the engine's values; OpenAlex subfield to ASJC code). Thirteen subfield rows
+  are approximate (`qualifier` rows), and a record carrying one is flagged in the methods.
+  Only the primary topic is read. A work the map does not cover is refused at registration.
+- **No Scopus citation counts.** A registered record has no citation snapshot. Its citation
+  count is reported as unavailable (`citations.registered_unavailable`), never imputed, and it
+  is absent from every citation statistic.
+- **No authors, affiliations or keywords.** Registrations carry none in this version, so
+  they contribute no country, keyword or network node, and the screening view shows title,
+  abstract and venue only.
+- **No language filter.** A registration's `language` is NULL and passes the language filter,
+  as every stored Scopus record does in the measured stores; the filter excludes nothing in
+  either population.
+- **Asymmetric subject-area filter.** Most Scopus records carry no subject rows and pass the
+  subject-area filter; a registered record always carries one and is filtered by it.
+- **Conference whitelist.** Scopus records with no `venue_id` pass the whitelist; a
+  registration is judged on its OpenAlex source name.
+- **Counted in the corpus.** Registrations count in `corpus.size`, the year bounds and the
+  venue tables; the methods sentence reports the registered count beside them.
+- **Reproducibility needs more than Layer 0.** A corpus with registrations reproduces only
+  with `registrations.jsonl`, its sidecar (both tracked in git) and the referenced Layer 0
+  OpenAlex payloads, which are not committed and stay in the local archive.
+
 ## No cross-database deduplication
 
 **Current state.** prismabib **reports** duplicates and never removes them.

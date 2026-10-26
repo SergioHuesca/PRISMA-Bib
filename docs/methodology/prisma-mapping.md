@@ -313,6 +313,27 @@ Note what equation 1 means arithmetically: `excluded_automated` is computed as
 reports a difference between "records identified" and "records loaded", that difference is
 not an automation exclusion and must not be presented as one.
 
+### When a registration is reversed or superseded
+
+Reversing a registration, or a Scopus record superseding it, removes that record from `S_raw`.
+Its current decisions stay in `decisions.jsonl` but are **orphaned**: they are not folded into
+any count, and they are listed (count, `record_id`, stage, reason) in the methods text and
+beside the diagram, never as a `FlowCounts` field
+([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md) §3).
+What the counts then do, as the code behaves:
+
+- `registered` falls by one, and so does every count the record contributed to, at whichever
+  stage its decisions had taken it. `included` falls only if the paper had reached `included`;
+  a paper excluded at title and abstract lowers `excluded_title_abstract` instead.
+- After a **supersession** the Scopus record enters `S_raw` with no decisions. It counts in
+  `unsure_title_abstract` (it is not excluded, and not included) until a reviewer decides it
+  again; decisions are never transferred. `included` therefore stays lower by one until then.
+- Equation 1 still closes: `identified` and the Scopus side of `S_raw` move together, and
+  `registered` falls by the superseded registration.
+
+The published `included` can thus fall after a draft quoted it; the build lists each such
+event.
+
 ### When equation 1 does not close
 
 This is the list to work through when a diagram will not add up. It is not closed — a cause

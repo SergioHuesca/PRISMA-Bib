@@ -248,7 +248,10 @@ def test_numbers_json__registered_key__always_present(tmp_path: Path) -> None:
     numbers = numbers_map(project)
 
     assert numbers["flow.registered"] == 0
+    assert numbers["citations.registered_unavailable"] == 0
     assert registered_sentence(numbers) == ""
+    assert numbers["methods.registered_sentence"] == ""
+    assert numbers["methods.orphaned_decisions_text"] == ""
 
 
 @pytest.mark.integration
@@ -260,9 +263,26 @@ def test_numbers_and_methods__registered__agree(tmp_path: Path) -> None:
 
     assert numbers["flow.registered"] == 1
     assert numbers["corpus.size"] == 4
+    assert numbers["citations.registered_unavailable"] == 1
     assert registered_sentence(numbers) == (
         "4 records, of which 1 are registrations from a manual Google Scholar search (ADR 0029)."
     )
+    assert numbers["methods.registered_sentence"] == registered_sentence(numbers)
+
+
+@pytest.mark.integration
+def test_numbers_json__orphaned_decisions__text_key_matches_listing(tmp_path: Path) -> None:
+    project = _project(tmp_path, scopus=2, slug="orphan-key")
+    _register(project)
+    _include_through_fulltext(project, REGISTERED)
+    _unregister(project)
+
+    numbers = numbers_map(project)
+
+    assert numbers["methods.orphaned_decisions_text"] == orphaned_decisions_text(
+        project_orphaned_decisions(project)
+    )
+    assert numbers["methods.orphaned_decisions_text"].startswith("2 screening decision(s)")
 
 
 @pytest.mark.integration

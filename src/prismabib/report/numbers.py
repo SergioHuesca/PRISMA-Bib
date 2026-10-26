@@ -22,11 +22,14 @@ appearance a reviewable diff rather than a surprise.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from prismabib.bibliometrics.citations import citation_statistics
 from prismabib.bibliometrics.venues import top_venues
-from prismabib.prisma.flow import FlowCounts, compute_flow_counts
+from prismabib.prisma.flow import FlowCounts, compute_flow_counts_with_orphans
+from prismabib.prisma.orphans import OrphanedDecision, project_orphaned_decisions
+from prismabib.report.methods import orphaned_decisions_text, registered_sentence
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus
@@ -195,7 +198,12 @@ def _venue_numbers(corpus: Corpus) -> dict[str, Any]:
     return numbers
 
 
-def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[str, Any]:
+def numbers_map(
+    project: Project,
+    *,
+    counts: FlowCounts | None = None,
+    orphans: Sequence[OrphanedDecision] | None = None,
+) -> dict[str, Any]:
     """Every scalar ``project``'s manuscript may cite, as a flat mapping.
 
     Args:
@@ -204,6 +212,8 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
             caller already has them. Recomputed from Layer 1 and the decision
             log when omitted -- never read from a cache, so this cannot report
             a number the current store does not support.
+        orphans: Pre-computed orphaned decisions, from the same snapshot as
+            ``counts``. Read from the project when omitted.
 
     Returns:
         A flat ``key -> scalar`` mapping, sorted by key. Sorted because the
@@ -218,7 +228,13 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
     """
     from prismabib.errors import ValidationError
 
-    resolved = counts if counts is not None else compute_flow_counts(project)
+    found: Sequence[OrphanedDecision] | None = orphans
+    if counts is None:
+        resolved, found = compute_flow_counts_with_orphans(project)
+    else:
+        resolved = counts
+    if found is None:
+        found = project_orphaned_decisions(project)
     numbers: dict[str, Any] = dict(_flow_numbers(resolved))
     numbers["criteria.version"] = project.criteria.version
 
@@ -239,6 +255,12 @@ def numbers_map(project: Project, *, counts: FlowCounts | None = None) -> dict[s
         numbers.update(_venue_numbers(corpus))
     finally:
         connection.close()
+
+    # ADR 0029 C7: a registration has no citation snapshot, so every one is unavailable.
+    numbers["citations.registered_unavailable"] = resolved.registered
+    # Methods snippets for `{{methods.*}}` placeholders; "" when there is nothing to say.
+    numbers["methods.registered_sentence"] = registered_sentence(numbers)
+    numbers["methods.orphaned_decisions_text"] = orphaned_decisions_text(found)
 
     for key, value in numbers.items():
         if not isinstance(value, _SCALAR_TYPES):
