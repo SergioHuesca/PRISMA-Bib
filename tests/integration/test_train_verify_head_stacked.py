@@ -585,9 +585,7 @@ def test_attributes__merge_tree_env_is_pinned(
     assert seen
     for env in seen:
         assert env["GIT_ATTR_NOSYSTEM"] == "1"
-        assert (
-            env["GIT_ATTR_SOURCE"] == "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-        )  # pragma: allowlist secret
+        assert env["GIT_ATTR_SOURCE"] == _module._EMPTY_TREE
         assert env["XDG_CONFIG_HOME"] != str(tmp_path / "hostile")
 
 
