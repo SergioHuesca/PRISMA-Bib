@@ -27,6 +27,13 @@ Rules, all of which must hold for ``ok``:
      that merge conflicts, only paths where P equals S are absorbed. With no absorbed path,
      d and e are unchanged.
 
+  g. clean automerge: M's tree is exactly the tree of git's own merge of P and S (the same
+     attribute-neutral merge-tree as rule f, one merge base, no conflicts). Rules d, e and f
+     are then not needed. M is a deterministic function of the reviewed head and main, so no
+     byte can be injected; whether the merged result is semantically right is left to the
+     required CI checks that run on the merged head (as for GitHub's update-branch). Checked
+     before any halt of d, e or f; a conflicting merge never passes g.
+
 Git runs with global and system config neutralised and the diff options pinned, so a
 machine's git settings cannot change the result.
 """
@@ -204,9 +211,17 @@ def verify(reviewed: str, head: str, main: str = "origin/main") -> dict[str, obj
         if not _is_ancestor(s, main):
             return _halt(f"commit {m[:12]} merges {s[:12]}, which is not on main")
         mb = _git("merge-base", p, s).decode().strip()
+        merged = _merged_tree(p, s, mb)
+        # Rule g: M is exactly git's own clean merge of P and S. Only with one merge base:
+        # with several, the real merge uses a virtual base that --merge-base cannot name.
+        if (
+            merged is not None
+            and len(_git("merge-base", "--all", p, s).split()) == 1
+            and _git("rev-parse", f"{m}^{{tree}}").decode().strip() == merged
+        ):
+            continue
         main_raw = _raw(mb, s)
         # Rule f: paths main changed whose change P already holds.
-        merged = _merged_tree(p, s, mb)
         absorbed = set(main_raw) - set(_raw(p, merged or s))
         if absorbed:
             remaining = {k: v for k, v in main_raw.items() if k not in absorbed}
