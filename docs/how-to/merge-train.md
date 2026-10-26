@@ -92,13 +92,14 @@ change. Whether that works depends on where B's edits are.
 **Works:**
 
 - Independent PRs, and PRs that edit the same file in places that are not next to each other.
-  Git merges these cleanly and rule 6 accepts the merge. The automerge tests cover three PRs
+  Git merges these cleanly and rule 6 (called rule g in the script) accepts the merge. The automerge tests cover three PRs
   that each add a bullet to one `CHANGELOG.md`, with the third stacked on the first and its
   bullet in a different section.
 - A stacked child whose edits do not touch hunks adjacent to its parent's. The verifier calls
   the paths the parent already holds **absorbed** (rule f): main's change on them is exactly
-  what the head has. The remaining paths are then checked by rule 6 (clean merge) or by rules
-  4 and 5 (exact, no overlap). Rule f needs git 2.40 or later; older git halts.
+  what the head has. A clean automatic merge already passes under rule 6 without needing
+  absorption; otherwise the absorbed paths are set aside and rules 4 and 5 (exact, no overlap)
+  apply to the rest. Rule f needs git 2.40 or later; older git halts.
 
 **Does not work: adjacent hunks.**
 
@@ -113,8 +114,9 @@ Still halts, by design: A changed after B was cut (B holds an older A, so the pa
 count as an overlap); main changed a path B holds differently. Fix by hand, review the result,
 and relabel.
 
-**What happened on 2026-10-26.** PR #182 added rule f and PR #183 added rule g. PR #177 then
-merged unattended. PR #178, stacked on #177, halted `DIRTY` after #177 was squash-merged. The
+**What happened on 2026-10-26.** PR #182 added rule f and PR #183 added rule g. PR #177 had
+halted once on overlap (a shared `CHANGELOG.md` edit) before #183 was on `main`; after the halt was
+cleared, rule g let its update merge through and it merged. PR #178, stacked on #177, halted `DIRTY` after #177 was squash-merged. The
 GUI of ADR 0035 was then landed as one PR, #184.
 
 **Recommended practice today:**
