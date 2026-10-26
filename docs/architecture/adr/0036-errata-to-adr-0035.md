@@ -236,7 +236,7 @@ It could not be checked without git or network, and no accepted record states it
    (a) [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md) §3 says that the reason for an orphan is
    "a reversal or a supersession" where one applies. `docs/methodology/prisma-mapping.md` (lines 322-323) says that the
    reason is always "record not in S_raw", because nothing records which event removed the record. `orphans.py` (lines
-   26-30) defines a literal of three reasons, but `project_orphaned_decisions` uses only the default, so the code agrees
+   26-30) defines a literal of three reasons, but `project_orphaned_decisions` takes an optional `outcomes` mapping that no caller in `src/` supplies (`cli.py` and `flow.py` pass none), so every production path yields "record not in S_raw" and the code agrees
    with the document and ADR 0033 §3 overstates. This record states the finding and does not otherwise change a rule. (b) The test names in [ADR 0035](0035-gui-registration-of-candidates.md)
    §11 differ from the implemented names, and the view refusal test is split into four. These are naming differences and
    no rule changes.
