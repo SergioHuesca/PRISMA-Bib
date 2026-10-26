@@ -39,15 +39,24 @@ import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Final, NoReturn
+from typing import Annotated, Final, NoReturn, cast
 
 import structlog
 import typer
 from structlog.typing import EventDict, WrappedLogger
 
 from prismabib import __version__
+from prismabib.capture.candidates import CandidateLog
 from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
+from prismabib.capture.registrations import (
+    REVERSAL_REASONS,
+    MatchRule,
+    active_registrations,
+    load_registration_events,
+    register_candidate,
+    reverse_registration,
+)
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import LogError, PrismabibError
@@ -611,6 +620,82 @@ def flow(
         _print_flow(counts, slug=slug)
         _print_orphans(project)
         _warn_if_inconsistent(counts)
+
+
+@app.command()
+def register(
+    slug: Annotated[str, typer.Argument(help="Project slug.")],
+    candidate_id: Annotated[str, typer.Argument(help="The pasted candidate to register.")],
+    reviewer: Annotated[str, typer.Option("--reviewer", help="The named reviewer.")],
+    payload: Annotated[
+        str,
+        typer.Option(
+            "--payload",
+            help="Sealed OpenAlex response under raw/: openalex/<run>/response-NNNN.jsonl.",
+        ),
+    ],
+    match_rule: Annotated[
+        str, typer.Option("--match-rule", help="doi, title_year or near_confirmed.")
+    ] = "doi",
+    confirm_near: Annotated[
+        bool, typer.Option("--confirm-near", help="Confirm a near match (near_confirmed).")
+    ] = False,
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Register a candidate from an already-captured OpenAlex response (no network).
+
+    Refusals print their reason, exit non-zero, and write nothing.
+    """
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
+        event = register_candidate(
+            project,
+            candidates,
+            candidate_id=candidate_id,
+            reviewer=reviewer,
+            payload_file=payload,
+            match_rule=cast(MatchRule, match_rule),  # the writer refuses an unknown rule
+            confirmed_near=confirm_near,
+        )
+        _echo(f"registered {event.record_id} (event {event.event_id})")
+
+
+@app.command()
+def reverse(
+    slug: Annotated[str, typer.Argument(help="Project slug.")],
+    event_id: Annotated[str, typer.Argument(help="The register event to reverse.")],
+    reviewer: Annotated[str, typer.Option("--reviewer", help="The named reviewer.")],
+    reason: Annotated[
+        str, typer.Option("--reason", help=f"One of: {', '.join(REVERSAL_REASONS)}.")
+    ],
+    note: Annotated[
+        str | None, typer.Option("--note", help="Required when the reason is 'other'.")
+    ] = None,
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """Reverse an active registration (append-only; the register event stays in the log)."""
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        event = reverse_registration(
+            project, reverses=event_id, reviewer=reviewer, reason=reason, note=note
+        )
+        _echo(f"reversed {event.reverses} (event {event.event_id})")
+
+
+@app.command()
+def registrations(
+    slug: Annotated[str, typer.Argument(help="Project slug.")],
+    root: Annotated[Path | None, _ROOT_OPTION] = None,
+) -> None:
+    """List active registrations (read-only; never creates the log)."""
+    with _reporting_errors():
+        project = Project.open(slug, root=root)
+        active = active_registrations(load_registration_events(project.registrations_path))
+        if not active:
+            _echo("none")
+        for e in active:
+            _echo(f"{e.event_id}  {e.record_id}  {e.doi}  {e.reviewer}  {e.ts.isoformat()}")
 
 
 @app.command()

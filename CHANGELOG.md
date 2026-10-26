@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CLI: `prismabib register`, `reverse` and `registrations` over the registration writer (ADR 0029/0032/0033): register a pasted candidate from a captured OpenAlex response (`--payload`, `--match-rule`, `--confirm-near`), reverse by event id with a closed `--reason` (`--note` when `other`), and list active registrations read-only. `supersede` stays build-time only.
 - `numbers.json` keys `citations.registered_unavailable` (ADR 0029 Consequence 7) and
   `methods.registered_sentence` / `methods.orphaned_decisions_text` (ADR 0032 C8, ADR 0033 §3),
   usable as `{{...}}` placeholders; empty string when there is nothing to say. Golden key and
