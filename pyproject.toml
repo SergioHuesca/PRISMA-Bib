@@ -260,7 +260,7 @@ disallow_untyped_calls = false
 # see that override above for why `disallow_untyped_calls` has to be exempted at the
 # calling module rather than at `panel` itself.
 [[tool.mypy.overrides]]
-module = ["prismabib.viz.dashboard"]
+module = ["prismabib.viz.dashboard", "prismabib.capture.registration_ui"]
 disallow_untyped_calls = false
 
 [tool.coverage.run]

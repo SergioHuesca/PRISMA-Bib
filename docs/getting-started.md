@@ -58,6 +58,7 @@ Layers 0, 1 and 2 are built and tested. Concretely:
 | Print PRISMA 2020 flow counts | `prismabib flow <slug>` |
 | Screen title/abstracts | `screener(project, stage=..., reviewer=...)` in a notebook |
 | Record a screening decision | `DecisionLog.append(...)` in Python |
+| Register a pasted candidate, or reverse a registration | `registration_view(project, reviewer=...)` in a notebook; see [Register and Reverse a Candidate](how-to/register-and-reverse-candidates.md) |
 | Replay under amended criteria | `engine.replay(project, criteria_version=...)` |
 
 `prismabib code` and `prismabib export` do not exist — deliberately, rather than as stubs
