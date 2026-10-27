@@ -568,3 +568,61 @@ def test_cli__audit_stop_malformed_pr_list_exits_2(
 ) -> None:
     path = _write(tmp_path, "audit.json", _audit(10))
     assert _run(tmp_path, ["audit-stop", "--audit", path], {"not": "a list"}, monkeypatch) == 2
+
+
+# Review follow-ups.
+
+
+@pytest.mark.unit
+def test_path__position_1_with_non_main_base__halts() -> None:
+    # Without this halt the head would take the old verifier path and be squash-merged
+    # into a non-main base branch.
+    out = _decide([_pr(2, 1, base="feature")], _ok(2), _facts(position=1))
+    assert out["action"] == "halt"
+    assert "position 1" in out["reason"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("content", ["null", "[]", "1", '"x"', "true", "false", "{}"])
+def test_cli__facts_file_present_but_not_a_usable_object__exits_2(
+    content: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # null is not "no facts": a failed API call must not judge a stacked child as plain.
+    facts = tmp_path / "facts.json"
+    facts.write_text(content, encoding="utf-8", newline="\n")
+    closed = _write(tmp_path, "closed.json", [])
+    check = _write(tmp_path, "check.json", {"ok": True})
+    argv = ["decide", "--merge-train", "on", "--closed", closed, "--head-pr", "2"]
+    argv += ["--head-check", check, "--facts", str(facts)]
+    assert _run(tmp_path, argv, [_child()], monkeypatch) == 2
+
+
+@pytest.mark.unit
+def test_cli__deeply_nested_facts_and_audit_exit_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deep = tmp_path / "deep.json"
+    deep.write_text("[" * 100000, encoding="utf-8", newline="\n")
+    closed = _write(tmp_path, "closed.json", [])
+    argv = ["decide", "--merge-train", "on", "--closed", closed, "--facts", str(deep)]
+    assert _run(tmp_path, argv, [_child()], monkeypatch) == 2
+    assert _run(tmp_path, ["audit-stop", "--audit", str(deep)], [_pr(20, 2)], monkeypatch) == 2
+    audit = _write(tmp_path, "audit.json", _audit(10))
+    argv = ["audit-stop", "--audit", audit, "--prs", str(deep)]
+    assert _run(tmp_path, argv, None, monkeypatch) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "facts",
+    [
+        # Each is otherwise consistent when True is read as 1 (the parent is not the head).
+        _mut(pr=True, parent__number=5),
+        {**_mut(stack__position=True), "parent": None},
+        {**_mut(stack__position=True, stack__size=True), "parent": None},
+    ],
+)
+def test_facts__bool_for_int__raises_input_error(facts: Any) -> None:
+    # bool is an int subclass: `pr: true` must not read as 1.
+    with pytest.raises(ts.InputError):
+        _decide([_pr(1, 1, base="main")], _ok(1), facts)

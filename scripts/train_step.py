@@ -585,6 +585,15 @@ def audit_stop(audit: Any, open_prs: Any) -> int | None:
     return min(found)[1] if found else None
 
 
+def _load_json(text: str) -> Any:
+    """json.loads for the new inputs: absurdly nested input is an InputError, not a traceback.
+    The existing readers (stdin PR list, --closed) are left as they were."""
+    try:
+        return json.loads(text)
+    except RecursionError as exc:
+        raise InputError("JSON nested too deeply") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -604,11 +613,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "audit-stop":
-            audit = json.loads(Path(args.audit).read_text(encoding="utf-8"))
+            audit = _load_json(Path(args.audit).read_text(encoding="utf-8"))
             if args.prs is not None:
-                open_prs = json.loads(Path(args.prs).read_text(encoding="utf-8"))
+                open_prs = _load_json(Path(args.prs).read_text(encoding="utf-8"))
             else:
-                open_prs = json.load(sys.stdin)
+                open_prs = _load_json(sys.stdin.read())
             target = audit_stop(audit, open_prs)
             print("none" if target is None else target)
             return 0
@@ -629,7 +638,11 @@ def main(argv: list[str] | None = None) -> int:
                 head_check = _head_check(args.head_pr, args.head_check)
             facts = None
             if args.facts is not None:
-                facts = json.loads(Path(args.facts).read_text(encoding="utf-8"))
+                facts = _load_json(Path(args.facts).read_text(encoding="utf-8"))
+                # A PRESENT --facts that is not an object (a failed API call yielding null)
+                # must not read as "not stacked".
+                if not isinstance(facts, dict):
+                    raise InputError("facts: the file must hold a JSON object")
             stacks_on = args.merge_train_stacks == "on"
             print(json.dumps(decide(prs, head_check, merge_on, closed, facts, stacks_on)))
     except ValueError as exc:  # includes json.JSONDecodeError and InputError
