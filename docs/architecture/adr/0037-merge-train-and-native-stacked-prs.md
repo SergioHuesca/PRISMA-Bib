@@ -5,6 +5,7 @@
 Accepted — 2026-10-27, on the merge of the pull request that adds this record, which the owner approves. Until the
 merge, this record was `Proposed` on the branch `docs/adr-0037-train-native-stacks`. Accepting it changes no code, no
 workflow and no repository setting: it fixes the design that the pull requests of Decision 9 implement, one at a time.
+Points the owner has not decided are in "Open questions for the owner" and are not claimed as decided.
 
 ADRs 0001 to 0036 are frozen. This record does not edit any of them.
 
@@ -13,512 +14,349 @@ ADRs 0001 to 0036 are frozen. This record does not edit any of them.
 ### What happened on 2026-10-26
 
 The unattended train (`.github/workflows/update-behind-prs.yml`, `scripts/train_step.py`,
-`scripts/train_verify_head.py`) merged #182, #183 and #177, then halted at #178, which was stacked on #177. When #177 was
-squash-merged, the child's update from `main` conflicted on adjacent hunks (the top `CHANGELOG.md` bullet and appended
-tests). The conflict is textual. Rules f and g of the verifier check a merge that exists; they cannot make one. The
-how-to (`docs/how-to/merge-train.md`, "Stacked PRs") lists the way out as manual: restack by hand, re-review, relabel, or
-land dependent work as one PR.
+`scripts/train_verify_head.py`) merged #182, #183 and #177, then halted at #178, stacked on #177. When #177 was
+squash-merged, the update of the child from `main` conflicted on adjacent hunks (top `CHANGELOG.md` bullet, appended
+tests). Rules f and g of the verifier check a merge that exists; they cannot make one. The how-to
+(`docs/how-to/merge-train.md`, "Stacked PRs") offers only a manual restack.
 
 ### What the pilot showed
 
-A throwaway public repository, `SergioHuesca/stacks-pilot`, has squash-only merges, the required check `gates` (strict),
-conversation resolution and `enforce_admins`. Three native stacked PRs (`gh-stack` v0.3.0, `gh stack init/add/submit`;
-stack number 4, PRs #1, #2, #3) were merged bottom first. The facts below are from the pilot's own history, unless marked
-*not verified*.
+`SergioHuesca/stacks-pilot` (throwaway, public) has squash-only merges, required check `gates` (strict), conversation
+resolution and `enforce_admins`. Three native stacked PRs (`gh-stack` v0.3.0; stack number 4; #1, #2, #3) were merged bottom
+first. Read-only checks in this session confirm the following.
 
-- After a parent is squash-merged, GitHub retargets the child to `main` and rebases it, in steps. For #2 (parent #1 merged
-  01:25:58): `automatic_base_change_succeeded` 01:25:59, `head_ref_force_pushed` 01:26:03. For #3: a force-push alone at
-  01:26:04 (after #1 merged; base still the branch of #2), then, after #2 merged at 01:26:59, `automatic_base_change_succeeded`
-  at 01:27:00 and `head_ref_force_pushed` at 01:27:04. So for 1 to 5 seconds after a parent merges the child has base
-  `main` (or still its parent's branch) and its **old** head. There was no conflict on adjacent hunks. All PRs had one
-  commit.
-- `gates` ran again on each new head: `check-runs` of the new head of #2 (`fdbd412b…`) and of #3 (`cc2b8739…`) each show
-  one `gates` run, `completed`, `success`, started 9 to 10 seconds after the head was created.
-- A label survives the merge of its own PR: closed #2 still carries `reviewed:test`, and `GET /pulls/2` returns it. That
-  label is not a 40-hex `reviewed:` label, and the pilot says nothing about the labels of an **open** child across its
-  parent's merge and rebase. The rehearsal must test this with a 40-hex label (Decision 8).
-- `gh pr merge` and `gh pr merge --auto` are refused for a stacked PR ("must be merged using the asynchronous merge REST
-  API"). The route that worked is `PUT /repos/{o}/{r}/pulls/{n}/merge-async` with `merge_method=squash` and `sha`, which
-  returns `202` and a uuid, followed by `GET /repos/{o}/{r}/pulls/{n}/merge-async/{uuid}` until `merged`.
-- Every merge changes the head SHA of every PR above it, with no author push. The new head is the new `main` plus the
-  PR's own diff (the tree of #2 matched `main` plus `git cherry-pick -n` of its original commit).
-- The rebased commits are unsigned (`verification.verified=false`, `reason=unsigned`). The squash commits on `main` are
-  signed by GitHub (`verified=true`, `valid`) and have one parent.
-- #3 was rebased twice: first onto the rebased head of #2 (`0d35733f…`, parent `fdbd412b…`), then, after #2 merged, onto
-  `main` (`cc2b8739…`, parent `bf51ec84…`, the squash of #2). A head whose parent is another PR's head is a transient
-  state. GitHub still serves a force-pushed-away commit by SHA (`GET /commits/0d35733f…` returned it).
+- After a parent is squash-merged, GitHub retargets the child to `main` and rebases it, in steps. #2 (parent #1 merged
+  01:25:58): `automatic_base_change_succeeded` 01:25:59, `head_ref_force_pushed` 01:26:03. #3: a force-push alone at
+  01:26:04 (after #1 merged; base still the branch of #2), then, after #2 merged at 01:26:59, base change 01:27:00 and
+  force-push 01:27:04. For 1 to 5 seconds after a parent merges, the child has base `main` (or its parent's branch) and
+  its **old** head. Other timeline events seen: `added_to_stack`, `committed`, `merged`, `closed`, `head_ref_deleted`
+  (`delete_branch_on_merge` is on in both repositories, so the parent's branch is deleted at once; `pull/N/head` persists).
+  Every PR had one commit; no adjacent-hunk conflict occurred.
+- `gates` ran on each new head, 9 to 10 seconds after it was created.
+- Closed #2 still carries its label (`reviewed:test`). That is not a 40-hex label, and nothing here shows that an **open**
+  child keeps a 40-hex label across its parent's merge and rebase.
+- `gh pr merge` and `--auto` are refused for a stacked PR. `PUT /repos/{o}/{r}/pulls/{n}/merge-async` with
+  `merge_method=squash` and `sha` returns `202` and a uuid; `GET …/merge-async/{uuid}` is polled until `merged`.
+  `GET …/merge-async/<unknown uuid>` is `404`.
+- Each merge changes the head SHA of every PR above it, with no author push. The new head is the new `main` plus the PR's
+  own diff. The rebased commits are unsigned; the squash commits on `main` are signed by GitHub and have one parent. The
+  squash commit's tree equals the merged head's tree.
+- #3 was rebased twice (onto the rebased head of #2, `0d35733f…`, then onto `main`, `cc2b8739…`). A force-pushed-away
+  commit and the `pull/N/head` of a closed PR can both be fetched by SHA over HTTPS (reviewer, from the pilot).
 
-### The API surface found (read-only, against the pilot)
+### API surface (read-only)
 
-| Need | Endpoint and fields | Evidence |
-|---|---|---|
-| Is this PR in a stack, and where | REST `GET /repos/{o}/{r}/pulls/{n}`, key `stack`: `{"id": 2644774, "number": 4, "position": 1, "size": 3, "base": {"ref": "main", "sha": null}}`. Position 1 is the bottom. | Verified for #1, #2, #3. For a PR that is not stacked the key is **absent** (read-only `GET /repos/SergioHuesca/PRISMA-Bib/pulls/188`: `has("stack")` is false; the reviewer saw `null`, so the train treats absent and `null` alike as "not stacked"). |
-| Same, GraphQL | `PullRequest.stack` (`PullRequestStack`: `id`, `number`, `size`, `baseRefName`, `entries(first:N)`) and `PullRequest.stackEntry` (`PullRequestStackEntry`: `id`, `position`, `pullRequest`, `stack`). | Verified by query on #3: entries 1 to 3 with `number`, `state`, `headRefOid`, `baseRefName`, `mergedAt`. |
-| The stack's PRs in order | REST `GET /repos/{o}/{r}/stacks` (list) and `GET /repos/{o}/{r}/stacks/{number}`. Fields: `id`, `number`, `node_id`, `base.ref`, `open` (bool), `created_at`, `pull_requests[]` in position order (array order; no `position` field). Keys per entry in `GET /stacks/4`: `base`, `draft`, `head`, `html_url`, `id`, `merged_at`, `node_id`, `number`, `state`, `title`, `url`, `user`. There is **no** `merge_commit_sha` and **no** `labels`. The list form `GET /stacks` is slimmer: `draft`, `head{ref,sha}`, `merged_at`, `number`, `state`. | Verified on stack 4 (`open: false`, three entries in order). The merge commit and the labels need a second call, `GET /pulls/{parent}` (`merge_commit_sha`, `labels`): verified on #2 (`bf51ec84…`, one label). |
-| Timeline events | `GET /repos/{o}/{r}/issues/{n}/timeline`: `added_to_stack`, `automatic_base_change_succeeded`, `head_ref_force_pushed` (with `commit_id`), `merged`, `closed`. | Verified on #2 and #3. |
-| GitHub finished rebasing a child | No single field. Observable: `baseRefName == main`; `head.sha` differs from the head seen before the parent merged; a `head_ref_force_pushed` event after the parent's `merged_at`; `check-runs` of the new head complete; `mergeStateStatus` is `CLEAN`. | Each item seen in the pilot. A field that says "rebase finished" was not found. |
-| Merge a stacked PR | `PUT /repos/{o}/{r}/pulls/{n}/merge-async`, body `merge_method`, `sha`; `merge_action` defaults to `default`. `202` and a uuid. Poll `GET …/merge-async/{uuid}`; status `merged`, `pending`, `enqueued` or `failed`. | The brief's pilot run. This session re-verified only that `GET …/merge-async/<unknown uuid>` is `404` and names `docs.github.com/rest/pulls/pulls#get-the-result-of-an-asynchronous-merge`. |
-| `merge-async` on failure, and on a stale `sha` | Response body and status code. | **Not verified.** Writing is not allowed against the pilot. The design treats everything other than `202` on the call, and everything other than `merged` at the end of the poll, as a halt. |
-| What happens to a child when the parent's merge fails | State of the child. | **Not verified.** The design acts on one PR per run, and does not touch a child until its parent is `MERGED`. |
-| Real repository's protection | `required_status_checks`: strict, `lint`, `fast`, `full`, `docs`, `e2e`; `enforce_admins`: on; `required_signatures`: off; `required_linear_history`: off; no rulesets (so no merge queue). | Read-only `GET /branches/main/protection` and `/rulesets` on `SergioHuesca/PRISMA-Bib`. |
-
-`gh pr list --json` has no stack field in the pilot's `gh`; the train would read `stack` per PR with `gh api`.
+| Need | Endpoint and fields |
+|---|---|
+| In a stack, and where | `GET /pulls/{n}`, key `stack`: `{id, number, position, size, base:{ref,sha}}`, position 1 is the bottom. Verified on #1 to #3. For a PR that is not stacked the key is **absent** (PRISMA-Bib #188: `has("stack")` false; the reviewer saw `null`): treat absent and `null` alike. GraphQL has `PullRequest.stack` and `stackEntry`. |
+| The stack's PRs in order | `GET /stacks/{number}`: `pull_requests[]` in array order (no position field); entry keys `base, draft, head, html_url, id, merged_at, node_id, number, state, title, url, user`; **no** merge commit, **no** labels. `GET /stacks` is slimmer: `draft, head{ref,sha}, merged_at, number, state`. |
+| Merge commit, labels, `merged_at` of a PR | `GET /pulls/{n}`: `merged`, `merged_at`, `merge_commit_sha`, `labels` (verified on #2). |
+| Rebase finished | No field. Observable: `merge_commit_sha` of the parent is an ancestor of the child's head. |
+| `merge-async` on failure, on a stale `sha`, repeated during a flight; a child whose parent's merge fails; `strict` semantics of `merge-async` | **Not verified.** Writing to the pilot is not allowed. |
+| Real repository | `required_status_checks` strict with `lint, fast, full, docs, e2e`; `enforce_admins` on; `required_signatures` off; no rulesets (no merge queue); 73 closed-unmerged PRs. |
 
 ### Why the current verifier cannot accept a GitHub-rebased child
 
-The reviewed commit R of the child is not an ancestor of the rebased head H. GitHub replaced the child's commits with new
-ones. Rule a halts ("not an ancestor"). Adding a `reviewed:` label for H would mean a human reviews a commit that no
-one wrote, every time a parent merges.
+The child's reviewed commit R is not an ancestor of the rebased head H, so rule a halts. Asking for a new `reviewed:` label
+per rebase would be the manual restack this record removes.
 
 ## Decision
 
 ### 1. The invariant
 
-For a PR that merges, the tree that lands on `main` must equal **the tree of the three-way merge of the current `main`
-and the reviewed head, on the base the reviewer reviewed against**, and the merge must be clean. In words: what merges is
-the reviewed change plus only `main`'s own changes. If the train cannot prove it, it halts.
+What merges is the reviewed change plus only `main`'s own changes, or the train halts. For a stacked child whose parent has
+merged: the tree of H equals the three-way merge of the current `main` and the reviewed head, on the base the reviewer
+reviewed against, which is the parent's reviewed head. The squash tree equals the tree of an up-to-date head, so proving
+`tree(H)` proves what lands.
 
-For an unstacked PR the base is the merge base with `main`, and rules a to g already enforce this. For a stacked child
-whose parent has merged, the base is the reviewed head of the parent. Both cases are the same statement with a different
-base. The squash commit's tree equals the tree of H when H is up to date (`strict` is on, so a merge only happens when it
-is), so proving `tree(H)` proves what lands.
+Rejected: trusting GitHub's rebase unchecked; a new label per rebase; comparing the rebased diff with the reviewed diff
+(wrong when `main` touched the same files); comparing patch ids (they ignore context).
 
-**Considered.**
+### 2. Rule h (the verifier)
 
-- *Trust GitHub's rebase.* Rejected. It makes the train depend on a service's behaviour with no check, and the project's
-  rule is that the gate checks bytes.
-- *Require a new `reviewed:` label on every rebased head.* Rejected. It is the manual restack this record removes, and it
-  asks the reviewer to approve a commit that is main plus an already approved diff.
-- *Check that the rebased head's own diff equals the reviewed diff* (`git diff R_parent R_child` against
-  `git diff main H`). Rejected as the sole test. It is correct when main did not change the touched files and wrong
-  when it did, so it would halt where git merges cleanly. The three-way merge is the exact statement.
+`train_verify_head.py` gains three optional arguments, all or none: `--parent-reviewed R_parent`, `--parent-head P_final`
+(the parent's final head) and `--parent-merge M_parent` (its merge commit). With them, rule h replaces the `R == H`
+shortcut and rule a. Walk the first-parent chain down from H. Two-parent merges at the top are update merges made after the
+rebase. T is the first commit with one parent. The series is `main..T` on the first-parent chain, X the parent of its bottom
+commit. The head is accepted iff:
 
-### 2. The new verifier rule (rule h)
+- **h1 (shape).** The series is not empty; every commit in it has one parent (a merge commit in the series halts); the bottom
+  commit has a parent (a root commit halts); X is an ancestor of `origin/main` (not necessarily its tip); at most 500
+  commits.
+- **h2.** `R_parent` is a proper ancestor of `R_child`.
+- **h3.** `tree(T)` equals the tree of `git merge-tree --write-tree --merge-base=R_parent X R_child`, in the pinned
+  environment of rule g (config off, `merge.renames=false`, `GIT_ATTR_SOURCE` the empty tree, `core.attributesFile` off,
+  empty `XDG_CONFIG_HOME`, pinned `diff.*`, git 2.40 or later). The result is `X + (R_child - R_parent)`.
+- **h4.** That merge has no conflict (exit 1 halts).
+- **h5.** Each two-parent merge above T passes the full existing `verify(T, H)` (rules a to g with T as reviewed commit).
+  Rule h alone returns ok for an honest T under an evil update merge; only `verify(T, H)` rejects it, so the hand-off is
+  part of the rule and has a named test and a mutation (Decision 8).
+- **h6 (the parent).** `tree(M_parent)` equals `tree(P_final)`, and `verify(R_parent, P_final)` (rules a to g) passes.
 
-`scripts/train_verify_head.py` gains an optional argument `--parent-reviewed R_parent`. The workflow passes it only for a
-stacked head whose parent is merged (Decision 4). With it, rule h replaces the shortcut `R == H` and rule a.
+X, not the tip of `main`, is "ours" in h3, so the proof does not depend on where `main` is when the train looks. The label
+keeps `R_child`; nothing is written back. If GitHub rebases again, the proof is run again from the same inputs.
 
-**Rule h.** Walk the first-parent chain down from H. Two-parent merges at the top are update merges from `main` made after
-the rebase. Let T be the first commit with one parent (T is H when there is no update merge). Let the series be the
-commits of `main..T` on the first-parent chain, and X the parent of the bottom commit of the series. The head is
-accepted iff:
+**`R_parent`.** It is the single valid `reviewed:<40 hex>` label of the merged parent PR, found through the stack record,
+never through the child's history. Label write access is owner-only (existing confirmation 2).
 
-- **h0 (pending, not a verdict).** With `--parent-merge-commit M_parent` (the parent's `merge_commit_sha`): M_parent must
-  be an ancestor of `origin/main`, or the verifier halts. If M_parent is **not** an ancestor of H, GitHub has not yet
-  rebased the child onto a `main` that holds its parent: the old head, or the transient head of #3 above (`0d35733f…`
-  holds the squash of #1 but not of #2). The verifier then prints
-  `{"ok": false, "pending": true, "reason": "..."}` and exits 0. It does not look at h1 to h5. `decide` turns this into
-  a wait (Decision 3), never into a merge. When M_parent is an ancestor of H, `pending` is never emitted.
-- **h1 (shape).** The series is not empty (H is not already on `main`), every commit of the series has exactly one parent
-  (so a merge commit inside the rebased series halts), the bottom commit has a parent (a root commit has none to take X
-  from: halt), X is an ancestor of `origin/main`, and the series has at most 500 commits. X is an ancestor, not the tip:
-  `main` may have moved between GitHub's rebase and the train's look. The number of rebased commits is not fixed, because
-  only the tree is compared.
-- **h2 (relation to the review).** `R_parent` is a proper ancestor of `R_child`. The child was cut from the parent's
-  reviewed head.
-- **h3 (content).** `tree(T)` equals the tree written by
-  `git merge-tree --write-tree --merge-base=R_parent X R_child`, run in the same pinned environment as rule g: global and
-  system config off, `merge.renames=false`, `GIT_ATTR_SOURCE` set to the empty tree, `core.attributesFile` off,
-  `XDG_CONFIG_HOME` empty, `diff.*` options pinned, git 2.40 or later. The result is `X + (R_child - R_parent)`, which is
-  the `main` that GitHub rebased onto, plus the reviewed change.
-- **h4 (no conflict).** That merge exits 0. Exit 1 (conflicts) halts.
-- **h5 (update merges).** Each two-parent merge above T is checked by the full existing verifier, `verify(T, H)` (rules a to
-  g with T as the reviewed commit). Rule h alone returns ok for an honest T under an evil update merge; only `verify(T, H)`
-  rejects it. The hand-off is therefore part of the rule, has its own named test and its own mutation (Decision 8), and
-  `train_verify_head.py` returns ok for a stacked head only when h1 to h5 all hold.
+**What a wrong `R_parent` can do.** The merge in h3 draws every byte from X and `R_child`, so no unreviewed byte enters
+whatever `R_parent` is. A wrong, older `R_parent` changes which of `main`'s changes win: an H' that re-adds a line `main`
+had deliberately reverted is accepted with an old `R_parent` and rejected with the true one (reviewer's `s5.py`, V4). h2
+bounds the base to the child's ancestry; h6 ties the label to what the parent actually merged: a stale or wrong label fails
+`verify(R_parent, P_final)`.
 
-Rule h anchors the chain once at T; the existing rules carry it forward to the head. X, not the tip of `main`, is
-"ours" in h3, so the proof does not depend on where `main` is when the train looks.
-
-**No re-binding of the label.** The label keeps `R_child`, the commit the owner reviewed. The verifier proves H from three
-inputs it can authenticate: `R_child` (the child's label), `R_parent` (the parent's label) and `main`. If GitHub rebases
-again (the grandchild moves when a middle PR merges), H changes, and the proof is run again from the same inputs. Nothing
-is written back.
-
-**How `R_parent` and `M_parent` are obtained and authenticated.** Both come from GitHub's records, never from the
-child's branch or history.
-
-1. `GET /pulls/{child}` gives `stack.position`. `GET /stacks/{number}` lists the entries in array order. The train checks
-   that the entry at `position - 1` (zero-based) is the child and the entry before it is the parent. Entries carry no
-   position, labels or merge commit.
-2. `GET /pulls/{parent}` gives `merged`, `merge_commit_sha` (M_parent) and `labels`. The parent must be merged, and M_parent
-   must be an ancestor of `origin/main`. Otherwise halt.
-3. `R_parent` is the single valid `reviewed:<40 hex>` label of the closed parent. A missing or malformed label halts.
-4. **The label is checked against the parent's own history.** A label alone is not enough: a parent merged outside the train
-   can carry a stale label that passes "one valid label". The train therefore re-derives it. It fetches the parent's final
-   head (`head.sha` of the stack entry) and requires `verify(R_parent, parent_final_head)` to pass: rules a to g for the
-   bottom of the stack, rule h with the grandparent's label and merge commit for a middle one (recursion; depth at most
-   the stack size, capped at 10, deeper halts). It also requires M_parent's tree to equal git's merge of the parent's final
-   head onto the parent of M_parent (the audit computation of Decision 3). A label that was edited after the merge, or a
-   label on a parent the train did not merge, fails here. *That the objects of a closed PR remain fetchable
-   (`pull/<parent>/head`) was not verified; an unfetchable object halts.* The cost is one extra verification per stack
-   level, run on `main`'s code.
-5. Label write access is owner-only (existing confirmation 2). The recursion protects against a stale or wrong label, not
-   against an owner who writes false labels; for that the whole gate is already open.
-
-Alternative considered for item 4: record the verified `R_parent` in the squash commit message. Rejected: it needs a commit
-message parameter on `merge-async` that was not verified, and it would make the message a trust anchor.
-
-**What a wrong `R_parent` can and cannot do.** The merge in h3 draws every byte of its result from two commits, X (`main`)
-and `R_child` (the reviewed child), as git's three-way merge. So no unreviewed byte can enter the result, whatever
-`R_parent` is. What `R_parent` decides is the *base*: which differences between the base and `main` count as "main's
-changes win". With an `R_parent` that is older than the true one, an `H'` that re-adds a line that `main` had deliberately
-reverted after the true `R_parent` is accepted (the reviewer's `s3.py` showed this: accepted with `R_parent` an old
-commit, rejected with the true one). That is why `R_parent` must be the right commit, and why item 4 and h2 exist. h2
-(`R_parent` is a proper ancestor of `R_child`) bounds the base to the child's own ancestry. A child that holds a different
-version of its parent (the parent changed after the child was cut) fails h2 and halts.
+**One level only, no recursion.** h6 is checked for a parent that is the bottom of its stack (the child is at position 2),
+which is the incident's case. A child at position 3 or higher with a merged parent **halts** ("three-level stacks are not
+enabled") until a later PR, after a rehearsal. Recursion is dropped because a human may squash-merge a parent with an extra
+unreviewed commit and leave the label (reviewer's V3): rule h accepts the child correctly, since the extra commit is now
+`main`'s own change, but a re-derivation of the parent's label at every level would halt that child for good. At the one
+level kept, the same parent halts the child too, deliberately: `verify(R_parent, P_final)` fails; the remedy is the owner
+putting a `reviewed:` label for the commit actually merged on the closed parent, and relabelling is cheap there.
+A parent merged without a valid label halts.
 
 **Cases.**
 
-- *First PR of a stack (position 1).* There is no parent and no rebase. The head is verified by the existing rules a to g
-  against its own label. `--parent-reviewed` is not passed. It still merges through `merge-async`, because `gh pr merge`
-  is refused for any PR with a non-null `stack` (*refusal at position 1 not verified; the design does not rely on
-  `gh pr merge` there*).
-- *Multi-level stack (C after B after A).* Only the immediate parent is needed. When A merges, B is rebased onto `main`
-  and C onto the new B. When B merges, C is rebased onto `main`; `R_parent` is B's label. `main` already holds A and B, so
-  `R_child - R_parent` is C's own change. C is never merged while its parent is not `MERGED`.
-- *Only part of the stack is in the batch.* If the head's parent is merged, rule h applies whether or not the parent was
-  in this batch. If the head's parent is open, the train halts (Decision 5). A child outside the batch is not acted on;
-  GitHub still rebases it, and it waits for a later batch.
-- *Main moved again after the rebase (other batch PRs merged in between).* GitHub rebased onto the `main` of that moment,
-  X. h1 accepts any ancestor of the current `main`, and h3 uses X, so the proof still holds. The head is `BEHIND`, the
-  train updates it as today, and h5 verifies the update merge. A head whose X is not on `main` halts.
-- *GitHub's rebase differs from git's merge.* The failure to expect is a **conflict** in h3 (exit 1, h4), not a tree
-  difference: a child that renames a file that `main` also edits, or renames and edits it, conflicts under our rename-less
-  merge where GitHub's rename-aware rebase succeeds (the reviewer's fuzz of 300 cases found no case where the trees
-  differed). These are false halts, not holes; the owner restacks by hand as today. Not false halts: a child that edits the
-  parent's lines, deletes a file, changes a mode, adds an executable file, or has three commits. How GitHub rebases a
-  **multi-commit** child, and a child with a merge commit in its series, is *not verified* (the pilot had one commit per
-  PR). A merge commit in the series halts at h1.
-- *`H == R_child`* for a child with a merged parent (GitHub has not rebased yet). Rule h does not take the `R == H`
-  shortcut. M_parent is not an ancestor of H, so the verifier prints `pending` (h0) and `decide` waits.
+- *Position 1.* No parent, no rebase: existing rules a to g against its own label. It is still merged with `merge-async`.
+- *Only part of the stack in the batch.* If the head's parent is merged, rule h applies whether or not the parent was in the
+  batch. If the parent is open or closed unmerged, halt.
+- *`main` moved after the rebase.* X is any ancestor of `main`; the head is then `BEHIND`, and h5 checks the update.
+- *Conflict.* GitHub's rebase is rename-aware and our merge is not. A child that renames a file that `main` also edits (or
+  renames and edits it) conflicts in h3 where GitHub's rebase succeeded: a false halt, restack by hand. Not false halts:
+  edits to the parent's lines, deletions, mode changes, adding an executable, three commits (reviewer's fuzz, 300 cases, no
+  divergence). How GitHub rebases a multi-commit child or one with a merge commit is *not verified*.
 
-**Considered.**
+### 3. The decision (`train_step.py`)
 
-- *Re-bind: the train writes `reviewed:<H>` after verifying H.* Rejected. A write path from the workflow to the trust
-  anchor makes the anchor only as strong as the workflow, and it must run again after every rebase.
-- *Use the merge base of `main` and H as the base.* Rejected. It is chosen by the history of H, which GitHub wrote but
-  which an author could shape by pushing before the rebase.
-- *Rebase the child ourselves, in the train.* Rejected. The train would hold a write path to a PR branch, and a force push
-  by the App would re-trigger checks on a head nobody reviewed. The train never creates a head.
-- *Compare patch ids (`git patch-id`) of the rebased commits to the reviewed ones.* Rejected. Patch ids ignore context, so
-  a conflict resolution that changes surrounding lines would pass.
+**Visibility.** Today both lists use `--base main`. A native child's base is its parent's branch until GitHub retargets it, so
+after A merges, B and C vanish for 1 to 5 seconds, an independent D with a higher `train:N` becomes head and merges ahead of
+them. Fix: both `gh pr list` calls drop `--base main` and add `baseRefName`; the head is the lowest `train:N` among **all**
+open PRs. A head whose base is not `main` and that is not stacked halts. Update-only mode keeps "the lowest-numbered open PR
+targeting main" by filtering on `baseRefName` inside the call to `select_next_pr`; that filter is the only one left.
+No separate stack-completeness check is added: the 100-entry cap already halts.
 
-### 3. What the train sees, when it waits, and the merge call
+**Pre-existing cliff, not fixed here.** A full closed-unmerged list (100) halts the train permanently. The real repository has
+73 today. Every PR closed unmerged moves it closer. Owner question 4.
 
-**3.1 Visibility.** The workflow lists open PRs with `gh pr list --base main` and closed ones likewise. A native child's
-base is its parent's **branch** until GitHub retargets it. With A(`train:1`), B(2), C(3) and an independent D(4), the
-train would see only A and D while A is open. After A merges, B and C stay invisible until GitHub retargets them (1 to 5
-seconds in the pilot), and `decide` would take D, the lowest listed label, as head and merge it ahead of B and C. The gap
-check starts at the head's number, so it would not notice. The closed-unmerged check has the same blind spot. This breaks
-"never merges out of order". The fix:
+**Facts record.** The pure `decide` gets, for the head only, one JSON object assembled by the workflow:
 
-- Both lists drop `--base main` and add `baseRefName` to `--json`. The train head is the lowest `train:N` among **all**
-  open PRs, whatever their base. The 100-PR cap now applies to the unfiltered list, and a full list still halts.
-- Update-only mode keeps its contract ("the lowest-numbered open PR targeting main"): the filter on `baseRefName == main`
-  moves from the query into the call to `select_next_pr`, so that mode behaves as before.
-- A train head whose base is not `main` and that is **not** stacked halts. A stacked head whose base is not `main` while
-  its parent is merged waits (retarget pending, 3.2). A stacked head whose parent is open halts (Decision 5).
-- Stack-aware completeness, as a second layer: for a stacked head, every entry of its stack record that is open must
-  appear in the listed PRs, else halt ("a stack member is not visible"). This catches a list cut by the cap or by an
-  eventually consistent search.
+```json
+{"pr": 178, "now": "2026-10-27T01:30:00Z",
+ "stack": null | {"id": 2644774, "number": 4, "position": 2, "size": 3},
+ "parent": null | {"number": 177, "merged": true, "merged_at": "…Z", "merge_commit_sha": "40 hex",
+                   "in_main": true, "reviewed": ["reviewed:…", "…"]}}
+```
 
-**3.2 The transient state of a child (liveness).** In the seconds after a parent merges, the child has base `main` (or
-still the parent's branch) and its old head, and its old head fails the verifier. `_head` halts as soon as the verifier's
-result is not ok, before it looks at `mergeStateStatus` or the checks, so the "wait" row of the halt table would become a
-sticky halt: the train is stateless and cannot know "the head is unchanged since before the parent merged". The predicate
-that needs no state is derived from git and the parent's record:
+Calls: `GET /pulls/{head}` (`stack`), `GET /stacks/{number}` (the parent is the entry before the head's; the head's own entry
+is checked against `position`), `GET /pulls/{parent}` (`merged`, `merged_at`, `merge_commit_sha`, `labels`). `in_main` is
+`git merge-base --is-ancestor <merge_commit_sha> origin/main`, after one re-fetch of `main` if it is false. Anything
+unparseable raises `InputError` (exit 2). `stack` absent or `null` means not stacked. `parent` is null at position 1.
 
-- **pending** is true iff the parent is merged and the parent's `merge_commit_sha` (M_parent) is not an ancestor of H.
-  Before GitHub's rebase H is the old head, or a head rebased onto the parent's old branch; neither holds M_parent. After
-  the rebase H descends from a `main` that holds M_parent. The verifier computes it (rule h0) and prints
-  `{"ok": false, "pending": true, "reason": "..."}`, exit 0. `train_step.py` carries `pending` through its head-check
-  wrapper (today it keeps only `ok` and `reason`).
-- `decide` order for a train head: draft halt; label halt; **pending or base not `main` with a merged parent: wait**;
-  then verifier result; then checks and `mergeStateStatus`. Pending is evaluated before the verifier's `ok`.
-- The wait is bounded without state: `decide` receives the parent's `merged_at` and the current time as inputs (`now` is
-  injected, so tests fix it). If `now - merged_at` exceeds 10 minutes (the pilot took 5 seconds) the answer is halt
-  ("GitHub did not rebase the child"). Pending can only produce a wait or a halt, never a merge.
-- What re-triggers the evaluation: GitHub's force-push starts the child's checks, whose completion is a `workflow_run`
-  trigger. Whether it does when the App performed the merge is *not verified*, so PR 4 adds a `schedule` trigger (every 15
-  minutes) so that a wait cannot stall and the 10-minute limit can fire. The decision rules do not change; in update-only
-  mode the same trigger applies the same rule.
+**Path selection, strictly by the stack record.** `stack` null or position 1: the existing verifier call. Position 2 with a
+merged parent: `train_verify_head.py <R_child> <H> --parent-reviewed … --parent-head … --parent-merge …`. Position 3 or
+higher with a merged parent, or a parent that is not merged: halt. The path is never chosen from the shape of the head:
+an old child head plus an update merge from `main` that contains M_parent is accepted by today's verifier (rules b to g
+absorb the parent's change; reviewer's X1) but is **not** a head rule h accepts, and must be judged by rule h only.
+`MERGE_TRAIN_STACKS` not `on`: any stacked head halts.
 
-**3.3 The merge call.** For a stacked head that passes all the checks of `train_step.py` (not draft, `CLEAN`, every check
-passing on the **new** head, one valid label, rule h or rules a to g), the train makes these calls:
+**Pending (a wait, decide only).** The verifier gains no new output. A stacked head at position 2 whose parent is merged, and
+for which the verifier is not ok (or did not run, or the base is not `main`, or `in_main` is false), is a **wait** while
+`now - parent.merged_at` is under 10 minutes, and a halt afterwards (with the verifier's reason). It is never a merge. The
+case "the parent merged between my fetch and my lookup" is `in_main: false` after one re-fetch: the same wait, not a sticky
+halt. The wait is checked **before** the verifier's `ok`, and after the draft and label halts. A human-merged parent, or any
+bad parent check, waits at most 10 minutes and then halts. The train does **not** `update-branch` such a head until the
+verifier is ok for it: updating a pending child would create the X1 shape.
 
-1. `GET /pulls/{n}`. If `merged` is true, stop with success (idempotency). If `head.sha` differs from the SHA the decision
-   was made on, stop with `wait`: the head moved since the decision.
-2. `PUT /repos/{o}/{r}/pulls/{n}/merge-async` with `merge_method=squash` and `sha=<the verified head>`. The `sha` is always
-   passed, because omitting it fills in the current head and is not a match check. `merge_action` is not set.
-   **Hypothesis to be proven, not a fact:** that a `sha` which is not the current head is rejected. The pilot run
-   established that a correct `sha` is accepted and that an omitted one is filled in; the response to a stale `sha` was
-   not observed. Until the rehearsal proves it (a deliberately stale `sha` on a throwaway PR, response recorded), the
-   `sha` is not counted as closing the race between the verification and the call. That proof is an explicit gate of the
-   first PR that contains a `merge-async` call (Decision 9). If a stale `sha` is accepted, the native path does not ship
-   and this record is amended.
-3. Anything but `202` with a uuid halts.
-4. Poll `GET …/merge-async/{uuid}` every 3 seconds, up to 180 seconds (the pilot's rebase took 5 to 10 seconds). `pending`
-   and `enqueued` keep polling (this repository has no merge queue, so `enqueued` is unexpected but not an error). `merged`
-   succeeds. `failed`, an unknown status or a non-2xx poll halts. On timeout the train reads `GET /pulls/{n}` once more
-   after 60 seconds: merged goes to the audit, otherwise halt.
-5. **Audit** (detective, after the irreversible merge). Let S be the PR's `merge_commit_sha` and P_S its single parent. The
-   audit recomputes git's merge of the verified head H onto P_S in the pinned environment (base = merge base of P_S and H)
-   and requires `tree(S)` to equal it. The earlier wording "the parent was the `main` tip the train saw" is dropped: `main`
-   can move legitimately while the train polls, which would raise a false alarm. (With `strict` on, GitHub refuses to merge
-   a head that is behind `main`, so a late move shows as `failed`, not as a mismatch.)
-6. **Stop on a failed audit.** The audit result is an input of `decide` (`--audit FILE`). A failed audit makes `decide`
-   return halt on the head, the lowest open `train:N`, and the existing `halt()` labels it `train:halted` and comments.
-   Every later run does nothing until the owner removes the label. The audit runs in the same run as the merge, before the
-   `concurrency` group lets the next run start, so the successor cannot be acted on first. With no open successor nothing
-   is running, and the job fails with `::error::`. The audit also runs at the **start of every run** for the most recent
-   merged PR that has a `reviewed:` label (a second listing, `--state merged`, `mergedAt`, `mergeCommit`), so a merge that
-   completed after a timeout, or a run cancelled between the merge and its audit, is audited at the next trigger. It is
-   idempotent. A stronger stop, writing `MERGE_TRAIN=off` as a repository variable, would need the App to hold the
-   `Variables: write` repository permission, which lets the unattended job change any Actions variable. It is not
-   recommended; it is an owner question (Decision 10).
+**Order and batch.** `train:N` of stack members must follow the stack order, bottom first; any inversion halts. A head whose
+parent is open or closed unmerged halts. A stack member not in the batch above the head is ignored. (That GitHub itself
+refuses a child-before-parent merge was not verified; the train does not rely on it.)
 
-**The train never merges a child before GitHub finished rebasing it and `gates` is green on the new head.** The decision
-reads the PR fresh each run, so it sees the new head. A child whose parent just merged is in one of these states: pending
-or base not yet `main` (wait, 3.2); head changed and checks running (wait); head changed, green and `CLEAN` (rule h, then
-merge). The residual race between the decision and the call is closed by the `sha` only once the hypothesis of step 2 is
-proven; until then it is open and detected by the audit.
+### 4. The merge call (stacked heads only)
 
-**Idempotency on re-dispatch.** Runs are serialised by the workflow's `concurrency` group (`cancel-in-progress: false`), so
-a second dispatch waits. If a run is cancelled between the `202` and the end of the poll, the next run reads the PR: merged
-means done (and the start-of-run audit covers it); open with the same head means the train repeats step 2 with the same
-`sha`. *Whether GitHub rejects a second `merge-async` while one is in flight was not verified*; if it accepts both, the
-second call on a merged PR returns an error and halts a PR that is already merged, which is cleaned up by hand. The train
-does not store the uuid.
+A non-stacked head keeps `gh pr merge --squash --match-head-commit` unchanged. A stacked head, once `decide` says merge (not
+draft, `CLEAN`, every check passing on the **new** head, one valid label, verifier ok), is merged so:
 
-**Considered.** *Polling the PR instead of the uuid* (check `merged` every few seconds): simpler, no dependence on the
-result shape, but loses the `failed` signal and waits out the timeout on failure. Recommended as the fallback if the result
-shape of `merge-async` turns out unstable: poll both.
+1. `GET /pulls/{n}`: merged means success; a `head.sha` different from the decided one means wait.
+2. `PUT …/merge-async` with `merge_method=squash` and `sha=<the verified head>`; `merge_action` unset. The `sha` is always
+   passed. **Hypothesis, not fact:** that a stale `sha` is rejected. The pilot showed only that a correct `sha` is accepted
+   and an omitted one is filled in. Until the rehearsal proves rejection of a stale `sha` (response recorded), the pin is
+   not counted as closing the race between verification and call, and the audit must not depend on `strict` (its behaviour
+   for `merge-async` is unverified).
+3. Any response but `202` with a uuid halts.
+4. Poll every 3 seconds up to 180 seconds. `pending` and `enqueued` continue. `merged` goes to the audit. `failed`, an unknown
+   status or a non-2xx poll halts at once. On **timeout** the PR is re-read after 60 more seconds: merged goes to the audit,
+   anything else halts.
+5. **Audit, in the same run.** Let S be `merge_commit_sha`, P_S its parent. It passes iff S has exactly one parent, `tree(S)`
+   equals `tree(H)` (H the verified head), and P_S is an ancestor of H. Anything else is a failure. If `main` moves during the
+   poll the audit may fail without a fault; the owner then inspects, which is the safe side.
+6. **Stop on a failed audit.** The current workflow runs `decide` once before the merge, and `$pr` in the shell `halt()` is
+   the PR just merged. `decide` scans only **open** PRs for `train:halted`, and GitHub accepts a label on a closed PR, so
+   labelling the merged PR would stop nothing. Instead: after the merge the job re-lists the open PRs and calls a new
+   subcommand `train_step.py audit-stop --audit FILE < open_prs.json`. It prints `halt` on the **lowest open `train:N`** (the
+   successor; the merged PR, if still listed, is skipped), or `none` when there is no open `train:N` PR. The workflow then
+   runs the existing `halt()` with `$pr` set to the successor. With no successor nothing is running: the job posts the
+   failure as a comment on the merged PR and in the step summary and fails once (`::error::`); with no start-of-run audit it
+   cannot repeat. A unit test asserts that the label target is an open PR.
+7. **Idempotency.** `concurrency` serialises runs. A run cancelled after the `202` leaves the PR merged or open; the next run
+   sees which. If open with the same head it repeats step 2 with the same `sha` (whether a second call is rejected while one
+   is in flight is unverified; a rejection halts a PR that did merge and is cleaned up by hand).
 
-### 4. Workflow changes
+**No start-of-run audit.** The train keeps no state, so a later run does not know which head it verified. At a later run
+the merged PR's head is whatever GitHub reports, and GitHub guarantees `tree(S) == tree(head)` for a squash, so the check
+cannot detect a swap between verification and merge. A merge whose audit never ran (cancelled run) is not re-audited; the
+owner sees the run as cancelled.
 
-- **Which path.** The decision step stays pure (`train_step.py`). It receives, for the head only, the `stack` object (or
-  nothing). `stack` absent or null: the existing `gh pr merge --squash --match-head-commit` path, unchanged. `stack`
-  non-null: the native path (`merge-async`). Any read of `stack` that fails to parse halts. A repository variable
-  `MERGE_TRAIN_STACKS` must be `on` for the native path; otherwise a stacked head halts with a message that names the
-  variable. The variable is the rollback (Decision 7).
-- **Which verifier call.** For a stacked head with a merged parent: `train_verify_head.py <R_child> <H> --parent-reviewed
-  <R_parent> --parent-merge-commit <M_parent>`. For position 1 and for unstacked heads: unchanged. Reading `R_parent` and
-  `M_parent` takes `GET /pulls/{n}`, `GET /stacks/{number}` and `GET /pulls/{parent}` (Decision 2).
-- **Fetching.** The workflow fetches `main`, `pull/<n>/head` and, by SHA, `R_child` and `R_parent`. `R_child` is no longer
-  on any ref after the rebase. GitHub served a force-pushed-away commit through the REST API in the pilot; that
-  `git fetch origin <sha>` works for it was **not verified** (no network except `gh api`). If it does not work, the
-  fallback is to fetch `pull/<child>/head` before the parent merges and keep it, which an unattended run cannot do, so the
-  rehearsal must settle this first. An unfetchable `R_child` halts ("reviewed commit is not in this repository").
-- **Token.** The existing App token has `contents: write` and `pull-requests: write`, and `gh pr merge` has merged
-  unattended under `enforce_admins` (the App is not a bypass actor). Whether `merge-async` accepts the same token and
-  scopes must be verified in the real repository; the REST docs for the endpoint were not reachable here. The workflow's
-  job permissions (`contents: read`) and the token step do not change if that holds. If the endpoint needs another
-  permission, adding it is an owner action on the App, and the rehearsal finds this before the real workflow changes.
-- **List queries** (3.1): both lists drop `--base main` and add `baseRefName`; a third query lists the last merged PR for the
-  start-of-run audit.
-- **Trigger**: a `schedule` (every 15 minutes), for the wait and its limit (3.2). Open question for the owner.
-- **No other changes** to `concurrency`, checkout (no `ref:`), or the rule that no PR code runs in this job.
+### 5. Workflow changes (`update-behind-prs.yml`)
 
-**Considered.** *Always use `merge-async`, also for unstacked PRs.* Rejected. The unstacked path has run in production
-since 2026-10-26. A second route for every PR doubles the surface to rehearse. *A separate workflow for stacks.* Rejected.
-Two workflows would each act on the head, and the single `concurrency` group and the single halt label are what keep one
-PR moving at a time.
+- Both lists: no `--base main`, `baseRefName` added (Decision 3).
+- For a head with a `stack` key: assemble the facts record, fetch `R_child`, `R_parent`, `P_final` and `M_parent` by SHA
+  (fetchable, as seen on the pilot; to be confirmed on the real repository), run the verifier with the three arguments,
+  pass the facts to `decide`, merge with the Decision 4 steps, then the audit and the stop.
+- Token: the App token has `contents: write` and `pull-requests: write` and `gh pr merge` merged unattended under
+  `enforce_admins` (the App is not a bypass actor). That `merge-async` accepts it, and that checks re-run on a rebase
+  triggered by an App merge, **must be verified in the real repository**; the REST docs were not reachable here.
+- The `schedule` trigger is **not** part of the design. It is added only if the rehearsal shows that no `workflow_run` or
+  `push` event fires after GitHub's rebase of an App-triggered merge (Decision 9, Open question 3). Without a trigger a wait
+  would stall.
+- Unchanged: `concurrency`, the checkout without `ref:`, and the rule that no PR code runs in the job.
 
-### 5. Labels and ordering
-
-- `train:N` for stack members follows stack order, bottom first. For every open batch PR whose `stack` is non-null, the
-  train compares the order of `train:N` with the stack order (the stack's array order). Any inversion halts ("train order
-  disagrees with stack order"). The train does not renumber.
-- A stacked head whose parent (position - 1) is **open** halts: the child must not merge before the parent. (That GitHub
-  refuses a child-before-parent merge was not verified; the train does not rely on it.) A parent that is **closed unmerged** halts: the existing closed-unmerged rule covers a batch member below the
-  head, and the new rule also covers a non-batch parent. The stack record for a stack with a closed-unmerged member is not
-  specified by anything read here (*not verified*), so any entry of a stack that is neither `MERGED` below the head nor
-  open above it halts.
-- A stack member not in the batch, above the head, is ignored. One in the batch below the head, closed unmerged, halts as
-  today.
-- Every batch member keeps its own `reviewed:<R>` label, taken after the owner reviewed the commit at its position. The
-  label of a child names the child's own commit, as the how-to says.
-- The `reviewed:` label of a **merged** parent must stay on the closed PR. The cleanup step of the how-to must not remove
-  labels from merged PRs. This is stated in the how-to by PR 5.
+Rejected: `merge-async` for every PR (the unstacked path has run in production); a separate workflow for stacks (two actors
+on the head); polling the PR instead of the uuid (kept only as a fallback if the result shape proves unstable).
 
 ### 6. Signing
 
-The rebased heads are unsigned, and the repository does not require signed commits (`required_signatures` is off). The
-squash commits on `main` are signed by GitHub, whether the head was signed or not (pilot). If the repository ever requires
-signed commits, the question is whether a squash merge of an unsigned head is accepted; that was **not verified** and is an
-open question. If it is refused, a native stack cannot merge under that rule and the feature is turned off; the train
-would not sign or re-push anything.
+The rebased heads are unsigned. The repository does not require signed commits, and the squash commits are signed by GitHub.
+Whether a squash of an unsigned head would be accepted under a signed-commits requirement is not verified; if it were
+refused, the feature is turned off. The train never signs or pushes anything.
 
 ### 7. Failure modes, rollback, and what the train never does
 
 | Condition | Action |
 |---|---|
-| `stack` unreadable, or `MERGE_TRAIN_STACKS` not `on` | halt |
+| `stack` unreadable; `MERGE_TRAIN_STACKS` not `on`; position 3 or higher; parent open, closed unmerged, or without a valid label | halt |
 | `train:N` order differs from stack order | halt |
-| Head's parent open, closed unmerged, or not in the stack record | halt |
-| Parent's `reviewed:` label missing or malformed | halt |
-| `R_parent` or `R_child` unfetchable | halt |
-| Rule h fails (h1 to h5) | halt, with the failing clause |
-| Pending (M_parent not an ancestor of H), or base not `main` with a merged parent, for 10 minutes or less | wait |
-| Pending or base not `main` for more than 10 minutes after the parent's `merged_at` | halt |
-| Head's base is not `main` and the PR is not stacked | halt |
-| A stack member is not in the listed PRs (completeness) | halt |
+| Head not stacked and base not `main` | halt |
+| Parent merged less than 10 minutes ago and the verifier is not ok, did not run, base not `main`, or `in_main` false | wait |
+| Same, 10 minutes or more | halt (verifier reason) |
+| Rule h fails (h1 to h6) after the window; `R_parent`, `R_child`, `P_final` or `M_parent` unfetchable | halt |
 | Checks running on the new head | wait |
-| Head `BEHIND` after the rebase | update-branch as today, then verify (*update-branch on a stacked child was not tested*) |
-| `merge-async` not `202`, status `failed`, unknown status, timeout | halt |
-| Post-merge audit mismatch | `train:halted` on the lowest open `train:N`, job fails |
-| `merge-async` for a PR already merged | success (idempotent) |
+| `merge-async` not `202`, status `failed`, unknown status, non-2xx poll | halt |
+| `merge-async` timeout | re-read after 60 s: merged, audit; else halt |
+| Audit failure with an open successor | `train:halted` on the successor, job fails |
+| Audit failure with no open successor | comment on the merged PR, summary, job fails once |
+| Head `BEHIND` and the verifier ok | update-branch as today (*untested on a stacked child*) |
+| Head `BEHIND` and the verifier not ok | wait or halt as above, never update |
 
-**Rollback.** `gh variable set MERGE_TRAIN_STACKS --body off` (any value other than `on` is off) makes stacked heads halt
-instead of merge. `MERGE_TRAIN=off` stops the whole train, as today. The code paths are inert while the variable is off.
+**Rollback.** `gh variable set MERGE_TRAIN_STACKS --body off` (anything but `on` is off): stacked heads halt. `MERGE_TRAIN=off`
+stops the whole train.
 
-**The train never** merges a stacked PR with `gh pr merge`, calls `merge-async` without `sha`, merges a head that rule h or
-rules a to g did not accept, creates, rebases, retargets or force-pushes a PR branch, edits a `reviewed:` label, calls
-`unstack`, uses `merge_action` other than the default, retries a failed merge, skips a PR, acts on a PR other than the
-head, merges while `pending`, filters the PR lists by base, or writes a repository variable.
+**The train never** merges a stacked PR with `gh pr merge`; calls `merge-async` without `sha`; merges a head the verifier did
+not accept, or while pending; creates, rebases, retargets or force-pushes a PR branch; edits a `reviewed:` label; calls
+`unstack`; sets `merge_action`; retries a failed merge; skips a PR; acts on a PR other than the head (the audit stop acts on
+the successor, which is the head by definition once the merged PR is gone); updates a pending stacked child; or writes a
+repository variable. The base filter exists only inside update-only mode.
 
 ### 8. Testing
 
-The existing verifier tests are `tests/integration/test_train_verify_head*.py` (four files) and the decision tests are
-`tests/unit/test_train_step.py`; the new files sit next to them. All verifier tests use real temporary git repositories.
-Nothing mocks `git`. A helper simulates GitHub's rebase: for a child with
-commits `c1..ck` on parent branch `P`, after the squash of `P` onto `main`, it builds H by `cherry-pick` of `c1..ck` onto
-`main`, with committer data fixed so the commit is deterministic.
+Verifier tests are `tests/integration/test_train_verify_head*.py` (four files, real temporary git repositories, no git
+mocks); decision tests are `tests/unit/test_train_step.py`. New files sit beside them. A helper simulates GitHub's rebase by
+cherry-picking the child's commits onto `main`.
 
-- **Unit** (`tests/unit/test_train_step_stack.py`): decision logic with a `stack` object per PR: path selection,
-  `MERGE_TRAIN_STACKS` off, order mismatch, open or closed-unmerged parent, unparseable `stack`, `merge_stack` action.
-  Malformed `stack` raises `InputError` (exit 2). Added by this review:
-  - **Visibility**: A(1) merged, B(2) and C(3) with a base that is not `main`, independent D(4): the decision is wait on B,
-    never a merge of D. The same list with the `baseRefName == main` filter applied first makes D the head: that is the
-    mutation, and the test fails on it. The same for the closed list. A list in which a stack member is missing halts.
-  - **Transient child**: parent merged, child with base `main`, head equal to `R_child`, verifier output `pending`: wait,
-    not halt. The same with `now - merged_at` over 10 minutes: halt. The transient head of #3 (`0d35733f…` shape: holds
-    the grandparent's squash but not the parent's): wait. `pending` with `ok: true` is impossible and raises.
-  - **Audit**: a failed `--audit` makes the head halt even when every other input says merge.
-- **Unit** (merge client, `scripts/train_merge_async.py`, with an injected runner in place of `gh`): `sha` always present,
-  `202` handling, polling states, timeout, already merged, post-merge audit.
-- **Integration** (`tests/integration/test_train_verify_head_native_stack.py`): accepted cases: a two-level and a three-level
-  stack, a multi-commit child (three commits), a child that deletes a file, changes a mode, or adds an executable, `main` moved after the rebase with an update merge on top, a child whose edits are adjacent to
-  the parent's (the 2026-10-26 case, built from the real `CHANGELOG.md` shape). Attacks, each must halt:
-  wrong base (`R_parent` older than the parent's reviewed head; `R_parent` not an ancestor of `R_child`), forged parent label
-  (label of another PR, of a PR of a different stack, of an unmerged parent), extra bytes in H, a missing `main` change in H,
-  a conflict in the merge, rename divergence (the child renames a file that `main` also edits: git's rename-less merge and
-  GitHub's cherry-pick disagree), a merge of a different stack's parent (squash of another stack's commit on `main`), a
-  two-parent H that is not an update merge, H whose parent is not on `main`, a rebased child that still holds a merge
-  commit in its series, a series with a root commit, a rename of a file that `main` also edits (h4 conflict), `R_parent`
-  older than the true one with a line `main` reverted (accepted by h3 alone; must be rejected by the parent re-derivation of
-  Decision 2 item 4), a stale label on a parent merged outside the train, and `H == R_child` with a merged parent
-  (`pending`, not ok). The **combined path** has a named test,
-  `test_stack__rule_h_passes_but_update_merge_is_evil__halts`: an honest T under an update merge that adds a byte; h1 to h4
-  pass and `verify(T, H)` rejects it. Its pair accepts an honest update merge on top of T.
-- **Mutation checks**, each must fail at least one test: replace `R_parent` by the merge base of `main` and H; drop h2;
-  drop h4 (accept `merge-tree` exit 1); compare against `R_parent`'s tree instead of the merge; use `main`'s tip where the
-  rule needs X; keep the `R == H` shortcut for stacked heads; omit `--no-renames` or the attribute pinning; **skip
-  `verify(T, H)` for update merges (h5)**; **accept an `R_parent` that is not derived from the parent's final head**; **drop
-  the list-query fix** (filter by `--base main` again); evaluate the verifier result before `pending`; drop the 10-minute
-  limit; compute the audit from the tip the train saw instead of from P_S.
-- **Run as CI runs** (`pytest -n auto`) and single-process, on at least two machines or the Windows NTFS mount and a Linux
-  runner. The rule uses git behaviour (`merge-tree`, cherry-pick) that is a version-inference risk; the test pins git
-  2.40 or later.
-- **Rehearsal on the pilot.** The pilot has no train. The rehearsal needs: the scripts and a copy of the workflow on the
-  pilot's `main`; the GitHub App (or a second one) installed on the pilot with the same two permissions, because the
-  rebase push may behave differently when the App merges (does `gates` still run on it); `MERGE_TRAIN=on` and
-  `MERGE_TRAIN_STACKS=on`; the labels `train:1..3`, `train:halted`, `reviewed:<sha>`; a new three-PR stack made with
-  `gh stack`, including one pair that edits adjacent hunks; a run of the workflow by dispatch. It must also test: a
-  deliberately wrong parent label, **a stale `sha` (the gate of Decision 9)**, a failing parent, `update-branch` on a
-  rebased child, a fetch by SHA of `R_child` and of a closed parent's head, whether a `merge-async` repeated during a flight
-  is rejected, a **40-hex `reviewed:` label on an open child across its parent's merge and rebase**, a **multi-commit
-  child** and a **child with a merge commit in its series** (how GitHub rebases each), the retarget window with an
-  independent PR holding a higher `train:N` (the out-of-order case), the merge by the App token (checks re-run, `merge-async`
-  accepted under `enforce_admins`), and a deliberately failed audit (the stop). Each observed response is written into the
-  how-to.
+- **Integration** (`test_train_verify_head_native_stack.py`). Accepted: two-level stack, three-commit child, child deleting a
+  file, changing a mode or adding an executable, adjacent hunks, `main` moved with an honest update merge on top. Halt:
+  `R_parent` not an ancestor; extra bytes in H; a missing `main` change; a conflict; rename of a file `main` edits; a merge
+  commit in the series; a root-commit series; H whose parent is not on `main`; a stale label on a human-merged parent
+  (V3); an older `R_parent` with a line `main` reverted (V4, halts through h6); `tree(M_parent) != tree(P_final)`.
+  **Named combined test** `test_stack__rule_h_passes_but_update_merge_is_evil__halts`, with an honest-update pair. **X1
+  test:** an old head plus an update merge containing M_parent passes today's `verify` but must be judged by rule h and
+  halt.
+- **Unit** (`test_train_step_stack.py`). Visibility: A merged, B and C with base not `main`, independent D(4): wait on B,
+  never merge D; the same for the closed list. Pending: parent merged 2 minutes ago and verifier not ok is wait; 11 minutes is
+  halt; `in_main` false is wait; the transient head of #3 is wait; ok is never overridden into a wait for a head that is
+  ok. Path selection: position 3 halts; stacked head with `MERGE_TRAIN_STACKS` off halts; a pending head is not updated.
+  `audit-stop`: with an open successor the target is that open PR (and a stale list still containing the merged PR does not
+  pick it); with none the output is `none`.
+- **Merge client** unit tests with an injected runner: `sha` always present, each poll state, timeout and re-read, the audit
+  (swapped tree, P_S not an ancestor, two parents).
+- **Mutations**, each must fail a test: `R_parent` replaced by the merge base; drop h2; drop h4; drop h6; use `main`'s tip
+  for X; keep the `R == H` shortcut for stacked heads; skip `verify(T, H)` for update merges; choose the path by head shape
+  instead of the stack record; restore `--base main` on the lists; evaluate the verifier before pending; drop the 10-minute
+  limit; label the merged PR instead of the successor; drop the pinned attributes or `--no-renames`.
+- **Run as CI runs** (`pytest -n auto`) and single-process, on the Windows mount and a Linux runner; git 2.40 or later.
+- **Rehearsal on the pilot** (it has no train). It uses the scripts of PRs 1 and 2 (merged) and of PRs 3 and 4 (open as
+  drafts, copied to the pilot), and needs: the App installed on the pilot with the two permissions, `MERGE_TRAIN` and
+  `MERGE_TRAIN_STACKS` on, the labels, and a new stack made with `gh stack`. It must show: **a stale `sha` rejected**;
+  the `merge-async` failure body; the App-merge token and checks; whether checks and `workflow_run` fire after the rebase
+  (decides the schedule trigger); a 40-hex label on an open child across the parent's merge; how GitHub rebases a
+  multi-commit child and one with a merge commit; the retarget window with an independent higher `train:N`; a wrong parent
+  label; a failing parent; `update-branch` on a rebased child; a repeated `merge-async` during a flight; fetch by SHA on the
+  real repository; a deliberately failed audit whose label lands on an open PR. Each response goes into the how-to.
 
 ### 9. Rollout
 
-Each pull request is green alone, reviewed at its head, and changes nothing the train does until PR 4.
+Each PR is green on its own and changes nothing the train does until PR 4.
 
-1. **PR 1, verifier.** Rule h and `--parent-reviewed` in `scripts/train_verify_head.py`, the integration tests and mutation
-   checks of Decision 8, the docstring. No caller passes the argument. Gate: the five required checks, Copilot
-   conversations resolved, and a re-run of the mutation list by the reviewer.
-2. **PR 2, decision.** The `stack` input, path selection, order and parent checks, `baseRefName` handling (an absent field
-   means `main` until PR 4 makes it required), the visibility and completeness rules, the pending wait with its injected
-   `now`, the `--audit` input, and the new `merge_stack` action in `scripts/train_step.py`, with the unit tests of Decision
-   8. The workflow is not changed, so the listing is still filtered and the new action is ignored. Gate: as PR 1.
-3. **PR 3, merge client.** `scripts/train_merge_async.py` (the call, the poll, the audit computation) with its unit tests,
-   not called by the workflow. It is the first PR with a `merge-async` call. **Gate: the rehearsal on the pilot has
-   proven, with the response recorded, that a stale `sha` is rejected by `merge-async`.** If it is not rejected, this
-   PR is not merged and the record is amended.
-4. **Rehearsal on the pilot** (not a PR to this repository). Runs before PR 3 is merged, with the PR 1 to 3 scripts copied
-   to the pilot. Settles the unverified items. The owner reads the written results.
-5. **PR 4, workflow.** Wiring behind `MERGE_TRAIN_STACKS` (default off): **both list queries without `--base main` and with
-   `baseRefName` (F1), the stateless wait and its `schedule` trigger (F2)**, the fetch of `R_child`, `R_parent` and the
-   parent's final head, the native merge call, the start-of-run audit and its stop. Only this PR touches the workflow. Gate:
-   as PR 1, plus the rehearsal results, plus the owner's check of the token (Decision 4) before the merge.
-6. **PR 5, documents.** The how-to ("Stacked PRs", the halt table, the remove-labels warning), `CHANGELOG.md`. The
-   "Not built" paragraph on native stacks is replaced by what the rehearsal found.
-7. **First live use.** A two-PR stack with `MERGE_TRAIN_STACKS=on`, owner present. Afterwards the variable stays `on` or is
-   set back.
+1. **PR 1, verifier.** Rule h with its three arguments, h1 to h6, the integration tests and mutations. No caller.
+2. **PR 2, decision.** Facts record, visibility (absent `baseRefName` means `main` until PR 4), path selection, pending wait,
+   the order checks, `MERGE_TRAIN_STACKS`, the `audit-stop` subcommand, unit tests. The workflow is untouched.
+3. **Drafts of PR 3 and PR 4 and the rehearsal.** PR 3 is the merge client (call, poll, audit), PR 4 the workflow. Both are
+   opened as drafts and copied to the pilot for the rehearsal; PR 1 and PR 2 are already merged.
+4. **PR 3 merges** only when the rehearsal has **proven that a stale `sha` is rejected**. If not, it is not merged and this
+   record is amended.
+5. **PR 4 merges** (workflow: lists, facts assembly, fetches, merge call, audit and stop; the schedule trigger only if the
+   rehearsal requires it) with the rehearsal results and the owner's check of the token as its gate.
+6. **PR 5, documents:** the how-to, the halt table, a warning not to remove labels from merged parents, `CHANGELOG.md`.
+7. **First live use:** a two-PR stack, owner present.
+8. **Later PR:** three-level stacks, after a rehearsal of a three-level stack and a decision on recursion.
 
-### 10. Open questions for the owner, and risks not verified
+### What was cut, and why
 
-Questions:
+| Cut | Why |
+|---|---|
+| Rule h0, `--parent-merge-commit` as a verifier output and `pending` in the verifier | Pending is a decide-only wait; the verifier stays a yes/no. |
+| Stack-completeness check | The 100-entry cap already halts. |
+| Recursive re-derivation of `R_parent` for every level | V3: it halts a child that rule h accepts correctly. One level kept. |
+| Three-level stacks in the first rollout | Rehearse first. |
+| Start-of-run audit | No state; the check cannot detect a swap. |
+| Recomputed-merge audit | Trivial or a false-alarm source; replaced by `tree(S) == tree(H)` and P_S an ancestor of H. |
+| `schedule` trigger as a commitment | Added only if the rehearsal needs it. |
+| Poll-both fallback | Only if the result shape proves unstable. |
+| Writing `MERGE_TRAIN=off` on audit failure | Needs `Variables: write` for the App; the label on the successor is used. |
 
-1. May the owner enable `gh-stack` / native stacks on the real repository (the pilot's preview status is not confirmed
-   for it)?
-2. Does the owner accept a false halt when GitHub's rebase and git's merge disagree (restack by hand as today)?
-3. Is a second App or the same App on the pilot acceptable for the rehearsal?
-4. Should a stacked PR's `reviewed:` label be taken at the child's own commit (as designed) or after the parent merged?
-5. May the App be given `Variables: write` so that a failed audit can set `MERGE_TRAIN=off`? The design says no and uses the
-   `train:halted` label on the successor.
-6. Is a `schedule` trigger (every 15 minutes) acceptable?
+## Open questions for the owner (not decided by this record)
 
-Not verified (all would be settled by the rehearsal):
+1. May native stacks and `gh-stack` be enabled on the real repository (preview status not confirmed)?
+2. Is a false halt acceptable when GitHub's rebase and git's merge disagree (restack by hand)?
+3. Is a `schedule` trigger acceptable if the rehearsal shows it is needed?
+4. The closed-unmerged list halts the train at 100 entries (73 today). Raise the cap, page the list, or accept it?
+5. Should the App get `Variables: write` so that an audit failure can set `MERGE_TRAIN=off`? The design says no.
+6. A second App, or the same App, on the pilot for the rehearsal?
+7. Should a stacked PR's label be taken at its own commit (as designed) or after its parent merged?
 
-- `merge-async` failure body and status, **stale-`sha` response** (a gate, Decision 9), repeat-call behaviour.
-- How GitHub rebases a **multi-commit** child and a child with a **merge commit** in its series (the pilot had one commit per
-  PR).
-- Whether a 40-hex `reviewed:` label of an open child survives its parent's merge and the rebase.
-- Whether the objects of a closed parent (`pull/<parent>/head`) can be fetched, for the re-derivation of `R_parent`.
-- Whether the `schedule` trigger is needed (whether an App-triggered rebase starts the checks that start the `workflow_run`).
-- What a child does when its parent's merge fails.
-- Whether the App token and its two permissions may call `merge-async` under `enforce_admins`.
-- Whether `gates`/`lint`/`fast`/`full`/`docs`/`e2e` re-run on a rebase that was triggered by an App, as they did when a user
-  merged in the pilot.
-- `git fetch origin <sha>` of a force-pushed-away commit.
-- Whether `gh pr merge` works at position 1. (The shape of `stack` for a PR that is not stacked **is** verified: the key is
-  absent on PRISMA-Bib #188.)
-- `update-branch` on a rebased child, and the stack record of a closed-unmerged member.
-- Whether signed commits would block a native stack.
-- Whether the `stack` field and the endpoints stay stable: they are a public preview.
+Not verified, to be settled by the rehearsal: the `merge-async` failure body and stale-`sha` response; a repeated call during
+a flight; a child whose parent's merge fails; token and `enforce_admins` for `merge-async`; whether checks fire after an
+App-triggered rebase; a 40-hex label on an open child; multi-commit and merge-commit rebases; `update-branch` on a stacked
+child; `gh pr merge` at position 1; signed-commit requirements; fetch by SHA on the real repository; stability of a preview
+API.
 
 ## Consequences
 
-1. A stack of dependent PRs can merge unattended, with the bytes checked, and without the manual restack of the how-to.
-2. The trust anchor stays the owner's labels. The verifier gains one rule and one optional argument. No label is written by
-   the workflow.
-3. The train depends on a preview API. The feature switch and the halt-by-default behaviour limit the cost of a change in it.
-4. A false halt is possible when git and GitHub disagree; the cost is a manual restack, as today.
-5. The how-to gains the rows of Decision 7 in PR 5; the "Stacked PRs" text changes then, not before.
-6. `mkdocs.yml` gains a navigation entry for this record, after the entry for ADR 0036.
+1. A two-level stack can merge unattended with the bytes checked, without the manual restack.
+2. The trust anchor stays the owner's labels. The verifier gains one rule and three optional arguments passed together; the
+   workflow writes no label except the existing halt.
+3. The train depends on a preview API; the switch and halt-by-default limit the cost of a change.
+4. False halts are possible (renames); the cost is a manual restack. A human-merged parent halts its child until the owner
+   relabels it.
+5. The lists now include every base, so the train sees stacked children; update-only mode behaves as before.
+6. The how-to changes in PR 5, not before. `mkdocs.yml` has a navigation entry after ADR 0036.
 
 ## Alternatives considered
 
-**Land dependent work as one PR, or restack by hand between batches.** Remains valid and is what the how-to recommends
-today. Not enough alone: it asks the author to know in advance which PRs depend on which.
-
-**Automatic restacking by the train** (rebase the child onto `main` after the parent merges, then ask for a new
-review). Rejected: write access to PR branches from the unattended job, and a head that nobody reviewed.
-
-**Merge queue.** Not configured (no rulesets). `merge_action=default` would use one if it were. A queue does not remove the
-rebase of a child; it is a separate decision.
-
-**Skip the check on stacked PRs because GitHub did the rebase.** Rejected (Decision 1).
+Landing dependent work as one PR or restacking by hand remains valid and is what the how-to recommends today. Automatic
+restacking by the train is rejected (write access to PR branches, an unreviewed head). A merge queue is not configured;
+`merge_action=default` would use one. Skipping the check because GitHub did the rebase is rejected (Decision 1).
 
 ## Related decisions
 
 - [ADR 0034](0034-errata-to-adr-0031-and-0033.md) and [ADR 0036](0036-errata-to-adr-0035.md): the form of this record.
-- [`docs/how-to/merge-train.md`](../../how-to/merge-train.md): the train's rules today, and the "Stacked PRs" text that
-  PR 5 changes.
-- `scripts/train_verify_head.py`, `scripts/train_step.py`, `.github/workflows/update-behind-prs.yml`: the code this record
-  extends.
+- [`docs/how-to/merge-train.md`](../../how-to/merge-train.md): the rules today, and the "Stacked PRs" text PR 5 changes.
+- `scripts/train_verify_head.py`, `scripts/train_step.py`, `.github/workflows/update-behind-prs.yml`: the code extended.
