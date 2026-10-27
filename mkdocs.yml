@@ -138,6 +138,7 @@ nav:
       - Figure Gallery: how-to/figure-gallery.md
       - Merge Train: how-to/merge-train.md
       - Pre-push Check: how-to/pre-push-check.md
+      - Stacked Merge Check: how-to/stacked-merge-check.md
   - Testing: testing.md
   - API Reference: reference/index.md
 
