@@ -321,7 +321,14 @@ def _head(
     """Apply rules 2 and 4 to the train head. Every branch that is not an explicit merge,
     update or wait is a halt. ``facts`` is the parsed record (None: not stacked).
 
-    Order: draft, label, stack path and pending wait, verifier result, checks."""
+    Order: draft, label, stack path and pending wait, verifier result, checks. A stacked
+    head that is BEHIND is always a halt, never ``update``: update-branch on a stacked PR
+    is HTTP 403 (rehearsal), and a BEHIND child cannot merge under strict checks. The
+    pending wait comes first, so a position-2 head inside the 10-minute window with a
+    verifier problem stays a wait (GitHub's rebase may still arrive). After the window, or
+    with the verifier ok, BEHIND halts, even while checks run. DIRTY, UNKNOWN and failing
+    checks halt as before. Update-only mode (``_update_only``) has no facts and cannot see
+    stacks: PR 4 must keep it off a stacked head."""
     n = pr["number"]
     extra: dict[str, Any] = {}
 
@@ -408,6 +415,11 @@ def _head(
             return halt("CLEAN but no checks were reported")
         return act("merge", "all checks pass, the branch is CLEAN and the head is verified")
     if state == "BEHIND":
+        if stack is not None:
+            return halt(
+                "stacked PR is behind main; update-branch is not supported for stacked PRs "
+                "(HTTP 403 in the rehearsal); restack by hand (gh stack rebase) and review again"
+            )
         if running:
             return act("wait", "BEHIND with checks running")
         return act(

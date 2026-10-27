@@ -269,14 +269,60 @@ def test_pending__pending_head_is_never_updated() -> None:
     for check in (None, _bad(2)):
         out = _decide([child], check, _facts())
         assert out["action"] not in ("update", "merge")
-    # Once the verifier is ok, BEHIND updates as for any head.
-    assert _decide([child], _ok(2), _facts())["action"] == "update"
+    # Once the verifier is ok, BEHIND halts: update-branch is 403 for a stacked PR.
+    assert _decide([child], _ok(2), _facts())["action"] == "halt"
 
 
 @pytest.mark.unit
 def test_pending__now_before_merged_at_is_still_a_wait() -> None:
     out = _decide([_child()], _bad(2), _facts(now="2026-10-27T00:59:00Z"))
     assert out["action"] == "wait"
+
+
+# BEHIND stacked heads: update-branch is HTTP 403, so never `update`.
+
+_BEHIND_WORDS = "update-branch is not supported for stacked PRs"
+
+
+@pytest.mark.unit
+def test_behind__position_2_merged_parent_verifier_ok__halts_never_update() -> None:
+    out = _decide([_child(state="BEHIND")], _ok(2), _facts())
+    assert out["action"] == "halt"
+    assert _BEHIND_WORDS in out["reason"] and "gh stack rebase" in out["reason"]
+
+
+@pytest.mark.unit
+def test_behind__position_1__halts() -> None:
+    out = _decide([_child(state="BEHIND")], _ok(2), _facts(position=1))
+    assert out["action"] == "halt" and _BEHIND_WORDS in out["reason"]
+
+
+@pytest.mark.unit
+def test_behind__inside_pending_window_verifier_not_ok__waits() -> None:
+    for check in (None, _bad(2)):
+        out = _decide([_child(state="BEHIND")], check, _facts(now=NOW_2MIN))
+        assert out["action"] == "wait"
+
+
+@pytest.mark.unit
+def test_behind__after_window__halts() -> None:
+    out = _decide([_child(state="BEHIND")], _ok(2), _facts(now=NOW_11MIN))
+    assert out["action"] == "halt" and _BEHIND_WORDS in out["reason"]
+
+
+@pytest.mark.unit
+def test_behind__checks_running_still_halts_for_stacked() -> None:
+    child = _child(state="BEHIND")
+    child["statusCheckRollup"] = [{**_DONE, "status": "IN_PROGRESS"}]
+    out = _decide([child], _ok(2), _facts())
+    assert out["action"] == "halt" and _BEHIND_WORDS in out["reason"]
+
+
+@pytest.mark.unit
+def test_behind__non_stacked_updates_and_clean_stacked_merges() -> None:
+    assert _decide([_child(state="BEHIND")], _ok(2), None)["action"] == "update"
+    assert _decide([_child(state="BEHIND")], _ok(2), _facts(position=None))["action"] == "update"
+    assert _decide([_child()], _ok(2), _facts())["action"] == "merge"
 
 
 # Path selection, by the stack record only.
