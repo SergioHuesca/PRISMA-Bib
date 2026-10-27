@@ -318,13 +318,14 @@ Each PR is green on its own and changes nothing the train does until PR 4.
 7. **First live use:** a two-PR stack, owner present.
 8. **Later PR:** three-level stacks, after a rehearsal of a three-level stack and a decision on recursion.
 
-> **Note added 2026-10-28 (owner decision, the rehearsal evidence and what was built; this note does not change the record above).**
-> Items 3 to 5 of the Rollout assumed a rehearsal on a scratch repository. The owner decided on 2026-10-28 to skip it and to prove
+> **Note added 2026-10-27 (owner decision, the rehearsal evidence and what was built; this note does not change the record above).**
+> Items 3 to 5 of the Rollout assumed a rehearsal on a scratch repository. The owner decided on 2026-10-27 to skip it and to prove
 > the stacked path live on this repository, with the owner present, using a throwaway two-PR stack. PR 4 (#195) was therefore
 > merged **before** the two gates of item 5 were met, with the stacked path off (the repository variable `MERGE_TRAIN_STACKS` is
 > not set). Those two gates stay open and are checked by the first live use: that the App token is accepted by `merge-async` and
 > can read `GET /repos/{o}/{r}/stacks/{n}` under `enforce_admins`, and whether an event fires after GitHub's rebase of an
-> App-triggered merge (if none does, a `schedule` trigger is added before the feature is used). PRs 1 to 4 are #190, #191 with
+> App-triggered merge (if none does, a `schedule` trigger is added before the feature is used). PR 4 merged without a
+> `schedule` trigger, so once the variable is on a wait could stall silently until that question is answered. PRs 1 to 4 are #190, #191 with
 > #192, #193 and #195.
 >
 > A first part of the rehearsal had been run on a scratch repository with the owner's own token. It proved item 4's gate: a
