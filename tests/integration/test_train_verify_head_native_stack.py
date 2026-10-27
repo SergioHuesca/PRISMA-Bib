@@ -88,7 +88,13 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         monkeypatch.setenv(f"GIT_{key}_NAME", "test")
         monkeypatch.setenv(f"GIT_{key}_EMAIL", "t@example.invalid")
     _git(root, "init", "-q", "-b", "main")
-    for key, val in (("core.autocrlf", "false"), ("core.safecrlf", "false")):
+    # fileMode=false on every OS: `update-index --chmod` is then authoritative. With true, a later
+    # `add -A` re-reads the on-disk mode (644) and a 755 index entry makes the tree dirty.
+    for key, val in (
+        ("core.autocrlf", "false"),
+        ("core.safecrlf", "false"),
+        ("core.fileMode", "false"),
+    ):
         _git(root, "config", key, val)
     monkeypatch.chdir(root)
     return root
