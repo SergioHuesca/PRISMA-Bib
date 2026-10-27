@@ -156,6 +156,16 @@ would make a check that cannot fail.
 **Today's behaviour.** Nothing reports an orphaned decision (Context). The implementation adds the listing as a separate function over the
 same snapshot, and it does not change which decisions are counted.
 
+> **Note added 2026-10-27 (ADR 0036, Consequence 4(a); this note does not change the section above).** This section says an
+> orphaned decision's reported reason can be "reversal" or "supersession" for a registration. The code has that ability:
+> `orphaned_decisions` and `project_orphaned_decisions` (`prisma/orphans.py`) take an optional `outcomes` mapping from
+> `record_id` to `"reversal"` or `"supersession"`. No production caller supplies it. The build report (`cli.py`) and
+> `compute_flow_counts_with_orphans` (`prisma/flow.py`) pass none, so in practice every reported reason is
+> `record not in S_raw`. [Methodology: PRISMA mapping](../../methodology/prisma-mapping.md) states this as the current
+> behaviour ("the reason is always `record not in S_raw`") and governs until a caller supplies the outcomes. No rule or
+> number changes. The owner approved this pointer note on 2026-10-27; the basis is the project rule in `CLAUDE.md` that
+> contracts are not renegotiated without a new ADR (§2.6), and the note records a finding without renegotiating anything.
+
 ### 4. Reversal and supersession
 
 **Reversal (`reverse`, ADR 0029 §2 for the reason field, §7 for the reversal).** `reason` is one of a closed set (owner decision,
