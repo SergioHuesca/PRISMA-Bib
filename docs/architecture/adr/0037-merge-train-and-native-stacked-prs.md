@@ -318,6 +318,32 @@ Each PR is green on its own and changes nothing the train does until PR 4.
 7. **First live use:** a two-PR stack, owner present.
 8. **Later PR:** three-level stacks, after a rehearsal of a three-level stack and a decision on recursion.
 
+> **Note added 2026-10-27 (owner decision, the rehearsal evidence and what was built; this note does not change the record above).**
+> Items 3 to 5 of the Rollout assumed a rehearsal on a scratch repository. The owner decided on 2026-10-27 to skip it and to prove
+> the stacked path live on this repository, with the owner present, using a throwaway two-PR stack. PR 4 (#195) was therefore
+> merged **before** the two gates of item 5 were met, with the stacked path off (the repository variable `MERGE_TRAIN_STACKS` is
+> not set). Those two gates stay open and are checked by the first live use: that the App token is accepted by `merge-async` and
+> can read `GET /repos/{o}/{r}/stacks/{n}` under `enforce_admins`, and whether an event fires after GitHub's rebase of an
+> App-triggered merge (if none does, a `schedule` trigger is added before the feature is used). PR 4 merged without a
+> `schedule` trigger, so once the variable is on a wait could stall silently until that question is answered. PRs 1 to 4 are #190, #191 with
+> #192, #193 and #195.
+>
+> A first part of the rehearsal had been run on a scratch repository with the owner's own token. It proved item 4's gate: a
+> `merge-async` call with a non-current `sha` (a nonexistent one, an older commit, another PR's head, uppercase hex, a short
+> one) returns HTTP 400 "Pull request head branch was modified." and merges nothing. It also showed that an open child keeps
+> `stack.position` and its stack record while its parent is merged (a two-level stack, and the middle child of a three-level
+> stack); that an omitted `sha` is filled in by the server; that a required check that is still pending fails the job instead of
+> waiting; that a repeated call while one is in flight returns HTTP 409 with the existing job id; that a 40-hex `reviewed:` label
+> survives the rebase; that a merge commit inside a child is flattened; and that `update-branch` on a stacked child returns
+> HTTP 403.
+>
+> Read the record above with these differences, which are what PRs 2b, 3 and 4 implement: a stacked head that is BEHIND halts
+> and is never updated (`update-branch` is refused for stacked PRs, so the update merges that h5 covers cannot be produced by the
+> train for a stacked head); a 409 from `merge-async` is a wait, not a halt and not an adoption of the existing job; the 202
+> response must carry `expected_head_sha` equal to the verified head before it is polled; the audit fetches the merge commit by
+> `sha` before it runs; `audit-stop` prints the PR number or `none` (not the word `halt`); the facts record has the optional keys
+> `parent.head_sha` and `parent.state`; the job has a 20-minute limit and the merge client's fetch a 120-second limit.
+
 ### What was cut, and why
 
 | Cut | Why |
