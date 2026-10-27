@@ -116,10 +116,13 @@ def _call(
         raise _Halt(f"{method} request failed: {_safe(exc)}") from None
 
 
+FETCH_TIMEOUT_S = 120
+
+
 def _fetch(sha: str) -> None:
     """Fetch one commit by sha as data (the squash commit S is created by GitHub after the
     workflow's last fetch, so the clone does not have it). Raises GitError on failure."""
-    _git("fetch", "--no-tags", "--quiet", "origin", sha)
+    _git("fetch", "--no-tags", "--quiet", "origin", sha, timeout=FETCH_TIMEOUT_S)
 
 
 def audit(merge_sha: Any, head: str, fetch: Callable[[str], None] = _fetch) -> dict[str, Any]:

@@ -111,8 +111,14 @@ class GitError(RuntimeError):
     """git failed in a way that is not a yes/no answer."""
 
 
-def _git(*args: str) -> bytes:
-    proc = subprocess.run(["git", *_OPTS, *args], env=_env(), capture_output=True, check=False)
+def _git(*args: str, timeout: float | None = None) -> bytes:
+    """``timeout`` (seconds) is for network calls only; None keeps local calls unbounded."""
+    try:
+        proc = subprocess.run(
+            ["git", *_OPTS, *args], env=_env(), capture_output=True, check=False, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        raise GitError(f"git {args[0]} timed out after {timeout:g}s") from None
     if proc.returncode != 0:
         raise GitError(f"git {args[0]} failed: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout

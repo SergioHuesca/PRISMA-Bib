@@ -107,6 +107,36 @@ def test_audit__fetch_succeeds_but_commit_still_missing__failure():
     assert result["ok"] is False and "not present locally after fetching" in result["reason"]
 
 
+def test_audit__fetch_times_out__audit_failure_not_a_crash(world, monkeypatch):
+    real_run = subprocess.run
+    seen: dict[str, object] = {}
+
+    def run(cmd, *args, **kwargs):
+        if "fetch" in cmd:
+            seen["timeout"] = kwargs.get("timeout")
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = tm.audit(world.squash, world.head)
+    assert result["ok"] is False
+    assert "cannot fetch the merge commit" in result["reason"] and "timed out" in result["reason"]
+    assert seen["timeout"] == tm.FETCH_TIMEOUT_S == 120
+
+
+def test_git__default_has_no_timeout_so_local_calls_are_unchanged(world, monkeypatch):
+    seen: dict[str, object] = {}
+    real_run = subprocess.run
+
+    def run(cmd, *args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout", "absent")
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    tm._git("rev-parse", "HEAD")
+    assert seen["timeout"] is None
+
+
 def test_audit__fetch_is_called_once_per_missing_sha_and_never_for_present_ones(world):
     calls: list[str] = []
     tm.audit(world.squash, world.head, fetch=lambda sha: (calls.append(sha), tm._fetch(sha))[1])

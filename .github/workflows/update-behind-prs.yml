@@ -82,6 +82,8 @@ permissions: {}
 jobs:
   update:
     runs-on: ubuntu-latest
+    # A stalled git fetch must not hold the concurrency group for the 6 h default.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -207,7 +209,10 @@ jobs:
           mode=$(jq -r .mode <<<"$out")
           reason=$(jq -r .reason <<<"$out")
           echo "$action (mode $mode): $reason"
-          echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+          # An update is written by the update arm after its stack check: a stacked PR is not updated.
+          if [ "$action" != update ]; then
+            echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           # A halt labels the head and says why. The reason is sanitised by the script, and it
           # is passed quoted.
@@ -296,6 +301,9 @@ jobs:
               #             updated does today; restack it by hand or close it.
               #  unknown -> the stack check itself failed: warn, skip, the next trigger retries.
               stacked=$(gh api "repos/$GH_REPO/pulls/$pr" --jq '(.stack // null) != null' 2>/dev/null || echo unknown)
+              if [ "$stacked" = false ]; then
+                echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+              fi
               if [ "$stacked" = true ] && [ "$mode" = train ]; then
                 halt "stacked PR is behind main; update-branch is not supported for stacked PRs; restack by hand (gh stack rebase) and review again" || true
                 echo "::error::PR #$pr: stacked and behind main; the train is halted"

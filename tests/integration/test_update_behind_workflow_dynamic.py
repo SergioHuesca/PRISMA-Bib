@@ -414,7 +414,42 @@ def assert_s7(r: Result) -> None:
     assert r.rc == 0, r.err
     assert not [n for n in r.names if "update-branch" in n]
     assert "::warning::" in r.out and "::notice::" not in r.out
-    assert "stacked and BEHIND" in r.summary and "updating" not in r.summary.split("stacked")[-1]
+    assert "stacked and BEHIND" in r.summary
+    assert "updating" not in r.summary  # the first decide line must not claim an update
+    no_unexpected(r)
+
+
+def sc_facts_fail(fx: Fx) -> dict[str, Any]:
+    sc = stacked(fx)
+    sc["api"]["GET /repos/o/r/stacks/4"] = {"status": 500, "body": {}}
+    return sc
+
+
+def assert_s9b(r: Result) -> None:
+    assert r.rc == 1, (r.out, r.err)
+    assert "::error::" in r.out and "facts record could not be assembled" in r.out
+    assert not [
+        n for n in r.names if n.startswith(("pr merge", "pr edit", "pr comment", "api PUT"))
+    ]
+    no_unexpected(r)
+
+
+def sc_stale_audit(fx: Fx) -> dict[str, Any]:
+    """The merge client halts (stale sha) and writes no audit; an old failed audit file is there."""
+    sc = stacked(fx)
+    body = {"details": {"message": "Pull request head branch was modified."}}
+    sc["api"]["PUT /repos/o/r/pulls/12/merge-async"] = {"status": 400, "body": body}
+    stale = {"merged_pr": 12, "failed": True, "reason": "stale"}
+    (fx.d / "tmp").mkdir(exist_ok=True)
+    (fx.d / "tmp" / "audit.json").write_text(json.dumps(stale))
+    return sc
+
+
+def assert_stale_audit(r: Result) -> None:
+    assert r.rc == 1, (r.out, r.err)
+    assert r.names.count("pr list open") == 1  # no audit-stop path, so no re-list
+    assert "pr edit 12 --add-label train:halted" in r.names  # the open PR itself is halted
+    assert not [n for n in r.names if n.startswith("pr edit 13")]
     no_unexpected(r)
 
 
@@ -469,6 +504,8 @@ SCENARIOS: dict[str, Scenario] = {
         assert_s9e,
     ),
     "HOSTILE": (stacked, {**STACKS_ON, "HARNESS_PRE_STUB": HOSTILE_PRE}, assert_hostile),
+    "S9b": (sc_facts_fail, STACKS_ON, assert_s9b),
+    "STALE": (sc_stale_audit, STACKS_ON, assert_stale_audit),
 }
 
 
@@ -497,6 +534,11 @@ DYNAMIC_MUTATIONS = {
     "stacked in update-only mode not skipped": (
         'elif [ "$stacked" = true ]; then', "elif false; then", "S7"),
     "sha-regex guard on verifier_args removed": (_VARGS, "true", "HOSTILE"),
+    "facts failure masked": (
+        '{ echo "::error::PR #$n: the facts record could not be assembled; nothing was merged"; exit 1; }',
+        "true", "S9b"),
+    "stale audit file not removed": ('rm -f "$audit"', "true", "STALE"),
+    "update summary line unconditional": ('if [ "$action" != update ]; then', "if true; then", "S7"),
     "audit-stop runs even when the audit passed": (
         '[ "$(jq -r .failed "$audit")" = true ]', "true", "S3"),
 }  # fmt: skip

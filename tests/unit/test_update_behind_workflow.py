@@ -46,6 +46,8 @@ def violations(text: str) -> list[str]:
     job = wf["jobs"]["update"]
     if job.get("permissions") != {"contents": "read"}:
         bad.append("job permissions must be contents: read only")
+    if job.get("timeout-minutes") != 20:
+        bad.append("the job needs timeout-minutes: 20")
     steps = job["steps"]
     checkout = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout")]
     if len(checkout) != 1:
@@ -227,6 +229,7 @@ MUTATIONS = {
         "permission-contents: write\n",
         "permission-contents: write\n          permission-workflows: write\n",
     ),
+    "remove the job timeout": lambda t: _replace(t, "    timeout-minutes: 20\n", ""),
     "widen the job permissions": lambda t: _replace(
         t, "      contents: read\n", "      contents: write\n"
     ),
