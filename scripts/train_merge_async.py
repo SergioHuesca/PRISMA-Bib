@@ -9,15 +9,30 @@ input of ``train_step.py audit-stop``. The token is read by ``gh`` from ``GH_TOK
 script never prints it, and every message is scrubbed of it and cleaned.
 
 Steps: 1. read the PR (merged: audit; ``head.sha`` != H: wait). 2. ``PUT merge-async`` with
-``merge_method=squash``, ``sha=H``. 3. Anything but 202 with a uuid halts. 4. Poll every 3 s
-up to 180 s; on timeout re-read the PR after 60 s more. 5. Audit: S = ``merge_commit_sha``
-passes iff it has exactly one parent, ``tree(S) == tree(H)`` and its parent is an ancestor of H.
+``merge_method=squash``, ``sha=H``. 3. Only a 202 whose ``details.expected_head_sha`` equals H
+and that carries a uuid is polled. 4. Poll every 3 s up to 180 s; on timeout re-read the PR after
+60 s more. 5. Audit: S = ``merge_commit_sha`` passes iff it has exactly one parent, S != H,
+``tree(S) == tree(H)`` and its parent is an ancestor of H and not H itself.
 
-Deliberate deviation from ADR step 7, from the rehearsal: a repeated call during a flight
-returns 409 WITH the existing uuid, so that uuid is adopted and polled instead of halting.
-The audit (against OUR H) catches a request that was made with another head.
-The rehearsal also showed the server rejects a non-current ``sha`` with 400 (message "Pull
-request head branch was modified."), and fails (does not wait for) a pending required check.
+Deviation from ADR step 7 (evidence from the rehearsal): a repeated call during a flight returns
+409 with the existing uuid but NO ``expected_head_sha``, so a job made by someone else, or
+without ``sha``, cannot be shown to be pinned to H before the irreversible merge. A 409 is
+therefore a WAIT: not a halt (a sticky halt for a harmless repeat), and never an adoption. The next run
+re-reads the PR: merged -> audit against OUR H; open with the same head -> wait again.
+The server rejects a non-current ``sha`` with 400 ("Pull request head branch was modified.")
+and fails (does not wait for) a pending required check.
+
+Behaviour (status -> outcome):
+  PR merged at step 1                    -> audit: merged, or halt on audit failure
+  PR head.sha != H                       -> wait
+  PUT 202, expected_head_sha == H, uuid  -> poll
+  PUT 409 (any body)                     -> wait, no poll
+  PUT anything else, 202 with another or no expected_head_sha, bad uuid -> halt
+  poll non-2xx, failed, unknown (case-sensitive) status -> halt
+  poll pending/enqueued                  -> keep polling (3 s, up to 180 s)
+  poll merged, PR re-read merged is True -> audit; re-read not merged -> halt
+  timeout, re-read after 60 s: merged -> audit, else halt
+  audit failure                          -> halt with audit.ok false
 """
 
 from __future__ import annotations
@@ -104,22 +119,30 @@ def _call(
 def audit(merge_sha: Any, head: str) -> dict[str, Any]:
     """The post-merge audit (Decision 4, step 5). Never raises on a git problem."""
     if not isinstance(merge_sha, str) or not _SHA_RE.fullmatch(merge_sha):
-        return {"ok": False, "reason": "audit: merge_commit_sha missing or malformed"}
-    if not _exists(merge_sha):
-        return {"ok": False, "reason": "audit: the merge commit is not present locally"}
-    if not _exists(head):
-        return {"ok": False, "reason": "audit: the verified head is not present locally"}
+        return _bad("merge_commit_sha missing or malformed")
+    if merge_sha == head:
+        return _bad("S is H itself, not a squash of H")
     try:
+        if not _exists(merge_sha):
+            return _bad("the merge commit is not present locally")
+        if not _exists(head):
+            return _bad("the verified head is not present locally")
         parents = _git("rev-list", "--parents", "-n", "1", merge_sha).decode().split()[1:]
         if len(parents) != 1:
-            return {"ok": False, "reason": f"audit: merge commit has {len(parents)} parents, not 1"}
+            return _bad(f"merge commit has {len(parents)} parents, not 1")
+        if parents[0] == head:
+            return _bad("the parent of S is H itself, not a squash of H")
         if _git("rev-parse", f"{merge_sha}^{{tree}}") != _git("rev-parse", f"{head}^{{tree}}"):
-            return {"ok": False, "reason": "audit: tree(S) differs from tree(H)"}
+            return _bad("tree(S) differs from tree(H)")
         if not _is_ancestor(parents[0], head):
-            return {"ok": False, "reason": "audit: the parent of S is not an ancestor of H"}
-    except GitError as exc:
-        return {"ok": False, "reason": f"audit: git failed: {_safe(exc)}"}
+            return _bad("the parent of S is not an ancestor of H")
+    except (GitError, OSError) as exc:
+        return _bad(f"git failed: {_safe(exc)}")
     return {"ok": True, "reason": "tree(S) == tree(H), one parent, parent is an ancestor of H"}
+
+
+def _bad(reason: str) -> dict[str, Any]:
+    return {"ok": False, "reason": f"audit: {reason}"}
 
 
 def _validate(repo: str, pr: int, head: object) -> None:
@@ -184,13 +207,19 @@ def _run(repo, pr, head, runner, audit_fn, sleep, clock, poll_s, timeout_s, grac
     status, body = _call(
         runner, "PUT", f"{path}/merge-async", {"merge_method": "squash", "sha": head}
     )
-    uuid = (
-        body.get("details", {}).get("uuid")
-        if isinstance(body, dict) and isinstance(body.get("details"), dict)
-        else None
-    )
-    if status not in (202, 409) or not isinstance(uuid, str) or not _UUID_RE.fullmatch(uuid):
+    if status == 409:  # never adopted: its pin to H cannot be verified (see the docstring)
+        return {
+            "outcome": "wait",
+            "reason": "a merge request already exists for this PR; re-checked on the next run",
+            "audit": None,
+        }
+    details = body.get("details") if isinstance(body, dict) else None
+    details = details if isinstance(details, dict) else {}
+    uuid = details.get("uuid")
+    if status != 202 or not isinstance(uuid, str) or not _UUID_RE.fullmatch(uuid):
         raise _Halt(f"merge-async refused (HTTP {status}): {_message(body)}")
+    if details.get("expected_head_sha") != head:
+        raise _Halt("merge-async accepted a job not pinned to the verified head")
 
     poll = f"{path}/merge-async/{uuid}"
     start = clock()
@@ -200,7 +229,10 @@ def _run(repo, pr, head, runner, audit_fn, sleep, clock, poll_s, timeout_s, grac
         if not 200 <= status < 300:
             raise _Halt(f"poll failed (HTTP {status})")
         if state == "merged":
-            return _finish(_get_pr(runner, path), head, audit_fn)
+            data = _get_pr(runner, path)
+            if data.get("merged") is not True:
+                raise _Halt("the poll said merged but the PR is not merged")
+            return _finish(data, head, audit_fn)
         if state == "failed":
             raise _Halt(f"merge failed: {_message(body)}")
         if state not in ("pending", "enqueued"):
@@ -230,14 +262,18 @@ def main(argv: list[str] | None = None) -> int:
     except InputError as exc:
         print(f"train_merge_async: {_safe(exc)}", file=sys.stderr)
         return 2
+    print(json.dumps(result), flush=True)
     if args.audit_file and result["audit"] is not None:
         record = {
             "merged_pr": args.pr,
             "failed": not result["audit"]["ok"],
             "reason": result["audit"]["reason"],
         }
-        Path(args.audit_file).write_text(json.dumps(record), encoding="utf-8", newline="\n")
-    print(json.dumps(result))
+        try:
+            Path(args.audit_file).write_text(json.dumps(record), encoding="utf-8", newline="\n")
+        except OSError as exc:
+            print(f"train_merge_async: cannot write the audit file: {_safe(exc)}", file=sys.stderr)
+            return 1
     return 0
 
 

@@ -139,10 +139,38 @@ def test_run_end_to_end__real_audit_with_fake_runner(repo: Path) -> None:
     replies = iter(
         [
             (200, {"merged": False, "head": {"sha": head}}),
-            (202, {"details": {"uuid": uuid}}),
+            (202, {"details": {"uuid": uuid, "expected_head_sha": head}}),
             (200, {"status": "merged"}),
             (200, {"merged": True, "merge_commit_sha": s}),
         ]
     )
     out = tm.run("o/r", 3, head, runner=lambda m, p, b: next(replies), sleep=lambda s_: None)
     assert out["outcome"] == "merged" and out["audit"]["ok"] is True
+
+
+def test_audit__s_is_h__fails(repo: Path) -> None:
+    _, head = _world(repo)
+    res = tm.audit(head, head)
+    assert res["ok"] is False and "H itself" in res["reason"]
+
+
+def test_audit__empty_commit_on_top_of_h__fails(repo: Path) -> None:
+    _, head = _world(repo)
+    _git(repo, "checkout", "-q", "--detach", head)
+    s = _commit(repo, {}, "empty on top of H")
+    res = tm.audit(s, head)
+    assert res["ok"] is False and "parent of S is H" in res["reason"]
+
+
+def test_audit__git_oserror__is_an_audit_failure(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, head = _world(repo)
+    s = _squash(repo, head)
+
+    def boom(*a: object) -> bool:
+        raise FileNotFoundError("git vanished")
+
+    monkeypatch.setattr(tm, "_exists", boom)
+    res = tm.audit(s, head)
+    assert res["ok"] is False and "git failed" in res["reason"]

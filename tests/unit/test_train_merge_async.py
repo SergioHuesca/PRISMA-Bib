@@ -27,7 +27,10 @@ REPO = "own/repo"
 TOKEN = "ghs_SENTINELTOKEN123"  # pragma: allowlist secret
 OPEN = (200, {"merged": False, "head": {"sha": H}})
 MERGED_PR = (200, {"merged": True, "head": {"sha": H}, "merge_commit_sha": S})
-ACCEPTED = (202, {"status": "pending", "details": {"uuid": UUID}})
+ACCEPTED = (
+    202,
+    {"status": "pending", "details": {"uuid": UUID, "expected_head_sha": H}},
+)
 PENDING = (200, {"status": "pending", "details": {"message": "Merge request is in progress."}})
 MERGED = (200, {"status": "merged"})
 
@@ -143,21 +146,74 @@ def test_400_stale__halts_without_polling() -> None:
     assert len(fake.calls) == 2 and out["_audited"] == []
 
 
-def test_409_with_uuid__adopted_and_polled() -> None:
-    dup = (
-        409,
-        {
-            "status": "pending",
-            "details": {"message": "A merge request already exists", "uuid": UUID},
-        },
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"status": "pending", "details": {"message": "exists", "uuid": UUID}},
+        {"status": "pending", "details": {"message": "exists"}},
+        {"status": "pending", "details": {"uuid": UUID, "expected_head_sha": "ef" * 20}},
+        {"status": "pending", "details": {"uuid": UUID, "expected_head_sha": H}},
+        None,
+    ],
+)
+def test_409_any_body__wait_never_adopted_no_poll(body: Any) -> None:
+    fake = Fake(OPEN, (409, body))
+    out = go(fake)
+    assert out["outcome"] == "wait" and "next run" in out["reason"]
+    assert [c[0] for c in fake.calls] == ["GET", "PUT"] and out["_audited"] == []
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"uuid": UUID, "expected_head_sha": "ef" * 20},
+        {"uuid": UUID},
+        {"uuid": UUID, "expected_head_sha": H.upper()},
+        {"uuid": UUID, "expected_head_sha": None},
+    ],
+)
+def test_202_not_pinned_to_h__halts_without_polling(details: Any) -> None:
+    fake = Fake(OPEN, (202, {"status": "pending", "details": details}))
+    out = go(fake)
+    assert out["outcome"] == "halt" and "pinned" in out["reason"]
+    assert [c[0] for c in fake.calls] == ["GET", "PUT"]
+
+
+def test_poll_merged_but_pr_not_merged__halts() -> None:
+    out = go(Fake(OPEN, ACCEPTED, MERGED, (200, {"merged": False, "merge_commit_sha": S})))
+    assert out["outcome"] == "halt" and out["_audited"] == []
+
+
+@pytest.mark.parametrize("code", [404, 500, 403, 302])
+def test_poll_non_2xx_with_merged_body__halts(code: int) -> None:
+    fake = Fake(OPEN, ACCEPTED, (code, {"status": "merged"}))
+    out = go(fake)
+    assert out["outcome"] == "halt" and len(fake.calls) == 3 and out["_audited"] == []
+
+
+@pytest.mark.parametrize("word", ["MERGED", "Merged", "PENDING", "Failed", " merged"])
+def test_poll_status_is_case_sensitive__halts(word: str) -> None:
+    fake = Fake(OPEN, ACCEPTED, (200, {"status": word}))
+    out = go(fake)
+    assert out["outcome"] == "halt" and out["_audited"] == [] and len(fake.calls) == 3
+    assert "unknown poll status" in out["reason"]
+
+
+def test_main__audit_file_unwritable__json_first_exit_1_no_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = Fake(OPEN, ACCEPTED, MERGED, MERGED_PR)
+    monkeypatch.setattr(tm, "audit", lambda s, h: {"ok": True, "reason": "fine"})
+    monkeypatch.setattr(
+        tm.run,
+        "__kwdefaults__",
+        {**tm.run.__kwdefaults__, "runner": fake, "audit_fn": tm.audit, "sleep": Clock().sleep},
     )
-    out = go(Fake(OPEN, dup, MERGED, MERGED_PR))
-    assert out["outcome"] == "merged"
-
-
-def test_409_without_uuid__halts() -> None:
-    out = go(Fake(OPEN, (409, {"status": "pending", "details": {"message": "exists"}})))
-    assert out["outcome"] == "halt"
+    bad = tmp_path / "no" / "such" / "dir" / "a.json"
+    assert tm.main(["--repo", REPO, "--pr", "7", "--head", H, "--audit-file", str(bad)]) == 1
+    cap = capsys.readouterr()
+    assert json.loads(cap.out)["outcome"] == "merged"
+    assert "Traceback" not in cap.err and "cannot write" in cap.err
 
 
 @pytest.mark.parametrize(
