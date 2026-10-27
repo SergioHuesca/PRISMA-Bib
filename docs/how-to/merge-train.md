@@ -213,6 +213,34 @@ updated, and only when it is BEHIND with no running checks. No PR is ever merged
 Check names come from the PR's own CI, so the workflow strips control characters and
 markup from them and truncates them to 60 characters before they reach the log or a comment.
 
+## Native stacked PRs (draft, off by default)
+
+This is the workflow side of ADR 0037. It is a draft and must not be enabled until a rehearsal on
+a scratch repository has proved the trigger and token behaviour (below).
+
+- **Switch.** The repository variable `MERGE_TRAIN_STACKS`. Anything but `on` is off: a stacked head
+  halts and non-stacked PRs merge exactly as before. `gh variable set MERGE_TRAIN_STACKS --body off`
+  is the rollback; `MERGE_TRAIN=off` stops the whole train.
+- **Two-step decide.** With the switch on, `scripts/train_facts.py` reads the head's stack record.
+  `train_step.py decide` runs once without a verifier result, only to give the parent's commits
+  (`verifier_args`); those commits are fetched by SHA as data and never checked out;
+  `train_verify_head.py` runs with them (rule h); then `decide` runs again with the result.
+- **Merge.** A stacked head is merged with `scripts/train_merge_async.py` pinned to the verified head,
+  never `gh pr merge`, which GitHub refuses for stacks. A non-stacked head keeps `gh pr merge`.
+- **Audit stop.** The merge client audits the squash commit in the same run. If the audit fails the
+  PR is already merged, so the job re-lists the open PRs and `train_step.py audit-stop` names the
+  lowest open `train:N` PR, which gets `train:halted`. With none, the job comments on the merged PR
+  and fails.
+- **`update-branch` is HTTP 403 for a stacked PR.** The workflow never runs it on one (it checks the
+  PR's `stack` first), and a stacked head that is `BEHIND` halts: restack by hand.
+- **No `schedule` trigger.** A wait after a parent's merge relies on a `workflow_run` or `push`
+  event after GitHub's rebase. Whether one fires for an App-triggered merge is part of the rehearsal;
+  a `schedule` trigger is added only if it does not.
+- **Still required before enabling:** the rehearsal must show that the App token can call
+  `merge-async` under `enforce_admins`, that a stale `sha` is rejected, that checks and events fire
+  after the rebase, that an open child keeps `stack.position == 2` and a 40-hex label while its
+  parent is merged, and that fetch by SHA works on the real repository.
+
 ## Cleanup when a batch PR is closed without merging
 
 Remove its `train:*` label as part of closing it:
