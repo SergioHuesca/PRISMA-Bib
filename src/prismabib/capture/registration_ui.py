@@ -305,16 +305,16 @@ class RegistrationForm:
         self.options: dict[str, ResponseOption] = {}  # payload value -> option, for the rule
 
         self.candidate_table = pn.pane.HTML(name="Candidates")
-        self.candidate_select = pn.widgets.Select(name="Candidate")
-        self.rule_select = pn.widgets.Select(name="Match rule", options=list(RULES))
-        self.payload_select = pn.widgets.Select(name="Captured OpenAlex response")
+        self.candidate_select = pn.widgets.Select(label="Candidate")
+        self.rule_select = pn.widgets.Select(label="Match rule", options=list(RULES))
+        self.payload_select = pn.widgets.Select(label="Captured OpenAlex response")
         self.payload_note = pn.pane.Markdown(name="Responses not offered")
         self.match_pane = pn.pane.HTML(name="Match evidence")
         self.near_checkbox = pn.widgets.Checkbox(
-            name="I confirm this work is this candidate", visible=False
+            label="I confirm this work is this candidate", visible=False
         )
         self.confirm_pane = pn.pane.HTML(name="Confirmation")
-        self.register_button = pn.widgets.Button(name="Register")
+        self.register_button = pn.widgets.Button(label="Register")
         self.alert = pn.pane.HTML(name="Alert", sizing_mode="stretch_width")
 
         self.candidate_select.param.watch(lambda _e: self._on_change(self._on_candidate), "value")
@@ -514,17 +514,17 @@ class ReversalForm:
         self._attempts = 0
 
         self.active_table = pn.pane.HTML(name="Active registrations")
-        self.select = pn.widgets.Select(name="Registration to reverse")
+        self.select = pn.widgets.Select(label="Registration to reverse")
         self.reason_select = pn.widgets.Select(
-            name="Reversal reason", options=list(reason_options()), value=None
+            label="Reversal reason", options=list(reason_options()), value=None
         )
-        self.note_input = pn.widgets.TextAreaInput(name="Note (required when the reason is other)")
+        self.note_input = pn.widgets.TextAreaInput(label="Note (required when the reason is other)")
         self.hint = pn.pane.Markdown(
             name="Correcting a registration",
             object="To correct a wrong DOI or title, reverse the registration, then register again.",
         )
         self.confirm_pane = pn.pane.HTML(name="Reversal confirmation")
-        self.reverse_button = pn.widgets.Button(name="Reverse")
+        self.reverse_button = pn.widgets.Button(label="Reverse")
         self.alert = register.alert if register is not None else pn.pane.HTML(name="Alert")
 
         self.select.param.watch(lambda _e: self._on_select(), "value")
@@ -627,7 +627,7 @@ class ReversalForm:
                 reverses=target,
                 reviewer=self.reviewer,
                 reason=self.reason_select.value or "",
-                note=note if note.strip() else None,
+                note=note,
             )
         except PrismabibError as exc:
             message, done = f"Refused: {exc}", False

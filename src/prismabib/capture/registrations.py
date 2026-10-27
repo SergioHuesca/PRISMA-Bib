@@ -611,7 +611,7 @@ def reverse_registration(
         reviewer=reviewer,
         reverses=target,
         reason=cast(ReversalReason, reason),  # checked against REVERSAL_REASONS above
-        note=note,
+        note=note if (note or "").strip() else None,  # a blank note is no note, GUI and CLI alike
     )
     _refuse_without_log(project, target)
     registration_log(project.registrations_path).append_if(
