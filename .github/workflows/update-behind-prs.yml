@@ -45,8 +45,11 @@
 # has no queued or in-progress checks.
 #
 # NATIVE STACKED PRs (ADR 0037, DRAFT, off unless the repository variable MERGE_TRAIN_STACKS is
-# "on"). With it off the lists still include every base (the head must be visible), but a
-# non-stacked head merges exactly as above and a stacked head halts. With it on: scripts/
+# "on"). With it off the lists still include every base (the head must be visible), and a
+# non-stacked head merges exactly as above. A stacked head is not recognised by decide then
+# (no facts): it halts when the run reaches its update step (BEHIND), because the update arm
+# checks the PR's stack key. A CLEAN stacked head with the switch off is merged by gh pr merge,
+# which GitHub refuses, so the merge fails and that halts it too. With it on: scripts/
 # train_facts.py reads the head's stack record; a position-2 child of a merged parent is verified
 # with rule h (decide is called twice, see the comments below); a stacked head is merged with
 # scripts/train_merge_async.py (never gh pr merge), audited in the same run, and a failed audit
@@ -286,12 +289,23 @@ jobs:
               else
                 note="Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."
               fi
-              # update-branch is HTTP 403 for a stacked PR (ADR 0037): never run it on one. If the
-              # check itself fails the branch is not updated (the next trigger retries).
+              # update-branch is HTTP 403 for a stacked PR (ADR 0037): never run it on one.
+              #  true    -> train mode: halt that PR (the same rule decide applies to a BEHIND
+              #             stacked head); update-only mode: warn and skip. Update-only mode then
+              #             starves the PRs behind it exactly as any BEHIND PR that cannot be
+              #             updated does today; restack it by hand or close it.
+              #  unknown -> the stack check itself failed: warn, skip, the next trigger retries.
               stacked=$(gh api "repos/$GH_REPO/pulls/$pr" --jq '(.stack // null) != null' 2>/dev/null || echo unknown)
-              if [ "$stacked" != false ]; then
-                echo "::notice::PR #$pr is stacked (or the stack check failed); not running update-branch"
-                echo "PR #$pr: stacked or stack check failed; update-branch skipped" >> "$GITHUB_STEP_SUMMARY"
+              if [ "$stacked" = true ] && [ "$mode" = train ]; then
+                halt "stacked PR is behind main; update-branch is not supported for stacked PRs; restack by hand (gh stack rebase) and review again" || true
+                echo "::error::PR #$pr: stacked and behind main; the train is halted"
+                exit 1
+              elif [ "$stacked" = true ]; then
+                echo "::warning::PR #$pr is stacked and BEHIND; update-branch is not supported for stacked PRs, skipped"
+                echo "PR #$pr: stacked and BEHIND; update-branch skipped (restack by hand)" >> "$GITHUB_STEP_SUMMARY"
+              elif [ "$stacked" != false ]; then
+                echo "::warning::PR #$pr: the stack check failed; update-branch skipped, the next trigger retries"
+                echo "PR #$pr: the stack check failed; update-branch skipped" >> "$GITHUB_STEP_SUMMARY"
               elif gh pr update-branch "$pr" && gh pr comment "$pr" --body "$note"; then
                 :
               else

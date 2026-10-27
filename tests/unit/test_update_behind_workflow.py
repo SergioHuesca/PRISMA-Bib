@@ -117,8 +117,32 @@ def violations(text: str) -> list[str]:
     gate = script.find("(.stack // null) != null")
     if len(ub) != 1 or gate < 0 or not gate < ub[0]:
         bad.append("update-branch must come after the stack check")
-    elif 'if [ "$stacked" != false ]' not in script[gate : ub[0]]:
-        bad.append("update-branch must be skipped unless the stack check says false")
+    else:
+        between = script[gate : ub[0]]
+        for need in (
+            '[ "$stacked" = true ] && [ "$mode" = train ]',  # train mode halts a stacked PR
+            'elif [ "$stacked" = true ]',  # update-only mode warns and skips
+            'elif [ "$stacked" != false ]',  # an unknown stack check also skips
+            "stacked PR is behind main",
+        ):
+            if need not in between:
+                bad.append(f"update arm lacks: {need}")
+    mcall = merges and script[merges[0] : script.find(chr(10), merges[0])]
+    if mcall and not ("--squash" in mcall and '--match-head-commit "$sha"' in mcall):
+        bad.append('gh pr merge must be --squash --match-head-commit "$sha"')
+    if "--merge " in script or "--rebase" in script:
+        bad.append("a merge method other than squash")
+    if script.count("sha_re='^[0-9a-f]{40}$'") < 2:
+        bad.append("shell sha-regex guards missing")
+    if '"${#vargs[@]}" = 6' not in script:
+        bad.append("verifier_args count check missing")
+    alarm = script[script.find("audit_alarm() {") :][:600]
+    if "audit_alarm() {" not in script or "exit 1" not in alarm.split("}")[0]:
+        bad.append("audit_alarm must exit 1")
+    if "--merge-train on" in script or script.count('--merge-train "${MERGE_TRAIN:-off}"') != 3:
+        bad.append("--merge-train must come from MERGE_TRAIN, defaulting to off (3 calls)")
+    if script.count("--limit 100") != 2:
+        bad.append("--limit 100 must be on both lists")
     stops = [m.start() for m in re.finditer(r"train_step.py audit-stop", script)]
     failed = script.find('"$(jq -r .failed "$audit")" = true')
     if len(stops) != 1 or failed < 0 or not failed < stops[0]:
@@ -240,6 +264,30 @@ MUTATIONS = {
         t,
         "      - name: Decide and act",
         "      - uses: some/action@v1\n      - name: Decide and act",
+    ),
+    "merge without match-head-commit": lambda t: _replace(
+        t, ' --match-head-commit "$sha"; then', "; then"
+    ),
+    "merge method not squash": lambda t: _replace(
+        t, 'gh pr merge "$pr" --squash', 'gh pr merge "$pr" --merge'
+    ),
+    "sha guard removed": lambda t: _replace(t, "sha_re='^[0-9a-f]{40}$'", "x=1", 2),
+    "vargs count check removed": lambda t: _replace(t, '[ "${#vargs[@]}" = 6 ]', "true"),
+    "audit alarm without exit": lambda t: _replace(
+        t,
+        'audit failed: $areason"\n                    exit 1',
+        'audit failed: $areason"\n                    :',
+    ),
+    "merge train hardcoded on": lambda t: _replace(
+        t, 'decide --merge-train "${MERGE_TRAIN:-off}"', "decide --merge-train on"
+    ),
+    "limit dropped": lambda t: _replace(
+        t,
+        'gh pr list --state closed --search "is:unmerged" --limit 100',
+        'gh pr list --state closed --search "is:unmerged"',
+    ),
+    "train mode stacked update halt removed": lambda t: _replace(
+        t, '[ "$stacked" = true ] && [ "$mode" = train ]', "false"
     ),
     "eval": lambda t: _replace(t, "out=$(python3", 'eval "$x"; out=$(python3'),
     "MERGE_TRAIN_STACKS not in env": lambda t: _replace(

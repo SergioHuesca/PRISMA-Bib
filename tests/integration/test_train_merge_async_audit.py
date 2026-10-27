@@ -113,17 +113,17 @@ def test_audit__root_commit__fails(repo: Path) -> None:
     assert res["ok"] is False and "0 parents" in res["reason"]
 
 
-def test_audit__merge_commit_missing_locally__fails_with_reason(repo: Path) -> None:
+def test_audit__merge_commit_missing_locally_and_unfetchable__fails_with_reason(repo: Path) -> None:
     _, head = _world(repo)
     res = tm.audit("ab" * 20, head)
-    assert res["ok"] is False and "merge commit is not present" in res["reason"]
+    assert res["ok"] is False and "cannot fetch the merge commit" in res["reason"]
 
 
-def test_audit__head_missing_locally__fails_with_reason(repo: Path) -> None:
+def test_audit__head_missing_locally_and_unfetchable__fails_with_reason(repo: Path) -> None:
     _, head = _world(repo)
     s = _squash(repo, head)
     res = tm.audit(s, "ab" * 20)
-    assert res["ok"] is False and "head is not present" in res["reason"]
+    assert res["ok"] is False and "cannot fetch the verified head" in res["reason"]
 
 
 @pytest.mark.parametrize("bad", [None, "", "XY", "AB" * 20])

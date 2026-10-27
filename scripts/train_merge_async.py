@@ -11,7 +11,7 @@ script never prints it, and every message is scrubbed of it and cleaned.
 Steps: 1. read the PR (merged: audit; ``head.sha`` != H: wait). 2. ``PUT merge-async`` with
 ``merge_method=squash``, ``sha=H``. 3. Only a 202 whose ``details.expected_head_sha`` equals H
 and that carries a uuid is polled. 4. Poll every 3 s up to 180 s; on timeout re-read the PR after
-60 s more. 5. Audit: S = ``merge_commit_sha`` passes iff it has exactly one parent, S != H,
+60 s more. 5. Audit (S, and H if missing, are first fetched by sha): S = ``merge_commit_sha`` passes iff it has exactly one parent, S != H,
 ``tree(S) == tree(H)`` and its parent is an ancestor of H and not H itself.
 
 Deviation from ADR step 7 (evidence from the rehearsal): a repeated call during a flight returns
@@ -116,17 +116,29 @@ def _call(
         raise _Halt(f"{method} request failed: {_safe(exc)}") from None
 
 
-def audit(merge_sha: Any, head: str) -> dict[str, Any]:
-    """The post-merge audit (Decision 4, step 5). Never raises on a git problem."""
+def _fetch(sha: str) -> None:
+    """Fetch one commit by sha as data (the squash commit S is created by GitHub after the
+    workflow's last fetch, so the clone does not have it). Raises GitError on failure."""
+    _git("fetch", "--no-tags", "--quiet", "origin", sha)
+
+
+def audit(merge_sha: Any, head: str, fetch: Callable[[str], None] = _fetch) -> dict[str, Any]:
+    """The post-merge audit (Decision 4, step 5). Never raises on a git problem. A commit that
+    is missing locally (always S, possibly H) is fetched by sha first; a failed fetch fails
+    the audit with its own reason."""
     if not isinstance(merge_sha, str) or not _SHA_RE.fullmatch(merge_sha):
         return _bad("merge_commit_sha missing or malformed")
     if merge_sha == head:
         return _bad("S is H itself, not a squash of H")
     try:
-        if not _exists(merge_sha):
-            return _bad("the merge commit is not present locally")
-        if not _exists(head):
-            return _bad("the verified head is not present locally")
+        for what, sha in (("merge commit", merge_sha), ("verified head", head)):
+            if not _exists(sha):
+                try:
+                    fetch(sha)
+                except (GitError, OSError) as exc:
+                    return _bad(f"cannot fetch the {what}: {_safe(exc)}")
+                if not _exists(sha):
+                    return _bad(f"the {what} is not present locally after fetching it")
         parents = _git("rev-list", "--parents", "-n", "1", merge_sha).decode().split()[1:]
         if len(parents) != 1:
             return _bad(f"merge commit has {len(parents)} parents, not 1")
