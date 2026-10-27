@@ -44,6 +44,19 @@
 # DIRTY (conflicts a bot update cannot fix). The head is updated if and only if it is BEHIND and
 # has no queued or in-progress checks.
 #
+# NATIVE STACKED PRs (ADR 0037, DRAFT, off unless the repository variable MERGE_TRAIN_STACKS is
+# "on"). With it off the lists still include every base (the head must be visible), and a
+# non-stacked head merges exactly as above. A stacked head is not recognised by decide then
+# (no facts): it halts when the run reaches its update step (BEHIND), because the update arm
+# checks the PR's stack key. A CLEAN stacked head with the switch off is merged by gh pr merge,
+# which GitHub refuses, so the merge fails and that halts it too. With it on: scripts/
+# train_facts.py reads the head's stack record; a position-2 child of a merged parent is verified
+# with rule h (decide is called twice, see the comments below); a stacked head is merged with
+# scripts/train_merge_async.py (never gh pr merge), audited in the same run, and a failed audit
+# halts the lowest open train:N PR (train_step.py audit-stop). update-branch is never run on a
+# stacked PR (HTTP 403). There is NO schedule trigger: it is added only if a rehearsal shows
+# that no event fires after GitHub's rebase.
+#
 # Starvation and halt caveats: while a train runs, non-train PRs are not updated. A permanently
 # red, stalled, abandoned-draft or CLEAN-but-unmerged PR at the head blocks update-only mode
 # for the others until it merges or is closed. DIRTY PRs are skipped, so only non-conflicting
@@ -69,6 +82,8 @@ permissions: {}
 jobs:
   update:
     runs-on: ubuntu-latest
+    # A stalled git fetch must not hold the concurrency group for the 6 h default.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -94,19 +109,27 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           MERGE_TRAIN: ${{ vars.MERGE_TRAIN }}
+          # Rollback switch (ADR 0037): anything but "on" is off, and a stacked head halts.
+          MERGE_TRAIN_STACKS: ${{ vars.MERGE_TRAIN_STACKS }}
         run: |
+          # No --base filter (ADR 0037 Decision 3): a native child's base is its parent's branch
+          # until GitHub retargets it, so a filter would hide it. Update-only mode filters on
+          # baseRefName inside train_step.py. The same fields serve the post-merge re-list.
+          list_open() {
+            gh pr list --state open --limit 100 \
+              --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup,baseRefName
+          }
           prs="$RUNNER_TEMP/prs.json"
-          gh pr list --base main --state open --limit 100 \
-            --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup > "$prs"
+          list_open > "$prs"
           # Closed-unmerged PRs: a closed train:K below the head means the batch is broken.
           # Merged ones are excluded by the search. Passed to decide; a missing file halts.
           closed="$RUNNER_TEMP/closed.json"
-          gh pr list --base main --state closed --search "is:unmerged" --limit 100 \
-            --json number,labels,mergedAt > "$closed"
+          gh pr list --state closed --search "is:unmerged" --limit 100 \
+            --json number,labels,mergedAt,baseRefName > "$closed"
           # mergeStateStatus is computed lazily: re-read each UNKNOWN PR, up to ~60s (6 x 10s).
           for n in $(jq -r '.[] | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
             for i in 1 2 3 4 5 6; do
-              rec=$(gh pr view "$n" --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup)
+              rec=$(gh pr view "$n" --json number,state,isDraft,mergeStateStatus,headRefOid,labels,statusCheckRollup,baseRefName)
               if [ "$(jq -r .mergeStateStatus <<<"$rec")" != UNKNOWN ]; then break; fi
               echo "PR #$n: UNKNOWN, retry $i/6"; sleep 10
             done
@@ -120,27 +143,76 @@ jobs:
           # The train head's verification. PR content is fetched as data and never checked out
           # or executed. A failed fetch or verify leaves the head check out, and decide halts it.
           verify=()
+          facts_args=()
+          stacks_on=off
+          [ "${MERGE_TRAIN_STACKS:-off}" = on ] && stacks_on=on
+          facts="$RUNNER_TEMP/facts.json"
           cand=$(python3 scripts/train_step.py candidate --merge-train "${MERGE_TRAIN:-off}" < "$prs")
           if [ -n "$cand" ]; then
             read -r n sha rsha <<<"$cand"
             vout="$RUNNER_TEMP/verify.json"
-            if git fetch --no-tags --quiet origin main &&
-               git fetch --no-tags --quiet origin "pull/$n/head" &&
-               python3 scripts/train_verify_head.py "$rsha" "$sha" --main origin/main > "$vout"; then
+            stacked_path=false
+            if [ "$stacks_on" = on ]; then
+              # Stacks enabled: assemble the head's facts record (scripts/train_facts.py) from the
+              # REST API. An unparseable record exits 2 and fails the step: nothing is merged.
+              shas="$RUNNER_TEMP/shas.txt"
+              git fetch --no-tags --quiet origin main || echo "::warning::fetching main failed"
+              python3 scripts/train_facts.py --repo "$GH_REPO" --pr "$n" --out "$facts" --shas-out "$shas" ||
+                { echo "::error::PR #$n: the facts record could not be assembled; nothing was merged"; exit 1; }
+              facts_args=(--facts "$facts")
+              if [ "$(jq -r '.stack != null and .stack.position >= 2' "$facts")" = true ]; then
+                stacked_path=true
+              fi
+            fi
+            if [ "$stacked_path" = true ]; then
+              # TWO-STEP decide. The stacked verifier call needs the parent's commits, and only
+              # decide knows them (verifier_args, built from the facts). decide needs the
+              # verifier's result. So: decide WITHOUT --head-check first, only to read
+              # verifier_args; then fetch by SHA (as data, never checked out or executed); run the
+              # verifier; then the real decide below with --head-check. This first answer is
+              # never acted on. A head with no verifier_args (parent not merged, no valid label,
+              # position 3) gets no verifier and the real decide waits or halts it.
+              pre=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" \
+                --merge-train-stacks "${MERGE_TRAIN_STACKS:-off}" "${facts_args[@]}" < "$prs")
+              mapfile -t vargs < <(jq -r '(.verifier_args // [])[]' <<<"$pre")
+              sha_re='^[0-9a-f]{40}$'
+              if [ "${#vargs[@]}" = 6 ] && [ "${vargs[0]}" = --parent-reviewed ] &&
+                 [ "${vargs[2]}" = --parent-head ] && [ "${vargs[4]}" = --parent-merge ] &&
+                 [[ "${vargs[1]}" =~ $sha_re && "${vargs[3]}" =~ $sha_re && "${vargs[5]}" =~ $sha_re ]]; then
+                fetched=true
+                # One fetch per sha: the facts script's list plus the head and its reviewed commit.
+                mapfile -t want < <({ cat "$shas"; echo "$sha"; echo "$rsha"; } | sort -u)
+                for s in "${want[@]}"; do
+                  if [[ "$s" =~ $sha_re ]] && git fetch --no-tags --quiet origin "$s"; then :; else fetched=false; fi
+                done
+                if [ "$fetched" = true ] &&
+                   python3 scripts/train_verify_head.py "$rsha" "$sha" --main origin/main "${vargs[@]}" > "$vout"; then
+                  verify=(--head-pr "$n" --head-check "$vout")
+                else
+                  echo "::warning::PR #$n: stacked head verification did not run; the decision waits or halts it"
+                fi
+              fi
+            elif git fetch --no-tags --quiet origin main &&
+                 git fetch --no-tags --quiet origin "pull/$n/head" &&
+                 python3 scripts/train_verify_head.py "$rsha" "$sha" --main origin/main > "$vout"; then
               verify=(--head-pr "$n" --head-check "$vout")
             else
               echo "::warning::PR #$n: head verification did not run; the decision halts it"
             fi
           fi
 
-          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" "${verify[@]}" < "$prs")
+          out=$(python3 scripts/train_step.py decide --merge-train "${MERGE_TRAIN:-off}" --closed "$closed" \
+            --merge-train-stacks "${MERGE_TRAIN_STACKS:-off}" "${facts_args[@]}" "${verify[@]}" < "$prs")
           action=$(jq -r .action <<<"$out")
           pr=$(jq -r '.pr // empty' <<<"$out")
           sha=$(jq -r '.head_sha // empty' <<<"$out")
           mode=$(jq -r .mode <<<"$out")
           reason=$(jq -r .reason <<<"$out")
           echo "$action (mode $mode): $reason"
-          echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+          # An update is written by the update arm after its stack check: a stacked PR is not updated.
+          if [ "$action" != update ]; then
+            echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           # A halt labels the head and says why. The reason is sanitised by the script, and it
           # is passed quoted.
@@ -153,12 +225,67 @@ jobs:
               halt "$reason" || { echo "::error::PR #$pr: could not add train:halted or comment"; exit 1; }
               ;;
             merge)
-              if gh pr merge "$pr" --squash --match-head-commit "$sha"; then
-                echo "Merged #$pr (train head, head $sha)"
+              stacked=false
+              if [ "$stacks_on" = on ] && [ "$(jq -r '.stack != null' "$facts")" = true ]; then
+                stacked=true
+              fi
+              if [ "$stacked" != true ]; then
+                # Not stacked: unchanged since before ADR 0037.
+                if gh pr merge "$pr" --squash --match-head-commit "$sha"; then
+                  echo "Merged #$pr (train head, head $sha)"
+                else
+                  halt "the squash merge of this head failed" || true
+                  echo "::error::PR #$pr: squash merge failed; the train is halted"
+                  exit 1
+                fi
               else
-                halt "the squash merge of this head failed" || true
-                echo "::error::PR #$pr: squash merge failed; the train is halted"
-                exit 1
+                # Stacked: gh pr merge is refused for stacks. merge-async, pinned to the verified
+                # head, then the audit in the same run (scripts/train_merge_async.py).
+                sha_re='^[0-9a-f]{40}$'
+                [[ "$sha" =~ $sha_re ]] || { echo "::error::PR #$pr: the decided head sha is malformed"; exit 1; }
+                audit="$RUNNER_TEMP/audit.json"
+                rm -f "$audit"
+                res=$(python3 scripts/train_merge_async.py --repo "$GH_REPO" --pr "$pr" --head "$sha" --audit-file "$audit") || {
+                  halt "the merge client failed to run" || true
+                  echo "::error::PR #$pr: the merge client failed; the train is halted"
+                  exit 1
+                }
+                outcome=$(jq -r .outcome <<<"$res")
+                mreason=$(jq -r .reason <<<"$res")
+                echo "- merge-async: $outcome: $mreason" >> "$GITHUB_STEP_SUMMARY"
+                if [ -f "$audit" ] && [ "$(jq -r .failed "$audit")" = true ]; then
+                  # The PR IS merged but the audit failed. A label on it would stop nothing
+                  # (decide scans open PRs only), so name the open successor and halt that.
+                  merged_pr=$pr
+                  areason=$(jq -r .reason "$audit")
+                  audit_alarm() {
+                    gh pr comment "$merged_pr" --body "Post-merge audit failed: $areason. $1" || true
+                    echo "- AUDIT FAILED for #$merged_pr: $areason" >> "$GITHUB_STEP_SUMMARY"
+                    echo "::error::PR #$merged_pr was merged but its audit failed: $areason"
+                    exit 1
+                  }
+                  list_open > "$RUNNER_TEMP/open_after.json" ||
+                    audit_alarm "The open PRs could not be re-listed, so no PR was halted. Inspect the merge."
+                  # Exit 2 of audit-stop = stop everything: the job fails loudly.
+                  succ=$(python3 scripts/train_step.py audit-stop --audit "$audit" --prs "$RUNNER_TEMP/open_after.json") ||
+                    audit_alarm "audit-stop failed, so no PR was halted. Inspect the merge."
+                  if [[ "$succ" =~ ^[0-9]+$ ]]; then
+                    pr=$succ
+                    halt "the post-merge audit of #$merged_pr failed: $areason" || true
+                    echo "::error::PR #$merged_pr was merged but its audit failed: $areason; #$pr is halted"
+                    exit 1
+                  fi
+                  audit_alarm "No open PR carries train:N, so nothing was halted."
+                fi
+                case "$outcome" in
+                  merged) echo "Merged #$pr (stacked train head, head $sha)" ;;
+                  wait) echo "::notice::PR #$pr: merge not done this run: $mreason" ;;
+                  *)
+                    halt "the merge of this stacked head failed: $mreason" || true
+                    echo "::error::PR #$pr: stacked merge failed: $mreason; the train is halted"
+                    exit 1
+                    ;;
+                esac
               fi
               ;;
             update)
@@ -167,7 +294,27 @@ jobs:
               else
                 note="Branch updated from main at ${GITHUB_SHA}. A reviewer must confirm that the update brings in only main's changes before merge."
               fi
-              if gh pr update-branch "$pr" && gh pr comment "$pr" --body "$note"; then
+              # update-branch is HTTP 403 for a stacked PR (ADR 0037): never run it on one.
+              #  true    -> train mode: halt that PR (the same rule decide applies to a BEHIND
+              #             stacked head); update-only mode: warn and skip. Update-only mode then
+              #             starves the PRs behind it exactly as any BEHIND PR that cannot be
+              #             updated does today; restack it by hand or close it.
+              #  unknown -> the stack check itself failed: warn, skip, the next trigger retries.
+              stacked=$(gh api "repos/$GH_REPO/pulls/$pr" --jq '(.stack // null) != null' 2>/dev/null || echo unknown)
+              if [ "$stacked" = false ]; then
+                echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              if [ "$stacked" = true ] && [ "$mode" = train ]; then
+                halt "stacked PR is behind main; update-branch is not supported for stacked PRs; restack by hand (gh stack rebase) and review again" || true
+                echo "::error::PR #$pr: stacked and behind main; the train is halted"
+                exit 1
+              elif [ "$stacked" = true ]; then
+                echo "::warning::PR #$pr is stacked and BEHIND; update-branch is not supported for stacked PRs, skipped"
+                echo "PR #$pr: stacked and BEHIND; update-branch skipped (restack by hand)" >> "$GITHUB_STEP_SUMMARY"
+              elif [ "$stacked" != false ]; then
+                echo "::warning::PR #$pr: the stack check failed; update-branch skipped, the next trigger retries"
+                echo "PR #$pr: the stack check failed; update-branch skipped" >> "$GITHUB_STEP_SUMMARY"
+              elif gh pr update-branch "$pr" && gh pr comment "$pr" --body "$note"; then
                 :
               else
                 echo "::warning::PR #$pr: the update or the comment failed; if the update failed it stays BEHIND until the next trigger, if only the comment failed the branch is already updated"

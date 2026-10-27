@@ -213,6 +213,45 @@ updated, and only when it is BEHIND with no running checks. No PR is ever merged
 Check names come from the PR's own CI, so the workflow strips control characters and
 markup from them and truncates them to 60 characters before they reach the log or a comment.
 
+## Native stacked PRs (draft, off by default)
+
+This is the workflow side of ADR 0037. It is a draft and must not be enabled until a rehearsal on
+a scratch repository has proved the trigger and token behaviour (below).
+
+- **Switch.** The repository variable `MERGE_TRAIN_STACKS`. Anything but `on` is off: the train does not
+  recognise stacks, non-stacked PRs merge exactly as before, and a stacked head halts when the run
+  reaches it `BEHIND` (the update step checks the PR's `stack` key) or when `gh pr merge` is refused. `gh variable set MERGE_TRAIN_STACKS --body off`
+  is the rollback; `MERGE_TRAIN=off` stops the whole train.
+- **Two-step decide.** With the switch on, `scripts/train_facts.py` reads the head's stack record.
+  `train_step.py decide` runs once without a verifier result, only to give the parent's commits
+  (`verifier_args`); those commits are fetched by SHA as data and never checked out;
+  `train_verify_head.py` runs with them (rule h); then `decide` runs again with the result.
+- **Merge.** A stacked head is merged with `scripts/train_merge_async.py` pinned to the verified head,
+  never `gh pr merge`, which GitHub refuses for stacks. A non-stacked head keeps `gh pr merge`.
+- **Audit stop.** The merge client audits the squash commit in the same run. If the audit fails the
+  PR is already merged, so the job re-lists the open PRs and `train_step.py audit-stop` names the
+  lowest open `train:N` PR, which gets `train:halted`. With none, the job comments on the merged PR
+  and fails.
+- **`update-branch` is HTTP 403 for a stacked PR.** The workflow never runs it on one (it checks the
+  PR's `stack` first). In train mode a stacked head that is `BEHIND` halts (restack by hand). In
+  update-only mode the PR is skipped with a warning and a summary line, and, as for any `BEHIND` PR
+  that cannot be updated, it holds up the PRs behind it until restacked or closed. If the stack
+  check itself fails (API error) the run warns and skips the update; the next trigger retries.
+- **The lists now include every base.** (a) A train head whose base is not `main` halts. (b) The
+  closed-unmerged list counts PRs of every base and halts the train for good at 100 entries; it can
+  only grow. (c) 100 open PRs, one of them not based on `main`, now raise an input error in train
+  mode (before, 99 `main` PRs worked). Update-only mode still targets `main` only.
+- **The merge client fetches the squash commit by SHA** before the audit, because GitHub creates it
+  after the workflow's last fetch; a failed fetch fails the audit and halts the successor.
+- **No `schedule` trigger.** A wait after a parent's merge relies on a `workflow_run` or `push`
+  event after GitHub's rebase. Whether one fires for an App-triggered merge is part of the rehearsal;
+  a `schedule` trigger is added only if it does not.
+- **Still required before enabling:** the rehearsal must show that the App token can call
+  `merge-async` under `enforce_admins`, that a stale `sha` is rejected, that checks and events fire
+  after the rebase, that an open child keeps `stack.position == 2` and a 40-hex label while its
+  parent is merged, and that fetch by SHA works on the real repository. The App token must also be allowed
+  `GET /repos/{owner}/{repo}/stacks/{number}` (the facts record reads it).
+
 ## Cleanup when a batch PR is closed without merging
 
 Remove its `train:*` label as part of closing it:
