@@ -121,6 +121,7 @@ nav:
           - "ADR 0034: errata to ADR 0031 and ADR 0033": architecture/adr/0034-errata-to-adr-0031-and-0033.md
           - "ADR 0035: GUI for registering and reversing candidate records": architecture/adr/0035-gui-registration-of-candidates.md
           - "ADR 0036: errata to ADR 0035, ADR 0032 and ADR 0033": architecture/adr/0036-errata-to-adr-0035.md
+          - "ADR 0037: merge train and native stacked PRs": architecture/adr/0037-merge-train-and-native-stacked-prs.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
