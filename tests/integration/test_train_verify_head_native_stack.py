@@ -580,3 +580,62 @@ def test_stack__series_longer_than_500_commits__halts(repo: Path, extra: int, ok
         assert result == {"ok": True}
     else:
         _halts(result, "h1")
+
+
+# ---- several update merges above T ------------------------------------------------------
+
+
+def _two_update_merges(repo: Path, evil1: Change | None, evil2: Change | None) -> tuple[World, str]:
+    w = _make_world(repo, [{"base.txt": _line_edit(_BASE, 10, "child edit")}])
+    t = _rebase(w)
+    _advance_main(repo, {"o1.txt": "main moved once\n"})
+    m1 = _update_merge(repo, t, evil1)
+    _advance_main(repo, {"o2.txt": "main moved twice\n"})
+    return w, _update_merge(repo, m1, evil2)
+
+
+@pytest.mark.integration
+def test_stack__two_honest_update_merges__ok(repo: Path) -> None:
+    w, head = _two_update_merges(repo, None, None)
+    assert w.check(head) == {"ok": True}
+
+
+@pytest.mark.integration
+def test_stack__evil_update_merge_below_an_honest_top_one__halts_at_h5(repo: Path) -> None:
+    w, head = _two_update_merges(repo, {"evil.txt": "smuggled\n"}, None)
+    _halts(w.check(head), "h5")
+
+
+@pytest.mark.integration
+def test_stack__honest_update_merge_below_an_evil_top_one__halts_at_h5(repo: Path) -> None:
+    w, head = _two_update_merges(repo, None, {"evil.txt": "smuggled\n"})
+    _halts(w.check(head), "h5")
+
+
+def _merge_chain(repo: Path, t: str, n: int) -> str:
+    """n no-op update merges of main onto t, by plumbing (each is git's own clean merge)."""
+    tree, head = _tree(repo, t), t
+    for _ in range(n):
+        head = _git(repo, "commit-tree", tree, "-p", head, "-p", _MAIN, "-m", "update")
+    return head
+
+
+@pytest.mark.integration
+def test_stack__update_merge_cap__501_merges_halt_at_h1(repo: Path) -> None:
+    w = _make_world(repo, [{"b.txt": "child" + chr(10)}])
+    t = _rebase(w)
+    _halts(w.check(_merge_chain(repo, t, 501)), "h1")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("extra", "ok"), [(0, True), (1, False)])
+def test_stack__update_merge_cap__exactly_the_cap_ok_one_more_halts(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, extra: int, ok: bool
+) -> None:
+    monkeypatch.setattr(_module, "_MAX_SERIES", 20)  # the real 500 takes about a minute
+    w = _make_world(repo, [{"b.txt": "child" + chr(10)}])
+    result = w.check(_merge_chain(repo, _rebase(w), 20 + extra))
+    if ok:
+        assert result == {"ok": True}
+    else:
+        _halts(result, "h1")
