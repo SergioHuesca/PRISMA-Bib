@@ -27,6 +27,13 @@ from collections.abc import Callable, Mapping
 from time import sleep as _real_sleep
 from time import time as _real_time
 
+from prismabib.errors import QuotaExceededError
+
+# A server-reported reset further out than this is the weekly quota, not a
+# transient throttle: the limiter raises instead of sleeping, and Scopus uses
+# the same figure to classify a 429 (`_is_quota_exhausted`).
+QUOTA_RESET_THRESHOLD_SECONDS = 3600.0
+
 # One request costs exactly one token.
 _ONE_TOKEN = 1.0
 
@@ -112,9 +119,14 @@ class RateLimiter:
 
         First honours any pending server-reported reset (see
         :meth:`observe_headers`), then draws one token from the bucket,
-        sleeping in increments if the bucket is empty. Never raises under
-        normal operation -- it always eventually returns, deferring solely
-        to whatever the injected ``sleep`` does.
+        sleeping in increments if the bucket is empty. It returns once a token
+        is available, deferring to whatever the injected ``sleep`` does, and
+        raises only for the quota-exhausted case below.
+
+        Raises:
+            QuotaExceededError: If a server-reported reset is more than
+                :data:`QUOTA_RESET_THRESHOLD_SECONDS` away (the quota is
+                exhausted; sleeping that long would hang the run silently).
         """
         self._wait_for_reset()
         self._refill()
@@ -170,6 +182,14 @@ class RateLimiter:
             return
         now = self._clock()
         remaining = self._reset_at - now
+        if remaining > QUOTA_RESET_THRESHOLD_SECONDS:
+            # `_reset_at` is kept so every later acquire() refuses too.
+            raise QuotaExceededError(
+                f"Rate limiter: quota exhausted (X-RateLimit-Remaining: 0) and the "
+                f"reset is {remaining:.0f} s away (epoch {self._reset_at:.0f}), beyond "
+                f"the {QUOTA_RESET_THRESHOLD_SECONDS:.0f} s wait limit; "
+                "this will not recover within a single run."
+            )
         if remaining > 0:
             self._sleep(remaining)
         self._reset_at = None

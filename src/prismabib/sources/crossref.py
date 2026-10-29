@@ -352,7 +352,11 @@ class CrossrefTdmClient:
         with self._http.stream(
             "GET", url, params=dict(params) or None, follow_redirects=follow_redirects
         ) as streamed:
-            self._rate_limiter.observe_headers(streamed.headers)
+            # Only the API's own host speaks for this client's quota: a third-party OA/TDM
+            # host's `X-RateLimit-*` must not make every later `acquire()` raise.
+            # `streamed.url` is the final URL, so a redirect off-host is excluded too.
+            if streamed.url.host == httpx.URL(self.LOOKUP_ENDPOINT_TEMPLATE).host:
+                self._rate_limiter.observe_headers(streamed.headers)
             self._raise_for_status(
                 streamed, allow_404=allow_404, entitlement_on_403=entitlement_on_403
             )

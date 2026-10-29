@@ -6,6 +6,7 @@ Mock only at the HTTP boundary (``respx``), the same discipline
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import httpx
@@ -13,7 +14,7 @@ import pytest
 import respx
 
 from prismabib.config import Settings
-from prismabib.errors import EntitlementError, UpstreamError, ValidationError
+from prismabib.errors import EntitlementError, QuotaExceededError, UpstreamError, ValidationError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.crossref import CrossrefTdmClient
 from prismabib.sources.ratelimit import RateLimiter
@@ -289,3 +290,61 @@ def test_lookup__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
         assert route.call_count == 2
         assert client.lookup(_DOI) == _work_response()
     assert route.call_count == 2
+
+
+def _exhausted_headers() -> dict[str, str]:
+    return {
+        "X-RateLimit-Remaining": "0",
+        "X-RateLimit-Reset": str(int(time.time()) + 3 * 86400),
+    }
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__third_party_host_reports_exhausted_quota__does_not_poison_the_api_client() -> (
+    None
+):
+    """A foreign host's `X-RateLimit-*` is not this API's quota (PR #205 review)."""
+    respx.get(_TDM_URL).mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.4\n%%EOF", headers=_exhausted_headers())
+    )
+    respx.get(_LOOKUP_ENDPOINT).mock(return_value=httpx.Response(200, json=_work_response()))
+
+    with _client() as client:
+        client.fetch_bytes(_TDM_URL)
+        assert client.lookup(_DOI) is not None
+
+
+@pytest.mark.integration
+@respx.mock
+def test_fetch_bytes__redirect_to_third_party_host_reporting_quota__does_not_poison_the_api_client() -> (
+    None
+):
+    """The final (post-redirect) URL's host decides, not the requested one."""
+    respx.get("https://api.crossref.org/works/redirect").mock(
+        return_value=httpx.Response(
+            302, headers={"location": "https://tdm-host.example.org/other.pdf"}
+        )
+    )
+    respx.get("https://tdm-host.example.org/other.pdf").mock(
+        return_value=httpx.Response(200, content=b"x", headers=_exhausted_headers())
+    )
+    respx.get(_LOOKUP_ENDPOINT).mock(return_value=httpx.Response(200, json=_work_response()))
+
+    with _client() as client:
+        client.fetch_bytes("https://api.crossref.org/works/redirect")
+        assert client.lookup(_DOI) is not None
+
+
+@pytest.mark.integration
+@respx.mock
+def test_lookup__api_host_reports_exhausted_quota__next_call_raises() -> None:
+    """The API's own `Remaining: 0` with a far reset still stops the run (PR5 kept)."""
+    respx.get(_LOOKUP_ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_work_response(), headers=_exhausted_headers())
+    )
+
+    with _client() as client:
+        client.lookup(_DOI)
+        with pytest.raises(QuotaExceededError):
+            client.lookup(_DOI)

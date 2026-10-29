@@ -27,6 +27,7 @@ test -- exactly the same trade time-machine makes for wall-clock reads.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -34,7 +35,13 @@ import pytest
 import respx
 
 from prismabib.config import Settings
-from prismabib.errors import AuthError, EntitlementError, UpstreamError, ValidationError
+from prismabib.errors import (
+    AuthError,
+    EntitlementError,
+    QuotaExceededError,
+    UpstreamError,
+    ValidationError,
+)
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import RecordNotFoundError, ScopusClient
@@ -423,3 +430,27 @@ def test_search_standard_by_dois__bad_200_then_good__nothing_cached_and_retry_hi
         assert route.call_count == 2
         client.search_standard_by_dois(["10.1/a"])
     assert route.call_count == 2
+
+
+@pytest.mark.integration
+def test_search__200_with_zero_remaining_and_far_reset__next_request_raises_quota_error() -> None:
+    slept: list[float] = []
+    limiter = RateLimiter(rate=1000.0, sleep=slept.append)
+    client = ScopusClient(_settings(), rate_limiter=limiter)
+    reset = str(int(time.time()) + 3 * 86400)
+    page = _page(entry_ids=["1"], current="*", next_cursor=None)
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=page,
+                headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset},
+            )
+        )
+        assert len(list(client.search("q"))) == 1
+        with pytest.raises(QuotaExceededError):
+            list(client.search("q2"))
+
+    assert route.call_count == 1
+    assert slept == []

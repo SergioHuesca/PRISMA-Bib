@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from prismabib.sources.ratelimit import RateLimiter
+from prismabib.errors import QuotaExceededError
+from prismabib.sources.ratelimit import QUOTA_RESET_THRESHOLD_SECONDS, RateLimiter
 
 
 @dataclass
@@ -55,3 +56,58 @@ def test_ratelimit__header_says_zero_remaining__waits_until_reset() -> None:
 
     assert clock.sleeps == pytest.approx([120.0])
     assert clock.now == pytest.approx(reset_at)
+
+
+@pytest.mark.unit
+def test_ratelimit__zero_remaining_reset_days_away__raises_quota_error_without_sleeping() -> None:
+    clock = _FakeClock()
+    limiter = RateLimiter(clock=clock.time, sleep=clock.sleep)
+    reset_at = clock.now + 3 * 86400.0
+
+    limiter.observe_headers({"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(reset_at)})
+
+    with pytest.raises(QuotaExceededError, match="259200"):
+        limiter.acquire()
+    assert clock.sleeps == []
+    # The refusal is sticky: a retry must not slip through and hit the API.
+    with pytest.raises(QuotaExceededError):
+        limiter.acquire()
+
+
+@pytest.mark.unit
+def test_ratelimit__zero_remaining_short_reset__sleeps_exactly_that_long() -> None:
+    clock = _FakeClock()
+    limiter = RateLimiter(clock=clock.time, sleep=clock.sleep)
+
+    limiter.observe_headers(
+        {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(clock.now + 5.0)}
+    )
+    limiter.acquire()
+
+    assert clock.sleeps == pytest.approx([5.0])
+
+
+@pytest.mark.unit
+def test_ratelimit__reset_exactly_at_threshold__sleeps_and_one_second_past_raises() -> None:
+    at = _FakeClock()
+    limiter = RateLimiter(clock=at.time, sleep=at.sleep)
+    limiter.observe_headers(
+        {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(at.now + QUOTA_RESET_THRESHOLD_SECONDS),
+        }
+    )
+    limiter.acquire()
+    assert at.sleeps == pytest.approx([QUOTA_RESET_THRESHOLD_SECONDS])
+
+    past = _FakeClock()
+    limiter = RateLimiter(clock=past.time, sleep=past.sleep)
+    limiter.observe_headers(
+        {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(past.now + QUOTA_RESET_THRESHOLD_SECONDS + 1.0),
+        }
+    )
+    with pytest.raises(QuotaExceededError):
+        limiter.acquire()
+    assert past.sleeps == []
