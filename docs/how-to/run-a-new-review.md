@@ -250,7 +250,11 @@ projects/my-review/
 ```
 
 While a run is unsealed it also holds `_http/`, its own HTTP cache, which exists only to
-resume that run and is deleted when the run is sealed.
+resume that run and is deleted when the run is sealed. The clients validate a response before
+they cache it, so a 200 response with an HTML or service-error body is not cached. An entry
+written by an earlier version can still hold such a body: reading it raises `ValidationError`
+on every call, and prismabib does not evict it, so delete that entry from the run's `_http/`
+by hand.
 
 - **`raw/` is never tracked by git** (see
   [Architecture Overview](../architecture/overview.md#repository-structure)) — it is large
@@ -317,11 +321,17 @@ per-table checksums.
 - **Without `--rebuild`, an existing store is reused as-is** and any run captured since it
   was built is not loaded. The command says so. After a new `search`, use
   `uv run prismabib build my-review --rebuild`.
+- **A rebuild is all or nothing.** `--rebuild` builds beside the store and swaps it in only
+  when complete, so a failed or interrupted rebuild keeps the previous store. If the store
+  holds no records while a sealed run in `raw/` reports results, a plain `build` raises
+  `StoreError`: re-capture that run or inspect its page files. A rebuild reproduces the same
+  empty store until `raw/` is fixed.
 - **Duplicates are reported, never applied**: `duplicate_doi_groups` /
   `duplicate_records` count normalised-DOI collisions, and both rows stay in the store.
   Removing one is a screening decision.
 - **The store is derived and disposable.** Delete `store/corpus.duckdb` and rebuild; nothing
-  is lost. Layer 0 is the archive of record.
+  is lost. Layer 0 is the archive of record. Deleting the file only bypasses the refusal
+  above: the rebuild reads the same `raw/` and reproduces the empty store.
 - Affiliation country strings that do not map to an ISO 3166-1 alpha-3 code are kept
   verbatim and listed in the output, never dropped.
 
