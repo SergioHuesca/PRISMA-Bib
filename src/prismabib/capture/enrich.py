@@ -19,8 +19,8 @@ filter, exactly as before. A separate change consumes this data. See ADR 0011.
 
 **Why the payloads are Layer 0 and not a cache.** BUILD_PLAN §2.2 requires that
 Layer 1 be reconstructible from Layer 0 by running one function. If the
-Abstract Retrieval responses lived only in ``raw/_cache/`` -- which is
-gitignored, disposable, and documented as such -- then a
+Abstract Retrieval responses lived only in the HTTP cache -- which is
+gitignored, disposable, and removed when the run is sealed -- then a
 ``build_store(rebuild=True)`` after a routine cleanup would silently rebuild a
 corpus with no subject areas in it, or re-spend ~1,800 API calls against a
 weekly quota to get them back. Neither is a rebuild. So the responses are
@@ -60,6 +60,7 @@ no ``total_results`` field at all, and this module writes no ``runs`` row.
     raw/abstracts/<run_id>/
     ├── abstracts-0000.jsonl   # verbatim responses, one per line, 100 records/file
     ├── progress.json          # resumption sidecar; deleted on seal; NEVER hashed
+    ├── _http/                 # per-run HTTP cache (ADR 0038); resume only; removed on seal
     └── manifest.json          # the seal
 
 Payload lines are the **verbatim** Abstract Retrieval responses -- not wrapped
@@ -73,7 +74,7 @@ future reader would have to know about it to read the file.
 
 Encoding is canonical (``sort_keys``, compact separators) for the same reason
 :func:`prismabib.capture.writer._write_page` does it: ``payload_sha256`` must
-be byte-stable across a warm-cache re-run, independently of dict ordering.
+be byte-stable for the same response bodies, independently of dict ordering.
 Records are iterated in ``sorted(record_id)`` order and batched by **position
 in that sorted list**, so an interrupted run resumes to byte-identical files:
 ``abstracts-0000.jsonl`` always covers ``records[0:100]``, whatever happened
@@ -95,12 +96,15 @@ fell, which is precisely the machine-dependence this project's reproducibility
 argument cannot afford.
 
 **What that costs, stated as a quota number.** An interruption resumes without
-re-spending quota *only at a batch boundary, or with a warm cache*. Since
+re-spending quota *only at a batch boundary, or with the run's own ``_http/``
+still warm*. Since
 :data:`BATCH_SIZE` is 100 and only completed batches are durable, an
 interruption in the middle of a batch discards up to **99 records' worth of
-already-paid requests**, and they are recoverable only from ``raw/_cache/`` --
+already-paid requests**, and they are recoverable only from the run's ``_http/`` --
 which is gitignored, disposable, and therefore no guarantee at all on a
-machine where it has been cleaned or was never written. The same arithmetic
+machine where it has been cleaned or was never written. (A legacy
+``raw/_cache/`` is never read; an unsealed abstract run begun before ADR 0038
+loses its partial batch once.) The same arithmetic
 applies to ``budget``: a budget that is not a multiple of 100 spends its
 remainder on records that are not written and must be requested again, so
 ``budget=150`` durably advances the run by 100 records, not 150. Passing a
@@ -111,9 +115,9 @@ of it.
 :class:`~prismabib.sources.ratelimit.RateLimiter` carried over from a search
 run would arrive with the search API's consumed bucket and its
 ``X-RateLimit-Reset``, throttling (or, worse, parking) an enrichment run
-against a quota it does not draw on. The HTTP cache *is* shared, rooted at the
-same ``raw/_cache/``: it is keyed on ``(url, params)``, so the two APIs' entries
-cannot collide, and sharing it is what makes a warm-cache re-run free.
+against a quota it does not draw on. The HTTP cache is per run, rooted at
+``<run_dir>/_http/`` (ADR 0038): it replays already-paid responses when this
+unsealed run is resumed and is removed at seal, so a new run re-spends quota.
 
 **Entitlement, and why the first record of a fresh run is special.** Abstract
 Retrieval is a *different* entitlement from Search ``view=COMPLETE``; a key
@@ -158,6 +162,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -169,7 +174,7 @@ from pydantic import BaseModel
 from prismabib import __version__ as _CLIENT_VERSION
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
-    CACHE_DIRNAME,
+    HTTP_CACHE_DIRNAME,
     NON_RUN_DIRNAMES,
     RUN_MANIFEST_FILENAME,
     atomic_write_bytes,
@@ -495,8 +500,8 @@ def _write_batch(run_dir: Path, filename: str, responses: Sequence[JsonDict]) ->
     """Write one batch of verbatim Abstract Retrieval responses as JSON Lines.
 
     One response per line, canonically encoded (``sort_keys``, compact
-    separators) so that ``payload_sha256`` is byte-stable across a warm-cache
-    re-run regardless of dict ordering -- the same guarantee, obtained the same
+    separators) so that ``payload_sha256`` is byte-stable for the same
+    response bodies regardless of dict ordering -- the same guarantee, obtained the same
     way, as :func:`prismabib.capture.writer._write_page`.
 
     Args:
@@ -682,7 +687,7 @@ def capture_abstracts(
         budget: The maximum number of records this invocation will fetch, or
             ``None`` for no limit. Intended for spending a known slice of a
             weekly quota. It bounds *attempts*, so a record served from
-            ``raw/_cache/`` consumes budget too even though it costs no quota:
+            the run's ``_http/`` consumes budget too even though it costs no quota:
             the client does not report whether a call was a cache hit, and
             over-counting can only make an invocation stop early, never
             overspend.
@@ -691,7 +696,7 @@ def capture_abstracts(
             are durable, so a budget's remainder below a batch boundary is
             fetched, discarded unwritten, and requested again on the next call
             -- recoverable in between only from the disposable
-            ``raw/_cache/``. ``budget=150`` therefore advances the run by 100
+            ``_http/``. ``budget=150`` therefore advances the run by 100
             records, not 150. The same holds for an interruption: up to 99
             records of paid quota are lost when the cache is cold.
 
@@ -798,7 +803,7 @@ def capture_abstracts(
 
     run_id = run_dir.name
     settings = Settings()
-    cache = HttpCache(raw_dir / CACHE_DIRNAME)
+    cache = HttpCache(run_dir / HTTP_CACHE_DIRNAME)
     attempted = 0
     #: Record ids that have returned 404 with nothing yet fetched. Reset on the
     #: first success, so a withdrawn record mid-run cannot accumulate toward the
@@ -988,6 +993,8 @@ def capture_abstracts(
         # Not part of the sealed payload -- removed once sealing succeeds,
         # since there is nothing left to resume.
         progress_path.unlink()
+    # Best-effort and only after the manifest: a file lock must not raise on a sealed run.
+    shutil.rmtree(run_dir / HTTP_CACHE_DIRNAME, ignore_errors=True)
 
     logger.info(
         "capture.abstracts.run_sealed",

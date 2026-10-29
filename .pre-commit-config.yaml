@@ -28,9 +28,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
+      # Sealed Layer 0 payloads under tests/fixtures/projects/<p>/raw/ are hashed
+      # (payload_sha256): a hook must neither rewrite them nor open them for write
+      # (on Windows that raced a concurrent reader with PermissionError).
       - id: end-of-file-fixer
+        exclude: ^tests/fixtures/projects/[^/]+/raw/
       - id: trailing-whitespace
         args: ["--markdown-linebreak-ext=md"]
+        exclude: ^tests/fixtures/projects/[^/]+/raw/
 
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.4.0

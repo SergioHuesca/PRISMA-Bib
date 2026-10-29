@@ -23,7 +23,7 @@ both sides now import.
 
 **Why ``NON_RUN_DIRNAMES`` is a set rather than one name.** ``raw/`` holds two
 kinds of directory that are emphatically not search runs: ``raw/_cache/`` (the
-content-addressed HTTP cache, see :mod:`prismabib.sources.cache`) and
+legacy shared HTTP cache, see :mod:`prismabib.sources.cache` and ADR 0038) and
 ``raw/abstracts/`` (the Abstract Retrieval enrichment runs of
 :mod:`prismabib.capture.enrich`, which are nested one level deeper --
 ``raw/abstracts/<run_id>/`` -- and carry a different manifest schema
@@ -56,12 +56,15 @@ from prismabib.errors import PrismabibError
 #: at. The two manifests' *schemas* differ; the seal does not.
 RUN_MANIFEST_FILENAME = "manifest.json"
 
-#: The content-addressed HTTP cache directory under ``raw/``
-#: (:class:`prismabib.sources.cache.HttpCache`). Its name starts with ``_``
-#: precisely so that a run scan can skip it; it never receives a
-#: ``manifest.json``, so it is never sealed and stays writable across every run,
-#: past and future.
+#: The LEGACY shared HTTP cache directory under ``raw/`` (and ``fulltext/``).
+#: Nothing reads or writes it any more (ADR 0038); it stays a name to skip so
+#: that a run scan does not mistake a pre-ADR-0038 ``raw/_cache/`` for a run.
 CACHE_DIRNAME = "_cache"
+
+#: The per-run HTTP cache, ``<run_dir>/_http/`` (ADR 0038). It serves only to
+#: resume that unsealed run and is removed, best-effort, once the manifest is
+#: written.
+HTTP_CACHE_DIRNAME = "_http"
 
 #: The Abstract Retrieval enrichment tree under ``raw/``. Runs live one level
 #: deeper, at ``raw/abstracts/<run_id>/``, each with its own
@@ -156,6 +159,7 @@ def new_run_id() -> str:
 __all__ = [
     "ABSTRACTS_DIRNAME",
     "CACHE_DIRNAME",
+    "HTTP_CACHE_DIRNAME",
     "NON_RUN_DIRNAMES",
     "OPENALEX_DIRNAME",
     "RUN_MANIFEST_FILENAME",
