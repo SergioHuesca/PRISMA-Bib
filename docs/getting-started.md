@@ -62,8 +62,8 @@ All four layers (0 to 3) are built and tested. Concretely:
 | Register a pasted candidate, or reverse a registration | `registration_view(project, reviewer=...)` in a notebook; see [Register and Reverse a Candidate](how-to/register-and-reverse-candidates.md) |
 | Replay under amended criteria | `engine.replay(project, criteria_version=...)` |
 
-`prismabib code` and `prismabib export` do not exist — deliberately, rather than as stubs
-that accept arguments and do nothing.
+`prismabib code` does not exist — deliberately, rather than as a stub that accepts arguments
+and does nothing.
 
 ## 1. Clone and install
 

@@ -7,7 +7,7 @@ This is a statement of current state, not an apology. Some entries are stages no
 built; others are properties of the data source that will not change. Each says which it
 is, and what to do instead.
 
-Everything here describes **v0.5.0**: Layers 0, 1 and 2 are built; Layer 3 is not.
+Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
 
 ## Coverage: Scopus only
 
@@ -268,7 +268,7 @@ count with this paragraph beside it.
 The same caution applies to venue **type**: where Scopus indexes one venue under more than
 one `prism:aggregationType`, the type is reported as `mixed` rather than resolved to one.
 
-## No taxonomy, dashboard or export layer
+## Taxonomy, dashboard and export layer
 
 **Bibliometrics now exist** (Stage 7): annual counts and CAGR, geographic counting with a
 declared `full`/`fractional` method, venue and venue-type analysis, citation statistics
@@ -277,10 +277,10 @@ co-authorship networks with VOSviewer export. Every one returns an `AnalysisResu
 the parameters that produced it and a generated caption, so a figure cannot drift from its
 own number.
 
-Still absent (Layer 3, Stages 8–9):
+Still absent from the CLI (Layer 3):
 
-- the taxonomy coder (`prismabib code`) and its versioned rule files;
-- figures, LaTeX tables, and the Panel dashboard.
+- the taxonomy coder command, `prismabib code`. The coder and its rule files exist in
+  `src/prismabib/taxonomy/`.
 
 `prismabib code` is **absent from the CLI**, not stubbed. An absent command fails with "No
 such command", which is honest; a stub that accepts its arguments and does nothing is
