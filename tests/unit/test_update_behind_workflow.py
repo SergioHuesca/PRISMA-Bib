@@ -93,7 +93,7 @@ def violations(text: str) -> list[str]:
         bad.append("expected the open list function and the closed list only")
     if "--state closed" not in script:
         bad.append("closed list missing")
-    if "--limit 100" not in script:
+    if "--limit 100 " not in script:
         bad.append("--limit 100 missing")
     decides = _calls(script, "train_step.py decide")
     # the two-step: a decide without --head-check, then one with --head-check via "${verify[@]}"
@@ -143,8 +143,8 @@ def violations(text: str) -> list[str]:
         bad.append("audit_alarm must exit 1")
     if "--merge-train on" in script or script.count('--merge-train "${MERGE_TRAIN:-off}"') != 3:
         bad.append("--merge-train must come from MERGE_TRAIN, defaulting to off (3 calls)")
-    if script.count("--limit 100") != 2:
-        bad.append("--limit 100 must be on both lists")
+    if len(re.findall(r"--limit 100\b", script)) != 1 or script.count("--limit 1000") != 1:
+        bad.append("--limit 100 on the open list and --limit 1000 on the closed list")
     stops = [m.start() for m in re.finditer(r"train_step.py audit-stop", script)]
     failed = script.find('"$(jq -r .failed "$audit")" = true')
     if len(stops) != 1 or failed < 0 or not failed < stops[0]:
@@ -286,7 +286,7 @@ MUTATIONS = {
     ),
     "limit dropped": lambda t: _replace(
         t,
-        'gh pr list --state closed --search "is:unmerged" --limit 100',
+        'gh pr list --state closed --search "is:unmerged" --limit 1000',
         'gh pr list --state closed --search "is:unmerged"',
     ),
     "train mode stacked update halt removed": lambda t: _replace(

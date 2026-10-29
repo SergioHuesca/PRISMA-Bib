@@ -22,9 +22,8 @@ and executes the action it returns. Subcommands:
     all open PRs. Only update-only mode keeps "the lowest-numbered open PR targeting main",
     and it filters inside the call to select_next_pr.
 
-    Known cliff, not fixed here (ADR 0037 owner question 4): a closed-unmerged list of
-    LIST_LIMIT (100) entries halts the train for good; every PR closed unmerged moves the
-    repository closer to it.
+    A closed-unmerged list of CLOSED_LIMIT (1000) entries halts the train (it was 100, which
+    the repository was approaching: ADR 0037 owner question 4).
 
     FILE for --facts is the head's facts record (ADR 0037 Decision 3)::
 
@@ -79,6 +78,8 @@ HALTED = "train:halted"
 # The workflow asks gh for at most this many PRs. A full list may be cut short, so the
 # train refuses to decide rather than miss a label.
 LIST_LIMIT = 100
+# The closed-unmerged list only grows, so it gets a larger cap (gh pages internally).
+CLOSED_LIMIT = 1000
 # fullmatch, not match: `$` would accept a trailing newline in a label or argument.
 _TRAIN_RE = re.compile(r"train:[0-9]{1,3}")
 # The reviewed label is the reviewed head commit itself. 9 + 40 = 49 chars, within GitHub's
@@ -523,10 +524,10 @@ def decide(
         return halt_on(head, f"train:{gaps[0]} is missing; train numbers must be consecutive")
     if closed is None:
         return halt_on(head, "the closed PR list was not supplied; cannot rule out a broken batch")
-    if len(closed) >= LIST_LIMIT:
+    if len(closed) >= CLOSED_LIMIT:
         return halt_on(
             head,
-            f"the closed PR list is at the {LIST_LIMIT}-PR limit; cannot see every closed PR",
+            f"the closed PR list is at the {CLOSED_LIMIT}-PR limit; cannot see every closed PR",
         )
     hit = _closed_hit(closed, head_n)
     if hit is not None:
