@@ -330,3 +330,5 @@ This ADR records that an unloadable Layer 0 entry is persisted in Layer 1. Remov
 `malformed_entries` table, moving its contents to a sidecar file or a column on `runs`,
 storing the exception message in it, or dropping the unloadable-capture guard requires a new
 ADR that supersedes this one (§2.6).
+
+> **Note added 2026-10-29 (audit errata).** Two statements above are stale. `_delete_stale_store` no longer exists in `src/prismabib/store/load.py`, so the sidecar argument at L207-209 describes a deletion path that is gone. And a refused build no longer creates or touches the store: `build_store` loads into `<db>.tmp` and swaps it in only when complete (PR #201), so an existing store survives a failed build, except that a failure writing Layer 2 after the swap removes the store so the next build starts clean (`build_store`, `except BaseException`, L2643-2650). A refused build before the swap creates no store file under the real name. The rule at L299 holds in that form. This note does not change the record above.
