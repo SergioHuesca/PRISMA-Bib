@@ -63,7 +63,7 @@ from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import EntitlementError, RateLimitError, UpstreamError, ValidationError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
-from prismabib.sources.unpaywall import MAX_DOWNLOAD_BYTES, read_capped
+from prismabib.sources.unpaywall import MAX_DOWNLOAD_BYTES, read_capped, redact_url
 
 logger = structlog.get_logger(__name__)
 
@@ -372,7 +372,7 @@ class CrossrefTdmClient:
         if status == 404 and allow_404:
             return
 
-        endpoint = str(response.request.url)
+        endpoint = redact_url(response.request.url)
 
         if status == 403 and entitlement_on_403:
             logger.warning("crossref.request.entitlement_error", endpoint=endpoint, status=status)

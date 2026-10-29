@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from prismabib.config import Settings
 from prismabib.errors import UpstreamError
@@ -117,3 +118,27 @@ def test_fetch_bytes__small_pdf__bytes_and_content_type_unchanged(
 
     assert content == b"%PDF-1.4\n%%EOF"
     assert content_type == "application/pdf"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("cls", "module"), _CLIENTS)
+@pytest.mark.parametrize("status", [403, 404, 429, 500])
+def test_fetch_bytes__error_status__message_and_logs_omit_url_query(
+    cls: Callable[..., UnpaywallClient | CrossrefTdmClient],
+    module: object,
+    status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tenacity.nap.time.sleep", lambda _s: None)
+    url = "https://host.example.org/f/paper.pdf?token=SECRET&x=1"
+    with respx.mock, capture_logs() as logs:
+        respx.get(url).mock(return_value=httpx.Response(status))
+        with pytest.raises(Exception) as excinfo:
+            _make(cls).fetch_bytes(url)  # type: ignore[arg-type]
+
+    seen = str(excinfo.value) + repr(logs)
+    assert logs
+    for leaked in ("SECRET", "token=", "x=1"):
+        assert leaked not in seen
+    assert "host.example.org/f/paper.pdf" in seen
+    assert str(status) in seen
