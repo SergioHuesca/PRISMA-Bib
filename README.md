@@ -72,7 +72,8 @@ full walkthrough.
 **v0.5.0 — Layers 0, 1 and 2 are complete.** What works today:
 
 - **Scopus acquisition** into an immutable, sealed Layer 0 archive, with a resumable
-  cursor, an HTTP cache, and rate limiting. Re-running with a warm cache reproduces a
+  cursor, a per-run HTTP cache that only resumes an interrupted run, and rate limiting.
+  A re-run issues new requests (it spends quota); the same response bodies reproduce a
   byte-identical payload hash.
 - **Layer 1 DuckDB store**, rebuildable from Layer 0 by one function call, with
   deterministic per-table checksums that do not depend on the DuckDB version.

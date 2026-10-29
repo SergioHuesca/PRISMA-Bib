@@ -28,9 +28,15 @@ import pytest
 import respx
 
 from prismabib import __version__ as CLIENT_VERSION
-from prismabib.capture.writer import SealedRunError, _write_page, capture_search
+from prismabib.capture.writer import (
+    SealedRunError,
+    _write_page,
+    capture_search,
+    payload_sha256,
+)
 from prismabib.errors import ValidationError
 from prismabib.project import Project
+from prismabib.sources.cache import HttpCache
 
 _SEARCH_URL = "https://api.elsevier.com/content/search/scopus"
 
@@ -92,7 +98,7 @@ def test_capture__run__writes_pages_and_manifest(
 
 @pytest.mark.integration
 @pytest.mark.acceptance("S02-AC2")
-def test_capture__warm_cache_rerun__payload_sha256_is_identical(
+def test_capture__rerun_same_responses__payload_sha256_is_identical(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
@@ -105,9 +111,56 @@ def test_capture__warm_cache_rerun__payload_sha256_is_identical(
         first = capture_search(project, query='TITLE-ABS-KEY("x")')
         second = capture_search(project, query='TITLE-ABS-KEY("x")')
 
+    # ADR 0038: S02-AC2 protects the hash being a function of the response bodies,
+    # not "a re-run is free" -- the second run is a new run and asks again.
     assert first.run_id != second.run_id
     assert first.payload_sha256 == second.payload_sha256
-    assert route.call_count == 1
+    assert route.call_count == 2
+
+
+@pytest.mark.integration
+def test_capture__second_run_same_query__issues_new_requests_and_new_started_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor=None)
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page0))
+
+        first = capture_search(project, query='TITLE-ABS-KEY("x")')
+        second = capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    assert route.call_count == 2
+    assert second.run_id != first.run_id
+    # retrieved_at of every snapshot is started_at, so it must postdate the first seal.
+    assert second.started_at >= first.finished_at
+
+
+@pytest.mark.integration
+def test_capture__legacy_raw_cache__is_never_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor=None)
+    poison = _page(entry_ids=["POISON"], current="*", next_cursor=None)
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page0))
+        first = capture_search(project, query='TITLE-ABS-KEY("x")')
+        params = dict(route.calls[0].request.url.params)
+        HttpCache(project.raw_dir / "_cache").store(
+            _SEARCH_URL, params, json.dumps(poison).encode()
+        )
+
+        second = capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    page = (project.raw_dir / second.run_id / "page-0000.jsonl").read_text(encoding="utf-8")
+    assert "POISON" not in page
+    assert route.call_count == 2
+    assert second.payload_sha256 == first.payload_sha256
 
 
 @pytest.mark.integration
@@ -146,9 +199,7 @@ def test_capture__killed_at_page_2__resumes_without_duplicates(
     page1_bytes_before = (run_dir / "page-0001.jsonl").read_bytes()
 
     with respx.mock:
-        # Page 0 and page 1 are cache hits (their bytes were already stored
-        # by the first, interrupted attempt) -- only page 2 reaches the
-        # network this time.
+        # The persisted cursor resumes at page 2, so only page 2 reaches the network.
         respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page2))
 
         manifest = capture_search(project, query='TITLE-ABS-KEY("x")')
@@ -250,10 +301,10 @@ def test_capture__cold_cache_resume__starts_from_persisted_cursor(
 ) -> None:
     """A resumed run continues from the stored cursor, not from ``*``.
 
-    The HTTP cache is deleted before resuming, on purpose. Without that, a run
-    that replays from ``cursor=*`` looks identical to one that resumes correctly,
-    because every replayed page is a cache hit. But that cache is gitignored and
-    disposable: on a cold cache the replay is real HTTP against a weekly quota,
+    The run's HTTP cache (``_http/``) is deleted before resuming, on purpose.
+    Without that, a run that replays from ``cursor=*`` looks identical to one that
+    resumes correctly, because every replayed page is a cache hit. But that cache
+    is gitignored and disposable: on a cold cache the replay is real HTTP against a weekly quota,
     re-fetching pages Layer 0 already holds on disk. BUILD_PLAN line 768 requires
     resuming "without re-fetching" and §5 risk 2 says "never re-fetch what Layer 0
     already holds", so the cursor must be what carries the resumption, not luck.
@@ -273,7 +324,8 @@ def test_capture__cold_cache_resume__starts_from_persisted_cursor(
     run_dir = next(p for p in project.raw_dir.iterdir() if p.is_dir() and p.name != "_cache")
     first_page_before = (run_dir / "page-0000.jsonl").read_bytes()
     cursor_state = json.loads((run_dir / "cursor.json").read_text(encoding="utf-8"))
-    shutil.rmtree(project.raw_dir / "_cache", ignore_errors=True)
+    assert (run_dir / "_http").is_dir()
+    shutil.rmtree(run_dir / "_http")
 
     with respx.mock:
         route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page1))
@@ -286,3 +338,66 @@ def test_capture__cold_cache_resume__starts_from_persisted_cursor(
     assert (run_dir / "page-0000.jsonl").read_bytes() == first_page_before
     assert manifest.run_id == run_dir.name
     assert manifest.pages_fetched == 2
+
+
+@pytest.mark.integration
+@pytest.mark.acceptance("S02-AC3")
+def test_capture__resume_without_cursor__replays_from_run_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sidecar with no ``next_cursor`` replays from ``*``; the run's ``_http/`` serves page 0."""
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor="C2")
+    page1 = _page(entry_ids=["2"], current="C2", next_cursor=None)
+
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(
+            side_effect=[httpx.Response(200, json=page0), httpx.RequestError("boom")]
+        )
+        with pytest.raises(httpx.RequestError):
+            capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    run_dir = next(p for p in project.raw_dir.iterdir() if p.is_dir())
+    cursor_path = run_dir / "cursor.json"
+    state = json.loads(cursor_path.read_text(encoding="utf-8"))
+    state.pop("next_cursor")
+    cursor_path.write_text(json.dumps(state), encoding="utf-8")
+
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page1))
+        manifest = capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    # Page 0 came from the run's cache: the only request is the one the first attempt never made.
+    assert [call.request.url.params.get("cursor") for call in route.calls] == ["C2"]
+    assert manifest.run_id == run_dir.name
+    assert manifest.pages_fetched == 2
+
+
+@pytest.mark.integration
+def test_capture__seal__removes_run_cache_and_leaves_payload_hash_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    page0 = _page(entry_ids=["1"], current="*", next_cursor="C2")
+    page1 = _page(entry_ids=["2"], current="C2", next_cursor=None)
+
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(
+            side_effect=[httpx.Response(200, json=page0), httpx.RequestError("boom")]
+        )
+        with pytest.raises(httpx.RequestError):
+            capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    run_dir = next(p for p in project.raw_dir.iterdir() if p.is_dir())
+    assert (run_dir / "_http").is_dir()  # an unsealed run keeps its cache
+
+    with respx.mock:
+        respx.get(_SEARCH_URL).mock(return_value=httpx.Response(200, json=page1))
+        manifest = capture_search(project, query='TITLE-ABS-KEY("x")')
+
+    assert (run_dir / "manifest.json").is_file()
+    assert not (run_dir / "_http").exists()
+    assert not (run_dir / "cursor.json").exists()
+    assert manifest.payload_sha256 == payload_sha256(run_dir, manifest.payload_files)

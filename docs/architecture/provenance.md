@@ -24,7 +24,7 @@ Layer 3: Figures, tables, PRISMA flow diagram
 
 Every HTTP response from Scopus is persisted **verbatim** before any parsing happens. This layer is what allows the provenance chain:
 
-- **Cache keying:** Each API call is keyed on `(URL, parameters)` and cached in `raw/_cache/` before parsing
+- **Cache keying:** Each API call is keyed on `(URL, parameters)` and cached in the run's own `raw/<run_id>/_http/` once it has been parsed and validated. The cache serves only to resume that unsealed run and is removed when the run is sealed; a new run never reads an earlier run's cache (ADR 0038)
 - **Page storage:** Parsed pages are written to `raw/<run_id>/page-0000.jsonl`, `page-0001.jsonl`, etc. in fetch order
 - **Envelope storage:** The HTTP response envelope (status, headers, `opensearch:totalResults`, cursor tokens, etc.) is written separately to `raw/<run_id>/page-0000.meta.json`, `page-0001.meta.json`, etc.
 - **Manifest seal:** Once all pages are written, `raw/<run_id>/manifest.json` is written—this file's presence is the **only** signal that the run is complete and sealed
@@ -99,7 +99,7 @@ If `capture_search()` is interrupted mid-run (before `manifest.json` is written)
 
 - A `cursor.json` sidecar exists recording which pages have been durably written
 - The next call to `capture_search()` finds this unsealed run and resumes from the first missing page
-- Resumption replays from `cursor=*` through all pages (cached, zero quota cost), but only writes new pages to disk
+- Resumption continues from the cursor saved with the last page written, so pages already on disk are not requested again. A sidecar with no cursor replays from `cursor=*`, served from the run's own `_http/` cache where it is still present
 
 ### Tracing a number back to the manifest
 
@@ -140,11 +140,10 @@ The PRISMA flow diagram (e.g., "records after screening: 1,550") is derived from
 
 ### Byte-identical re-runs (determinism proof)
 
-A key property of the architecture: re-running the exact same query with a warm cache produces byte-identical outputs:
+A key property of the architecture: the same response bodies always produce byte-identical outputs. A re-run is a new run: it issues new requests (and spends quota), and never reads an earlier run's HTTP cache (ADR 0038), so `started_at`, the `retrieved_at` of its citation snapshots, is true.
 
-- The HTTP cache is keyed on `(URL, parameters)`, so a warm re-run returns the same response bytes without quota cost
-- Parsing and re-serialization of those bytes is deterministic (JSON with sorted keys, compact separators)
-- So `payload_sha256` is byte-identical on a re-run
+- Parsing and re-serialization of the response bodies is deterministic (JSON with sorted keys, compact separators)
+- So `payload_sha256` is byte-identical whenever the bodies are identical
 - This proves: "I did not touch the data; Scopus returned the same results on [date]"
 
 ### What is versioned in git (and what is not)

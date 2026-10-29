@@ -149,7 +149,6 @@ from urllib.parse import urlparse
 
 import structlog
 
-from prismabib.capture.layout import CACHE_DIRNAME
 from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import ConfigError, EntitlementError, PrismabibError
 from prismabib.publishers import publisher_from_doi
@@ -875,7 +874,10 @@ class ManualDropResolver:
 
 @contextmanager
 def default_chain(
-    project: Project, settings: Settings | FullTextSettings | None = None
+    project: Project,
+    settings: Settings | FullTextSettings | None = None,
+    *,
+    cache_dir: Path | None = None,
 ) -> Iterator[tuple[FullTextResolver, ...]]:
     """Build the standard four-resolver chain for one project (ADR 0020).
 
@@ -889,9 +891,12 @@ def default_chain(
 
     Args:
         project: The project resolvers read the manual drop-box under
-            (``project.fulltext_dir``) and cache HTTP responses under
-            (``project.fulltext_dir`` / the shared cache directory --
-            **not** ``project.raw_dir``: fetched full text is licensed
+            (``project.fulltext_dir``).
+        cache_dir: Where the three HTTP clients cache responses, or ``None``
+            for no cache (ADR 0038). Production passes the run's ``_http/``
+            directory through :func:`~prismabib.fulltext.capture.capture_fulltext`,
+            so the cache serves only to resume that run and is never shared
+            (**not** under ``project.raw_dir``: fetched full text is licensed
             content and must never sit anywhere near the Layer 0 archive,
             per ``project.fulltext_dir``'s own docstring and ADR 0019).
         settings: The environment configuration. Defaults to
@@ -922,13 +927,13 @@ def default_chain(
     )
     resolvers: list[FullTextResolver] = []
     closers: list[ScienceDirectClient | CrossrefTdmClient | UnpaywallClient] = []
-    cache_dir = project.fulltext_dir / CACHE_DIRNAME
+    cache = HttpCache(cache_dir) if cache_dir is not None else None
 
     try:
         sd_client = ScienceDirectClient(
             resolved_settings,
             rate_limiter=RateLimiter(),
-            cache=HttpCache(cache_dir),
+            cache=cache,
         )
     except ConfigError as exc:
         logger.warning("fulltext.chain.sciencedirect_unavailable", reason=str(exc))
@@ -943,7 +948,7 @@ def default_chain(
     crossref_client = CrossrefTdmClient(
         resolved_settings,
         rate_limiter=RateLimiter(),
-        cache=HttpCache(cache_dir),
+        cache=cache,
     )
     closers.append(crossref_client)
     resolvers.append(CrossrefTdmResolver(crossref_client=crossref_client))
@@ -952,7 +957,7 @@ def default_chain(
         oa_client = UnpaywallClient(
             resolved_settings,
             rate_limiter=RateLimiter(),
-            cache=HttpCache(cache_dir),
+            cache=cache,
         )
     except ConfigError as exc:
         logger.warning("fulltext.chain.openaccess_unavailable", reason=str(exc))

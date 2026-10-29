@@ -223,14 +223,15 @@ def run_fulltext_resolution(
             sealed=True,
         )
 
-    with default_chain(project, settings) as resolvers:
-        outcome = capture_fulltext(
-            project,
-            pending_ids=pending_ids,
-            doi_by_record_id=doi_by_record_id,
-            resolvers=resolvers,
-            budget=budget,
-        )
+    # capture_fulltext enters the chain (and so closes its clients) once it has
+    # chosen the run directory whose `_http/` is the chain's cache (ADR 0038).
+    outcome = capture_fulltext(
+        project,
+        pending_ids=pending_ids,
+        doi_by_record_id=doi_by_record_id,
+        chain_factory=lambda cache_dir: default_chain(project, settings, cache_dir=cache_dir),
+        budget=budget,
+    )
 
     return FullTextRunSummary(
         records_considered=len(target_ids),

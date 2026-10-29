@@ -277,13 +277,16 @@ Next: prismabib build my-review
 - **Interrupting is safe.** Every page is written as it arrives and a cursor is saved after
   each one. Ctrl-C exits `130` and prints how to resume; re-running the same command
   continues from the last page written, at no quota cost for what is already on disk.
+  The run's own `_http/` cache serves only this resume and is deleted at seal.
 - **A finished run is sealed and immutable.** Sealing is the presence of `manifest.json`;
   every write path refuses a sealed directory in code, not by convention. Running `search`
   again after a completed run starts a *new* run directory rather than amending the old one.
 - **`total_results` comes from Scopus's own `opensearch:totalResults`**, never from a count
   of rows or pages. It is this search's contribution to the PRISMA "records identified"
   number: one search string, one term. A project that runs a second, different search string
-  adds that search's total too; re-running the *same* string later adds nothing.
+  adds that search's total too; re-running the *same* string later adds nothing. Such a
+  re-run is a new run that **spends the full quota of the query again**: nothing from an
+  earlier run is replayed, which is what makes its citation counts current.
 - **`raw/` is never git-tracked.** It is large and licensed; the manifest is what makes the
   run reproducible.
 

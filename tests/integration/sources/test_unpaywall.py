@@ -64,7 +64,7 @@ def test_lookup__200__returns_parsed_response() -> None:
 
 
 @pytest.mark.integration
-def test_lookup__404__returns_none_and_caches_the_negative_result(tmp_path: Path) -> None:
+def test_lookup__404__returns_none_and_does_not_cache_the_negative_result(tmp_path: Path) -> None:
     cache = HttpCache(tmp_path / "cache")
 
     with respx.mock:
@@ -76,8 +76,9 @@ def test_lookup__404__returns_none_and_caches_the_negative_result(tmp_path: Path
 
     assert first is None
     assert second is None
-    # The second call is served from the negative cache entry, not the network.
-    assert route.call_count == 1
+    # "Not found" is never cached (ADR 0038): the second lookup asks again.
+    assert route.call_count == 2
+    assert cache.load(_LOOKUP_ENDPOINT, {"email": "reviewer@example.org"}) is None
 
 
 @pytest.mark.integration

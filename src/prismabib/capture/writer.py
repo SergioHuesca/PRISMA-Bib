@@ -13,19 +13,14 @@ down, in :class:`~prismabib.sources.cache.HttpCache`, whose ``store`` call
 inside ``ScopusClient._get`` runs on the exact response bytes *before*
 ``_parse_json`` is ever called. This module is the reason that cache exists
 and is never optional here: :func:`capture_search` always constructs its
-``ScopusClient`` with an :class:`HttpCache` rooted at
-``raw/_cache/`` -- a directory that lives under the immutable ``raw/`` tree
-(so it is gitignored exactly like everything else under §2.5) but is
-deliberately *not* a run directory: its name starts with ``_`` precisely so
-the run-directory scan in :func:`_find_resumable_run` skips it, and it
-never receives a ``manifest.json`` of its own, so it is never "sealed" and
-remains writable across every run, past and future. Because the cache is
-keyed on ``(url, params)`` (BUILD_PLAN line 772), a warm-cache re-run
-returns byte-for-byte the same response bodies, which is what makes
-S02-AC2 ("re-running with the cache warm produces a byte-identical payload
-hash") hold: the JSONL bytes this module writes are a deterministic
-re-encoding (sorted keys, compact separators) of a parsed page that is
-itself a pure function of those cached bytes.
+``ScopusClient`` with an :class:`HttpCache` rooted at ``<run_dir>/_http/``
+(ADR 0038). The cache is per run: it serves only to resume that unsealed run
+and is removed once the manifest is written, so a new run never reads an earlier
+run's responses (a re-run spends quota, and ``started_at`` -- the snapshots'
+``retrieved_at`` -- is true). What S02-AC2 protects is that the JSONL bytes this
+module writes are a deterministic re-encoding (sorted keys, compact separators)
+of a parsed page that is itself a pure function of the response bodies, so the
+same bodies always give the same ``payload_sha256``.
 
 **Sealing and resumption -- the subtle part.** A run directory is in
 exactly one of two states, distinguished *only* by the presence of
@@ -57,10 +52,9 @@ again after a completed run always starts a brand-new run directory (a new
 refuse -- to write into the old one. Resumption continues from the cursor
 ``cursor.json`` recorded alongside the last page actually written, passed to
 :meth:`ScopusClient.search` as ``start_cursor``, so pages already in Layer 0
-are never requested again. Relying on ``raw/_cache/`` for that instead is not
-equivalent: the cache is gitignored and disposable, so on a cold cache a run
-interrupted at page 40 of 71 would re-request all 40 against a weekly quota
-(BUILD_PLAN line 768; §5 risk 2). Only a sidecar written before the cursor
+are never requested again. The run's ``_http/`` cache would also replay them, but
+it is disposable: on a cold cache a run interrupted at page 40 of 71 would
+re-request all 40 against a weekly quota (BUILD_PLAN line 768; §5 risk 2). Only a sidecar written before the cursor
 was ever stored falls back to replaying from ``cursor=*`` and skipping by
 index. A page that fails to parse (BUILD_PLAN line 821) raises
 out of ``ScopusClient.search`` *before* this module ever attempts to create
@@ -91,7 +85,7 @@ value written to :class:`~prismabib.capture.manifest.RunManifest.total_results`
 ``len(payload_files)`` or a count of parsed entries.
 
 **Where the shared vocabulary lives.** ``manifest.json`` as the seal,
-``_cache`` as a non-run directory, the sealed-write guard, the atomic write,
+``_cache`` (legacy) as a non-run directory, the sealed-write guard, the atomic write,
 and the run-id format are not this module's private business -- they are the
 Layer 0 contract, and :mod:`prismabib.capture.enrich` and
 :mod:`prismabib.store.load` have to agree with them exactly. They live in
@@ -105,6 +99,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,7 +108,7 @@ from pydantic import BaseModel
 
 from prismabib import __version__ as _CLIENT_VERSION
 from prismabib.capture.layout import (
-    CACHE_DIRNAME,
+    HTTP_CACHE_DIRNAME,
     NON_RUN_DIRNAMES,
     RUN_MANIFEST_FILENAME,
     SealedRunError,
@@ -158,7 +153,7 @@ class _CursorState(BaseModel):
 
     #: The cursor to resume from -- the ``@next`` of the last page actually
     #: written. Without it, a resumed run replays from ``cursor="*"`` and only
-    #: avoids re-fetching because ``raw/_cache/`` happens to be warm. That cache
+    #: avoids re-fetching because the run's ``_http/`` happens to be warm. That cache
     #: is gitignored and disposable, so on a cold cache a run interrupted at page
     #: 40 of 71 re-requests all 40 pages against a weekly quota, while Layer 0
     #: already holds them on disk. BUILD_PLAN line 768 requires resuming "without
@@ -272,7 +267,7 @@ def _write_page(run_dir: Path, filename: str, page: JsonDict) -> None:
     prevent.
 
     Encoding stays canonical (``sort_keys``, compact separators) rather than raw
-    bytes: a warm-cache re-run must reproduce a byte-identical ``payload_sha256``
+    bytes: the same response bodies must give a byte-identical ``payload_sha256``
     (S02-AC2), and canonical encoding is what guarantees that independently of
     dict ordering.
 
@@ -436,7 +431,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
 
     resume_from = len(payload_files)
     settings = Settings()
-    cache = HttpCache(raw_dir / CACHE_DIRNAME)
+    cache = HttpCache(run_dir / HTTP_CACHE_DIRNAME)
     total_results: int | None = None
 
     # A persisted cursor resumes AT the first unwritten page, so nothing already
@@ -520,6 +515,8 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         # Not part of the sealed payload (see module docstring) -- removed
         # once sealing succeeds, since there is nothing left to resume.
         cursor_path.unlink()
+    # Best-effort and only after the manifest: a file lock must not raise on a sealed run.
+    shutil.rmtree(run_dir / HTTP_CACHE_DIRNAME, ignore_errors=True)
 
     logger.info(
         "capture.run_sealed",

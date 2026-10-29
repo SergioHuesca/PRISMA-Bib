@@ -29,6 +29,7 @@ import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote
 
 import duckdb
@@ -36,9 +37,10 @@ import httpx
 import pytest
 import respx
 
-from prismabib.capture.layout import is_sealed
+from prismabib.capture.layout import HTTP_CACHE_DIRNAME, is_sealed
 from prismabib.config import Settings
 from prismabib.errors import StoreError, ValidationError
+from prismabib.fulltext import run as run_module
 from prismabib.fulltext.capture import RUNS_DIRNAME, already_resolved_record_ids, capture_fulltext
 from prismabib.fulltext.resolve import manual_drop_path
 from prismabib.fulltext.run import run_fulltext_resolution
@@ -272,6 +274,35 @@ def test_run__budget_of_one__attempts_only_one_record_this_call(tmp_path: Path) 
 
     resolved = already_resolved_record_ids(project.fulltext_dir)
     assert resolved == {record_a, record_b}
+
+
+@pytest.mark.integration
+def test_run__passes_a_chain_factory_to_capture__so_the_cache_is_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, record_a, record_b = _build_project_with_two_included_records(tmp_path)
+    _drop_manual_pdf(project, record_a)
+    _drop_manual_pdf(project, record_b)
+    seen: dict[str, Any] = {}
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return capture_fulltext(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "capture_fulltext", _spy)
+
+    run_fulltext_resolution(project, settings=_settings(), budget=1)
+
+    assert seen.get("resolvers") is None
+    cache_dir = tmp_path / "unused" / HTTP_CACHE_DIRNAME
+    with seen["chain_factory"](cache_dir) as chain:
+        assert [resolver.name for resolver in chain][-1] == "manual"
+
+    # The run was left unsealed by the budget, and its own _http/ holds the Crossref
+    # answer the autouse fixture served; a sealed run would have removed it.
+    (run_dir,) = [e for e in (project.fulltext_dir / RUNS_DIRNAME).iterdir() if e.is_dir()]
+    assert any((run_dir / HTTP_CACHE_DIRNAME).rglob("*.bin"))
+    assert not (project.fulltext_dir / "_cache").exists()
 
 
 @pytest.mark.integration

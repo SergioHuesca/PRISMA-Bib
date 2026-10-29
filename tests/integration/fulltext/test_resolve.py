@@ -14,7 +14,7 @@ import httpx
 import pytest
 import respx
 
-from prismabib.capture.layout import CACHE_DIRNAME
+from prismabib.capture.layout import CACHE_DIRNAME, HTTP_CACHE_DIRNAME
 from prismabib.config import Settings
 from prismabib.fulltext.resolve import (
     CrossrefTdmResolver,
@@ -310,29 +310,48 @@ def test_chain__manual_drop_not_a_real_pdf__is_not_accepted(tmp_path: Path) -> N
 def test_default_chain__caches_http_responses_under_fulltext_dir_not_raw_dir(
     tmp_path: Path,
 ) -> None:
-    """The BLOCKING regression this pins: fetched full text must never sit near ``raw/``.
+    """Fetched full text must never sit near ``raw/``, nor in a cache shared between runs.
 
-    ``project.fulltext_dir``'s own docstring and ADR 0019 both require this:
+    ``project.fulltext_dir``'s own docstring and ADR 0019 require the first:
     fetched publisher content is licensed and must stay out of the Layer 0
-    archive entirely, including via an HTTP cache directory. Before this fix,
-    ``default_chain`` rooted its ``HttpCache`` at ``project.raw_dir / "_cache"``.
+    archive entirely, including via an HTTP cache directory. ADR 0038 adds the
+    second: the cache is the ``cache_dir`` the caller passes (a run's ``_http/``),
+    and the legacy shared ``fulltext/_cache`` and ``raw/_cache`` are never touched.
     """
     project = Project.init("cache-location-demo", title="Cache Location Demo", root=tmp_path)
+    run_cache = project.fulltext_dir / "runs" / "R1" / HTTP_CACHE_DIRNAME
 
     with respx.mock:
         respx.get(_SD_ENDPOINT).mock(return_value=httpx.Response(404))
-        respx.get(_CROSSREF_ENDPOINT).mock(return_value=httpx.Response(404))
+        # A 200 is cached; a 404 is not (ADR 0038), so Crossref has to answer.
+        respx.get(_CROSSREF_ENDPOINT).mock(
+            return_value=httpx.Response(200, json=_NO_TDM_LINKS_RESPONSE)
+        )
+        respx.get(_UNPAYWALL_ENDPOINT).mock(return_value=httpx.Response(404))
+
+        with default_chain(project, _settings(), cache_dir=run_cache) as resolvers:
+            resolve_fulltext(record_id=_RECORD_ID, doi=_DOI, resolvers=resolvers)
+
+    assert any(run_cache.rglob("*.bin")), "the run's cache is empty"
+    assert not (project.fulltext_dir / CACHE_DIRNAME).exists()
+    assert not (project.raw_dir / CACHE_DIRNAME).exists()
+
+
+@pytest.mark.integration
+def test_default_chain__no_cache_dir__writes_no_http_cache_anywhere(tmp_path: Path) -> None:
+    project = Project.init("no-cache-demo", title="No Cache Demo", root=tmp_path)
+
+    with respx.mock:
+        respx.get(_SD_ENDPOINT).mock(return_value=httpx.Response(404))
+        respx.get(_CROSSREF_ENDPOINT).mock(
+            return_value=httpx.Response(200, json=_NO_TDM_LINKS_RESPONSE)
+        )
         respx.get(_UNPAYWALL_ENDPOINT).mock(return_value=httpx.Response(404))
 
         with default_chain(project, _settings()) as resolvers:
             resolve_fulltext(record_id=_RECORD_ID, doi=_DOI, resolvers=resolvers)
 
-    fulltext_cache = project.fulltext_dir / CACHE_DIRNAME
-    raw_cache = project.raw_dir / CACHE_DIRNAME
-
-    assert fulltext_cache.is_dir()
-    assert any(fulltext_cache.rglob("*.bin")), "the cache under fulltext/ is empty"
-    assert not raw_cache.exists(), f"an HTTP cache was written under raw/: {raw_cache}"
+    assert not list(tmp_path.rglob("*.bin"))
 
 
 @pytest.mark.integration
