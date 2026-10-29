@@ -12,11 +12,11 @@ No amount of careful writing prevents this. The only solution is **architectural
 
 A four-layer pipeline ensures provenance and reproducibility. Layers 0, 1 and 2 are built;
 Layer 3 is described here as designed and is **not implemented yet** — see
-[what is built today](#what-is-built-today-v050).
+[what is built today](#what-is-built-today-v100).
 
 ### Layer 0: Raw capture (immutable)
 
-Every HTTP response is persisted verbatim as JSONL before any parsing. Today that means the Scopus Search API; ScienceDirect arrives with full-text acquisition, which is not built. Each acquisition run writes a manifest recording:
+Every HTTP response is persisted verbatim as JSONL before any parsing. Today that means the Scopus Search API, and ScienceDirect for full-text acquisition (`prismabib fulltext`). Each acquisition run writes a manifest recording:
 
 - The query string and Boolean operators
 - The API endpoint and view (e.g., COMPLETE or STANDARD)
@@ -52,7 +52,7 @@ Current set membership is **derived** by folding the log. Consequences:
 - Adding a second reviewer later requires no migration—agreement statistics become a query.
 - Screening can be replayed under amended criteria without redoing human work that still applies.
 
-### Layer 3: Analysis views (pure functions) — not built yet
+### Layer 3: Analysis views (pure functions)
 
 Deterministic transformations over Layers 1+2, designed to produce:
 
@@ -64,10 +64,10 @@ Deterministic transformations over Layers 1+2, designed to produce:
 
 **Critical design:** No caching of results into files that could go stale. Figures are produced by functions that take a `Corpus` handle and return a figure object plus the dataframe that produced it. Every figure ships with its own data provenance.
 
-## What is built today (v0.5.0)
+## What is built today (v1.0.0)
 
-**Layers 0, 1 and 2 are complete and tested. Layer 3 is not built.** Stages 0–4 have
-shipped, tagged through `v0.5.0`.
+**All four layers are built and tested.** The software is feature-complete against the build
+plan and tagged `v1.0.0` (2026-10-20).
 
 What works:
 
@@ -81,17 +81,18 @@ What works:
   append-only decision log that is `fsync`ed per write, `flock`-serialised and
   checksum-guarded, `FlowCounts` with a consistency guard, and `replay()` under amended
   criteria.
-- **A command-line wrapper**: `prismabib init | search | build | flow`, plus `--root/-r`
-  and `--version`.
+- **A command-line wrapper**: `prismabib init | search | build | flow | enrich | fulltext |
+  export | fill`, plus `--root/-r` and `--version`. `register | reverse | registrations` are on
+  `main`, unreleased.
 
-What does not exist yet: the screening UI, full-text retrieval, bibliometrics, the taxonomy
-engine, the Panel dashboard, and export/reporting. `prismabib code` and `prismabib export`
-are named in the build plan and are **deliberately absent** rather than stubbed — a
-subcommand that accepts its arguments and then does nothing real is indistinguishable from
-a working one at the point where it matters.
+What does not exist yet: `prismabib code`, the taxonomy coder's command. It is named in the
+build plan and is **deliberately absent** rather than stubbed — a subcommand that accepts its
+arguments and then does nothing real is indistinguishable from a working one at the point
+where it matters.
 
-Screening therefore has no user interface today: decisions are recorded through
-`DecisionLog.append` in Python. See [Limitations](methodology/limitations.md) for the full,
+Screening has a keyboard-first Panel view, `prismabib.screening.ui.screener()`, for use in a
+notebook (it needs the `viz` extra). Decisions can also be recorded through `DecisionLog.append`
+in Python. See [Limitations](methodology/limitations.md) for the full,
 plainly stated list before adopting this for a real review.
 
 ## Getting started
@@ -146,12 +147,9 @@ uv run mkdocs build --strict    # Static HTML in site/; the CI gate
 
 ## Project status
 
-- **Released:** v0.5.0 — Stage 4, the PRISMA engine and the Layer 2 decision log. Layers 0,
-  1 and 2 are complete; see [what is built today](#what-is-built-today-v050).
-- **Next:** Stage 5 — the keyboard-first screening UI (ADR 0004), which is what replaces
-  calling `DecisionLog.append` by hand, plus inter-reviewer agreement statistics.
-- **Then:** full-text acquisition, the taxonomy coder, bibliometrics, the dashboard, and
-  export/reporting — Layer 3, none of it built.
+- **Released:** v1.0.0 (2026-10-20) — feature-complete against the build plan; all four layers
+  are built. See [what is built today](#what-is-built-today-v100).
+- **Not built:** inter-reviewer agreement statistics (κ), and the `prismabib code` command.
 - **Per-release detail:** [CHANGELOG.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/CHANGELOG.md),
   which records what each stage added, changed, and fixed.
 

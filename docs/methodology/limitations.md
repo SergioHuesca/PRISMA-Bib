@@ -286,8 +286,10 @@ Still absent from the CLI (Layer 3):
 such command", which is honest; a stub that accepts its arguments and does nothing is
 indistinguishable from a working one in a shell script or a methods section.
 
-Bibliometrics are likewise library-only for now: there is no CLI command that emits them, so
-they are reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle.
+The full bibliometric analyses are library-only for now: no CLI command emits them, so they are
+reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle. `prismabib export`
+writes only selected scalars to `numbers.json` (flow counts, corpus and citation summary
+statistics, and the top venues by record count), not those analyses.
 Numbers you derive by querying Layer 1 yourself, rather than through those functions, carry
 no provenance and no caption — and are your responsibility, not the store's.
 
