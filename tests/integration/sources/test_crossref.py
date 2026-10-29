@@ -265,3 +265,26 @@ def test_lookup__api_redirects_elsewhere__is_not_followed() -> None:
 
     with _client() as client, pytest.raises(UpstreamError):
         client.lookup(_DOI)
+
+
+@pytest.mark.integration
+def test_lookup__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path,
+) -> None:
+    cache = HttpCache(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_LOOKUP_ENDPOINT).mock(
+            side_effect=[
+                httpx.Response(200, content=b"<html>captive portal</html>"),
+                httpx.Response(200, json=_work_response()),
+            ]
+        )
+        client = _client(cache=cache)
+        with pytest.raises(ValidationError):
+            client.lookup(_DOI)
+        assert not [p for p in (tmp_path / "cache").rglob("*") if p.is_file()]
+
+        assert client.lookup(_DOI) == _work_response()
+        assert route.call_count == 2
+        assert client.lookup(_DOI) == _work_response()
+    assert route.call_count == 2

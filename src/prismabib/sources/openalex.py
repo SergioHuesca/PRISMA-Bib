@@ -445,10 +445,12 @@ class OpenAlexClient:
             if status == 401:
                 raise AuthError("OpenAlex rejected the request (HTTP 401): check OPENALEX_API_KEY.")
             raise EntitlementError("OpenAlex refused access (HTTP 403).")
+        results = _parse_results(response.content, single=single)
+        # Cache only a body that parsed: a cached proxy/HTML 200 would replay forever.
         if self._cache is not None:
             self._cache.store(url, params, response.content)
         logger.info("openalex.works", cache="miss")
-        return _parse_results(response.content, single=single)
+        return results
 
     def _request_with_retry(self, url: str, params: Mapping[str, str]) -> httpx.Response:
         retryer = Retrying(
