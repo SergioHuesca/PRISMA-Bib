@@ -46,7 +46,7 @@ from prismabib.errors import (
     ValidationError,
 )
 from prismabib.sources.cache import HttpCache
-from prismabib.sources.ratelimit import RateLimiter
+from prismabib.sources.ratelimit import QUOTA_RESET_THRESHOLD_SECONDS, RateLimiter
 
 logger = structlog.get_logger(__name__)
 
@@ -57,7 +57,7 @@ JsonDict = dict[str, Any]
 # transient per-second throttle (RateLimitError, retried by tenacity).
 # Scopus does not document a header that names *which* quota tripped, so
 # this threshold is a deliberate interpretation -- see the module report.
-_QUOTA_RESET_THRESHOLD_SECONDS = 3600.0
+_QUOTA_RESET_THRESHOLD_SECONDS = QUOTA_RESET_THRESHOLD_SECONDS
 
 _REDACTION_MARKER = "***REDACTED***"
 _REDACTED_SECRETS: set[str] = set()
