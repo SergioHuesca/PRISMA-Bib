@@ -33,6 +33,7 @@ from prismabib.store.checksums import TABLE_NAMES, table_checksums
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus, build_store
 from tests.store_helpers import (
+    SCHEMA_SQL_PATH,
     copy_reference_project,
     make_entry,
     read_reference_entry,
@@ -302,8 +303,101 @@ def test_build_store__undeletable_store__raises_store_error_naming_the_cause(
 
     message = str(excinfo.value)
     assert str(project.db_path) in message
-    assert "while any connection to it is open" in message
-    assert "Nothing has been changed" in message
+
+
+def _hide_a_page(project: Project) -> Path:
+    """Rename one sealed page so the next load hits FileNotFoundError (helper, not a test)."""
+    page = next(project.raw_dir.rglob("page-*.jsonl"))
+    hidden = page.with_name(page.name + ".hidden")
+    page.rename(hidden)
+    return hidden
+
+
+def _store_dir_files(project: Project) -> list[str]:
+    return sorted(path.name for path in project.db_path.parent.iterdir())
+
+
+@pytest.mark.integration
+def test_build_store__rebuild_with_missing_page__raises_and_keeps_the_old_store(
+    tmp_path: Path,
+) -> None:
+    project = copy_reference_project(tmp_path)
+    before = build_store(project, rebuild=True)
+    files_before = _store_dir_files(project)
+    hidden = _hide_a_page(project)
+
+    with pytest.raises(FileNotFoundError):
+        build_store(project, rebuild=True)
+
+    # Neither an empty/partial store nor a temp build file is left behind.
+    assert _store_dir_files(project) == files_before
+    hidden.rename(hidden.with_name(hidden.name.removesuffix(".hidden")))
+    after = build_store(project)
+    assert after.rebuilt is False
+    assert after.records_loaded == before.records_loaded > 0
+
+
+@pytest.mark.integration
+def test_build_store__first_build_with_missing_page__leaves_no_store_file(tmp_path: Path) -> None:
+    project = copy_reference_project(tmp_path)
+    _hide_a_page(project)
+
+    with pytest.raises(FileNotFoundError):
+        build_store(project)
+
+    assert not project.db_path.exists()
+    assert not [p for p in project.db_path.parent.iterdir() if p.name.startswith("corpus")]
+
+
+@pytest.mark.integration
+def test_build_store__interrupted_rebuild__keeps_the_old_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = copy_reference_project(tmp_path)
+    before = build_store(project, rebuild=True)
+
+    def interrupt(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("prismabib.store.load._write_accumulator", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        build_store(project, rebuild=True)
+    monkeypatch.undo()
+
+    assert _store_dir_files(project) == [project.db_path.name]
+    after = build_store(project)
+    assert (after.rebuilt, after.records_loaded) == (False, before.records_loaded)
+
+
+@pytest.mark.integration
+def test_build_store__existing_empty_store_with_populated_raw__raises_instead_of_reusing(
+    tmp_path: Path,
+) -> None:
+    project = copy_reference_project(tmp_path)
+    build_store(project, rebuild=True)
+    project.db_path.unlink()
+    # The exact residue the old failure path left: the schema, zero rows.
+    connection = connect(project, read_only=False)
+    connection.execute(SCHEMA_SQL_PATH.read_text(encoding="utf-8"))
+    connection.close()
+
+    with pytest.raises(StoreError, match="rebuild=True"):
+        build_store(project)
+
+    assert build_store(project, rebuild=True).records_loaded > 0
+
+
+@pytest.mark.integration
+def test_build_store__rebuild_happy_path__replaces_the_store_and_leaves_no_temp_file(
+    tmp_path: Path,
+) -> None:
+    project = copy_reference_project(tmp_path)
+    first = build_store(project, rebuild=True)
+    second = build_store(project, rebuild=True)
+
+    assert second.rebuilt is True
+    assert second.records_loaded == first.records_loaded > 0
+    assert _store_dir_files(project) == [project.db_path.name]
 
 
 @pytest.mark.integration

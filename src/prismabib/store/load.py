@@ -154,6 +154,7 @@ opened writable would otherwise crash on any non-``RAW`` stage.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
@@ -195,7 +196,7 @@ from prismabib.capture.registrations import (
     supersede_registration,
 )
 from prismabib.countries import normalise_country
-from prismabib.errors import LogError, StoreError, ValidationError
+from prismabib.errors import StoreError, ValidationError
 from prismabib.fulltext.capture import sealed_fulltext_run_dirs
 from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
 from prismabib.fulltext.resolve import _refusal_entitled
@@ -2423,34 +2424,66 @@ def _stats_from_connection(
     )
 
 
-def _delete_stale_store(db_path: Path) -> None:
-    """Remove an existing store file before rebuilding it, or say why it cannot.
+def _install_store(built: Path, db_path: Path) -> None:
+    """Move a finished build over the existing store, or say why it cannot.
 
-    A rebuild has to start from an empty file -- that is what makes Layer 1
-    a pure function of Layer 0. On POSIX the unlink always succeeds, even
-    with the file open, so this used to be a bare ``unlink()``. Windows does
-    not work that way: while *any* handle is open on the database, deleting
-    it raises ``PermissionError`` with no indication of what is holding it,
-    and the most likely holder is the caller's own still-open ``Corpus`` or
-    a notebook kernel from earlier in the session.
+    The build is written beside the store and only swapped in once complete, so
+    an old store survives any failure before this point. Windows will not
+    replace a file while *any* handle is open on it (the likeliest holder is the
+    caller's own still-open ``Corpus`` or a notebook kernel), and the bare
+    ``PermissionError`` names no culprit.
 
     Args:
-        db_path: The existing store file to delete.
+        built: The finished, closed build.
+        db_path: The store path to replace.
 
     Raises:
-        StoreError: If the file cannot be deleted, naming the real cause.
+        StoreError: If the existing store cannot be replaced, naming the cause.
     """
+    # A leftover WAL of the old store would be replayed onto the new file.
+    with suppress(OSError):
+        db_path.with_name(db_path.name + ".wal").unlink(missing_ok=True)
     try:
-        db_path.unlink()
+        os.replace(built, db_path)
     except OSError as exc:
         raise StoreError(
-            f"cannot rebuild {db_path}: the existing store could not be deleted ({exc}). "
-            "A rebuild starts from an empty database, and on Windows the file cannot be "
-            "removed while any connection to it is open. Close every Corpus and DuckDB "
+            f"cannot rebuild {db_path}: the existing store could not be replaced ({exc}). "
+            "A rebuild swaps in a freshly built database, and on Windows the file cannot be "
+            "replaced while any connection to it is open. Close every Corpus and DuckDB "
             "connection to this project -- including one held by another notebook kernel "
-            "or another prismabib process -- and run the rebuild again. Nothing has been "
-            "changed."
+            "or another prismabib process -- and run the rebuild again. The existing store "
+            "has not been changed."
         ) from exc
+
+
+def _remove_build_files(build_path: Path) -> None:
+    """Delete a build file and its DuckDB write-ahead log, if present."""
+    for path in (build_path, build_path.with_name(build_path.name + ".wal")):
+        with suppress(OSError):
+            path.unlink(missing_ok=True)
+
+
+def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) -> None:
+    """Refuse to reuse a store with no records when Layer 0 holds some.
+
+    A store like that is the residue of a build that died after creating the file;
+    reusing it would report a clean load of nothing.
+
+    Raises:
+        StoreError: If ``stats`` has no records and a sealed run reports results.
+    """
+    if stats.records_loaded:
+        return
+    for run_dir in _sealed_run_dirs(project.raw_dir):
+        manifest = RunManifest.model_validate_json(
+            (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+        if manifest.total_results > 0:
+            raise StoreError(
+                f"{project.db_path} holds no records but {run_dir.name} in raw/ reports "
+                f"{manifest.total_results:,} results, so it is not a complete build. "
+                "Call build_store(project, rebuild=True) to recreate it."
+            )
 
 
 def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
@@ -2468,8 +2501,10 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             current counts -- an idempotent no-op reuse of the existing
             store (S03-AC4: calling this twice never duplicates a row,
             since the second call does not load anything a second time).
-            When ``True``, or when no store exists yet, ``project.db_path``
-            is deleted if present and fully rebuilt from Layer 0 -- the
+            When ``True``, or when no store exists yet, the store is fully
+            rebuilt from Layer 0 into a temporary file beside ``project.db_path``
+            and moved over it only once complete, so a failed or interrupted
+            rebuild leaves any existing store untouched -- the
             only path that guarantees byte-stable table checksums against
             the current Layer 0 content (S03-AC1) and that "deleting
             corpus.duckdb and rebuilding loses nothing" (S03-AC3).
@@ -2496,11 +2531,14 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         StoreError: If ``project.db_path`` exists, ``rebuild`` is
             ``False``, and it does not look like a Layer 1 store this
             function created (e.g. wrong schema); if an existing store
-            cannot be deleted before a rebuild (see
-            :func:`_delete_stale_store`); if so many Layer 0 entries could
+            has no records although a sealed run in ``raw/`` reports results
+            (``rebuild=False`` only; see
+            :func:`_refuse_empty_store_over_populated_raw`); if a finished
+            rebuild cannot replace the existing store (see
+            :func:`_install_store`); if so many Layer 0 entries could
             not be turned into records that the capture itself is unusable
-            (see :func:`_guard_against_unloadable_capture`, which leaves no
-            store behind rather than a half-loaded one); or if DuckDB
+            (see :func:`_guard_against_unloadable_capture`, which leaves the
+            existing store, or none, rather than a half-loaded one); or if DuckDB
             refuses to open the file for any other reason.
     """
     db_path = project.db_path
@@ -2508,7 +2546,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     if not rebuild and db_path.is_file():
         connection = connect(project, read_only=True)
         try:
-            return _stats_from_connection(connection, rebuilt=False)
+            stats = _stats_from_connection(connection, rebuilt=False)
         except duckdb.Error as exc:
             raise StoreError(
                 f"{db_path} exists but does not look like a Layer 1 store built "
@@ -2517,12 +2555,20 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             ) from exc
         finally:
             connection.close()
+        _refuse_empty_store_over_populated_raw(project, stats)
+        return stats
 
-    if db_path.is_file():
-        _delete_stale_store(db_path)
-
+    # Built beside the store and swapped in only when complete: any failure
+    # (including KeyboardInterrupt) discards the build and leaves the old store as it was.
+    build_path = db_path.with_name(db_path.name + ".tmp")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _remove_build_files(build_path)
+    installed = False
     try:
-        connection = connect(project, read_only=False)
+        try:
+            connection = duckdb.connect(str(build_path))
+        except duckdb.Error as exc:
+            raise StoreError(f"Could not open the Layer 1 store at {build_path}: {exc}") from exc
         try:
             _reset_schema(connection)
             accumulator = _Accumulator()
@@ -2579,27 +2625,27 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                     sorted(accumulator.unmatched_fulltext_record_ids)
                 ),
             )
-            # Layer 2 is touched only once the store is complete, so a failed build leaves
-            # registrations.jsonl byte-identical.
-            superseded = _append_supersedes(project, pending_supersedes)
-            if superseded:
-                logger.warning(
-                    "store.load.registrations_superseded",
-                    count=len(superseded),
-                    event_ids=superseded,
-                )
         finally:
             connection.close()
-    except (StoreError, LogError):
-        # A refused build leaves *no* store, not an empty or half-written
-        # one. `connect` creates the file before anything is loaded, and a
-        # store that exists is a store the next `prismabib build` (no
-        # `--rebuild`) reuses and reports as a clean load -- which is how a
-        # broken capture would become a plausible wrong number after all.
-        # The store is derived data; its absence means "not built", which is
-        # the truth.
-        with suppress(OSError):
-            db_path.unlink(missing_ok=True)
+        _install_store(build_path, db_path)
+        installed = True
+        # Layer 2 is touched only once the store is installed, so a failed build leaves
+        # registrations.jsonl byte-identical.
+        superseded = _append_supersedes(project, pending_supersedes)
+        if superseded:
+            logger.warning(
+                "store.load.registrations_superseded",
+                count=len(superseded),
+                event_ids=superseded,
+            )
+    except BaseException:
+        # Nothing but the build file is discarded; a store that exists is one the next plain
+        # `prismabib build` reuses as a clean load, so a half-written one must never be
+        # left under the real name.
+        _remove_build_files(build_path)
+        if installed:  # Layer 2 write failed after the swap: the store no longer matches it.
+            with suppress(OSError):
+                db_path.unlink(missing_ok=True)
         raise
 
     if stats.malformed_entries_skipped:
