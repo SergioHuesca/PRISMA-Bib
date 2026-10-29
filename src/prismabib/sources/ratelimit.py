@@ -119,9 +119,9 @@ class RateLimiter:
 
         First honours any pending server-reported reset (see
         :meth:`observe_headers`), then draws one token from the bucket,
-        sleeping in increments if the bucket is empty. Never raises under
-        normal operation -- it always eventually returns, deferring solely
-        to whatever the injected ``sleep`` does.
+        sleeping in increments if the bucket is empty. It returns once a token
+        is available, deferring to whatever the injected ``sleep`` does, and
+        raises only for the quota-exhausted case below.
 
         Raises:
             QuotaExceededError: If a server-reported reset is more than
