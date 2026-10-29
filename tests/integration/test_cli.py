@@ -21,6 +21,7 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -444,6 +445,38 @@ def test_cli_fulltext__budget_of_zero_records__reports_unsealed(
     assert "unexpected error mid-chain" not in result.stdout
     assert re.search(r"records attempted\s+1\b", result.stdout)
     assert "Run is UNSEALED" in result.stdout
+
+
+@pytest.mark.integration
+def test_cli_fulltext__quota_exhausted__reports_cleanly_and_leaves_the_run_unsealed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    from prismabib.errors import QuotaExceededError
+    from prismabib.fulltext.resolve import FullTextResolver
+
+    class _Exhausted:
+        name = "unpaywall"
+
+        def resolve(self, *, record_id: str, doi: str | None) -> object:
+            raise QuotaExceededError("reset is 2 days away")
+
+    @contextmanager
+    def _chain(*args: object, **kwargs: object) -> Iterator[list[FullTextResolver]]:
+        yield [_Exhausted()]
+
+    monkeypatch.setattr("prismabib.fulltext.run.default_chain", _chain)
+    project = _screened_reference(tmp_path)
+
+    result = runner.invoke(app, ["fulltext", project.slug, "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "prismabib: QuotaExceededError" in result.output
+    assert "Traceback" not in result.output
+    (run_dir,) = [e for e in (project.fulltext_dir / "runs").iterdir() if e.is_dir()]
+    assert not (run_dir / "manifest.json").is_file()
+    assert (run_dir / "progress.json").is_file()
 
 
 @pytest.mark.integration

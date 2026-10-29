@@ -16,6 +16,7 @@ import respx
 
 from prismabib.capture.layout import CACHE_DIRNAME, HTTP_CACHE_DIRNAME
 from prismabib.config import Settings
+from prismabib.errors import QuotaExceededError
 from prismabib.fulltext.resolve import (
     CrossrefTdmResolver,
     FullTextResolver,
@@ -858,3 +859,38 @@ def test_crossref_tdm__first_link_refused__the_next_link_still_resolves() -> Non
     assert good.call_count == 1
     assert asset is not None
     assert asset.content == _MINIMAL_PDF
+
+
+@pytest.mark.integration
+def test_openaccess__quota_exhausted_on_a_candidate__propagates_not_a_candidate_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-candidate frame must not swallow a quota stop and try the next mirror."""
+    client = UnpaywallClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    monkeypatch.setattr(client, "lookup", lambda doi: _unpaywall_response())
+
+    def _exhausted(url: str) -> tuple[bytes, str]:
+        raise QuotaExceededError("reset is 2 days away")
+
+    monkeypatch.setattr(client, "fetch_bytes", _exhausted)
+
+    with pytest.raises(QuotaExceededError):
+        OpenAccessResolver(unpaywall_client=client).resolve(record_id=_RECORD_ID, doi=_DOI)
+
+
+@pytest.mark.integration
+def test_crossref_tdm__quota_exhausted_on_a_link__propagates_not_a_candidate_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-link frame must not swallow a quota stop and try the next link."""
+    client = CrossrefTdmClient(_settings(), rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS))
+    link = {"URL": "https://link.springer.com/x.pdf", "intended-application": "text-mining"}
+    monkeypatch.setattr(client, "lookup", lambda doi: _tdm_response(link))
+
+    def _exhausted(url: str) -> tuple[bytes, str]:
+        raise QuotaExceededError("reset is 2 days away")
+
+    monkeypatch.setattr(client, "fetch_bytes", _exhausted)
+
+    with pytest.raises(QuotaExceededError):
+        CrossrefTdmResolver(crossref_client=client).resolve(record_id=_RECORD_ID, doi=_DOI)

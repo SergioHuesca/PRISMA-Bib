@@ -150,7 +150,7 @@ from urllib.parse import urlparse
 import structlog
 
 from prismabib.config import FullTextSettings, Settings
-from prismabib.errors import ConfigError, EntitlementError, PrismabibError
+from prismabib.errors import ConfigError, EntitlementError, PrismabibError, QuotaExceededError
 from prismabib.publishers import publisher_from_doi
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.crossref import CrossrefTdmClient, tdm_links
@@ -461,6 +461,8 @@ def resolve_fulltext(
         the raw material for :mod:`prismabib.fulltext.coverage`.
 
     Raises:
+        QuotaExceededError: Propagated untouched from any resolver: an exhausted
+            quota ends the run rather than failing the record.
         FullTextResolutionError: If a resolver raises anything other than
             :class:`~prismabib.errors.EntitlementError` -- a
             :class:`~prismabib.errors.PrismabibError` (an upstream 5xx
@@ -502,6 +504,10 @@ def resolve_fulltext(
                 )
             )
             continue
+        except QuotaExceededError:
+            # A run-level stop, not a record failure: let `capture_fulltext` leave the run
+            # unsealed and resumable (as the capture runs do) instead of failing every record.
+            raise
         # Deliberately `Exception`, not a curated tuple. This frame owns the
         # promise that one record's failure costs one record, and the axis it
         # defends on is *scope*, not exception type: anything a resolver can
@@ -690,6 +696,8 @@ class CrossrefTdmResolver:
                     error=str(exc),
                 )
                 continue
+            except QuotaExceededError:
+                raise  # run-level stop, see `resolve_fulltext`
             except Exception as exc:  # noqa: BLE001 -- see OpenAccessResolver's identical comment
                 # One candidate link failing (a dead host, a malformed URL, a
                 # transient non-5xx error already exhausted by the client's
@@ -776,6 +784,8 @@ class OpenAccessResolver:
             # serves the same paper. Raising here would discard those.
             try:
                 content, content_type = self.unpaywall_client.fetch_bytes(pdf_url)
+            except QuotaExceededError:
+                raise  # run-level stop, see `resolve_fulltext`
             except Exception as exc:  # noqa: BLE001 -- see the comment below
                 # `Exception`, matching the outer frame at the end of this
                 # function and for the identical reason. What this frame

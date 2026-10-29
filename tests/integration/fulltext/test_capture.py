@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from prismabib.capture.layout import HTTP_CACHE_DIRNAME
-from prismabib.errors import EntitlementError, UpstreamError, ValidationError
+from prismabib.errors import EntitlementError, QuotaExceededError, UpstreamError, ValidationError
 from prismabib.fulltext.capture import (
     ATTEMPTS_FILENAME,
     CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT,
@@ -676,3 +676,80 @@ def test_capture__resolvers_and_chain_factory__exactly_one_is_required(
         )
 
     assert not (project.fulltext_dir / RUNS_DIRNAME).exists()
+
+
+class _QuotaOnRecord:
+    """Resolves every record except ``quota_record_id``, which raises a quota stop while armed."""
+
+    name = "unpaywall"
+
+    def __init__(self, quota_record_id: str, *, armed: bool = True) -> None:
+        self.quota_record_id = quota_record_id
+        self.armed = armed
+
+    def resolve(self, *, record_id: str, doi: str | None) -> object:
+        del doi
+        if self.armed and record_id == self.quota_record_id:
+            raise QuotaExceededError("reset is 2 days away")
+        return _asset("unpaywall", record_id)
+
+
+@pytest.mark.integration
+def test_capture__quota_exhausted_mid_run__raises_unsealed_keeps_progress_and_resumes(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    ids = _record_ids(3)
+    dois: dict[str, str | None] = dict.fromkeys(ids)
+    resolver = _QuotaOnRecord(ids[1])
+    factory = _Factory([resolver])
+
+    with pytest.raises(QuotaExceededError):
+        capture_fulltext(project, pending_ids=ids, doi_by_record_id=dois, chain_factory=factory)
+
+    run_dir = _sole_run_dir(project)
+    assert (factory.entered, factory.closed) == (1, 1)
+    assert not (run_dir / "manifest.json").is_file()
+    assert (run_dir / "progress.json").is_file()
+    assert (run_dir / HTTP_CACHE_DIRNAME / "ab" / "entry.bin").is_file()
+    assert json.loads((run_dir / "progress.json").read_text("utf-8"))["records_done"] == 1
+
+    resolver.armed = False
+    resumed = _Factory([resolver])
+    outcome = capture_fulltext(
+        project, pending_ids=ids, doi_by_record_id=dois, chain_factory=resumed
+    )
+
+    assert outcome.sealed is True
+    assert outcome.attempted == 2
+    assert _sole_run_dir(project) == run_dir
+    assert (run_dir / "manifest.json").is_file()
+    assert already_resolved_record_ids(project.fulltext_dir) == set(ids)
+
+
+@pytest.mark.integration
+def test_capture__non_quota_error_on_one_record__still_fails_only_that_record(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    ids = _record_ids(3)
+
+    class _BrokenOnSecond:
+        name = "unpaywall"
+
+        def resolve(self, *, record_id: str, doi: str | None) -> object:
+            del doi
+            if record_id == ids[1]:
+                raise UpstreamError("503")
+            return _asset("unpaywall", record_id)
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=ids,
+        doi_by_record_id=dict.fromkeys(ids),
+        resolvers=[_BrokenOnSecond()],
+    )
+
+    assert outcome.sealed is True
+    assert outcome.failed_record_ids == (ids[1],)
+    assert outcome.resolved == 2

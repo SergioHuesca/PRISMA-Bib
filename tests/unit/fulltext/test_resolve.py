@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from prismabib.config import FullTextSettings
-from prismabib.errors import EntitlementError, UpstreamError
+from prismabib.errors import EntitlementError, QuotaExceededError, UpstreamError
 from prismabib.fulltext.resolve import (
     FullTextAsset,
     FullTextResolutionError,
@@ -346,3 +346,24 @@ def test_fulltext_settings__no_credentials_in_the_environment__constructs(
 
     assert settings.elsevier_sd_api_key is None
     assert settings.unpaywall_email is None
+
+
+@pytest.mark.unit
+def test_resolve_fulltext__quota_exhausted__propagates_instead_of_failing_the_record() -> None:
+    """A quota stop is a run-level condition: wrapping it as a per-record failure hid it.
+
+    Every later record would then fail fast at the same poisoned rate limiter, and
+    the manual-drop resolver never ran for them.
+    """
+    quota = QuotaExceededError("reset is 2 days away")
+    never_reached = _StubResolver(name="manual", outcome=None)
+
+    with pytest.raises(QuotaExceededError) as excinfo:
+        resolve_fulltext(
+            record_id="scopus:2-s2.0-85100000007",
+            doi="10.1016/z",
+            resolvers=[_StubResolver(name="unpaywall", raises=quota), never_reached],
+        )
+
+    assert excinfo.value is quota
+    assert never_reached.calls == []
