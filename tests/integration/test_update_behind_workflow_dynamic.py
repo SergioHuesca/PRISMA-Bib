@@ -457,6 +457,7 @@ def assert_s7_train(r: Result) -> None:
     assert r.rc == 1, (r.out, r.err)
     assert not [n for n in r.names if "update-branch" in n]
     assert "pr edit 20 --add-label train:halted" in r.names and "pr comment 20" in r.names
+    assert "stacked and BEHIND; the train is halted" in r.summary
     no_unexpected(r)
 
 
@@ -479,6 +480,12 @@ def assert_s9e(r: Result) -> None:
     no_unexpected(r)
 
 
+def assert_s6h(r: Result) -> None:
+    assert r.rc == 1, (r.out, r.err)
+    assert "could NOT be halted" in r.out and "#13 is halted" not in r.out
+    no_unexpected(r)
+
+
 def assert_hostile(r: Result) -> None:
     assert not any("verifier_argv" in x for x in r.log2), "the verifier ran on unvalidated args"
 
@@ -490,6 +497,7 @@ SCENARIOS: dict[str, Scenario] = {
     "S3": (stacked, STACKS_ON, assert_s3),
     "S5": (lambda fx: stacked(fx, mss="BEHIND"), STACKS_ON, assert_s5),
     "S6": (lambda fx: stacked(fx, "Sbad"), STACKS_ON, assert_s6),
+    "S6h": (lambda fx: stacked(fx, "Sbad") | {"fail": ["pr edit"]}, STACKS_ON, assert_s6h),
     "S6n": (lambda fx: stacked(fx, "Sbad") | {"open_after": []}, STACKS_ON, assert_s6n),
     "S7": (
         lambda fx: sc_update_only(fx, {"id": 1, "number": 4, "position": 1, "size": 2}),
