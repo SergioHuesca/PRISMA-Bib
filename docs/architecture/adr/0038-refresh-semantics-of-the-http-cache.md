@@ -44,14 +44,19 @@ Every use of the cache (grep of `HttpCache(` and `cache=`):
    resumed and never written (`guard_writable`).
 2. **Where the cache lives.** Inside the run directory it serves: `<run_dir>/_http/` for search, abstract and full-text
    runs. A new run directory starts with no cache by construction, so nothing leaks between runs and no key needs a run
-   id. Sealing deletes `_http/` together with the sidecar (`cursor.json`, `progress.json`), so a sealed run directory holds
-   what it holds today, and `payload_sha256` is unaffected (it hashes the payload files only).
+   id. Sealing removes `_http/` and the sidecar (`cursor.json`, `progress.json`) only AFTER the atomic manifest write, and
+   removing `_http/` is best-effort (`shutil.rmtree(..., ignore_errors=True)`), so a Windows file lock cannot raise after
+   the run is sealed. A crash between the manifest and the removal leaves a sealed directory that still holds `_http/`.
+   That is harmless: `payload_sha256` hashes only the listed payload files, and no loader scans inside run directories.
+   An unsealed run keeps `_http/` on disk (under `raw/` and `fulltext/runs/`, both gitignored through `projects/*/` and
+   guarded by `scripts/reject_licensed_content.sh`); a full-text `_http/` holds every ScienceDirect response until seal.
 3. **"Not found" is never cached.** Unpaywall and Crossref 404 responses are not stored. Inside a resumed run a 404 is
    requested again: one call, accepted. A 200 body is cached for resume as before.
 4. **Existing `raw/_cache` and `fulltext/_cache`.** They are never read again. They stay in `NON_RUN_DIRNAMES` so the run
    scans keep skipping them; they are safe to delete and are gitignored. No migration, and the tool deletes nothing. An
-   unsealed run started before the upgrade resumes from its cursor; if it has none it replays from page 0 and spends quota
-   once (the case the cursor exists to avoid).
+   unsealed legacy search run resumes from its cursor; if it has none it replays from page 0 and spends quota once. An
+   unsealed legacy abstract run loses its partial batch (up to 99 records, which `capture/enrich.py` relied on
+   `raw/_cache` to recover) and re-requests it once.
 5. **`retrieved_at`.** Unchanged in code: `manifest.started_at`, which a resumed run keeps from its first attempt. After
    this change it is true: every response in the run was obtained by that run, at or after `started_at` and before
    `finished_at`. For a run resumed days later it is a conservative lower bound (older than some pages), never a newer
@@ -65,15 +70,23 @@ Every use of the cache (grep of `HttpCache(` and `cache=`):
    same bodies produces a byte-identical payload hash; a new run issues new requests." The test is re-scoped, keeps the
    `S02-AC2` marker, and changes from `route.call_count == 1` to `== 2` with equal hashes. The cache-hit behaviour moves to
    the resume criterion (S02-AC3), tested through resume (Verification). The deliverable wording "so re-runs during
-   development cost no quota" (`sources/cache.py` line in BUILD_PLAN) is superseded for new runs. The restatement in
-   `tests/integration/capture/test_enrich.py` is re-scoped the same way.
+   development cost no quota" (`sources/cache.py` line in BUILD_PLAN) and the risk 2 clause "Aggressive local HTTP cache"
+   (BUILD_PLAN risk table) are superseded for new runs: the mitigations that remain are the resumable cursor and never
+   re-fetching what Layer 0 already holds. The criterion text is transcribed in `tests/acceptance_criteria.toml`
+   (S02-AC2), which `tests/markers.py` reads, so that line changes with this record. The restatement in
+   `tests/integration/capture/test_enrich.py` is re-scoped the same way. The frozen ADR 0011 (around line 160, "those are
+   cache hits when `raw/_cache/` is warm") becomes stale for new runs; this record is the current statement.
 7. **No switch.** No CLI option, no API parameter, no setting. A refresh is "run the search again"; a resume is automatic.
    An opt-in `--use-cache` would keep the defect available on demand.
 8. **Quota.** Re-running a search or abstract capture now spends the full quota of the query. The docs say so where they
    tell the user to re-run to refresh counts.
-9. **Full-text runs.** The same rule, with the same per-run directory. `default_chain` is built before the run directory
-   exists, so PR4 passes the cache root when `capture_fulltext` resolves the run directory (resume or new), not at chain
-   construction. `already_resolved_record_ids` is separate and unchanged: it skips records already resolved in sealed runs.
+9. **Full-text runs.** The same rule, with the same per-run directory. `default_chain` has one production caller
+   (`fulltext/run.py`, `with default_chain(project, settings) as resolvers:`), and it binds an `HttpCache` into each of
+   the three clients at construction, before `capture_fulltext` chooses the run directory. Mechanism: a chain factory.
+   `default_chain` takes a `cache_dir` argument; `capture_fulltext` accepts a callable that builds the chain from the
+   run's `_http/` path, and calls it after the resume-or-new decision; `run.py` passes
+   `lambda cache_dir: default_chain(project, settings, cache_dir=cache_dir)`. Chosen over a late-bind setter on the
+   three clients because the cache root stays immutable once a client exists, and no resolver needs a path to its client. `already_resolved_record_ids` is separate and unchanged: it skips records already resolved in sealed runs.
 
 ## Alternatives considered
 
@@ -121,14 +134,29 @@ Tests PR4 adds or changes. Each new test must be shown to fail on `bf14af4`.
 - Change the Unpaywall `test_lookup__404__returns_none_and_caches_the_negative_result` and its Crossref counterpart to
   `..._does_not_cache_the_negative_result` (a second lookup issues a request).
 - Change `test_default_chain__caches_http_responses_under_fulltext_dir_not_raw_dir`: nothing under `raw/` or
-  `fulltext/_cache`; the cache is under the run directory and gone after seal.
-- Run `pytest -n auto` as well as single-process, and `mkdocs build --strict`.
+  `fulltext/_cache`; the cache is under the run directory and gone after seal. The other `default_chain` callers pass the
+  new `cache_dir`: `tests/integration/fulltext/test_resolve.py` (about L327 and L728) and
+  `tests/integration/fulltext/test_entitlement_attribution.py` (about L115).
+- `test_capture__cold_cache_resume__starts_from_persisted_cursor` (`test_writer.py`, about L248) removes
+  `raw_dir/"_cache"`; and in `test_enrich.py` `_clear_http_cache` (about L175) with
+  `test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothing` (about L834): they must clear
+  `<run_dir>/_http` instead, or they become vacuous.
+- `tests/unit/capture/test_layout.py` (about L49 and L194) asserts the exact `NON_RUN_DIRNAMES` set and `__all__`; both
+  change with `HTTP_CACHE_DIRNAME`.
+- Run `pytest -n 4` as well as single-process, and `mkdocs build --strict`.
 
 ## Code changes of PR4
 
-- `capture/writer.py`, `capture/enrich.py`: `HttpCache(run_dir / "_http")`; remove it at seal next to the sidecar.
-- `fulltext/resolve.py`, `fulltext/capture.py`: per-run cache root as in Decision 9; remove at seal.
+- `capture/writer.py`, `capture/enrich.py`: `HttpCache(run_dir / "_http")`; after the manifest write, remove it
+  best-effort (Decision 2).
+- `fulltext/resolve.py` (`default_chain(..., cache_dir)`), `fulltext/capture.py` (chain factory), `fulltext/run.py`
+  (passes the factory): Decision 9; remove at seal as above.
 - `sources/unpaywall.py`, `sources/crossref.py`: do not store a 404.
 - `capture/layout.py`: an `HTTP_CACHE_DIRNAME` constant; `CACHE_DIRNAME` stays in `NON_RUN_DIRNAMES` for legacy dirs.
-- Docstrings (`writer.py`, `cache.py`), `docs/getting-started.md`, `docs/how-to/run-a-new-review.md`, `CHANGELOG.md`.
+- `tests/acceptance_criteria.toml` S02-AC2 text.
+- Docstrings that say a warm cache makes a re-run free or the payload byte-stable: `capture/writer.py` (about L23-27,
+  L275), `sources/cache.py` (about L10-11), `capture/enrich.py` (about L76, L98, L115-116, L498, L685-694).
+- Docs: `README.md` (about L75), `docs/architecture/provenance.md` (about L27, L102, L143-148),
+  `docs/how-to/run-a-new-review.md` (about L249, L262, and the layout tree), `docs/getting-started.md` (quota note),
+  `CHANGELOG.md`. The resume message in `cli.py` (about L323) and its test stay true.
 - The tests above.
