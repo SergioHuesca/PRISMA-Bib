@@ -61,7 +61,6 @@ _QUOTA_RESET_THRESHOLD_SECONDS = QUOTA_RESET_THRESHOLD_SECONDS
 
 _REDACTION_MARKER = "***REDACTED***"
 _REDACTED_SECRETS: set[str] = set()
-_REDACTION_PROCESSOR_INSTALLED = False
 
 
 def _redact_value(value: Any, secrets: frozenset[str]) -> Any:
@@ -133,14 +132,15 @@ def register_secret_for_redaction(secret: str | None) -> None:
             no-op -- an empty string would otherwise match, and mangle,
             every log line.
     """
-    global _REDACTION_PROCESSOR_INSTALLED
     if not secret:
         return
     _REDACTED_SECRETS.add(secret)
-    if not _REDACTION_PROCESSOR_INSTALLED:
-        current_processors = list(structlog.get_config()["processors"])
+    # Checked on every call, not once: structlog's config is process-global and
+    # something else (e.g. the CLI's progress context) may have restored a list
+    # that predates the processor.
+    current_processors = list(structlog.get_config()["processors"])
+    if _redact_secrets_processor not in current_processors:
         structlog.configure(processors=[_redact_secrets_processor, *current_processors])
-        _REDACTION_PROCESSOR_INSTALLED = True
 
 
 def _parse_json(body: bytes) -> JsonDict:
