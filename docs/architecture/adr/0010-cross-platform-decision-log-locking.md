@@ -299,3 +299,5 @@ This ADR records how `decisions.jsonl` is locked and how its bytes are written. 
 to a single POSIX-only backend, changing the sentinel lock range, weakening the
 non-reentrancy rule, or making `"shared"` mean something other than "an exclusive lock on
 Windows" requires a new ADR that supersedes this one (§2.6).
+
+> **Note added 2026-10-29 (audit errata).** Section 6 describes the rebuild before PR #201. It no longer unlinks the existing store. `build_store(rebuild=True)` writes `<db>.tmp` beside the store and swaps it in with `os.replace` only once the build is complete (`_install_store` in `src/prismabib/store/load.py`), so a failed build leaves the old store in place. The `StoreError` on Windows still applies when a connection holds the store open, because the replace fails. This note does not change the record above.

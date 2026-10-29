@@ -482,3 +482,5 @@ The ADR 0028 line 192 error is a separate correction, and it is not part of this
   and on `main`. Its Decision 1 says no score is stored in Layer 1, and its Decision 6 names this record.
 - ADR 0029, reviewer registration of a candidate. It is on branch `docs/adr-candidate-registration-stage2`,
   not yet on `main`. It does not affect this record.
+
+> **Note added 2026-10-29 (audit errata).** The statement at L212-213 that `openalex.py` does not register the key for redaction is stale. `OpenAlexClient.__init__` now calls `register_secret_for_redaction` with the key whenever one is set, and attaches the httpx log filter (`src/prismabib/sources/openalex.py`, L319-322). The structlog redaction processor that this relies on is re-added whenever it is missing (PR #208). This note does not change the record above.
