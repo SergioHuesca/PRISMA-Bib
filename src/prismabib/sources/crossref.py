@@ -63,6 +63,7 @@ from prismabib.config import FullTextSettings, Settings
 from prismabib.errors import EntitlementError, RateLimitError, UpstreamError, ValidationError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.sources.unpaywall import MAX_DOWNLOAD_BYTES, read_capped
 
 logger = structlog.get_logger(__name__)
 
@@ -349,12 +350,14 @@ class CrossrefTdmClient:
         # with `params`, so an empty mapping silently truncates a TDM URL's own
         # query string -- the same trap `UnpaywallClient._do_request` guards
         # against.
-        response = self._http.get(
-            url, params=dict(params) or None, follow_redirects=follow_redirects
-        )
-        self._rate_limiter.observe_headers(response.headers)
-        self._raise_for_status(response, allow_404=allow_404, entitlement_on_403=entitlement_on_403)
-        return response
+        with self._http.stream(
+            "GET", url, params=dict(params) or None, follow_redirects=follow_redirects
+        ) as streamed:
+            self._rate_limiter.observe_headers(streamed.headers)
+            self._raise_for_status(
+                streamed, allow_404=allow_404, entitlement_on_403=entitlement_on_403
+            )
+            return read_capped(streamed, MAX_DOWNLOAD_BYTES)
 
     def _raise_for_status(
         self, response: httpx.Response, *, allow_404: bool, entitlement_on_403: bool
