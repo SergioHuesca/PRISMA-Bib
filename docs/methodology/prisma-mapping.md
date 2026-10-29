@@ -260,9 +260,9 @@ assume it is covered:
 - **"Reports not retrieved."** Not modelled in Stage 4. `retrieved_fulltext` is `|M_abs|` —
   the records *advanced* to full-text screening — so it stands for both "sought for
   retrieval" and "assessed for eligibility", and the difference between those two boxes is
-  zero by construction. Full-text acquisition and its failure modes are Stage 7
-  (`fulltext/resolver.py`); until then, a review that failed to obtain some reports cannot
-  express that in `FlowCounts` and must report it in prose.
+  zero by construction. Full-text acquisition is built (`fulltext/`, `prismabib fulltext`), but
+  its failures are not counted in `FlowCounts`, so a review that failed to obtain some reports
+  cannot express that there and must report it in prose.
 - **"Registers."** This system searches Scopus and ScienceDirect only. The register column
   of the PRISMA diagram is empty.
 

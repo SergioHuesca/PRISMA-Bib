@@ -278,7 +278,7 @@ If you use `SUBJAREA(...)` in an explicit query, leave `subject_areas: []` in `c
 
 ### When This Feature Is Ready
 
-Once Abstract Retrieval enrichment merges, you will be able to fill `subject_areas` in `criteria.yaml` and have that restriction actually work. At that point, `prismabib enrich` will fetch subject-area codes from Abstract Retrieval for every record in Layer 1, and the criteria filtering will enforce the restriction correctly. That command is not available on `main` yet.
+Abstract Retrieval enrichment is merged and `prismabib enrich` is available (see Subject Areas above). Fill `subject_areas` in `criteria.yaml`, run `prismabib enrich` to fetch the subject-area codes from Abstract Retrieval, and the criteria filtering enforces the restriction.
 
 ---
 

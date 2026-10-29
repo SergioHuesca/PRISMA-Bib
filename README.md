@@ -63,13 +63,13 @@ prismabib build my-review     # derive the Layer 1 store from the raw capture
 prismabib flow my-review      # print the PRISMA 2020 flow counts
 ```
 
-Screening decisions currently go through `DecisionLog.append` in Python; the keyboard-first
-screening UI is the next release. See [Getting Started](docs/getting-started.md) for the
+Screening can run in the keyboard-first Panel view, `prismabib.screening.ui.screener()`
+(for use in a notebook; needs the `viz` extra), or by calling `DecisionLog.append` in Python. See [Getting Started](docs/getting-started.md) for the
 full walkthrough.
 
 ## Project status
 
-**v0.5.0 — Layers 0, 1 and 2 are complete.** What works today:
+**v1.0.0 (2026-10-20) — feature-complete against the build plan.** What works today:
 
 - **Scopus acquisition** into an immutable, sealed Layer 0 archive, with a resumable
   cursor, a per-run HTTP cache that only resumes an interrupted run, and rate limiting.
@@ -80,10 +80,11 @@ full walkthrough.
 - **The PRISMA engine**: the formal sets `S_raw`/`A`/`L`/`M_abs`/`M_full`/`C`, an
   append-only decision log with fsync-per-write and tamper detection, `FlowCounts` with a
   consistency guard, and replay under amended criteria.
-- **A CLI**: `prismabib init | search | build | flow`.
+- **A CLI**: `prismabib init | search | build | flow | enrich | fulltext | export | fill`. `register | reverse | registrations` are on `main`, unreleased (see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`).
 
-Not built yet: the screening UI, full-text retrieval, bibliometrics, the taxonomy engine,
-dashboards, and export/reporting. See
+The screening view, full-text retrieval, bibliometrics, the taxonomy engine,
+dashboards, and export/reporting are also built. Known limitations of v1.0.0 are in
+[CHANGELOG.md](CHANGELOG.md). See
 [docs/methodology/limitations.md](docs/methodology/limitations.md) for what that means in
 practice before you adopt this for a real review, and
 [BUILD_PLAN.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/BUILD_PLAN.md) §7 for

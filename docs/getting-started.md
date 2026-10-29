@@ -42,13 +42,14 @@ Two more access facts worth knowing before you start:
 - **Scopus enforces a weekly quota.** A large capture spends it. `prismabib search` is
   resumable and never re-fetches a page Layer 0 already holds, so an interruption costs
   nothing, but a repeatedly restarted *fresh* run does.
-- **Only Scopus is implemented.** No Web of Science, no OpenAlex, no Crossref, and no
-  full-text retrieval. See [Limitations](methodology/limitations.md) before adopting this
+- **Scopus is the only source `prismabib search` queries.** No Web of Science. OpenAlex,
+  Crossref, Unpaywall and ScienceDirect clients exist, and full-text retrieval is built
+  (`prismabib fulltext`). See [Limitations](methodology/limitations.md) before adopting this
   for a real review.
 
 ## What exists today
 
-Layers 0, 1 and 2 are built and tested. Concretely:
+All four layers (0 to 3) are built and tested. Concretely:
 
 | You can | Command or API |
 | --- | --- |
@@ -61,8 +62,8 @@ Layers 0, 1 and 2 are built and tested. Concretely:
 | Register a pasted candidate, or reverse a registration | `registration_view(project, reviewer=...)` in a notebook; see [Register and Reverse a Candidate](how-to/register-and-reverse-candidates.md) |
 | Replay under amended criteria | `engine.replay(project, criteria_version=...)` |
 
-`prismabib code` and `prismabib export` do not exist — deliberately, rather than as stubs
-that accept arguments and do nothing.
+`prismabib code` does not exist — deliberately, rather than as a stub that accepts arguments
+and does nothing.
 
 ## 1. Clone and install
 
@@ -97,7 +98,7 @@ Then edit it:
 ```bash
 SCOPUS_API_KEY=<your key>
 SCOPUS_INSTTOKEN=          # only if your library issued one; leave empty otherwise
-ELSEVIER_SD_API_KEY=       # read, but nothing uses it yet — no ScienceDirect client exists
+ELSEVIER_SD_API_KEY=       # used by full-text acquisition (ScienceDirect); may be the Scopus key
 PRISMABIB_PROJECTS_ROOT=./projects
 ```
 

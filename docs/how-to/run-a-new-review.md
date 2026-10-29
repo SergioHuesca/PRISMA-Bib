@@ -3,8 +3,8 @@
 Executing a review end to end: create the project, capture Scopus into Layer 0, build
 Layer 1, screen, and read the PRISMA counts.
 
-This page covers **steps 1–5**, which is everything that exists. Full-text acquisition,
-taxonomy coding, bibliometrics, the dashboard and export are named at the end as not built;
+This page covers **steps 1–5**. Full-text acquisition, taxonomy coding, bibliometrics, the
+dashboard and export are built; the end of this page names what is not built, and
 see [Limitations](../methodology/limitations.md) for what that costs you in practice.
 
 The running example uses the slug `my-review`. Substitute your own; nothing below depends
@@ -31,7 +31,7 @@ Create a `.env` file (never committed) in the repository root:
 ```bash
 SCOPUS_API_KEY=<your_api_key>
 SCOPUS_INSTTOKEN=                # Leave empty unless your institution issued a separate token
-ELSEVIER_SD_API_KEY=             # Read by Settings, but unused: no ScienceDirect client exists yet
+ELSEVIER_SD_API_KEY=             # Used by full-text acquisition (ScienceDirect); may be the Scopus key
 PRISMABIB_PROJECTS_ROOT=./projects
 ```
 
@@ -543,7 +543,8 @@ still citing it — which is the intended behaviour, not an inconvenience.
 
 ## What is not here yet
 
-- **Full-text retrieval and extraction** — no ScienceDirect client, no PDF/XML pipeline.
+- **Full-text retrieval and extraction** are built: `prismabib fulltext` runs them, and
+  entitlement gaps are recorded per resolver.
   "Reports not retrieved" cannot be expressed in `FlowCounts` and must be reported in prose.
 - **Inter-reviewer agreement statistics** — the decision log already folds per reviewer,
   so a second coder can screen the same corpus independently, but nothing computes a
@@ -551,10 +552,10 @@ still citing it — which is the intended behaviour, not an inconvenience.
 - **Three of Stage 10's tables** — the taxonomy distribution, dataset/benchmark usage and
   research-gap tables read analysis output that does not exist yet. They arrive with the
   stages that own their data ([ADR 0015](../architecture/adr/0015-stage-order-and-stage-10-scope.md)).
-- **Taxonomy coding** (`prismabib code`), **bibliometrics** and **the Panel dashboard**.
-  `code` is deliberately absent rather than stubbed: an absent command fails with "No such
-  command", which is honest, while a stub that accepts arguments and does nothing is
-  indistinguishable from a working one.
+- **The `prismabib code` command** is deliberately absent rather than stubbed: an absent
+  command fails with "No such command", which is honest, while a stub that accepts arguments
+  and does nothing is indistinguishable from a working one. The taxonomy coder itself is in
+  `prismabib.taxonomy`; bibliometrics and the Panel dashboard are built.
 
 See [Limitations](../methodology/limitations.md) for the consolidated list.
 

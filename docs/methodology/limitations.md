@@ -7,7 +7,7 @@ This is a statement of current state, not an apology. Some entries are stages no
 built; others are properties of the data source that will not change. Each says which it
 is, and what to do instead.
 
-Everything here describes **v0.5.0**: Layers 0, 1 and 2 are built; Layer 3 is not.
+Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
 
 ## Coverage: Scopus only
 
@@ -225,18 +225,19 @@ they depend entirely on your corpus's publisher mix and your institution's entit
 Report them alongside any full-text-derived finding, the same way a database's own coverage
 is reported under "No cross-database deduplication" above.
 
-## No screening interface
+## Screening interface
 
-**Not built yet** (Stage 5). Screening decisions are recorded by calling
+**Built** (Stage 5): a Panel view, `prismabib.screening.ui.screener()`, for use in a
+notebook (it needs the `viz` extra). Decisions can also be recorded by calling
 `DecisionLog.append` in Python — see
 [Getting Started, step 8](../getting-started.md#8-record-your-first-screening-decision).
 
 The guarantees around a decision are already real: append-only, `fsync`ed per write,
 `flock`-serialised, checksum-guarded against hand-editing, folded by
 `(stage, record_id, reviewer)` so a reversal is a new event and no reviewer overwrites
-another. What is missing is the ergonomics — a keyboard-first queue, progress tracking, and
-inter-reviewer agreement statistics (κ). Screening several thousand titles through a Python
-API is possible and unpleasant.
+another. What is still missing is inter-reviewer agreement statistics (κ); the view already has a
+keyboard-first queue and progress tracking. Screening several thousand titles through a
+Python API is possible and unpleasant.
 
 Multi-reviewer adjudication is already implemented conservatively (any `exclude` wins, then
 any `unsure`, `include` only if unanimous among those who logged a decision), but nothing
@@ -275,7 +276,7 @@ count with this paragraph beside it.
 The same caution applies to venue **type**: where Scopus indexes one venue under more than
 one `prism:aggregationType`, the type is reported as `mixed` rather than resolved to one.
 
-## No taxonomy, dashboard or export layer
+## Taxonomy, dashboard and export layer
 
 **Bibliometrics now exist** (Stage 7): annual counts and CAGR, geographic counting with a
 declared `full`/`fractional` method, venue and venue-type analysis, citation statistics
@@ -284,17 +285,19 @@ co-authorship networks with VOSviewer export. Every one returns an `AnalysisResu
 the parameters that produced it and a generated caption, so a figure cannot drift from its
 own number.
 
-Still absent (Layer 3, Stages 8–9):
+Still absent from the CLI (Layer 3):
 
-- the taxonomy coder (`prismabib code`) and its versioned rule files;
-- figures, LaTeX tables, and the Panel dashboard.
+- the taxonomy coder command, `prismabib code`. The coder and its rule files exist in
+  `src/prismabib/taxonomy/`.
 
 `prismabib code` is **absent from the CLI**, not stubbed. An absent command fails with "No
 such command", which is honest; a stub that accepts its arguments and does nothing is
 indistinguishable from a working one in a shell script or a methods section.
 
-Bibliometrics are likewise library-only for now: there is no CLI command that emits them, so
-they are reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle.
+The full bibliometric analyses are library-only for now: no CLI command emits them, so they are
+reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle. `prismabib export`
+writes only selected scalars to `numbers.json` (flow counts, corpus and citation summary
+statistics, and the top venues by record count), not those analyses.
 Numbers you derive by querying Layer 1 yourself, rather than through those functions, carry
 no provenance and no caption — and are your responsibility, not the store's.
 
