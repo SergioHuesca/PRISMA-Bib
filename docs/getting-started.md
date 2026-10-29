@@ -305,11 +305,17 @@ Two things to know:
 - **Without `--rebuild`, an existing store is reused as-is** and any Layer 0 run captured
   since it was built is *not* loaded. The output says so explicitly. After a new `search`,
   run `uv run prismabib build my-review --rebuild`.
+- **A rebuild is all or nothing.** `--rebuild` builds a new store beside the old one and swaps
+  it in only when complete, so a failed or interrupted rebuild keeps the store you had. If the
+  store holds no records while a sealed run in `raw/` reports results, a plain `build` raises
+  `StoreError`: re-capture that run or inspect its page files. A rebuild reproduces the same
+  empty store until `raw/` is fixed.
 - **Duplicates are reported, never applied.** Both members of a duplicate-DOI pair stay in
   the store as ordinary rows: removing one is a screening decision, not a load-time one.
 
 The store is derived and disposable. Deleting `projects/my-review/store/corpus.duckdb` and
-rebuilding loses nothing — Layer 0 is the archive of record.
+rebuilding loses nothing — Layer 0 is the archive of record. Deleting the file only bypasses
+the refusal above: the rebuild reads the same `raw/` and reproduces the empty store.
 
 ## 8. Record your first screening decision
 
@@ -463,7 +469,7 @@ truncates them.
 | --- | --- | --- |
 | `EntitlementError` | HTTP 403: your key is valid, but not entitled to `view=COMPLETE` | Run from your institution's network, or get an institutional token. prismabib will not degrade to `STANDARD` |
 | `AuthError` | HTTP 401: the key itself was rejected | Check `SCOPUS_API_KEY`; check you did not paste the key into `SCOPUS_INSTTOKEN` |
-| `QuotaExceededError` | The weekly Scopus quota is exhausted | Wait for the reset. Everything already captured is in Layer 0 and resumable |
+| `QuotaExceededError` | A quota is exhausted: the weekly Scopus quota, or a server-reported reset more than an hour away (prismabib raises rather than sleeping until it) | Wait for the reset, then run the same command again. Everything already captured is in Layer 0 and resumable. A `fulltext` run stops at the error (it does not fail each remaining record) and stays unsealed; the next `prismabib fulltext` resumes it |
 | `ConfigError: … SCOPUS_API_KEY` | No `.env` and no environment variable | `cp .env.example .env` |
 | `ConfigError` naming a `criteria.yaml` key | An unknown key — usually a typo | The message names the closest valid key and lists what is valid in that block |
 | `ConfigError` about `subject_areas` | A restriction that no record in the corpus can be evaluated against | Set `subject_areas: []`; see [Limitations](methodology/limitations.md) |

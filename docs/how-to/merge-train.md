@@ -207,7 +207,9 @@ updated, and only when it is BEHIND with no running checks. No PR is ever merged
 | `UNKNOWN` after about 60 s | GitHub did not compute the state. Look at the PR and re-run. |
 | Closed unmerged `train:K` below the head | A batch PR was closed without merging, so the next PR would jump the queue. See the cleanup step. |
 | Duplicate `train:N`, missing number, malformed or doubled train label | Fix the labels so the numbers are unique and consecutive. |
-| List at the 100-PR limit | More than 99 open or unmerged-closed PRs: the labels cannot all be seen. |
+| Stacked head is BEHIND (`PR #N: stacked and BEHIND; the train is halted (restack by hand)` in the step summary) | Update-branch is not supported for stacked PRs. Restack the child by hand (see "Stacked PRs"), review the new head, and relabel. |
+| Post-merge audit failed; `#N could NOT be halted (label or comment failed), halt it by hand` | The PR named before it is already merged. Add `train:halted` to #N by hand and read the audit failure before resuming. |
+| List at the limit: 100 or more open PRs, or 1000 or more unmerged-closed PRs | The list is cut at the gh limit, so the labels cannot all be seen. |
 | Squash merge failed | Check the PR, then resume. |
 
 Check names come from the PR's own CI, so the workflow strips control characters and
@@ -238,7 +240,7 @@ a scratch repository has proved the trigger and token behaviour (below).
   that cannot be updated, it holds up the PRs behind it until restacked or closed. If the stack
   check itself fails (API error) the run warns and skips the update; the next trigger retries.
 - **The lists now include every base.** (a) A train head whose base is not `main` halts. (b) The
-  closed-unmerged list counts PRs of every base and halts the train for good at 100 entries; it can
+  closed-unmerged list counts PRs of every base and halts the train for good at 1000 entries; it can
   only grow. (c) 100 open PRs, one of them not based on `main`, now raise an input error in train
   mode (before, 99 `main` PRs worked). Update-only mode still targets `main` only.
 - **The merge client fetches the squash commit by SHA** before the audit, because GitHub creates it
@@ -262,8 +264,8 @@ label is removed.
 
 ## Caveats
 
-- **Closed-PR search is eventually consistent and capped at 100.** The closed-unmerged list
-  is requested with `--search "is:unmerged" --limit 100`. A full list halts the train. A
+- **Closed-PR search is eventually consistent and capped at 1000.** The closed-unmerged list
+  is requested with `--search "is:unmerged" --limit 1000`. A full list halts the train. A
   closed train PR may take time to appear, so the cleanup step above is still required.
 - **Open list capped at 100**, requested with `--limit 100`; a full list halts the train.
 - **Starvation**: while a train runs, non-train PRs are not updated. A head that stays

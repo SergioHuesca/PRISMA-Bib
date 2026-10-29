@@ -164,8 +164,14 @@ def test_closed__malformed_train_label_unmerged__halts() -> None:
 
 @pytest.mark.unit
 def test_closed__list_at_limit__halts_rather_than_guess() -> None:
-    closed = [_closed(100 + i, merged=True) for i in range(100)]
+    closed = [_closed(1000 + i, merged=True) for i in range(1000)]
     assert decide([_ready(9)], _ok(9), True, closed)["action"] == "halt"
+
+
+@pytest.mark.unit
+def test_closed__list_of_100__is_not_the_limit() -> None:
+    closed = [_closed(100 + i, merged=True) for i in range(100)]
+    assert decide([_ready(9)], _ok(9), True, closed)["action"] != "halt"
 
 
 @pytest.mark.unit

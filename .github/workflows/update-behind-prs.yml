@@ -31,7 +31,7 @@
 # head sha, only when it is not a
 # draft; mergeStateStatus is CLEAN; every check is SUCCESS, SKIPPED or NEUTRAL with none queued
 # or running; and the verification passed. No batch PR may sit below the head closed unmerged
-# (the closed list is checked). Lists are capped at 100; a full list halts.
+# (the closed list is checked). The open list is capped at 100 and the closed list at 1000; a full list halts.
 # Otherwise: BEHIND with no running check -> update-branch; running checks -> wait; anything
 # unexpected -> halt: label the head train:halted and post one comment with the reason. While
 # any open PR has train:halted, every run does nothing. Resume = fix it, remove the label,
@@ -124,7 +124,7 @@ jobs:
           # Closed-unmerged PRs: a closed train:K below the head means the batch is broken.
           # Merged ones are excluded by the search. Passed to decide; a missing file halts.
           closed="$RUNNER_TEMP/closed.json"
-          gh pr list --state closed --search "is:unmerged" --limit 100 \
+          gh pr list --state closed --search "is:unmerged" --limit 1000 \
             --json number,labels,mergedAt,baseRefName > "$closed"
           # mergeStateStatus is computed lazily: re-read each UNKNOWN PR, up to ~60s (6 x 10s).
           for n in $(jq -r '.[] | select(.mergeStateStatus == "UNKNOWN") | .number' "$prs"); do
@@ -271,8 +271,11 @@ jobs:
                     audit_alarm "audit-stop failed, so no PR was halted. Inspect the merge."
                   if [[ "$succ" =~ ^[0-9]+$ ]]; then
                     pr=$succ
-                    halt "the post-merge audit of #$merged_pr failed: $areason" || true
-                    echo "::error::PR #$merged_pr was merged but its audit failed: $areason; #$pr is halted"
+                    if halt "the post-merge audit of #$merged_pr failed: $areason"; then
+                      echo "::error::PR #$merged_pr was merged but its audit failed: $areason; #$pr is halted"
+                    else
+                      echo "::error::PR #$merged_pr was merged but its audit failed: $areason; #$pr could NOT be halted (label or comment failed), halt it by hand"
+                    fi
                     exit 1
                   fi
                   audit_alarm "No open PR carries train:N, so nothing was halted."
@@ -305,6 +308,7 @@ jobs:
                 echo "- $action (mode $mode): $reason" >> "$GITHUB_STEP_SUMMARY"
               fi
               if [ "$stacked" = true ] && [ "$mode" = train ]; then
+                echo "PR #$pr: stacked and BEHIND; the train is halted (restack by hand)" >> "$GITHUB_STEP_SUMMARY"
                 halt "stacked PR is behind main; update-branch is not supported for stacked PRs; restack by hand (gh stack rebase) and review again" || true
                 echo "::error::PR #$pr: stacked and behind main; the train is halted"
                 exit 1

@@ -371,7 +371,7 @@ Layer 1 is a single DuckDB file (`project.db_path`, typically `store/corpus.duck
 
 **Key invariant (BUILD_PLAN §2.2, line 105):** Layer 1 must be reconstructible from Layer 0 by running one function—`build_store(project, rebuild=True)`. If it is not:
 
-- Layer 1 remains **fully disposable**: delete `corpus.duckdb` at any time, run `build_store` again, lose nothing.
+- Layer 1 remains **fully disposable**: delete `corpus.duckdb` at any time, build it again, lose nothing. A rebuild is written beside the store and swapped in only when complete, so a failed one keeps the existing store.
 - The store is **byte-stable**: rebuilding identical Layer 0 input produces byte-identical table checksums, so reproducibility can be verified independently.
 - The schema is **future-proof**: if Stage 2 or later needs to modify Layer 1, the only safe path is to drop Layer 0 and rebuild from upstream sources—never hand-edit the database.
 
@@ -524,7 +524,8 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     Args:
         project: The project to build.
         rebuild: When False (default) and store exists, reuse it (idempotent).
-                When True, delete and rebuild from Layer 0 (byte-stable).
+                When True, rebuild from Layer 0 (byte-stable) into a temporary
+                file that replaces the store only on success.
 
     Returns:
         StoreStats with counts: runs_loaded, records_loaded, authors_loaded,
@@ -538,8 +539,11 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
 
     Raises:
         StoreError: If store exists, rebuild=False, and store is corrupted;
-            or if so many Layer 0 entries could not be parsed that the
-            capture itself is unusable, in which case no store is written.
+            if the store holds no records while a sealed run in raw/ reports
+            results (rebuild=False); if a finished rebuild cannot replace the
+            existing store, which is kept; or if so many Layer 0 entries could
+            not be parsed that the capture itself is unusable, in which case
+            no new store is written.
     """
 ```
 

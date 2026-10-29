@@ -6,7 +6,7 @@ PrismabibError
 ├── SourceError
 │   ├── AuthError            # 401 -- bad key
 │   ├── EntitlementError     # 403 -- key valid, view/content not entitled
-│   ├── QuotaExceededError   # 429 with weekly quota headers exhausted
+│   ├── QuotaExceededError   # 429 quota exhausted or far-off reset; full-text run stops, resumable
 │   ├── RateLimitError       # 429 transient, retryable
 │   └── UpstreamError        # 5xx
 ├── StoreError

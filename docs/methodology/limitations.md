@@ -118,9 +118,11 @@ corpus — an exhausted quota, an interrupted run, a `--budget` cap — the diag
 one "excluded by subject area" figure computed over an unknown fraction of the review.
 prismabib refuses that state rather than reporting it: `record_subject_area_coverage` records
 what was asked, and the engine raises, naming how many records remain. Enrichment is
-resumable and does not re-spend quota on records already fetched. Records Scopus cannot
-resolve (404) or refuses (403) do not block screening — they were asked, and the answer is
-recorded.
+resumable and does not re-spend quota on records already fetched. `--budget` counts only calls
+that reach the network: a resumed run replays its own cached responses for free, and a budget
+that is not a multiple of 100 advances the run only by the whole batches it covers. Records
+Scopus cannot resolve (404) or refuses (403) do not block screening — they were asked, and the
+answer is recorded.
 
 The engine's general convention is that a record with no data on a dimension is never
 excluded on that dimension. Applied to a corpus where *no* record has the data, that would
@@ -174,6 +176,12 @@ Decision 0). Running `prismabib build <slug> --rebuild` afterward folds that run
 section text into `fulltext_sections`. `prismabib.fulltext.coverage` renders that table into
 a coverage-by-resolver and a coverage-by-publisher report, which `prismabib export` writes
 alongside every other table.
+
+**Quota and resume.** A `QuotaExceededError` from any resolver stops the run: `prismabib
+fulltext` exits `1` with the error and its message, and the run stays unsealed with its
+progress saved. The next `prismabib fulltext` call resumes it, and records already attempted
+are not re-paid for. Any other error fails only the record it occurred on. A download over
+100 MiB is refused as an `UpstreamError`, which the resolvers treat as a failed candidate.
 
 **State the mechanism plainly, because it determines whose corpus you actually read.**
 ScienceDirect answers for Elsevier journals only — Pattern Recognition, Neurocomputing,
