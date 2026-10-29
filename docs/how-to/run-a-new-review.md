@@ -250,8 +250,8 @@ projects/my-review/
 ```
 
 While a run is unsealed it also holds `_http/`, its own HTTP cache, which exists only to
-resume that run and is deleted when the run is sealed. The clients validate a response before
-they cache it, so a 200 response with an HTML or service-error body is not cached. An entry
+resume that run and is deleted when the run is sealed. The clients reject a body that is not
+parseable JSON before they cache it, so a 200 response with an HTML or other non-JSON body is not cached. Scopus also checks the response shape. An entry
 written by an earlier version can still hold such a body: reading it raises `ValidationError`
 on every call, and prismabib does not evict it, so delete that entry from the run's `_http/`
 by hand.
