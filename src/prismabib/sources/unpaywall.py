@@ -307,8 +307,8 @@ class UnpaywallClient:
 
 
 def redact_url(url: httpx.URL) -> str:
-    """Return ``url`` without query and fragment: OA/TDM URLs can carry access tokens."""
-    return str(url.copy_with(query=None, fragment=None))
+    """Return ``url`` without userinfo, query and fragment: OA/TDM URLs can carry secrets."""
+    return str(url.copy_with(userinfo=b"", query=None, fragment=None))
 
 
 def read_capped(streamed: httpx.Response, limit: int) -> httpx.Response:
