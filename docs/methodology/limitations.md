@@ -217,18 +217,19 @@ they depend entirely on your corpus's publisher mix and your institution's entit
 Report them alongside any full-text-derived finding, the same way a database's own coverage
 is reported under "No cross-database deduplication" above.
 
-## No screening interface
+## Screening interface
 
-**Not built yet** (Stage 5). Screening decisions are recorded by calling
+**Built** (Stage 5): a Panel view, `prismabib.screening.ui.screener()`, for use in a
+notebook (it needs the `viz` extra). Decisions can also be recorded by calling
 `DecisionLog.append` in Python — see
 [Getting Started, step 8](../getting-started.md#8-record-your-first-screening-decision).
 
 The guarantees around a decision are already real: append-only, `fsync`ed per write,
 `flock`-serialised, checksum-guarded against hand-editing, folded by
 `(stage, record_id, reviewer)` so a reversal is a new event and no reviewer overwrites
-another. What is missing is the ergonomics — a keyboard-first queue, progress tracking, and
-inter-reviewer agreement statistics (κ). Screening several thousand titles through a Python
-API is possible and unpleasant.
+another. What is still missing is inter-reviewer agreement statistics (κ); the view already has a
+keyboard-first queue and progress tracking. Screening several thousand titles through a
+Python API is possible and unpleasant.
 
 Multi-reviewer adjudication is already implemented conservatively (any `exclude` wins, then
 any `unsure`, `include` only if unanimous among those who logged a decision), but nothing

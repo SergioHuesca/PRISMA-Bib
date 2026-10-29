@@ -42,13 +42,14 @@ Two more access facts worth knowing before you start:
 - **Scopus enforces a weekly quota.** A large capture spends it. `prismabib search` is
   resumable and never re-fetches a page Layer 0 already holds, so an interruption costs
   nothing, but a repeatedly restarted *fresh* run does.
-- **Only Scopus is implemented.** No Web of Science, no OpenAlex, no Crossref, and no
-  full-text retrieval. See [Limitations](methodology/limitations.md) before adopting this
+- **Scopus is the only source `prismabib search` queries.** No Web of Science. OpenAlex,
+  Crossref, Unpaywall and ScienceDirect clients exist, and full-text retrieval is built
+  (`prismabib fulltext`). See [Limitations](methodology/limitations.md) before adopting this
   for a real review.
 
 ## What exists today
 
-Layers 0, 1 and 2 are built and tested. Concretely:
+All four layers (0 to 3) are built and tested. Concretely:
 
 | You can | Command or API |
 | --- | --- |
