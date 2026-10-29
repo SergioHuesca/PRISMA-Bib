@@ -184,10 +184,12 @@ class UnpaywallClient:
             return None
 
         body = response.content
+        parsed = _parse_json(body)
+        # Cache only a body that parsed: a cached proxy/HTML 200 would replay forever.
         if self._cache is not None:
             self._cache.store(url, params, body)
         logger.info("unpaywall.lookup", endpoint=url, cache="miss")
-        return _parse_json(body)
+        return parsed
 
     def fetch_bytes(self, url: str) -> tuple[bytes, str | None]:
         """Download the bytes at an open-access location URL.
