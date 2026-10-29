@@ -2482,7 +2482,9 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
             raise StoreError(
                 f"{project.db_path} holds no records but {run_dir.name} in raw/ reports "
                 f"{manifest.total_results:,} results, so it is not a complete build. "
-                "Call build_store(project, rebuild=True) to recreate it."
+                "Re-capture that run or inspect its page files in raw/; a rebuild reproduces "
+                "this store until raw/ is fixed, so call build_store(project, rebuild=True) "
+                "only after that."
             )
 
 

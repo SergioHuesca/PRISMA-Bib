@@ -381,7 +381,7 @@ def test_build_store__existing_empty_store_with_populated_raw__raises_instead_of
     connection.execute(SCHEMA_SQL_PATH.read_text(encoding="utf-8"))
     connection.close()
 
-    with pytest.raises(StoreError, match="rebuild=True"):
+    with pytest.raises(StoreError, match="holds no records"):
         build_store(project)
 
     assert build_store(project, rebuild=True).records_loaded > 0
@@ -398,6 +398,47 @@ def test_build_store__rebuild_happy_path__replaces_the_store_and_leaves_no_temp_
     assert second.rebuilt is True
     assert second.records_loaded == first.records_loaded > 0
     assert _store_dir_files(project) == [project.db_path.name]
+
+
+@pytest.mark.integration
+def test_build_store__truncated_pages__reuse_message_does_not_promise_a_rebuild_fixes_it(
+    tmp_path: Path,
+) -> None:
+    project = copy_reference_project(tmp_path)
+    for page in project.raw_dir.rglob("page-*.jsonl"):
+        page.write_text("", encoding="utf-8")
+    assert build_store(project, rebuild=True).records_loaded == 0
+
+    with pytest.raises(StoreError) as excinfo:
+        build_store(project)
+
+    message = str(excinfo.value)
+    assert "holds no records" in message
+    assert "Re-capture that run" in message
+    assert "only after that" in message
+
+
+@pytest.mark.integration
+def test_build_store__replace_refused__raises_store_error_and_keeps_the_old_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = copy_reference_project(tmp_path)
+    before = build_store(project, rebuild=True)
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("held open")
+
+    monkeypatch.setattr("prismabib.store.load.os.replace", refuse)
+    with pytest.raises(StoreError) as excinfo:
+        build_store(project, rebuild=True)
+    monkeypatch.undo()
+
+    message = str(excinfo.value)
+    assert "could not be replaced" in message
+    assert "has not been changed" in message
+    assert _store_dir_files(project) == [project.db_path.name]
+    after = build_store(project)
+    assert (after.rebuilt, after.records_loaded) == (False, before.records_loaded)
 
 
 @pytest.mark.integration
