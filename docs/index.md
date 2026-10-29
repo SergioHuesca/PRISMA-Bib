@@ -10,8 +10,7 @@ No amount of careful writing prevents this. The only solution is **architectural
 
 ## How it works
 
-A four-layer pipeline ensures provenance and reproducibility. Layers 0, 1 and 2 are built;
-Layer 3 is described here as designed and is **not implemented yet** — see
+A four-layer pipeline ensures provenance and reproducibility. All four layers are built; see
 [what is built today](#what-is-built-today-v100).
 
 ### Layer 0: Raw capture (immutable)

@@ -98,7 +98,7 @@ Then edit it:
 ```bash
 SCOPUS_API_KEY=<your key>
 SCOPUS_INSTTOKEN=          # only if your library issued one; leave empty otherwise
-ELSEVIER_SD_API_KEY=       # read, but nothing uses it yet — no ScienceDirect client exists
+ELSEVIER_SD_API_KEY=       # used by full-text acquisition (ScienceDirect); may be the Scopus key
 PRISMABIB_PROJECTS_ROOT=./projects
 ```
 

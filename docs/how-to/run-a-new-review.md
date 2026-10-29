@@ -31,7 +31,7 @@ Create a `.env` file (never committed) in the repository root:
 ```bash
 SCOPUS_API_KEY=<your_api_key>
 SCOPUS_INSTTOKEN=                # Leave empty unless your institution issued a separate token
-ELSEVIER_SD_API_KEY=             # Read by Settings, but unused: no ScienceDirect client exists yet
+ELSEVIER_SD_API_KEY=             # Used by full-text acquisition (ScienceDirect); may be the Scopus key
 PRISMABIB_PROJECTS_ROOT=./projects
 ```
 
