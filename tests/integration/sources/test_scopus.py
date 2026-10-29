@@ -26,6 +26,7 @@ test -- exactly the same trade time-machine makes for wall-clock reads.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -359,3 +360,66 @@ def test_search__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
         assert list(client.search('TITLE-ABS-KEY("x")')) == [good]
         assert list(client.search('TITLE-ABS-KEY("x")')) == [good]
     assert route.call_count == 3
+
+
+_POISON = json.dumps({"service-error": {"status": {"statusCode": "GENERIC_ERROR"}}}).encode()
+_META_URL = ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id="2-s2.0-1")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("view", ["FULL", "META"])
+def test_abstract__poisoned_cache_entry__raises_validation_error(tmp_path: Path, view: str) -> None:
+    HttpCache(tmp_path / "cache").store(_ABSTRACT_URL, {"view": view}, _POISON)
+    client = _cached_client(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_ABSTRACT_URL).mock(return_value=httpx.Response(500))
+        with pytest.raises(ValidationError):
+            client.abstract("scopus:2-s2.0-1") if view == "FULL" else client.abstract_meta(
+                "scopus:2-s2.0-1"
+            )
+    assert route.call_count == 0
+
+
+@pytest.mark.integration
+def test_abstract_meta__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path,
+) -> None:
+    good = {"abstracts-retrieval-response": {"coredata": {"dc:identifier": "SCOPUS_ID:1"}}}
+    client = _cached_client(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_META_URL).mock(
+            side_effect=[
+                httpx.Response(200, content=_POISON),
+                httpx.Response(200, json=good),
+            ]
+        )
+        with pytest.raises(ValidationError):
+            client.abstract_meta("scopus:2-s2.0-1")
+        assert not _cache_files(tmp_path / "cache")
+
+        client.abstract_meta("scopus:2-s2.0-1")
+        assert route.call_count == 2
+        client.abstract_meta("scopus:2-s2.0-1")
+    assert route.call_count == 2
+
+
+@pytest.mark.integration
+def test_search_standard_by_dois__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path,
+) -> None:
+    good = _page(entry_ids=["1"], current="*", next_cursor=None)
+    good["search-results"]["opensearch:totalResults"] = "0"
+    good["search-results"]["entry"] = []
+    client = _cached_client(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(
+            side_effect=[httpx.Response(200, content=_POISON), httpx.Response(200, json=good)]
+        )
+        with pytest.raises(ValidationError):
+            client.search_standard_by_dois(["10.1/a"])
+        assert not _cache_files(tmp_path / "cache")
+
+        client.search_standard_by_dois(["10.1/a"])
+        assert route.call_count == 2
+        client.search_standard_by_dois(["10.1/a"])
+    assert route.call_count == 2

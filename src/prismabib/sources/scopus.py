@@ -822,11 +822,14 @@ class ScopusClient:
         """Fetch and parse one JSON object, transparently using the cache when present.
 
         ``validate`` (raising ``ValidationError``) runs on a fresh body before it is cached,
-        so a bad HTTP 200 (proxy page, service-error) is never stored and replayed.
+        so a bad HTTP 200 (proxy page, service-error) is never stored and replayed. It also
+        runs on a cache hit, so an entry poisoned by an older version is rejected, not returned.
         """
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
             page = _parse_json(cached)
+            if validate is not None:
+                validate(page)
             logger.info(
                 "scopus.request",
                 endpoint=url,
