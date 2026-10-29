@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from prismabib.config import Settings
 from prismabib.errors import UpstreamError
@@ -117,3 +118,72 @@ def test_fetch_bytes__small_pdf__bytes_and_content_type_unchanged(
 
     assert content == b"%PDF-1.4\n%%EOF"
     assert content_type == "application/pdf"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("cls", "module"), _CLIENTS)
+@pytest.mark.parametrize("status", [403, 404, 429, 500])
+def test_fetch_bytes__error_status__message_and_logs_omit_url_query(
+    cls: Callable[..., UnpaywallClient | CrossrefTdmClient],
+    module: object,
+    status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tenacity.nap.time.sleep", lambda _s: None)
+    url = "https://host.example.org/f/paper.pdf?token=SECRET&x=1"
+    with respx.mock, capture_logs() as logs:
+        respx.get(url).mock(return_value=httpx.Response(status))
+        with pytest.raises(Exception) as excinfo:
+            _make(cls).fetch_bytes(url)  # type: ignore[arg-type]
+
+    seen = str(excinfo.value) + repr(logs)
+    assert logs
+    for leaked in ("SECRET", "token=", "x=1"):
+        assert leaked not in seen
+    assert "host.example.org/f/paper.pdf" in seen
+    assert str(status) in seen
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("raw", "secrets", "kept"),
+    [
+        (
+            "https://us%40x:pw@[2001:db8::1]:444/a?x=1#f",  # pragma: allowlist secret
+            ("us", "pw", "@", "x=1", "#f"),
+            ("2001:db8::1", ":444", "/a"),
+        ),
+        ("https://u:p@h.org/a", ("u:p", "@"), ("h.org", "/a")),
+    ],
+)
+def test_redact_url__userinfo__dropped_host_port_path_kept(
+    raw: str, secrets: tuple[str, ...], kept: tuple[str, ...]
+) -> None:
+    out = unpaywall.redact_url(httpx.URL(raw))
+    for leaked in secrets:
+        assert leaked not in out
+    for part in kept:
+        assert part in out
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("cls", "module"), _CLIENTS)
+def test_fetch_bytes__url_with_userinfo__message_and_logs_omit_credentials(
+    cls: Callable[..., UnpaywallClient | CrossrefTdmClient],
+    module: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tenacity.nap.time.sleep", lambda _s: None)
+    url = (
+        "https://usr:hunter2@host.example.org/f/paper.pdf?token=SECRET"  # pragma: allowlist secret
+    )
+    with respx.mock, capture_logs() as logs:
+        respx.get(host="host.example.org").mock(return_value=httpx.Response(403))
+        with pytest.raises(Exception) as excinfo:
+            _make(cls).fetch_bytes(url)  # type: ignore[arg-type]
+
+    seen = str(excinfo.value) + repr(logs)
+    assert logs
+    for leaked in ("usr", "hunter2", "SECRET", "@"):
+        assert leaked not in seen
+    assert "host.example.org/f/paper.pdf" in seen

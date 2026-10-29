@@ -282,7 +282,7 @@ class UnpaywallClient:
         if status == 404 and allow_404:
             return
 
-        endpoint = str(response.request.url)
+        endpoint = redact_url(response.request.url)
 
         if status == 429:
             logger.warning("unpaywall.request.rate_limited", endpoint=endpoint, status=status)
@@ -304,6 +304,11 @@ class UnpaywallClient:
         raise UpstreamError(
             f"Unpaywall (or the OA host) returned unexpected HTTP {status} for {endpoint}."
         )
+
+
+def redact_url(url: httpx.URL) -> str:
+    """Return ``url`` without userinfo, query and fragment: OA/TDM URLs can carry secrets."""
+    return str(url.copy_with(userinfo=b"", query=None, fragment=None))
 
 
 def read_capped(streamed: httpx.Response, limit: int) -> httpx.Response:
@@ -328,8 +333,7 @@ def read_capped(streamed: httpx.Response, limit: int) -> httpx.Response:
                 break
             chunks.append(chunk)
     if too_large:
-        # Query dropped: OA/TDM URLs can carry access tokens.
-        where = str(streamed.request.url.copy_with(query=None, fragment=None))
+        where = redact_url(streamed.request.url)
         logger.warning("download.too_large", endpoint=where, limit=limit)
         raise UpstreamError(f"response from {where} exceeds the {limit}-byte download limit.")
     # `content-encoding`/`content-length` dropped: the body is already decoded.
@@ -504,4 +508,10 @@ def looks_like_pdf(content: bytes, content_type: str | None) -> bool:
     return _PDF_MAGIC in content[:_PDF_SNIFF_WINDOW]
 
 
-__all__ = ["UnpaywallClient", "best_oa_pdf_url", "looks_like_pdf", "oa_pdf_candidates"]
+__all__ = [
+    "UnpaywallClient",
+    "best_oa_pdf_url",
+    "looks_like_pdf",
+    "oa_pdf_candidates",
+    "redact_url",
+]
