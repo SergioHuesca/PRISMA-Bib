@@ -705,7 +705,10 @@ def enrich(
         int | None,
         typer.Option(
             "--budget",
-            help="Stop after this many records (a multiple of 100; see below).",
+            help=(
+                "Stop after this many paid requests; cache replays are free "
+                "(a multiple of 100; see below)."
+            ),
         ),
     ] = None,
     root: Annotated[Path | None, _ROOT_OPTION] = None,
@@ -725,9 +728,11 @@ def enrich(
     than one per record.
 
     Costs one call per record against your weekly quota. ``--budget`` spends a
-    known slice; pass a multiple of 100, because only completed batches are
-    durable and a remainder below a batch boundary is fetched, discarded, and
-    requested again next time.
+    known slice and counts paid network requests only: a record replayed from
+    the run's ``_http/`` cache is free and uses none of it. Pass a multiple of
+    100 (the batch size), because only completed batches are durable and a
+    remainder below a batch boundary is fetched, discarded, and requested
+    again next time.
 
     Resumable: a run interrupted part-way is continued by re-running this
     command, and already-fetched records are not re-paid for.
@@ -805,6 +810,8 @@ def fulltext(
 
     Resumable: an already-resolved record is never re-attempted. ``--budget``
     bounds how many *not yet resolved* records this invocation attempts.
+    If a resolver's quota is exhausted the run stops, unsealed; re-running
+    resumes it.
 
     This writes Layer 0 only (a sealed run under
     ``projects/<slug>/fulltext/runs/``), exactly like ``prismabib enrich``:
@@ -894,8 +901,8 @@ def _print_fulltext_summary(summary: FullTextRunSummary, *, slug: str) -> None:
         )
     else:
         _echo(
-            "\n  Run is UNSEALED -- the budget stopped it short. Re-run `prismabib fulltext` "
-            "to\n  continue; already-attempted records are not re-paid for."
+            "\n  Run is UNSEALED -- the budget or an exhausted quota stopped it short. "
+            "Re-run `prismabib fulltext` to\n  continue; already-attempted records are not re-paid for."
         )
 
 
