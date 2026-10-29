@@ -175,6 +175,9 @@ def run_fulltext_resolution(
             ``duckdb.CatalogException``.
         LogError: If the decision log fails to load while computing
             ``manual_abstract_set``.
+        QuotaExceededError: A resolver's quota is exhausted; the run stays unsealed
+            and a later call resumes it (see
+            :func:`~prismabib.fulltext.capture.capture_fulltext`).
     """
     if budget is not None and budget < 1:
         raise ValidationError(f"budget must be a positive number of records, got {budget!r}")

@@ -647,6 +647,9 @@ def capture_fulltext(
             :func:`_entitlement_breaker_error`). Raised without writing the
             triggering record's attempts and without sealing the run, so a
             later, differently-credentialed call resumes at that record.
+        QuotaExceededError: When a resolver reports an exhausted quota. Raised
+            without sealing the run; its progress sidecar and `_http/` are kept, so a
+            later call resumes at that record.
         SealedRunError: Only if an internal invariant is violated (a resumed
             run directory turns out to already be sealed); unreachable through
             this function's own code paths.
