@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Iterable, Iterator, Mapping, MutableMapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Literal, Self, TypeVar
 from urllib.parse import parse_qs, urlsplit
@@ -165,6 +165,15 @@ def _parse_json(body: bytes) -> JsonDict:
             f"Scopus response is valid JSON but not a JSON object (got {type(parsed).__name__})"
         )
     return parsed
+
+
+def _require_search_page(page: Mapping[str, Any]) -> None:
+    """Raise ``ValidationError`` unless ``page`` is a well-formed search page (not a service-error)."""
+    if "service-error" in page:
+        raise ValidationError(
+            f"Scopus returned HTTP 200 with a service-error body: {page['service-error']!r}"
+        )
+    extract_total_results(page)
 
 
 def _result_count(page: Mapping[str, Any]) -> int | None:
@@ -593,7 +602,7 @@ class ScopusClient:
                 "count": str(self.PAGE_SIZE),
                 "cursor": cursor,
             }
-            page = self._get(self.SEARCH_ENDPOINT, params, view=view)
+            page = self._get(self.SEARCH_ENDPOINT, params, view=view, validate=_require_search_page)
             yield page
 
             next_cursor = extract_next_cursor(page)
@@ -632,7 +641,7 @@ class ScopusClient:
         """
         scopus_id = record_id.removeprefix("scopus:")
         url = self.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id=scopus_id)
-        response = self._get(url, {"view": "FULL"}, view="FULL")
+
         # Validate the envelope, exactly as the search path validates a page.
         # Scopus can answer HTTP 200 with a `service-error` body, and without
         # this the caller cannot tell that from a record it genuinely has
@@ -640,13 +649,17 @@ class ScopusClient:
         # manifest reporting the record fetched, and the payload line written
         # for it carries no `coredata`, so it cannot even be keyed back to a
         # record afterwards. Layer 0 is immutable, so that false success is
-        # permanent (BUILD_PLAN §1.4).
-        if not isinstance(response.get("abstracts-retrieval-response"), Mapping):
-            raise ValidationError(
-                f"Scopus returned HTTP 200 for {url} without an "
-                "'abstracts-retrieval-response' object, so the response describes no "
-                f"record. Top-level keys were {sorted(response)!r}."
-            )
+        # permanent (BUILD_PLAN §1.4). It runs inside `_get`, before the body
+        # is cached, so a bad 200 is never replayed from the cache.
+        def require_record(page: Mapping[str, Any]) -> None:
+            if not isinstance(page.get("abstracts-retrieval-response"), Mapping):
+                raise ValidationError(
+                    f"Scopus returned HTTP 200 for {url} without an "
+                    "'abstracts-retrieval-response' object, so the response describes no "
+                    f"record. Top-level keys were {sorted(page)!r}."
+                )
+
+        response = self._get(url, {"view": "FULL"}, view="FULL", validate=require_record)
         return response
 
     def search_standard_by_dois(
@@ -685,7 +698,9 @@ class ScopusClient:
             query = DOI_QUERY_JOINER.join(DOI_QUERY_TERM.format(doi=d) for d in batch)
             params = {"query": query, "view": "STANDARD", "count": str(self.PAGE_SIZE)}
             try:
-                page = self._get(self.SEARCH_ENDPOINT, params, view="STANDARD")
+                page = self._get(
+                    self.SEARCH_ENDPOINT, params, view="STANDARD", validate=_require_search_page
+                )
             except (AuthError, EntitlementError) as exc:
                 if not fallback_opt_in:
                     raise
@@ -724,10 +739,6 @@ class ScopusClient:
                 ``opensearch:totalResults`` exceeds the entries received (the batch
                 would silently lose records), or when two entries share a DOI.
         """
-        if "service-error" in page:
-            raise ValidationError(
-                f"Scopus returned HTTP 200 with a service-error body: {page['service-error']!r}"
-            )
         total = extract_total_results(page)  # also checks the 'search-results' object
         entries = _as_list(page["search-results"].get("entry"))
         if total > len(entries):
@@ -770,8 +781,13 @@ class ScopusClient:
                 f"'scopus:'), got {scopus_id!r}; a 'SCOPUS_ID:' value would 404 as not_found."
             )
         url = self.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id=eid)
+
+        def require_body(page: Mapping[str, Any]) -> None:
+            if not isinstance(page.get("abstracts-retrieval-response"), Mapping):
+                raise ValidationError(f"Scopus returned HTTP 200 for {url} without a record body")
+
         try:
-            page = self._get(url, {"view": "META"}, view="META")
+            page = self._get(url, {"view": "META"}, view="META", validate=require_body)
         except RecordNotFoundError:
             return CascadeResult("not_found")
         except (AuthError, EntitlementError) as exc:
@@ -782,9 +798,7 @@ class ScopusClient:
                 http_status=getattr(exc, "http_status", None),
                 message=getattr(exc, "response_message", None),
             )
-        body = page.get("abstracts-retrieval-response")
-        if not isinstance(body, Mapping):
-            raise ValidationError(f"Scopus returned HTTP 200 for {url} without a record body")
+        body = page["abstracts-retrieval-response"]  # checked by `require_body`
         core = body.get("coredata")
         core = core if isinstance(core, Mapping) else {}
         # Observed in the 2026-10-21 single-DOI probe: coredata.dc:creator, a dict whose
@@ -797,8 +811,19 @@ class ScopusClient:
         }
         return _result(_affiliations(body.get("affiliation")), first, ids)
 
-    def _get(self, url: str, params: dict[str, str], *, view: str | None) -> JsonDict:
-        """Fetch and parse one JSON object, transparently using the cache when present."""
+    def _get(
+        self,
+        url: str,
+        params: dict[str, str],
+        *,
+        view: str | None,
+        validate: Callable[[JsonDict], object] | None = None,
+    ) -> JsonDict:
+        """Fetch and parse one JSON object, transparently using the cache when present.
+
+        ``validate`` (raising ``ValidationError``) runs on a fresh body before it is cached,
+        so a bad HTTP 200 (proxy page, service-error) is never stored and replayed.
+        """
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
             page = _parse_json(cached)
@@ -814,9 +839,11 @@ class ScopusClient:
 
         response = self._request_with_retry(url, params, view=view)
         body = response.content
+        page = _parse_json(body)
+        if validate is not None:
+            validate(page)
         if self._cache is not None:
             self._cache.store(url, params, body)
-        page = _parse_json(body)
         logger.info(
             "scopus.request",
             endpoint=url,

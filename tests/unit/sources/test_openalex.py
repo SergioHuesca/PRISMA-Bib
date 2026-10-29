@@ -17,7 +17,7 @@ import pytest
 import respx
 
 from prismabib.config import Settings
-from prismabib.errors import AuthError, EntitlementError, RateLimitError
+from prismabib.errors import AuthError, EntitlementError, RateLimitError, ValidationError
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.openalex import (
     FieldOutcome,
@@ -319,6 +319,29 @@ def test_cache__second_lookup__does_not_hit_the_network_even_with_another_key(
 
     assert route.call_count == 1
     assert isinstance(again[_DOI_ONE], OpenAlexWork)
+
+
+@pytest.mark.integration
+def test_cache__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path,
+) -> None:
+    cache = HttpCache(tmp_path)
+    with respx.mock:
+        route = respx.get(OpenAlexClient.ENDPOINT).mock(
+            side_effect=[
+                httpx.Response(200, content=b"<html>captive portal</html>"),
+                httpx.Response(200, json=_cassette("works_batch.json")),
+            ]
+        )
+        client = _client(cache=cache)
+        with pytest.raises(ValidationError):
+            client.lookup_dois([_DOI_ONE])
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+
+        assert isinstance(client.lookup_dois([_DOI_ONE])[_DOI_ONE], OpenAlexWork)
+        assert route.call_count == 2
+        client.lookup_dois([_DOI_ONE])
+    assert route.call_count == 2
 
 
 @pytest.mark.integration

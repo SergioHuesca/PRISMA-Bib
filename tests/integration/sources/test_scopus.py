@@ -26,12 +26,15 @@ test -- exactly the same trade time-machine makes for wall-clock reads.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 import respx
 
 from prismabib.config import Settings
-from prismabib.errors import AuthError, EntitlementError, UpstreamError
+from prismabib.errors import AuthError, EntitlementError, UpstreamError, ValidationError
+from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import RecordNotFoundError, ScopusClient
 
@@ -291,3 +294,68 @@ def test_scopus__search_404__stays_a_retried_upstream_error_naming_real_causes()
             list(client.search('TITLE-ABS-KEY("x")', view="COMPLETE"))
 
     assert route.call_count == ScopusClient.MAX_ATTEMPTS
+
+
+_ABSTRACT_URL = ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id="2-s2.0-1")
+
+
+def _cached_client(cache_dir: Path) -> ScopusClient:
+    return ScopusClient(
+        _settings(),
+        rate_limiter=RateLimiter(**_FAST_RATE_LIMITER_KWARGS),
+        cache=HttpCache(cache_dir),
+    )
+
+
+def _cache_files(cache_dir: Path) -> list[Path]:
+    return [p for p in cache_dir.rglob("*") if p.is_file()]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "bad",
+    [
+        httpx.Response(200, content=b"<html>captive portal</html>"),
+        httpx.Response(200, json={"service-error": {"status": {"statusCode": "GENERIC_ERROR"}}}),
+    ],
+    ids=["html", "service-error"],
+)
+def test_abstract__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path, bad: httpx.Response
+) -> None:
+    good = {"abstracts-retrieval-response": {"coredata": {"dc:title": "t"}}}
+    client = _cached_client(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_ABSTRACT_URL).mock(side_effect=[bad, httpx.Response(200, json=good)])
+        with pytest.raises(ValidationError):
+            client.abstract("scopus:2-s2.0-1")
+        assert not _cache_files(tmp_path / "cache")
+
+        assert client.abstract("scopus:2-s2.0-1") == good
+        assert route.call_count == 2
+        assert client.abstract("scopus:2-s2.0-1") == good
+    assert route.call_count == 2
+
+
+@pytest.mark.integration
+def test_search__bad_200_then_good__nothing_cached_and_retry_hits_the_network(
+    tmp_path: Path,
+) -> None:
+    good = _page(entry_ids=["1"], current="*", next_cursor=None)
+    client = _cached_client(tmp_path / "cache")
+    with respx.mock:
+        route = respx.get(_SEARCH_URL).mock(
+            side_effect=[
+                httpx.Response(200, content=b"<html>captive portal</html>"),
+                httpx.Response(200, json={"service-error": {"status": {}}}),
+                httpx.Response(200, json=good),
+            ]
+        )
+        for _ in range(2):
+            with pytest.raises(ValidationError):
+                list(client.search('TITLE-ABS-KEY("x")'))
+            assert not _cache_files(tmp_path / "cache")
+
+        assert list(client.search('TITLE-ABS-KEY("x")')) == [good]
+        assert list(client.search('TITLE-ABS-KEY("x")')) == [good]
+    assert route.call_count == 3
