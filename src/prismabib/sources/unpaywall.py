@@ -262,7 +262,11 @@ class UnpaywallClient:
         response = self._http.get(
             url, params=dict(params) or None, follow_redirects=follow_redirects
         )
-        self._rate_limiter.observe_headers(response.headers)
+        # Only the API's own host speaks for this client's quota: a third-party OA/TDM
+        # host's `X-RateLimit-*` must not make every later `acquire()` raise.
+        # `response.url` is the final URL, so a redirect off-host is excluded too.
+        if response.url.host == httpx.URL(self.LOOKUP_ENDPOINT_TEMPLATE).host:
+            self._rate_limiter.observe_headers(response.headers)
         self._raise_for_status(response, allow_404=allow_404)
         return response
 
