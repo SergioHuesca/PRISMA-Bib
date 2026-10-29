@@ -523,6 +523,9 @@ class ScopusClient:
         self._owns_http = http_client is None
         self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
         self._cache = cache
+        #: Requests that went to the network (cache hits excluded), so a caller
+        #: can meter quota spent rather than calls made.
+        self.network_requests = 0
 
         register_secret_for_redaction(self._settings.scopus_api_key.get_secret_value())
         if self._settings.scopus_insttoken is not None:
@@ -840,6 +843,7 @@ class ScopusClient:
             )
             return page
 
+        self.network_requests += 1
         response = self._request_with_retry(url, params, view=view)
         body = response.content
         page = _parse_json(body)

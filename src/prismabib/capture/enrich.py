@@ -686,11 +686,9 @@ def capture_abstracts(
             way.
         budget: The maximum number of records this invocation will fetch, or
             ``None`` for no limit. Intended for spending a known slice of a
-            weekly quota. It bounds *attempts*, so a record served from
-            the run's ``_http/`` consumes budget too even though it costs no quota:
-            the client does not report whether a call was a cache hit, and
-            over-counting can only make an invocation stop early, never
-            overspend.
+            weekly quota. It bounds requests that reach the network: a record
+            replayed from the run's ``_http/`` costs no quota and consumes no
+            budget, so a resume spends it on paid requests only.
 
             **Pass a multiple of** :data:`BATCH_SIZE`. Only completed batches
             are durable, so a budget's remainder below a batch boundary is
@@ -827,7 +825,7 @@ def capture_abstracts(
             batch_unavailable: list[AbstractUnavailable] = []
 
             for record_id in batch_ids:
-                if budget is not None and attempted >= budget:
+                if budget is not None and client.network_requests >= budget:
                     budget_exhausted = True
                     break
 

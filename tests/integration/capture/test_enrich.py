@@ -365,6 +365,36 @@ def test_enrich__interrupted_then_resumed__total_requests_equal_the_record_count
 
 
 @pytest.mark.integration
+def test_enrich__resume_after_mid_batch_budget_stop__replays_cache_hits_without_spending_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A budget counts requests that reach the network, never replays from ``_http/``.
+
+    ``budget=150`` over 300 records fetches 150 but writes only batch 0; the 50
+    responses of batch 1 are dropped from the sealed files and survive only in
+    the run's ``_http/``. The resume replays them free, so ``budget=150`` buys
+    150 paid requests and finishes the run: 300 network calls for 300 records.
+    Counting the replays as attempts stopped it at 250 calls, short of batch 2.
+    """
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus(3 * BATCH_SIZE)
+
+    with respx.mock:
+        first_route = _mock_abstracts()
+        capture_abstracts(project, record_ids=records, budget=150)
+
+    with respx.mock:
+        second_route = _mock_abstracts()
+        manifest = capture_abstracts(project, record_ids=records, budget=150)
+
+    assert first_route.call_count == 150
+    assert second_route.call_count == 150
+    assert manifest.records_fetched == len(records)
+    assert (_sole_run_dir(project) / "manifest.json").is_file()
+
+
+@pytest.mark.integration
 def test_enrich__resumed_run__writes_bytes_identical_to_an_uninterrupted_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
