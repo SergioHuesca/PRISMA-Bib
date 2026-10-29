@@ -18,11 +18,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 from pytest_socket import SocketBlockedError
 
 from tests.conftest import FROZEN_INSTANT, SeededIdFactory
 
 REPO_ROOT = Path(__file__).parent.parent.parent
+PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 
@@ -233,3 +235,24 @@ def test_ci__benchmark_tests__run_in_some_workflow() -> None:
         "will keep calling it claimed regardless. Restore a job that runs "
         "`pytest -m benchmark`, or move the claim to a test that does run."
     )
+
+
+@pytest.mark.unit
+def test_pre_commit__whitespace_hooks__exempt_only_sealed_raw_payloads() -> None:
+    hooks = {
+        hook["id"]: hook
+        for repo in yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))["repos"]
+        for hook in repo["hooks"]
+    }
+    fixtures = REPO_ROOT / "tests" / "fixtures" / "projects"
+    files = [p.relative_to(REPO_ROOT).as_posix() for p in fixtures.rglob("*") if p.is_file()]
+    sealed = [f for f in files if "/raw/" in f]
+    assert sealed, "no sealed payloads found; the guard would be vacuous"
+
+    for hook_id in ("end-of-file-fixer", "trailing-whitespace"):
+        exclude = re.compile(hooks[hook_id].get("exclude", "(?!)"))
+        # sealed Layer 0 bytes are hashed; hooks must not open them for write
+        assert all(exclude.search(f) for f in sealed), hook_id
+        # ...but nothing hand-written (criteria, project.toml, scripts, src) is exempt
+        assert not [f for f in files if "/raw/" not in f and exclude.search(f)], hook_id
+        assert not exclude.search("src/prismabib/store/load.py"), hook_id
