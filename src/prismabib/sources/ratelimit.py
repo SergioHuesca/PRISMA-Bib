@@ -158,6 +158,11 @@ class RateLimiter:
             unparseable headers are ignored rather than raising, since a
             throttling header is an optimisation the caller cannot control
             upstream returning malformed data.
+
+            Callers pass only headers from the API's own host; a third-party
+            host's headers must not be observed. If the recorded reset is
+            more than :data:`QUOTA_RESET_THRESHOLD_SECONDS` away, :meth:`acquire`
+            raises :class:`QuotaExceededError` instead of sleeping.
         """
         remaining_raw = headers.get("X-RateLimit-Remaining")
         reset_raw = headers.get("X-RateLimit-Reset")

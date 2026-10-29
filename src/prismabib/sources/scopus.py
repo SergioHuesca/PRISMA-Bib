@@ -117,9 +117,10 @@ def register_secret_for_redaction(secret: str | None) -> None:
     BUILD_PLAN §3.4 (line 396) requires redaction "at the logger processor
     level, not at call sites": a call site is free to log a full URL,
     header dict, or params mapping without individually remembering to
-    scrub it, because a single processor -- spliced in once, ahead of
-    every other configured processor -- rewrites every event before it
-    reaches a renderer or sink.
+    scrub it, because a single processor -- placed ahead of every other
+    configured processor, and re-added whenever it is missing from the
+    structlog config -- rewrites every event before it reaches a
+    renderer or sink.
 
     Idempotent and process-global: safe to call once per
     :class:`ScopusClient` constructed (which is exactly what its

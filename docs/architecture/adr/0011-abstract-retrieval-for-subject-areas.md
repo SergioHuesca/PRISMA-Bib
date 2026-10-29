@@ -342,3 +342,5 @@ This ADR records where subject-area codes come from and where the responses are 
 Moving the payloads out of Layer 0, flattening `raw/abstracts/` beside the search runs,
 giving an abstract run a `runs` row, or allowing a fallback to `view=META` requires a new
 ADR that supersedes this one (§2.6).
+
+> **Note added 2026-10-29 (audit errata).** The statement at L159-161 that re-requests are cache hits "when `raw/_cache/` is warm" is stale. Capture no longer reads `raw/_cache/`, and a legacy one is never read. Each run has its own `<run_dir>/_http/` cache, which serves only to resume that unsealed run and is removed at seal (`src/prismabib/capture/enrich.py`). A new run after a seal therefore re-requests from the API. Refresh semantics are set by ADR 0038; this note does not change the record above.
