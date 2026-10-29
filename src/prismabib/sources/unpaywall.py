@@ -41,6 +41,11 @@ logger = structlog.get_logger(__name__)
 
 JsonDict = dict[str, Any]
 
+#: Largest body any download client will buffer. Hosts are named by third-party API data,
+#: and the 30 s timeout is per read, so without a cap one slow or hostile host could
+#: exhaust memory. Shared with :mod:`prismabib.sources.crossref`.
+MAX_DOWNLOAD_BYTES: Final = 100 * 1024 * 1024
+
 
 class _RetryableUpstreamError(UpstreamError):
     """A 5xx from Unpaywall or the OA host it redirected to -- the only outcome retried.
@@ -258,12 +263,12 @@ class UnpaywallClient:
         # exactly the hosts this client downloads from -- and stripping it yields a
         # 404 whose logged URL is the truncated one, so nothing in the output
         # reveals what happened.
-        response = self._http.get(
-            url, params=dict(params) or None, follow_redirects=follow_redirects
-        )
-        self._rate_limiter.observe_headers(response.headers)
-        self._raise_for_status(response, allow_404=allow_404)
-        return response
+        with self._http.stream(
+            "GET", url, params=dict(params) or None, follow_redirects=follow_redirects
+        ) as streamed:
+            self._rate_limiter.observe_headers(streamed.headers)
+            self._raise_for_status(streamed, allow_404=allow_404)
+            return read_capped(streamed, MAX_DOWNLOAD_BYTES)
 
     def _raise_for_status(self, response: httpx.Response, *, allow_404: bool) -> None:
         """Translate a non-2xx Unpaywall (or OA-location) response into the §3.3 taxonomy."""
@@ -295,6 +300,46 @@ class UnpaywallClient:
         raise UpstreamError(
             f"Unpaywall (or the OA host) returned unexpected HTTP {status} for {endpoint}."
         )
+
+
+def read_capped(streamed: httpx.Response, limit: int) -> httpx.Response:
+    """Read a streamed body, refusing one larger than ``limit`` bytes (after decoding).
+
+    Returns:
+        A fully-read response equivalent to what a non-streaming ``get`` returns.
+
+    Raises:
+        UpstreamError: If ``Content-Length`` or the bytes actually received exceed
+            ``limit``. Not retried: a too-large file stays too large.
+    """
+    declared = streamed.headers.get("content-length", "")
+    too_large = declared.isdigit() and int(declared) > limit
+    chunks: list[bytes] = []
+    received = 0
+    if not too_large:
+        for chunk in streamed.iter_bytes():
+            received += len(chunk)
+            if received > limit:
+                too_large = True
+                break
+            chunks.append(chunk)
+    if too_large:
+        # Query dropped: OA/TDM URLs can carry access tokens.
+        where = str(streamed.request.url.copy_with(query=None, fragment=None))
+        logger.warning("download.too_large", endpoint=where, limit=limit)
+        raise UpstreamError(f"response from {where} exceeds the {limit}-byte download limit.")
+    # `content-encoding`/`content-length` dropped: the body is already decoded.
+    headers = [
+        (k, v)
+        for k, v in streamed.headers.multi_items()
+        if k.lower() not in ("content-encoding", "content-length")
+    ]
+    return httpx.Response(
+        streamed.status_code,
+        headers=headers,
+        content=b"".join(chunks),
+        request=streamed.request,
+    )
 
 
 def _parse_json(body: bytes) -> JsonDict:
