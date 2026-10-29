@@ -80,13 +80,24 @@ Every use of the cache (grep of `HttpCache(` and `cache=`):
    An opt-in `--use-cache` would keep the defect available on demand.
 8. **Quota.** Re-running a search or abstract capture now spends the full quota of the query. The docs say so where they
    tell the user to re-run to refresh counts.
-9. **Full-text runs.** The same rule, with the same per-run directory. `default_chain` has one production caller
-   (`fulltext/run.py`, `with default_chain(project, settings) as resolvers:`), and it binds an `HttpCache` into each of
-   the three clients at construction, before `capture_fulltext` chooses the run directory. Mechanism: a chain factory.
-   `default_chain` takes a `cache_dir` argument; `capture_fulltext` accepts a callable that builds the chain from the
-   run's `_http/` path, and calls it after the resume-or-new decision; `run.py` passes
-   `lambda cache_dir: default_chain(project, settings, cache_dir=cache_dir)`. Chosen over a late-bind setter on the
-   three clients because the cache root stays immutable once a client exists, and no resolver needs a path to its client. `already_resolved_record_ids` is separate and unchanged: it skips records already resolved in sealed runs.
+9. **Full-text runs.** The same rule, with the same per-run directory. `default_chain` (a `@contextmanager` whose
+   `finally` closes the three clients) has one production caller (`fulltext/run.py`,
+   `with default_chain(project, settings) as resolvers:`), and it binds an `HttpCache` into each client at construction,
+   before `capture_fulltext` chooses the run directory. Mechanism: a chain factory. `default_chain` takes a `cache_dir`
+   argument; the factory is a callable from the run's `_http/` path to the context manager `default_chain` already is;
+   `run.py` passes `lambda cache_dir: default_chain(project, settings, cache_dir=cache_dir)`. Chosen over a late-bind
+   setter on the three clients because the cache root stays immutable once a client exists, and no resolver needs a path
+   to its client.
+   - **Ownership of closing moves from `run.py` to `capture.py`.** After the resume-or-new decision and before the
+     attempt loop, `capture_fulltext` does `with factory(run_dir / "_http") as resolvers:`, so the `EntitlementError` raise
+     path still closes the clients. `_http/` is removed after the `with` exits and after the atomic manifest write,
+     best-effort (Decision 2); `HttpCache` is plain files, so removal is safe on Windows.
+   - **The `resolvers=` parameter keeps working unchanged**, with no per-run cache, for callers that pass ready-made
+     resolvers. The factory is a second, optional parameter and is the production path used by `run.py`; exactly one of
+     the two is given. Reason: 15 call sites pass `resolvers=` (12 in `tests/integration/fulltext/test_capture.py`, 2 in
+     `test_entitlement_attribution.py`, 1 in `test_run.py`) and none of them builds an HTTP client, so replacing the
+     parameter would rewrite them for no behaviour.
+   - `already_resolved_record_ids` is separate and unchanged: it skips records already resolved in sealed runs.
 
 ## Alternatives considered
 
@@ -141,6 +152,9 @@ Tests PR4 adds or changes. Each new test must be shown to fail on `bf14af4`.
   `raw_dir/"_cache"`; and in `test_enrich.py` `_clear_http_cache` (about L175) with
   `test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothing` (about L834): they must clear
   `<run_dir>/_http` instead, or they become vacuous.
+- `tests/integration/fulltext/test_capture.py` gains tests for the factory path (closing on the `EntitlementError`
+  path, `_http/` gone after seal, `resolvers=` untouched); `tests/integration/fulltext/test_run.py` covers `run.py`
+  passing the factory.
 - `tests/unit/capture/test_layout.py` (about L49 and L194) asserts the exact `NON_RUN_DIRNAMES` set and `__all__`; both
   change with `HTTP_CACHE_DIRNAME`.
 - Run `pytest -n 4` as well as single-process, and `mkdocs build --strict`.
@@ -158,5 +172,6 @@ Tests PR4 adds or changes. Each new test must be shown to fail on `bf14af4`.
   L275), `sources/cache.py` (about L10-11), `capture/enrich.py` (about L76, L98, L115-116, L498, L685-694).
 - Docs: `README.md` (about L75), `docs/architecture/provenance.md` (about L27, L102, L143-148),
   `docs/how-to/run-a-new-review.md` (about L249, L262, and the layout tree), `docs/getting-started.md` (quota note),
-  `CHANGELOG.md`. The resume message in `cli.py` (about L323) and its test stay true.
+  `CHANGELOG.md`. The resume message in `cli.py` (about L323) and its test stay true, as do
+  `docs/how-to/run-a-new-review.md` about L234 (cursor resume) and L306 (legacy dirname skipped).
 - The tests above.
