@@ -107,7 +107,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+import shutil
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager, ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -117,6 +119,7 @@ from pydantic import BaseModel, ConfigDict
 
 from prismabib import __version__ as _CLIENT_VERSION
 from prismabib.capture.layout import (
+    HTTP_CACHE_DIRNAME,
     RUN_MANIFEST_FILENAME,
     atomic_write_bytes,
     guard_writable,
@@ -124,7 +127,7 @@ from prismabib.capture.layout import (
     new_run_id,
 )
 from prismabib.capture.manifest import FullTextRunManifest
-from prismabib.errors import EntitlementError
+from prismabib.errors import EntitlementError, ValidationError
 from prismabib.fulltext.resolve import (
     SCIENCEDIRECT,
     FullTextAttempt,
@@ -138,6 +141,9 @@ if TYPE_CHECKING:
     from prismabib.project import Project
 
 logger = structlog.get_logger(__name__)
+
+#: Builds the resolver chain around a per-run HTTP cache directory; see ``default_chain``.
+ChainFactory = Callable[[Path], AbstractContextManager[Sequence[FullTextResolver]]]
 
 #: Every full-text resolution run lives under ``project.fulltext_dir / RUNS_DIRNAME``,
 #: a sibling of :data:`~prismabib.fulltext.resolve.MANUAL_DROP_DIRNAME` -- the two
@@ -595,7 +601,8 @@ def capture_fulltext(
     *,
     pending_ids: Sequence[str],
     doi_by_record_id: Mapping[str, str | None],
-    resolvers: Sequence[FullTextResolver],
+    resolvers: Sequence[FullTextResolver] | None = None,
+    chain_factory: ChainFactory | None = None,
     budget: int | None = None,
 ) -> FullTextCaptureOutcome:
     """Run (or resume) the resolver chain over ``pending_ids`` and seal a Layer 0 run.
@@ -616,8 +623,14 @@ def capture_fulltext(
             with none), read from Layer 1 by the caller. This function never
             opens a database connection of its own -- see the module
             docstring and ADR 0019 Decision 0.
-        resolvers: The chain to run, in order (see
-            :func:`~prismabib.fulltext.resolve.default_chain`).
+        resolvers: A ready-made chain to run, in order. It carries no per-run
+            HTTP cache. Exactly one of ``resolvers`` and ``chain_factory``.
+        chain_factory: The production path (ADR 0038): called with the run's
+            ``_http/`` directory, after the resume-or-new decision, and entered
+            as a context manager that is closed here, also on the
+            :class:`~prismabib.errors.EntitlementError` path (see
+            :func:`~prismabib.fulltext.resolve.default_chain`). ``_http/`` is
+            removed after the run is sealed. Exactly one of the two.
         budget: The maximum number of records this call will attempt.
             ``None`` for no limit.
 
@@ -625,6 +638,8 @@ def capture_fulltext(
         A :class:`FullTextCaptureOutcome` describing this call's contribution.
 
     Raises:
+        ValidationError: If not exactly one of ``resolvers`` and
+            ``chain_factory`` is given.
         EntitlementError: When one resolver has refused
             :data:`CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT` records in a row
             and resolved none of them in this run -- the signature of an
@@ -636,6 +651,10 @@ def capture_fulltext(
             run directory turns out to already be sealed); unreachable through
             this function's own code paths.
     """
+    if (resolvers is None) == (chain_factory is None):
+        raise ValidationError(
+            "capture_fulltext needs exactly one of resolvers= and chain_factory=."
+        )
     sorted_pending = sorted(set(pending_ids))
     fulltext_dir = project.fulltext_dir
     runs_root = fulltext_dir / RUNS_DIRNAME
@@ -668,183 +687,197 @@ def capture_fulltext(
             records_requested=len(sorted_pending),
         )
 
-    run_id = run_dir.name
-    attempts_path = run_dir / ATTEMPTS_FILENAME
-    attempts_lines = [
-        json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-        for row in _iter_attempt_rows(attempts_path)
-    ]
+    with ExitStack() as stack:
+        active: Sequence[FullTextResolver] = (
+            stack.enter_context(chain_factory(run_dir / HTTP_CACHE_DIRNAME))
+            if chain_factory is not None
+            else resolvers or ()
+        )
+        run_id = run_dir.name
+        attempts_path = run_dir / ATTEMPTS_FILENAME
+        attempts_lines = [
+            json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            for row in _iter_attempt_rows(attempts_path)
+        ]
 
-    call_attempted = 0
-    call_resolved_by_resolver: dict[str, int] = {}
-    call_refused_by_resolver: dict[str, int] = {}
-    call_unresolved: list[str] = []
-    call_failed: list[str] = []
-    #: Consecutive genuine refusals (``entitled=False``), per resolver, since
-    #: the last non-refusal attempt from that same resolver -- reset to 0 on
-    #: any other outcome for that resolver, never on an outcome for a
-    #: different one. Local to this call, not part of `_FullTextProgress`:
-    #: the guard against re-arming on a resumed run is
-    #: `state.resolved_by_resolver`, which *is* persisted, not this counter.
-    #: See CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT.
-    consecutive_refused_by_resolver: dict[str, int] = {}
+        call_attempted = 0
+        call_resolved_by_resolver: dict[str, int] = {}
+        call_refused_by_resolver: dict[str, int] = {}
+        call_unresolved: list[str] = []
+        call_failed: list[str] = []
+        #: Consecutive genuine refusals (``entitled=False``), per resolver, since
+        #: the last non-refusal attempt from that same resolver -- reset to 0 on
+        #: any other outcome for that resolver, never on an outcome for a
+        #: different one. Local to this call, not part of `_FullTextProgress`:
+        #: the guard against re-arming on a resumed run is
+        #: `state.resolved_by_resolver`, which *is* persisted, not this counter.
+        #: See CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT.
+        consecutive_refused_by_resolver: dict[str, int] = {}
 
-    while state.records_done < len(state.pending_record_ids):
-        if budget is not None and call_attempted >= budget:
-            break
+        while state.records_done < len(state.pending_record_ids):
+            if budget is not None and call_attempted >= budget:
+                break
 
-        record_id = state.pending_record_ids[state.records_done]
-        call_attempted += 1
-        doi = doi_by_record_id.get(record_id)
+            record_id = state.pending_record_ids[state.records_done]
+            call_attempted += 1
+            doi = doi_by_record_id.get(record_id)
 
-        try:
-            asset, attempts = resolve_fulltext(record_id=record_id, doi=doi, resolvers=resolvers)
-        except FullTextResolutionError as exc:
-            asset = None
-            attempts = exc.attempts
-            outcome_is_failure = True
-        else:
-            outcome_is_failure = False
-
-        for attempt in attempts:
-            # The breaker counts *genuine* refusals, which is not the same
-            # thing as `attempt.entitled is False` (ADR 0021 Decision 1b:
-            # Layer 0 records the raw fact, and only Layer 1 attributes it to
-            # a publisher). Reading Layer 0's value here would abort a run for
-            # a user whose ScienceDirect key is perfectly good but whose first
-            # ten records are IEEE's -- a false positive that stops retrieval
-            # for every *later* resolver too, Crossref TDM and open access
-            # included, since the chain never reaches them. So the same
-            # derivation the store applies is applied here, to the same
-            # (resolver, DOI) pair.
-            attributed = (
-                _refusal_entitled(resolver_name=attempt.resolver_name, doi=doi)
-                if attempt.entitled is False
-                else None
-            )
-            if attempt.entitled is False and attributed is False:
-                # Checked *before* anything below writes a single byte for
-                # this attempt: a resolver's attempts always carry `content`
-                # only when `entitled=True` (resolve.py never populates it
-                # otherwise), so no asset has been written yet for this
-                # record when the breaker can possibly trip -- discarding it
-                # here costs one call, not a corrupted attempts.jsonl.
-                consecutive_refused_by_resolver[attempt.resolver_name] = (
-                    consecutive_refused_by_resolver.get(attempt.resolver_name, 0) + 1
-                )
-                if (
-                    state.resolved_by_resolver.get(attempt.resolver_name, 0) == 0
-                    and consecutive_refused_by_resolver[attempt.resolver_name]
-                    >= CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT
-                ):
-                    logger.warning(
-                        "fulltext.capture.entitlement_breaker_tripped",
-                        run_id=run_id,
-                        resolver=attempt.resolver_name,
-                        consecutive_refusals=consecutive_refused_by_resolver[attempt.resolver_name],
-                    )
-                    raise _entitlement_breaker_error(
-                        resolver_name=attempt.resolver_name,
-                        consecutive_refusals=consecutive_refused_by_resolver[attempt.resolver_name],
-                    )
-            elif attempt.entitled is False:
-                # A refusal this resolver's publisher constraint says is not
-                # about this record: it is *neutral*, neither incrementing
-                # the counter nor resetting it. An unentitled ScienceDirect
-                # key refuses every record it is asked about, so the IEEE
-                # papers between two Elsevier ones say nothing either way --
-                # letting them reset the counter would leave the breaker
-                # un-armed on exactly the corpus shape (Elsevier a minority)
-                # that motivated a consecutive counter over a first-record
-                # probe in the first place.
-                pass
+            try:
+                asset, attempts = resolve_fulltext(record_id=record_id, doi=doi, resolvers=active)
+            except FullTextResolutionError as exc:
+                asset = None
+                attempts = exc.attempts
+                outcome_is_failure = True
             else:
-                # Any other outcome from this resolver -- resolved, or "not
-                # an entitlement question" (HTTP 404, no OA location, no
-                # manual file) -- breaks its own run of refusals. A record
-                # embargoed for reasons unrelated to the key must not
-                # accumulate toward a breaker meant to detect the key
-                # itself.
-                consecutive_refused_by_resolver[attempt.resolver_name] = 0
+                outcome_is_failure = False
 
-            asset_file = (
-                _write_asset(run_dir, content=attempt.content, media_type=attempt.media_type)
-                if attempt.content is not None and attempt.media_type is not None
-                else None
-            )
-            attempts_lines.append(_serialise_attempt(attempt, asset_file=asset_file))
-            if attempt.entitled is False:
-                state.refused_by_resolver[attempt.resolver_name] = (
-                    state.refused_by_resolver.get(attempt.resolver_name, 0) + 1
+            for attempt in attempts:
+                # The breaker counts *genuine* refusals, which is not the same
+                # thing as `attempt.entitled is False` (ADR 0021 Decision 1b:
+                # Layer 0 records the raw fact, and only Layer 1 attributes it to
+                # a publisher). Reading Layer 0's value here would abort a run for
+                # a user whose ScienceDirect key is perfectly good but whose first
+                # ten records are IEEE's -- a false positive that stops retrieval
+                # for every *later* resolver too, Crossref TDM and open access
+                # included, since the chain never reaches them. So the same
+                # derivation the store applies is applied here, to the same
+                # (resolver, DOI) pair.
+                attributed = (
+                    _refusal_entitled(resolver_name=attempt.resolver_name, doi=doi)
+                    if attempt.entitled is False
+                    else None
                 )
-                call_refused_by_resolver[attempt.resolver_name] = (
-                    call_refused_by_resolver.get(attempt.resolver_name, 0) + 1
+                if attempt.entitled is False and attributed is False:
+                    # Checked *before* anything below writes a single byte for
+                    # this attempt: a resolver's attempts always carry `content`
+                    # only when `entitled=True` (resolve.py never populates it
+                    # otherwise), so no asset has been written yet for this
+                    # record when the breaker can possibly trip -- discarding it
+                    # here costs one call, not a corrupted attempts.jsonl.
+                    consecutive_refused_by_resolver[attempt.resolver_name] = (
+                        consecutive_refused_by_resolver.get(attempt.resolver_name, 0) + 1
+                    )
+                    if (
+                        state.resolved_by_resolver.get(attempt.resolver_name, 0) == 0
+                        and consecutive_refused_by_resolver[attempt.resolver_name]
+                        >= CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT
+                    ):
+                        logger.warning(
+                            "fulltext.capture.entitlement_breaker_tripped",
+                            run_id=run_id,
+                            resolver=attempt.resolver_name,
+                            consecutive_refusals=consecutive_refused_by_resolver[
+                                attempt.resolver_name
+                            ],
+                        )
+                        raise _entitlement_breaker_error(
+                            resolver_name=attempt.resolver_name,
+                            consecutive_refusals=consecutive_refused_by_resolver[
+                                attempt.resolver_name
+                            ],
+                        )
+                elif attempt.entitled is False:
+                    # A refusal this resolver's publisher constraint says is not
+                    # about this record: it is *neutral*, neither incrementing
+                    # the counter nor resetting it. An unentitled ScienceDirect
+                    # key refuses every record it is asked about, so the IEEE
+                    # papers between two Elsevier ones say nothing either way --
+                    # letting them reset the counter would leave the breaker
+                    # un-armed on exactly the corpus shape (Elsevier a minority)
+                    # that motivated a consecutive counter over a first-record
+                    # probe in the first place.
+                    pass
+                else:
+                    # Any other outcome from this resolver -- resolved, or "not
+                    # an entitlement question" (HTTP 404, no OA location, no
+                    # manual file) -- breaks its own run of refusals. A record
+                    # embargoed for reasons unrelated to the key must not
+                    # accumulate toward a breaker meant to detect the key
+                    # itself.
+                    consecutive_refused_by_resolver[attempt.resolver_name] = 0
+
+                asset_file = (
+                    _write_asset(run_dir, content=attempt.content, media_type=attempt.media_type)
+                    if attempt.content is not None and attempt.media_type is not None
+                    else None
+                )
+                attempts_lines.append(_serialise_attempt(attempt, asset_file=asset_file))
+                if attempt.entitled is False:
+                    state.refused_by_resolver[attempt.resolver_name] = (
+                        state.refused_by_resolver.get(attempt.resolver_name, 0) + 1
+                    )
+                    call_refused_by_resolver[attempt.resolver_name] = (
+                        call_refused_by_resolver.get(attempt.resolver_name, 0) + 1
+                    )
+
+            guard_writable(run_dir)
+            body = ("\n".join(attempts_lines) + "\n").encode("utf-8") if attempts_lines else b""
+            atomic_write_bytes(attempts_path, body)
+
+            if outcome_is_failure:
+                state.failed_record_ids.append(record_id)
+                call_failed.append(record_id)
+                logger.warning("fulltext.capture.record_failed", run_id=run_id, record_id=record_id)
+            elif asset is None:
+                state.unresolved_record_ids.append(record_id)
+                call_unresolved.append(record_id)
+            else:
+                state.resolved_by_resolver[asset.resolver_name] = (
+                    state.resolved_by_resolver.get(asset.resolver_name, 0) + 1
+                )
+                call_resolved_by_resolver[asset.resolver_name] = (
+                    call_resolved_by_resolver.get(asset.resolver_name, 0) + 1
                 )
 
-        guard_writable(run_dir)
-        body = ("\n".join(attempts_lines) + "\n").encode("utf-8") if attempts_lines else b""
-        atomic_write_bytes(attempts_path, body)
+            state.records_done += 1
+            _save_progress(run_dir, state)
 
-        if outcome_is_failure:
-            state.failed_record_ids.append(record_id)
-            call_failed.append(record_id)
-            logger.warning("fulltext.capture.record_failed", run_id=run_id, record_id=record_id)
-        elif asset is None:
-            state.unresolved_record_ids.append(record_id)
-            call_unresolved.append(record_id)
-        else:
-            state.resolved_by_resolver[asset.resolver_name] = (
-                state.resolved_by_resolver.get(asset.resolver_name, 0) + 1
-            )
-            call_resolved_by_resolver[asset.resolver_name] = (
-                call_resolved_by_resolver.get(asset.resolver_name, 0) + 1
-            )
-
-        state.records_done += 1
-        _save_progress(run_dir, state)
-
-    sealed = state.records_done >= len(state.pending_record_ids)
-    manifest = FullTextRunManifest(
-        run_id=run_id,
-        started_at=state.started_at,
-        finished_at=datetime.now(UTC),
-        records_requested=len(state.pending_record_ids),
-        records_attempted=call_attempted,
-        records_resolved=sum(state.resolved_by_resolver.values()),
-        resolved_by_resolver=dict(state.resolved_by_resolver),
-        refused_by_resolver=dict(state.refused_by_resolver),
-        unresolved_record_ids=list(state.unresolved_record_ids),
-        failed_record_ids=list(state.failed_record_ids),
-        attempts_file=ATTEMPTS_FILENAME,
-        attempts_sha256=_attempts_sha256(attempts_path),
-        client_version=_CLIENT_VERSION,
-        criteria_version=project.criteria.version,
-    )
-
-    if sealed:
-        guard_writable(run_dir)
-        atomic_write_bytes(
-            run_dir / RUN_MANIFEST_FILENAME,
-            manifest.model_dump_json(indent=2).encode("utf-8") + b"\n",
-        )
-        progress_path = run_dir / PROGRESS_FILENAME
-        if progress_path.is_file():
-            progress_path.unlink()
-        logger.info(
-            "fulltext.capture.run_sealed",
+        sealed = state.records_done >= len(state.pending_record_ids)
+        manifest = FullTextRunManifest(
             run_id=run_id,
-            records_requested=manifest.records_requested,
-            records_resolved=manifest.records_resolved,
-            attempts_sha256=manifest.attempts_sha256,
-        )
-    else:
-        logger.info(
-            "fulltext.capture.budget_exhausted",
-            run_id=run_id,
-            budget=budget,
-            records_done=state.records_done,
+            started_at=state.started_at,
+            finished_at=datetime.now(UTC),
             records_requested=len(state.pending_record_ids),
+            records_attempted=call_attempted,
+            records_resolved=sum(state.resolved_by_resolver.values()),
+            resolved_by_resolver=dict(state.resolved_by_resolver),
+            refused_by_resolver=dict(state.refused_by_resolver),
+            unresolved_record_ids=list(state.unresolved_record_ids),
+            failed_record_ids=list(state.failed_record_ids),
+            attempts_file=ATTEMPTS_FILENAME,
+            attempts_sha256=_attempts_sha256(attempts_path),
+            client_version=_CLIENT_VERSION,
+            criteria_version=project.criteria.version,
         )
+
+        if sealed:
+            guard_writable(run_dir)
+            atomic_write_bytes(
+                run_dir / RUN_MANIFEST_FILENAME,
+                manifest.model_dump_json(indent=2).encode("utf-8") + b"\n",
+            )
+            progress_path = run_dir / PROGRESS_FILENAME
+            if progress_path.is_file():
+                progress_path.unlink()
+            logger.info(
+                "fulltext.capture.run_sealed",
+                run_id=run_id,
+                records_requested=manifest.records_requested,
+                records_resolved=manifest.records_resolved,
+                attempts_sha256=manifest.attempts_sha256,
+            )
+        else:
+            logger.info(
+                "fulltext.capture.budget_exhausted",
+                run_id=run_id,
+                budget=budget,
+                records_done=state.records_done,
+                records_requested=len(state.pending_record_ids),
+            )
+
+    # After the clients are closed and, if sealed, after the manifest write; best-effort.
+    if sealed:
+        shutil.rmtree(run_dir / HTTP_CACHE_DIRNAME, ignore_errors=True)
 
     return FullTextCaptureOutcome(
         manifest=manifest,

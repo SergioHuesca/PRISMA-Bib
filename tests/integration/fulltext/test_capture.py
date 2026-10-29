@@ -10,11 +10,14 @@ persistence :mod:`prismabib.fulltext.resolve` hands up.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
-from prismabib.errors import EntitlementError, UpstreamError
+from prismabib.capture.layout import HTTP_CACHE_DIRNAME
+from prismabib.errors import EntitlementError, UpstreamError, ValidationError
 from prismabib.fulltext.capture import (
     ATTEMPTS_FILENAME,
     CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT,
@@ -23,6 +26,7 @@ from prismabib.fulltext.capture import (
     capture_fulltext,
     sealed_fulltext_run_dirs,
 )
+from prismabib.fulltext.resolve import FullTextResolver
 from prismabib.project import Project
 from tests.unit.fulltext.test_resolve import _asset, _StubResolver
 
@@ -80,6 +84,38 @@ class _ResolvesOneThenRefuses:
 
 def _project(tmp_path: Path, slug: str = "capture-demo") -> Project:
     return Project.init(slug, title="Capture Demo", root=tmp_path)
+
+
+class _Factory:
+    """A chain factory that records how it was used, as ``default_chain`` would be.
+
+    Writes one file into the cache directory it is given, standing in for an
+    ``HttpCache`` entry, so a test can see what was left behind.
+    """
+
+    def __init__(self, resolvers: Sequence[FullTextResolver]) -> None:
+        self._resolvers = resolvers
+        self.cache_dirs: list[Path] = []
+        self.entries_on_entry: list[list[str]] = []
+        self.entered = 0
+        self.closed = 0
+
+    @contextmanager
+    def __call__(self, cache_dir: Path) -> Iterator[Sequence[FullTextResolver]]:
+        self.cache_dirs.append(cache_dir)
+        self.entries_on_entry.append(sorted(p.name for p in cache_dir.rglob("*.bin")))
+        (cache_dir / "ab").mkdir(parents=True, exist_ok=True)
+        (cache_dir / "ab" / "entry.bin").write_bytes(b"{}")
+        self.entered += 1
+        try:
+            yield self._resolvers
+        finally:
+            self.closed += 1
+
+
+def _sole_run_dir(project: Project) -> Path:
+    (run_dir,) = [e for e in (project.fulltext_dir / RUNS_DIRNAME).iterdir() if e.is_dir()]
+    return run_dir
 
 
 @pytest.mark.integration
@@ -525,3 +561,118 @@ def test_already_resolved__run_directory_without_attempts__is_skipped(tmp_path: 
     _write_run(fulltext_dir, "20260304T000000Z-dddddddd", "a", sealed=False)
 
     assert already_resolved_record_ids(fulltext_dir, include_unsealed=True) == {"a"}
+
+
+@pytest.mark.integration
+def test_capture__chain_factory__seals_closes_the_chain_and_removes_the_run_cache(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    factory = _Factory([_StubResolver(name="manual", outcome=_asset("manual", _RECORD_A))])
+
+    outcome = capture_fulltext(
+        project,
+        pending_ids=[_RECORD_A],
+        doi_by_record_id={_RECORD_A: None},
+        chain_factory=factory,
+    )
+
+    run_dir = _sole_run_dir(project)
+    assert outcome.sealed is True
+    assert factory.cache_dirs == [run_dir / HTTP_CACHE_DIRNAME]
+    assert (factory.entered, factory.closed) == (1, 1)
+    assert (run_dir / "manifest.json").is_file()
+    assert not (run_dir / HTTP_CACHE_DIRNAME).exists()
+
+
+@pytest.mark.integration
+def test_capture__chain_factory_unsealed_run__keeps_the_run_cache_and_resumes_into_it(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    ids = [_RECORD_A, _RECORD_B]
+    dois: dict[str, str | None] = {_RECORD_A: None, _RECORD_B: None}
+
+    class _PerRecordResolver:
+        name = "manual"
+
+        def resolve(self, *, record_id: str, doi: str | None) -> object:
+            del doi
+            return _asset("manual", record_id)
+
+    factory = _Factory([_PerRecordResolver()])
+    first = capture_fulltext(
+        project, pending_ids=ids, doi_by_record_id=dois, chain_factory=factory, budget=1
+    )
+    run_dir = _sole_run_dir(project)
+    assert first.sealed is False
+    assert (run_dir / HTTP_CACHE_DIRNAME / "ab" / "entry.bin").is_file()
+
+    # The resumed attempt is handed the same run's directory, which still holds the entry.
+    resumed = _Factory([_PerRecordResolver()])
+    second = capture_fulltext(
+        project, pending_ids=ids, doi_by_record_id=dois, chain_factory=resumed, budget=1
+    )
+
+    assert factory.entries_on_entry == [[]]
+    assert second.sealed is True
+    assert resumed.cache_dirs == [run_dir / HTTP_CACHE_DIRNAME]
+    assert resumed.entries_on_entry == [["entry.bin"]]
+    assert not (run_dir / HTTP_CACHE_DIRNAME).exists()
+
+
+@pytest.mark.integration
+def test_capture__chain_factory_entitlement_breaker__closes_the_chain_and_keeps_the_run_cache(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    record_ids = _record_ids(CONSECUTIVE_ENTITLEMENT_REFUSAL_LIMIT + 2)
+    factory = _Factory([_AlwaysRefusesScienceDirect()])
+
+    with pytest.raises(EntitlementError, match="sciencedirect"):
+        capture_fulltext(
+            project,
+            pending_ids=record_ids,
+            doi_by_record_id=_elsevier_dois(record_ids),
+            chain_factory=factory,
+        )
+
+    run_dir = _sole_run_dir(project)
+    assert (factory.entered, factory.closed) == (1, 1)
+    assert not (run_dir / "manifest.json").is_file()
+    assert (run_dir / HTTP_CACHE_DIRNAME).is_dir()
+
+
+@pytest.mark.integration
+def test_capture__resolvers_argument__still_works_and_creates_no_run_cache(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+
+    capture_fulltext(
+        project,
+        pending_ids=[_RECORD_A],
+        doi_by_record_id={_RECORD_A: None},
+        resolvers=[_StubResolver(name="manual", outcome=_asset("manual", _RECORD_A))],
+    )
+
+    assert not (_sole_run_dir(project) / HTTP_CACHE_DIRNAME).exists()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("both", [False, True], ids=["neither", "both"])
+def test_capture__resolvers_and_chain_factory__exactly_one_is_required(
+    tmp_path: Path, both: bool
+) -> None:
+    project = _project(tmp_path)
+    stub = _StubResolver(name="manual", outcome=_asset("manual", _RECORD_A))
+    with pytest.raises(ValidationError, match="exactly one"):
+        capture_fulltext(
+            project,
+            pending_ids=[_RECORD_A],
+            doi_by_record_id={_RECORD_A: None},
+            resolvers=[stub] if both else None,
+            chain_factory=_Factory([stub]) if both else None,
+        )
+
+    assert not (project.fulltext_dir / RUNS_DIRNAME).exists()

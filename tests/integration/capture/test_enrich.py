@@ -43,7 +43,7 @@ from prismabib.capture.enrich import (
     PROGRESS_FILENAME,
     capture_abstracts,
 )
-from prismabib.capture.layout import ABSTRACTS_DIRNAME, CACHE_DIRNAME, SealedRunError
+from prismabib.capture.layout import ABSTRACTS_DIRNAME, HTTP_CACHE_DIRNAME, SealedRunError
 from prismabib.capture.manifest import AbstractUnavailable
 from prismabib.capture.writer import _find_resumable_run, capture_search
 from prismabib.errors import EntitlementError, QuotaExceededError, ValidationError
@@ -173,15 +173,18 @@ def _line_count(path: Path) -> int:
 
 
 def _clear_http_cache(project: Project) -> None:
-    """Delete ``raw/_cache/``, the way a routine cleanup or a fresh clone would.
+    """Delete the unsealed run's ``_http/``, the way a routine cleanup or a fresh clone would.
 
-    Every quota claim about resumption has to survive this. ``raw/_cache/`` is
+    Every quota claim about resumption has to survive this. ``_http/`` is
     gitignored and documented as disposable, so a test that leaves it warm
     cannot tell "the resume started at the right offset" apart from "the
     re-requested records happened to be free this time" -- and only the first
-    of those is true on the machine that matters.
+    of those is true on the machine that matters. Asserting that it exists
+    keeps this from becoming vacuous if the cache ever moves again.
     """
-    shutil.rmtree(project.raw_dir / CACHE_DIRNAME, ignore_errors=True)
+    http_dir = _sole_run_dir(project) / HTTP_CACHE_DIRNAME
+    assert http_dir.is_dir()
+    shutil.rmtree(http_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -220,17 +223,15 @@ def test_enrich__cold_cache__issues_exactly_one_request_per_record(
 
 
 @pytest.mark.integration
-def test_enrich__warm_cache_rerun__issues_zero_requests_and_reproduces_the_hash(
+def test_enrich__rerun_same_responses__issues_a_new_request_per_record_and_reproduces_the_hash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A second run over the same records must cost nothing and produce the same bytes.
+    """A second run is a new run: it asks again, and the same bodies give the same bytes.
 
-    Two independent claims in one place because they fail together: the byte
-    identity is what makes ``payload_sha256`` a citable identifier of a
-    capture (S02-AC2's guarantee, restated for this run kind), and it only
-    holds if the re-run genuinely replayed the cached bodies rather than
-    re-fetching and re-encoding whatever the server happened to return the
-    second time.
+    The byte identity is what makes ``payload_sha256`` a citable identifier of a
+    capture (S02-AC2's guarantee, restated for this run kind): a deterministic
+    function of the response bodies. It does not mean a re-run is free (ADR 0038):
+    a new run never reads an earlier run's cache, so it spends the quota again.
     """
     monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
     project = _init_project(tmp_path)
@@ -244,9 +245,60 @@ def test_enrich__warm_cache_rerun__issues_zero_requests_and_reproduces_the_hash(
         route = _mock_abstracts()
         second = capture_abstracts(project, record_ids=records)
 
-    assert route.call_count == 0
+    assert route.call_count == _CORPUS_SIZE
     assert first.run_id != second.run_id
     assert first.payload_sha256 == second.payload_sha256
+
+
+@pytest.mark.integration
+def test_enrich__resume_mid_batch__replays_paid_responses_from_the_run_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A budget below ``BATCH_SIZE`` writes no batch; the run's own ``_http/`` recovers it."""
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+
+    with respx.mock:
+        _mock_abstracts()
+        capture_abstracts(project, record_ids=records, budget=50)
+
+    assert (_sole_run_dir(project) / HTTP_CACHE_DIRNAME).is_dir()
+
+    with respx.mock:
+        route = _mock_abstracts()
+        manifest = capture_abstracts(project, record_ids=records)
+
+    # The 50 already-paid records are cache hits; only the remaining 70 are requested.
+    assert route.call_count == _CORPUS_SIZE - 50
+    assert manifest.records_fetched == _CORPUS_SIZE
+
+
+@pytest.mark.integration
+def test_enrich__seal__removes_run_cache_and_leaves_payload_hash_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    project = _init_project(tmp_path)
+    records = _corpus()
+
+    with respx.mock:
+        _mock_abstracts()
+        capture_abstracts(project, record_ids=records, budget=50)
+
+    run_dir = _sole_run_dir(project)
+    assert (run_dir / HTTP_CACHE_DIRNAME).is_dir()  # an unsealed run keeps its cache
+
+    with respx.mock:
+        _mock_abstracts()
+        manifest = capture_abstracts(project, record_ids=records)
+
+    assert (run_dir / "manifest.json").is_file()
+    assert not (run_dir / HTTP_CACHE_DIRNAME).exists()
+    assert (
+        manifest.payload_sha256
+        == hashlib.sha256(_payload_bytes(run_dir, manifest.payload_files)).hexdigest()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -838,7 +890,7 @@ def test_enrich__resumed_at_a_batch_boundary_with_a_cold_cache__refetches_nothin
 
     The sibling resumption tests use budgets *below* ``BATCH_SIZE``, so no batch
     is ever written and ``records_done`` stays 0 -- every resume in the suite
-    was from offset zero. Their saving therefore came from ``raw/_cache/``,
+    was from offset zero. Their saving therefore came from the run's ``_http/``,
     which is gitignored and documented as disposable, not from ``progress.json``.
     They would pass unchanged against a resume that replayed from record 0.
 

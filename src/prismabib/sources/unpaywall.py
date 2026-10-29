@@ -179,13 +179,12 @@ class UnpaywallClient:
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
             logger.info("unpaywall.lookup", endpoint=url, cache="hit")
-            return None if cached == b"" else _parse_json(cached)
+            return _parse_json(cached)
 
         response = self._request_with_retry(url, params, follow_redirects=False)
         if response.status_code == 404:
             logger.info("unpaywall.lookup.not_found", endpoint=url)
-            if self._cache is not None:
-                self._cache.store(url, params, b"")
+            # Never cached (ADR 0038): a DOI "not found" now may be registered later.
             return None
 
         body = response.content

@@ -32,6 +32,7 @@ from prismabib.capture import layout, writer
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     CACHE_DIRNAME,
+    HTTP_CACHE_DIRNAME,
     NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
     RUN_MANIFEST_FILENAME,
@@ -47,6 +48,14 @@ from prismabib.store.load import _sealed_run_dirs
 @pytest.mark.unit
 def test_layout__non_run_dirnames__names_both_non_run_directories() -> None:
     assert set(NON_RUN_DIRNAMES) == {CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME}
+
+
+@pytest.mark.unit
+def test_layout__http_cache_dirname__is_per_run_and_distinct_from_the_legacy_shared_cache() -> None:
+    assert HTTP_CACHE_DIRNAME == "_http"
+    # It lives inside a run directory, never directly under raw/, so it is no scan name.
+    assert HTTP_CACHE_DIRNAME not in NON_RUN_DIRNAMES
+    assert CACHE_DIRNAME in NON_RUN_DIRNAMES  # legacy raw/_cache is still skipped
 
 
 @pytest.mark.unit
@@ -192,6 +201,7 @@ def test_layout__module__exports_exactly_the_shared_vocabulary() -> None:
     assert set(layout.__all__) == {
         "ABSTRACTS_DIRNAME",
         "CACHE_DIRNAME",
+        "HTTP_CACHE_DIRNAME",
         "NON_RUN_DIRNAMES",
         "OPENALEX_DIRNAME",
         "RUN_MANIFEST_FILENAME",

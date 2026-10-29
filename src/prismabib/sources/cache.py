@@ -1,19 +1,19 @@
-"""Content-addressed HTTP cache (BUILD_PLAN §Stage 2, line 772; risk 2, line 1488).
+"""Content-addressed HTTP cache, one per run (BUILD_PLAN §Stage 2, line 772; ADR 0038).
 
 Keyed on ``(url, params)`` rather than on response content, because the
-request -- not the response -- is what a re-run needs to recognise as
-"already fetched": the whole point is to avoid re-spending Scopus quota on
-a request the operator already made during development, and the response
-does not exist yet until we decide whether to make it.
+request -- not the response -- is what a resumed run needs to recognise as
+"already fetched": the response does not exist yet until we decide whether to
+make it. Since ADR 0038 a cache is rooted in one run directory
+(``<run_dir>/_http/``), serves only to resume that unsealed run, and is removed
+when the run is sealed; a new run never reads an earlier run's cache.
 
-The cache stores the exact response bytes it was given, unmodified, so that
-a warm-cache re-run replays byte-for-byte what the server returned
-(BUILD_PLAN S02-AC2). Callers that need to persist a *reproducible*
-serialisation (e.g. :mod:`prismabib.capture.writer`, which re-encodes the
-parsed page rather than storing raw bytes -- see that module's docstring for
-why) get that reproducibility from re-encoding deterministically, not from
-this cache; this cache's only promise is "you get back exactly what you
-put in".
+The cache stores the exact response bytes it was given, unmodified, so that a
+resumed run replays byte-for-byte what the server returned. Callers that need
+to persist a *reproducible* serialisation (e.g. :mod:`prismabib.capture.writer`,
+which re-encodes the parsed page rather than storing raw bytes -- see that
+module's docstring for why) get that reproducibility from re-encoding
+deterministically, not from this cache; this cache's only promise is "you get
+back exactly what you put in".
 """
 
 from __future__ import annotations

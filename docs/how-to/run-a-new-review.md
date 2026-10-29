@@ -246,8 +246,11 @@ projects/my-review/
 │   │   ├── page-0001.jsonl
 │   │   ├── ...
 │   │   └── manifest.json              # sealed: query, view, total_results, SHA-256
-│   └── _cache/                        # HTTP cache; never a run, never git-tracked
+│   └── _cache/                        # legacy shared cache (pre-ADR 0038); never read, safe to delete
 ```
+
+While a run is unsealed it also holds `_http/`, its own HTTP cache, which exists only to
+resume that run and is deleted when the run is sealed.
 
 - **`raw/` is never tracked by git** (see
   [Architecture Overview](../architecture/overview.md#repository-structure)) — it is large
@@ -257,9 +260,12 @@ projects/my-review/
   pages. One manifest is one *search*: a review that runs a second search string gets a second
   run directory, and the diagram's identification count is the sum over the project's distinct
   searches ([ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md)). Re-running
-  the same query — to refresh citation counts — adds a run and no identification.
-- **`payload_sha256`** hashes every page file concatenated in fetch order. A re-run with the
-  HTTP cache warm reproduces it byte for byte.
+  the same query — to refresh citation counts — adds a run and no identification. It
+  issues every request again, so it **spends the query's full quota** and its citation
+  counts are as of the new run's `started_at` (ADR 0038).
+- **`payload_sha256`** hashes every page file concatenated in fetch order. The same
+  response bodies reproduce it byte for byte; a re-run is a new run and requests them
+  again.
 - **The run is sealed.** Sealing is the presence of `manifest.json`, and every write path in
   `capture/writer.py` refuses a sealed directory (`SealedRunError`) — immutability enforced
   in code, not by convention. A later `search` starts a new run directory.
@@ -303,7 +309,7 @@ stats = build_store(project, rebuild=True)
 print(stats.records_loaded, stats.duplicate_doi_groups)
 ```
 
-Only **sealed** run directories are loaded; `raw/_cache/` is skipped. The traversal order
+Only **sealed** run directories are loaded; a legacy `raw/_cache/` is skipped. The traversal order
 is fixed (runs by `run_id`, then each run's `payload_files` in fetch order, then line
 order), which is what makes two builds over identical Layer 0 input produce identical
 per-table checksums.
