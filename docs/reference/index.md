@@ -176,7 +176,9 @@ Elsevier Article Retrieval, addressed by DOI — entitled Elsevier content only.
 
 A DOI → open-access location lookup, and the download of whatever host that location
 actually resolves to. Takes no API key; `UNPAYWALL_EMAIL` is a terms-of-use contact
-address, not a credential.
+address, not a credential. A download is streamed and refused above 100 MiB
+(`MAX_DOWNLOAD_BYTES`). Error messages and logs show only `scheme://host[:port]/path` of a
+URL, so the email address in the query string never appears in them.
 
 ::: prismabib.sources.unpaywall
     options:
@@ -189,7 +191,8 @@ address, not a credential.
 A DOI → publisher-declared text-and-data-mining link lookup (ADR 0020), keyless like
 `sources.unpaywall` above and modelled closely on it. Reuses `UNPAYWALL_EMAIL` as
 Crossref's own `mailto` "polite pool" courtesy parameter rather than declaring a second
-credential for the same terms-of-use purpose.
+credential for the same terms-of-use purpose. Its download cap and its error and log
+redaction are the same as `sources.unpaywall`'s, so the `mailto` address stays out of messages.
 
 ::: prismabib.sources.crossref
     options:
