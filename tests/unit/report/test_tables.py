@@ -164,3 +164,21 @@ def test_tables__empty_table__still_renders_a_header_in_each_format() -> None:
     assert to_csv(empty) == "A,B\n"
     assert "| A | B |" in to_markdown(empty)
     assert r"\toprule" in to_latex(empty)
+
+
+def test_to_csv__formula_text__is_apostrophe_prefixed_numbers_untouched() -> None:
+    table = Table(
+        slug="x",
+        caption="x",
+        columns=("T", "N"),
+        rows=(("=HYPERLINK(1)", -3), ("+1+1", 2), ("@SUM(A1)", 1), ("\tx", 1), ("plain", 1)),
+    )
+    got = [r[0] for r in csv.reader(io.StringIO(to_csv(table)))][1:]
+    assert got == ["'=HYPERLINK(1)", "'+1+1", "'@SUM(A1)", "'\tx", "plain"]
+    assert "-3" in to_csv(table).splitlines()[1]
+    assert "'-3" not in to_csv(table)
+
+
+def test_to_markdown__pipe_and_newline__stay_in_one_cell() -> None:
+    table = Table(slug="x", caption="x", columns=("A", "B"), rows=(("Cats | Dogs", "a\nb"),))
+    assert to_markdown(table).splitlines()[-1] == "| Cats \\| Dogs | a b |"
