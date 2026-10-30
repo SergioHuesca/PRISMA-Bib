@@ -59,7 +59,7 @@ from prismabib.capture.registrations import (
 )
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
-from prismabib.errors import LogError, PrismabibError
+from prismabib.errors import LogError, PrismabibError, QuotaExceededError
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
@@ -128,6 +128,11 @@ def _echo_err(line: str = "") -> None:
     typer.echo(line, err=True)
 
 
+_QUOTA_RESUME_HINT: Final = (
+    "Everything fetched so far is saved. Re-run the same command after the quota resets to resume."
+)
+
+
 def _fail(exc: PrismabibError) -> NoReturn:
     """Report a known prismabib failure and exit non-zero, with no traceback.
 
@@ -147,6 +152,10 @@ def _fail(exc: PrismabibError) -> NoReturn:
     # exists so that distinction survives to the surface.
     _echo_err(f"prismabib: {type(exc).__name__}")
     _echo_err(str(exc))
+    if isinstance(exc, QuotaExceededError):
+        # search saves per page (cursor.json), enrich per batch and fulltext per
+        # record (progress.json); the interrupted run stays unsealed and resumes.
+        _echo_err(_QUOTA_RESUME_HINT)
     raise typer.Exit(code=_EXIT_KNOWN_ERROR)
 
 

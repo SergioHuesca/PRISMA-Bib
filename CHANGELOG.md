@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `QuotaExceededError` that ends `search`, `enrich` or `fulltext` now also prints that everything fetched so far is saved and the same command resumes after the quota resets; the rate limiter's message shows the reset as a UTC timestamp instead of a raw epoch.
+
 ### Added
 
 - ADR 0037 PR 4 (workflow, DRAFT, off unless `MERGE_TRAIN_STACKS` is `on`): `update-behind-prs.yml` lists open PRs without `--base main` (adds `baseRefName`), builds the head's facts record with the new `scripts/train_facts.py`, calls `decide` twice for a stacked child (the first only for `verifier_args`), fetches the parent's commits by SHA as data, merges a stacked head with `train_merge_async.py` (non-stacked heads keep `gh pr merge`), and after a failed audit halts the lowest open `train:N` PR via `audit-stop`. `update-branch` is skipped for any PR with a `stack` key. No `schedule` trigger. Tests: `tests/unit/test_train_facts.py`, `tests/unit/test_update_behind_workflow.py` (static invariants and mutations). The merge client now fetches the squash commit (and the head, if missing) by SHA before its audit. A BEHIND stacked PR halts in train mode and is skipped with a warning in update-only mode. Dynamic test: `tests/integration/test_update_behind_workflow_dynamic.py` (real bash, fake `gh`). Needs the scratch-repo rehearsal before it is enabled.
