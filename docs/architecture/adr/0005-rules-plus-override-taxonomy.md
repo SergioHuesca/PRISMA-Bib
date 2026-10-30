@@ -144,3 +144,14 @@ Given the same rule file and corpus, running the coder produces the same assignm
 ---
 
 This records BUILD_PLAN §1.2 line 58, which is not open for renegotiation. Changing it requires a new ADR that supersedes this one (§2.6).
+
+> **Note added 2026-10-30 (owner decision; this note does not change the record above).**
+> 1. **Rule patterns match case-insensitively by default.** Every field pattern is compiled with `re.IGNORECASE`;
+>    `(?-i:...)` inside a pattern opts that part out (PR #227, draft). This record fixes the regex DSL and requires regex
+>    matching, but says nothing about case, so this fills a gap rather than reversing a decision. `\btransformer\b` now
+>    matches "Transformer" in a title.
+> 2. **The engine is now a third input to coding.** Its matching behaviour is recorded as `TAXONOMY_ENGINE_BEHAVIOUR`
+>    (`1` = case-sensitive, the behaviour of this record; `2` = case-insensitive, from the change above). The constant is
+>    folded into the audit-sample seed and reported in the taxonomy provenance, so an unchanged rule `version` no longer
+>    hides an engine change. See [ADR 0039](0039-taxonomy-engine-behaviour-stamp.md).
+> 3. The `version` field stays author-declared. The assignment columns above are unchanged.
