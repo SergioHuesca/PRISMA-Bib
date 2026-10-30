@@ -228,3 +228,48 @@ categories:
         "abstract",
         "SupervisedMarkerExcluded",
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text", ["Transformer networks", "TRANSFORMER", "transformer", "Vision Transformer Models"]
+)
+def test_rules__pattern__matches_case_insensitively_by_default(tmp_path: Path, text: str) -> None:
+    # Owner decision 2026-10-30: this tests the engine's compile flag (what the
+    # rule author is promised), not the `re` module -- see docs/how-to.
+    path = _write(
+        tmp_path / "learning_paradigm.yaml",
+        r"""version: 1.0.0
+dimension: learning_paradigm
+counting_unit: papers
+categories:
+  - id: supervised
+    any:
+      - {field: title, pattern: '\btransformer\b'}
+""",
+    )
+
+    pattern = load_rule_file(path, schema=_SCHEMA).categories[0].any[0].pattern
+
+    assert pattern.search(text) is not None
+
+
+@pytest.mark.unit
+def test_rules__scoped_inline_flag__opts_out_of_case_insensitivity(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "learning_paradigm.yaml",
+        """\
+version: 1.0.0
+dimension: learning_paradigm
+counting_unit: papers
+categories:
+  - id: supervised
+    any:
+      - {field: title, pattern: '(?-i:SAR)'}
+""",
+    )
+
+    pattern = load_rule_file(path, schema=_SCHEMA).categories[0].any[0].pattern
+
+    assert pattern.search("SAR imagery") is not None
+    assert pattern.search("sar imagery") is None

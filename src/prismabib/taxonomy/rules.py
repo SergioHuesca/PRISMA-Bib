@@ -269,7 +269,8 @@ def _compile_pattern(
             expression (ADR 0023 Decision 6: fails at load, not at match).
     """
     try:
-        compiled = re.compile(field_pattern.pattern)
+        # Case-insensitive by default (owner decision 2026-10-30); `(?-i:...)` opts out.
+        compiled = re.compile(field_pattern.pattern, re.IGNORECASE)
     except re.error as exc:
         # pragma: no mutate start  -- diagnostic prose; see [tool.mutmut] in pyproject.toml
         raise ConfigError(
