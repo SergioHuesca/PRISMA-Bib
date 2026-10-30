@@ -175,7 +175,9 @@ def record_markdown(model: Mapping[str, Any]) -> str:
         here: there is no branch in this function that could disagree with the
         one that made the model.
     """
-    lines = [f"### {model.get('title') or '(no title)'}", ""]
+    # Collapse whitespace: a newline in the title would end the heading.
+    title = " ".join(str(model.get("title") or "(no title)").split())
+    lines = [f"### {title}", ""]
 
     meta = " · ".join(str(model[key]) for key in ("venue", "year", "doc_type") if model.get(key))
     if meta:
@@ -646,9 +648,18 @@ class Screener:
             **{digit_action(digit): _reason_handler(self, digit) for digit in REASON_DIGITS},
         }
 
-        self._record_pane = pn.pane.Markdown(sizing_mode="stretch_width")
-        self._progress_pane = pn.pane.Markdown(sizing_mode="stretch_width")
-        self._status_pane = pn.pane.Markdown(sizing_mode="stretch_width")
+        self._record_pane = pn.pane.Markdown(
+            sizing_mode="stretch_width",
+            renderer_options={"html": False},  # store text is data, never markup
+        )
+        self._progress_pane = pn.pane.Markdown(
+            sizing_mode="stretch_width",
+            renderer_options={"html": False},  # store text is data, never markup
+        )
+        self._status_pane = pn.pane.Markdown(
+            sizing_mode="stretch_width",
+            renderer_options={"html": False},  # store text is data, never markup
+        )
         self._help_pane = pn.pane.Markdown(help_markdown(KEY_MAP), visible=False)
         self._bridge = KeyboardBridge(height=0, width=0, margin=0)
         self._bridge.param.watch(self._on_keystroke, "keystroke")
