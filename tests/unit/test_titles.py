@@ -41,10 +41,26 @@ def test_normalise_title__well_being_études__matches_well_being_etudes() -> Non
 @pytest.mark.parametrize(
     ("title", "year", "expected"),
     [
-        ("Well-being: Études", 2020, "231a569384c869af392e45b7a147abb6"),
-        ("Café-au-lait", 2019, "16f8465025f62b2a95128f00a58eca65"),
-        ("Naïve Bayes \u2013 a survey", 2021, "63394012662f1f20c243d08589bf3ac5"),
-        ("Don't panic (really)", 2018, "69b70c10501e7bf63b43bf4c218a1f38"),
+        (
+            "Well-being: Études",
+            2020,
+            "231a569384c869af392e45b7a147abb6",  # pragma: allowlist secret
+        ),
+        (
+            "Café-au-lait",
+            2019,
+            "16f8465025f62b2a95128f00a58eca65",  # pragma: allowlist secret
+        ),
+        (
+            "Naïve Bayes \u2013 a survey",
+            2021,
+            "63394012662f1f20c243d08589bf3ac5",  # pragma: allowlist secret
+        ),
+        (
+            "Don't panic (really)",
+            2018,
+            "69b70c10501e7bf63b43bf4c218a1f38",  # pragma: allowlist secret
+        ),
     ],
 )
 def test_candidate_id__golden__is_unchanged(title: str, year: int, expected: str) -> None:
