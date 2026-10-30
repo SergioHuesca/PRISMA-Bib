@@ -15,6 +15,7 @@ import pytest
 
 from prismabib.bibliometrics.base import AnalysisResult
 from prismabib.errors import ValidationError
+from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.analysis import dimension_distribution, dimension_evolution
 from prismabib.taxonomy.coder import CountingUnit, code
 from prismabib.taxonomy.schema import load_dimensions
@@ -89,6 +90,18 @@ def test_dimension_distribution__caption__states_counting_unit(coded_project) ->
 
 
 @pytest.mark.unit
+def test_dimension_distribution__params__carry_engine_behaviour(coded_project) -> None:
+    corpus, result, schema, _records = coded_project
+
+    analysis = dimension_distribution(
+        corpus, result, schema, "learning_paradigm", CountingUnit.PAPERS
+    )
+
+    assert analysis.params["taxonomy_engine_behaviour"] == TAXONOMY_ENGINE_BEHAVIOUR
+    assert f"taxonomy_engine_behaviour={TAXONOMY_ENGINE_BEHAVIOUR}" in analysis.caption()
+
+
+@pytest.mark.unit
 def test_dimension_distribution__over_assigned_fixture__raises(tmp_path: Path) -> None:
     """The same guard `distribution()` enforces (ADR 0023 Decision 4) still fires through here."""
     records = [TaxonomyRecordSpec(number=1, title="An AmbiguousMarker approach")]
@@ -130,6 +143,18 @@ def test_dimension_evolution__caption__states_counting_unit(coded_project) -> No
     )
 
     assert "counting_unit=assignments" in analysis.caption()
+
+
+@pytest.mark.unit
+def test_dimension_evolution__params__carry_engine_behaviour(coded_project) -> None:
+    corpus, result, schema, _records = coded_project
+
+    analysis = dimension_evolution(
+        corpus, result, schema, "learning_paradigm", CountingUnit.ASSIGNMENTS
+    )
+
+    assert analysis.params["taxonomy_engine_behaviour"] == TAXONOMY_ENGINE_BEHAVIOUR
+    assert f"taxonomy_engine_behaviour={TAXONOMY_ENGINE_BEHAVIOUR}" in analysis.caption()
 
 
 @pytest.mark.unit
