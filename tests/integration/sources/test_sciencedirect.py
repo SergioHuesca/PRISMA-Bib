@@ -98,6 +98,41 @@ def test_article_retrieval_xml__cache_hit__does_not_call_the_network() -> None:
 
 
 @pytest.mark.integration
+def test_article_retrieval_xml__poisoned_cache_hit__discards_and_refetches(
+    tmp_path: Path,
+) -> None:
+    cache = HttpCache(tmp_path)
+    cache.store(_ENDPOINT, {"view": "FULL"}, b"<html><body>captive portal</body>")
+
+    with respx.mock:
+        route = respx.get(_ENDPOINT).mock(return_value=httpx.Response(200, content=_MODELLED_XML))
+        body = _client(cache=cache).article_retrieval_xml(_DOI)
+
+    assert route.call_count == 1
+    assert body == _MODELLED_XML
+    assert cache.load(_ENDPOINT, {"view": "FULL"}) == _MODELLED_XML
+
+
+@pytest.mark.integration
+def test_article_retrieval_xml__poisoned_cache_and_bad_refetch__raises_and_not_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    cache = HttpCache(tmp_path)
+    cache.store(_ENDPOINT, {"view": "FULL"}, b"<html><body>captive portal</body>")
+
+    with respx.mock:
+        route = respx.get(_ENDPOINT).mock(
+            return_value=httpx.Response(200, content=b"<html><body>portal</body>")
+        )
+        with pytest.raises(UpstreamError):
+            _client(cache=cache).article_retrieval_xml(_DOI)
+
+    assert route.call_count == ScienceDirectClient.MAX_ATTEMPTS
+    assert cache.load(_ENDPOINT, {"view": "FULL"}) is None
+
+
+@pytest.mark.integration
 def test_article_retrieval_xml__401__raises_auth_error_without_retry() -> None:
     with respx.mock:
         route = respx.get(_ENDPOINT).mock(return_value=httpx.Response(401))

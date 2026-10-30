@@ -24,6 +24,7 @@ reimplemented, since it is already tested at
 from __future__ import annotations
 
 from typing import Self
+from xml.etree import ElementTree as ET
 
 import httpx
 import structlog
@@ -189,13 +190,27 @@ class ScienceDirectClient:
         """Perform exactly one HTTP GET, honouring the cache, rate limiter, and error taxonomy."""
         cached = self._cache.load(url, {"view": "FULL"}) if self._cache is not None else None
         if cached is not None:
-            logger.info("sciencedirect.request", endpoint=url, cache="hit")
-            return httpx.Response(200, content=cached, request=httpx.Request("GET", url))
+            try:
+                ET.fromstring(cached)
+            except ET.ParseError:
+                # Poisoned entry (ADR 0038: cache is advisory): evict and refetch.
+                logger.warning("sciencedirect.request.cache_poisoned_entry_discarded", endpoint=url)
+                assert self._cache is not None
+                self._cache.discard(url, {"view": "FULL"})
+            else:
+                logger.info("sciencedirect.request", endpoint=url, cache="hit")
+                return httpx.Response(200, content=cached, request=httpx.Request("GET", url))
 
         self._rate_limiter.acquire()
         response = self._http.get(url, params={"view": "FULL"}, headers=self._headers())
         self._rate_limiter.observe_headers(response.headers)
         self._raise_for_status(response)
+        try:
+            # Same parser as fulltext.extract; validate before store.
+            ET.fromstring(response.content)
+        except ET.ParseError as exc:
+            logger.warning("sciencedirect.request.malformed_body", endpoint=url)
+            raise UpstreamError(f"ScienceDirect returned a non-XML body for {url}.") from exc
         if self._cache is not None:
             self._cache.store(url, {"view": "FULL"}, response.content)
         logger.info(
