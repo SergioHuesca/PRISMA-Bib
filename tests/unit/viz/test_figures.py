@@ -14,6 +14,7 @@ import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 
+import matplotlib
 import polars as pl
 import pytest
 
@@ -220,3 +221,29 @@ def test_caption__with_criteria_versions__appends_them() -> None:
 
     assert caption.startswith(result.caption())
     assert "criteria version(s): 1.0.0, 1.1.0" in caption
+
+
+@pytest.mark.parametrize("venue", [r"Journal of $\foo$ Studies", "Cost of $5 vs $10"])
+@pytest.mark.parametrize("fmt", ["png", "svg"])
+def test_venues_figure__dollar_signs_in_venue__render_literally(venue: str, fmt: str) -> None:
+    import io
+
+    result = AnalysisResult(
+        data=pl.DataFrame({"venue": [venue], "count": [3]}),
+        params={"top_n": 1},
+        provenance=Provenance(
+            corpus_size=1,
+            stage=PrismaStage.INCLUDED,
+            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+            run_ids=(),
+            criteria_versions=(),
+        ),
+    )
+    _, fig = figures_module.venues_figure(result)
+    buffer = io.BytesIO()
+
+    with matplotlib.rc_context({"svg.fonttype": "none"}):  # keep text as text, not glyph paths
+        fig.savefig(buffer, format=fmt)
+
+    if fmt == "svg":
+        assert "$" in buffer.getvalue().decode()
