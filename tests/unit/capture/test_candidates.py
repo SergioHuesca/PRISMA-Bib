@@ -396,3 +396,36 @@ def test_event__schema_version_follows_single_constant(monkeypatch: pytest.Monke
     assert _event().schema_version == 2  # a bump must not break new events
     with pytest.raises(PydanticValidationError):
         CandidateEvent(**{**_event().model_dump(), "schema_version": 1})
+
+
+@pytest.mark.parametrize("title", ["???", "!!!", "   ", "\u2014"])
+def test_parse_pasted_rows__punctuation_only_title__rejected_with_reason(title: str) -> None:
+    with pytest.raises(ValidationError, match=r"line 1: "):
+        parse_pasted_rows(f"{title}\t2020")
+
+
+def test_parse_pasted_rows__punctuation_only_title__reason_is_clear() -> None:
+    with pytest.raises(ValidationError, match="no letters or digits"):
+        parse_pasted_rows("???\t2020")
+
+
+def test_candidate_event__punctuation_only_title__still_loads_from_log() -> None:
+    event = _event("???", 2020)
+    assert CandidateEvent.model_validate_json(event.model_dump_json()) == event
+
+
+def test_candidate_id__trailing_punctuation_dropped_by_design() -> None:
+    assert candidates.candidate_id("Quo?", 2020) == candidates.candidate_id("Quo!", 2020)
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Quo?", "93aea16c62632e827d8ae5a62807cf68"),  # pragma: allowlist secret
+        ("Hello World", "86dd518b8fb88b5e815e8c42c9ed4095"),  # pragma: allowlist secret
+        ("Caf\u00e9-au-lait", "ad11b2ccb4c97418657b26fcee034eec"),  # pragma: allowlist secret
+        ("Well-being", "359766c6f7d8ad8cd60d12e2cb04becb"),  # pragma: allowlist secret
+    ],
+)
+def test_candidate_id__golden_values_pinned(title: str, expected: str) -> None:
+    assert candidates.candidate_id(title, 2020) == expected

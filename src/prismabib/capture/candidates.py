@@ -98,6 +98,8 @@ def parse_pasted_rows(text: str) -> list[CandidateRow]:
             continue
         if not title:
             errors.append(f"line {number}: missing title")
+        elif not normalise_title(title):
+            errors.append(f"line {number}: title {title!r} has no letters or digits")
         elif not _YEAR.fullmatch(year):
             errors.append(f"line {number}: year {year!r} is not an integer")
         elif not MIN_YEAR <= int(year) <= MAX_YEAR:
