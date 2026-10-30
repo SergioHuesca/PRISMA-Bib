@@ -96,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `citation_statistics` (and `citations_by_year`, `citation_distribution`) on a stage with no records now returns empty citations instead of the whole corpus's snapshots.
 - **`build_store(rebuild=True)` no longer leaves a partial store.** The rebuild writes `<db>.tmp` beside the store and replaces the store with `os.replace` only on success, so a failed or interrupted rebuild keeps the previous store and leaves no temporary file. If the swap itself fails (on Windows, a file still open in another process or notebook), the old store is kept and the error says so. A plain `build_store()` on an existing store that holds no records, while a sealed run in `raw/` reports results, now raises `StoreError`: re-capture that run or inspect its page files. A rebuild reproduces the same empty store until `raw/` is fixed.
 - **A 200 response with an HTML or non-JSON body is no longer cached.** The Scopus, Crossref, OpenAlex and Unpaywall clients reject a body that is not parseable JSON before caching it. Scopus also checks the response shape, on fresh and cached bodies, so a bad body is never replayed. An entry already on disk from an earlier version raises `ValidationError` on every call and is not evicted: delete that entry by hand.
 - **Only the API's own host feeds the Unpaywall and Crossref rate limiter.** The `X-RateLimit-*` headers of a third-party download host are ignored.
