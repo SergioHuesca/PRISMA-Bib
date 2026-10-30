@@ -528,3 +528,19 @@ def test_httpx_filter__empty_key__leaves_the_message_intact() -> None:
     # replace("", "***") would insert *** between every character.
     assert _scrub({"", "secret"}, "HTTP Request: GET /x?k=secret") == "HTTP Request: GET /x?k=***"
     assert _scrub({""}, "HTTP Request: GET /x") == "HTTP Request: GET /x"
+
+
+@pytest.mark.integration
+def test_cache__poisoned_entry__is_discarded_and_refetched(tmp_path: Path) -> None:
+    cache = HttpCache(tmp_path)
+    good: dict[str, Any] = {"results": []}
+    with respx.mock:
+        route = respx.get(OpenAlexClient.ENDPOINT).mock(return_value=httpx.Response(200, json=good))
+        _client(cache=cache).lookup_dois([_DOI_ONE])  # seeds the entry
+        (entry,) = tmp_path.rglob("*.bin")
+        entry.write_bytes(b"<html>captive portal</html>")
+        _client(cache=cache).lookup_dois([_DOI_ONE])
+        _client(cache=cache).lookup_dois([_DOI_ONE])  # served from the replaced entry
+
+    assert route.call_count == 2
+    assert json.loads(entry.read_bytes()) == good

@@ -31,6 +31,7 @@ CURRENT_DOI_CONFLICT_SCHEMA_VERSION = 1
 
 _DOI_LIKE = re.compile(r"(10\.|doi:|https?://)", re.IGNORECASE)
 _YEAR = re.compile(r"[0-9]+")
+MIN_YEAR, MAX_YEAR = 1000, 2100  # a typo'd year would silently never match any record
 
 
 def normalise_title(title: str) -> str:
@@ -112,6 +113,8 @@ def parse_pasted_rows(text: str) -> list[CandidateRow]:
             errors.append(f"line {number}: missing title")
         elif not _YEAR.fullmatch(year):
             errors.append(f"line {number}: year {year!r} is not an integer")
+        elif not MIN_YEAR <= int(year) <= MAX_YEAR:
+            errors.append(f"line {number}: year {year!r} is outside {MIN_YEAR}-{MAX_YEAR}")
         else:
             rows.append(CandidateRow(title=title, year=int(year), doi=normalise_doi(doi)))
     if errors:
@@ -171,7 +174,13 @@ class CandidateEvent(BaseModel):
 
     @classmethod
     def from_row(cls, row: CandidateRow, *, reviewer: str, pasted_at: datetime) -> CandidateEvent:
-        """Build an event, deriving ``candidate_id`` from the row."""
+        """Build an event, deriving ``candidate_id`` from the row.
+
+        Intake path: enforces the year bound. Log loading does not, so older
+        append-only logs stay readable.
+        """
+        if not MIN_YEAR <= row.year <= MAX_YEAR:
+            raise ValidationError(f"year {row.year} is outside {MIN_YEAR}-{MAX_YEAR}")
         doi = normalise_doi(row.doi)
         return cls(
             candidate_id=candidate_id(row.title, row.year),

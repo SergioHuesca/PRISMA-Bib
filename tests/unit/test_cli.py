@@ -31,7 +31,7 @@ from prismabib.cli import (
     _reporting_errors,
     app,
 )
-from prismabib.errors import ConfigError
+from prismabib.errors import ConfigError, QuotaExceededError
 from prismabib.prisma.flow import FlowCounts
 
 runner = CliRunner()
@@ -143,6 +143,32 @@ def test_reporting_errors__known_error__names_the_exception_type(
         raise ConfigError("boom")
 
     assert capsys.readouterr().err == "prismabib: ConfigError\nboom\n"
+
+
+@pytest.mark.unit
+def test_reporting_errors__quota_exceeded__says_the_run_is_saved_and_resumable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(typer.Exit) as raised, _reporting_errors():
+        raise QuotaExceededError("quota gone")
+
+    err = capsys.readouterr().err
+    assert raised.value.exit_code == 1
+    assert err == (
+        "prismabib: QuotaExceededError\nquota gone\n"
+        "Everything fetched so far is saved. Re-run the same command after the quota "
+        "resets to resume.\n"
+    )
+
+
+@pytest.mark.unit
+def test_reporting_errors__other_known_error__has_no_resume_hint(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(typer.Exit), _reporting_errors():
+        raise ConfigError("boom")
+
+    assert "resume" not in capsys.readouterr().err
 
 
 @pytest.mark.unit
