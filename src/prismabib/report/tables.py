@@ -77,6 +77,23 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
+def _csv_safe(value: Any) -> str:
+    """Render a cell, neutralising spreadsheet formulas in text values.
+
+    Only ``str`` values are prefixed (OWASP CSV injection); numbers, such as a
+    legitimately negative one, stay numeric.
+    """
+    text = _cell(value)
+    if isinstance(value, str) and text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + text
+    return text
+
+
+def _md_cell(value: Any) -> str:
+    """Render a cell safe inside a Markdown pipe table."""
+    return " ".join(_cell(value).replace("|", "\\|").splitlines())
+
+
 def to_csv(table: Table) -> str:
     """Render ``table`` as CSV.
 
@@ -93,7 +110,7 @@ def to_csv(table: Table) -> str:
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(table.columns)
     for row in table.rows:
-        writer.writerow([_cell(value) for value in row])
+        writer.writerow([_csv_safe(value) for value in row])
     return buffer.getvalue()
 
 
@@ -109,7 +126,7 @@ def to_markdown(table: Table) -> str:
     lines = [f"### {table.caption}", "", "| " + " | ".join(table.columns) + " |"]
     lines.append("| " + " | ".join("---" for _ in table.columns) + " |")
     for row in table.rows:
-        lines.append("| " + " | ".join(_cell(value) for value in row) + " |")
+        lines.append("| " + " | ".join(_md_cell(value) for value in row) + " |")
     return "\n".join(lines) + "\n"
 
 

@@ -108,6 +108,10 @@ def _group_venues(venues: pl.DataFrame) -> list[tuple[str, str, int]]:
         venues.get_column("name").to_list(), venues.get_column("venue_type").to_list(), strict=True
     ):
         norm = _normalise_venue_name(name)
+        if not norm:
+            # No venue name (Scopus omitted prism:publicationName) is not a venue
+            # named ''; it must not count in venues.total or top-N.
+            continue
         group = groups.setdefault(norm, {"count": 0, "types": set()})
         group["count"] += 1
         if venue_type is not None:

@@ -301,3 +301,16 @@ change.
   Layer 0", which is why Decision 1 stores nothing
 - [ADR 0022](0022-the-analysis-result-contract-and-its-provenance.md) — Stage 7's `UNK` bucket,
   the same argument as Decision 4's `uncoded`
+
+> **Note added 2026-10-30 (owner decision; this note does not change the record above).**
+> 1. **Case-insensitive default matching.** Rule patterns compile with `re.IGNORECASE`, with `(?-i:...)` as the opt-out
+>    (PR #227, draft). Decision 6's load-time validation is unchanged: the flag is applied when a pattern compiles, and
+>    nothing is checked at match time.
+> 2. **Decision 5's seed input list is extended.** The seed also digests the engine behaviour (`TAXONOMY_ENGINE_BEHAVIOUR`),
+>    as a token that is omitted for the baseline value `1`, so every seed recorded before this note is unchanged. The seed
+>    is still data-derived and machine-independent. See [ADR 0039](0039-taxonomy-engine-behaviour-stamp.md), Decision 2.
+> 3. **Decision 1's pure function has a fourth, implicit input**: the engine behaviour. Assignments are still not stored,
+>    and no table is added.
+> 4. **Consequence 1's cost extends to engine bumps.** A change of engine behaviour, like a rule-version bump, re-draws the
+>    audit sample and can change agreement rates without a review. The queue and the coverage report state the engine
+>    (ADR 0039, Decision 3).

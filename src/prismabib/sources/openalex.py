@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Self
@@ -46,6 +45,7 @@ from prismabib.errors import (
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import register_secret_for_redaction
+from prismabib.titles import normalise_title
 
 logger = structlog.get_logger(__name__)
 
@@ -148,12 +148,6 @@ class TopicKeyword:
     name: str
     score: float | None
     kind: str = KEYWORD_KIND
-
-
-def normalise_title(title: str) -> str:
-    """Lowercase, delete punctuation, collapse whitespace (ADR 0028 Decision 4)."""
-    kept = "".join(c for c in title.lower() if not unicodedata.category(c).startswith("P"))
-    return " ".join(kept.split())
 
 
 def normalise_doi(doi: str) -> str:
@@ -431,8 +425,16 @@ class OpenAlexClient:
         single = url != self.ENDPOINT
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
-            logger.info("openalex.works", cache="hit")
-            return _parse_results(cached, single=single)
+            try:
+                hit = _parse_results(cached, single=single)
+            except ValidationError:
+                # Poisoned entry (ADR 0038: cache is advisory): evict and refetch.
+                logger.warning("openalex.works.cache_poisoned_entry_discarded")
+                assert self._cache is not None
+                self._cache.discard(url, params)
+            else:
+                logger.info("openalex.works", cache="hit")
+                return hit
 
         response = self._request_with_retry(url, params)
         if response.status_code == 404:

@@ -6,6 +6,7 @@ Mock only at the HTTP boundary (``respx``), the same discipline
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -404,3 +405,21 @@ def test_lookup__api_host_reports_exhausted_quota__next_call_raises() -> None:
         client.lookup(_DOI)
         with pytest.raises(QuotaExceededError):
             client.lookup(_DOI)
+
+
+@pytest.mark.integration
+def test_lookup__poisoned_cache_entry__is_discarded_and_refetched(tmp_path: Path) -> None:
+    cache = HttpCache(tmp_path / "cache")
+    cache.store(_LOOKUP_ENDPOINT, {"email": "reviewer@example.org"}, b"<html>captive portal</html>")
+    client = _client(cache=cache)
+
+    with respx.mock:
+        route = respx.get(_LOOKUP_ENDPOINT).mock(
+            return_value=httpx.Response(200, json=_oa_response())
+        )
+        assert client.lookup(_DOI) == _oa_response()
+        assert client.lookup(_DOI) == _oa_response()  # served from the replaced entry
+
+    assert route.call_count == 1
+    (entry,) = (p for p in (tmp_path / "cache").rglob("*.bin"))
+    assert json.loads(entry.read_bytes()) == _oa_response()

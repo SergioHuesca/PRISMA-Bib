@@ -375,16 +375,22 @@ _META_URL = ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE.format(scopus_id="2-s2.0-1")
 
 @pytest.mark.integration
 @pytest.mark.parametrize("view", ["FULL", "META"])
-def test_abstract__poisoned_cache_entry__raises_validation_error(tmp_path: Path, view: str) -> None:
-    HttpCache(tmp_path / "cache").store(_ABSTRACT_URL, {"view": view}, _POISON)
+def test_abstract__poisoned_cache_entry__is_discarded_and_refetched(
+    tmp_path: Path, view: str
+) -> None:
+    good = {"abstracts-retrieval-response": {"coredata": {"dc:identifier": "SCOPUS_ID:1"}}}
+    cache = HttpCache(tmp_path / "cache")
+    cache.store(_ABSTRACT_URL, {"view": view}, b"<html>captive portal</html>")
     client = _cached_client(tmp_path / "cache")
     with respx.mock:
-        route = respx.get(_ABSTRACT_URL).mock(return_value=httpx.Response(500))
-        with pytest.raises(ValidationError):
-            client.abstract("scopus:2-s2.0-1") if view == "FULL" else client.abstract_meta(
-                "scopus:2-s2.0-1"
-            )
-    assert route.call_count == 0
+        route = respx.get(_ABSTRACT_URL).mock(return_value=httpx.Response(200, json=good))
+        if view == "FULL":
+            client.abstract("scopus:2-s2.0-1")
+        else:
+            client.abstract_meta("scopus:2-s2.0-1")
+    assert route.call_count == 1
+    assert client.network_requests == 1
+    assert json.loads(cache.load(_ABSTRACT_URL, {"view": view}) or b"") == good
 
 
 @pytest.mark.integration
