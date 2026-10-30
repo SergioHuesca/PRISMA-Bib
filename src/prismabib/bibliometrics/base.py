@@ -35,6 +35,9 @@ from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
 
+#: Inclusive publication-year bounds; a ``None`` bound is open (ADR 0040 Decision 1).
+YearRange = tuple[int | None, int | None]
+
 
 def _max_datetime(series: pl.Series) -> datetime | None:
     """The maximum value of a ``Datetime``-typed :class:`polars.Series`, safely typed.
@@ -179,16 +182,22 @@ class AnalysisResult:
             parts.append(f"corpus as at {provenance.retrieved_at.date().isoformat()}")
         else:
             parts.append("corpus as at an unknown date (no sealed search runs)")
+        years = self.params.get("years")
+        if isinstance(years, str):  # ADR 0040 Decision 3: a clause, not a key=value pair
+            parts.append(f"papers published in {years}")
         if provenance.citation_snapshot is not None:
             snapshot_date = provenance.citation_snapshot.date().isoformat()
             if provenance.citation_snapshot_is_uniform:
                 parts.append(f"citations as at {snapshot_date}")
             else:
                 parts.append(f"latest citation snapshot per record, most recent {snapshot_date}")
+            if isinstance(years, str):
+                parts.append("older papers have had longer to accumulate citations")
         scalar_params = {
             key: value
             for key, value in self.params.items()
             if isinstance(value, str | int | float | bool)
+            and not (key == "years" and isinstance(years, str))
         }
         if scalar_params:
             parts.append(
@@ -321,6 +330,84 @@ def build_provenance(
     )
 
 
+def normalise_years(years: YearRange | None) -> YearRange | None:
+    """Validate a year range; ``None`` and ``(None, None)`` both mean "no range" (ADR 0040 Decision 1).
+
+    Args:
+        years: ``(start, end)`` or ``None``.
+
+    Returns:
+        ``None`` for no range, otherwise ``years`` unchanged.
+
+    Raises:
+        AnalysisError: A bound is not an ``int``/``None``, or start > end.
+    """
+    if years is None:
+        return None
+    start, end = years
+    for bound in (start, end):
+        if bound is not None and (isinstance(bound, bool) or not isinstance(bound, int)):
+            raise AnalysisError(f"year bounds must be int or None, got {bound!r}")
+    if start is None and end is None:
+        return None
+    if start is not None and end is not None and start > end:
+        raise AnalysisError(f"year range start {start} is after end {end}")
+    return years
+
+
+def years_label(years: YearRange | None) -> str | None:
+    """The ``params["years"]`` string for a range: ``"2020-2021"``, ``"2020-..."``, ``"...-2021"``.
+
+    The same text as ``viz/dashboard.py::_year_range_text`` (ADR 0040 Decision 2).
+
+    Args:
+        years: ``(start, end)`` or ``None``.
+
+    Returns:
+        ``None`` when there is no range (``None`` or ``(None, None)``).
+
+    Raises:
+        AnalysisError: As :func:`normalise_years`.
+    """
+    years = normalise_years(years)
+    if years is None:
+        return None
+    start, end = years
+    return f"{'...' if start is None else start}-{'...' if end is None else end}"
+
+
+def restrict_to_years(records: pl.DataFrame, years: YearRange | None) -> tuple[pl.DataFrame, int]:
+    """The rows of ``records`` inside ``years``, and how many were dropped for a null ``year``.
+
+    The one place that compares ``year`` (ADR 0040 Decision 1). Bounds are
+    inclusive and a ``None`` bound is open. ``None`` and ``(None, None)`` mean
+    "no range": the very same frame comes back with a drop count of ``0``.
+    Once any bound is set a null-``year`` row lies in no range and is dropped
+    (Decision 4); row order is otherwise preserved.
+
+    Args:
+        records: A frame with a ``year`` column.
+        years: ``(start, end)`` or ``None``.
+
+    Returns:
+        ``(in_range_rows, n_null_year_dropped)``.
+
+    Raises:
+        AnalysisError: A bound is not an ``int``/``None``, or start > end.
+    """
+    years = normalise_years(years)
+    if years is None:
+        return records, 0
+    start, end = years
+    year = pl.col("year")
+    keep = year.is_not_null()
+    if start is not None:
+        keep = keep & (year >= start)
+    if end is not None:
+        keep = keep & (year <= end)
+    return records.filter(keep), records.get_column("year").null_count()
+
+
 def first_incomplete_year(corpus: Corpus) -> int | None:
     """The first publication year this corpus's capture cannot have observed in full.
 
@@ -383,4 +470,13 @@ def _serialise(result: AnalysisResult) -> tuple[bytes, bytes, bytes]:
     return data_bytes, params_bytes, result.caption().encode("utf-8")
 
 
-__all__ = ["AnalysisResult", "Provenance", "build_provenance", "first_incomplete_year"]
+__all__ = [
+    "AnalysisResult",
+    "Provenance",
+    "YearRange",
+    "build_provenance",
+    "first_incomplete_year",
+    "normalise_years",
+    "restrict_to_years",
+    "years_label",
+]
