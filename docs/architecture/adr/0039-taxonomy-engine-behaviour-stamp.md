@@ -324,3 +324,5 @@ description reports 106 taxonomy tests passing.
 - [ADR 0018](0018-abstract-runs-in-layer-1.md): Layer 1 is a function of Layer 0, which is why no table stores assignments.
 - [ADR 0038](0038-refresh-semantics-of-the-http-cache.md): the precedent for dated notes appended to a frozen record, and for
   the Status wording used here.
+
+> **Note added 2026-10-30 (step 2 merged; coverage effect).** PR #227 (step 2 of Decision 4) merged on 2026-10-30, and the constant `TAXONOMY_ENGINE_BEHAVIOUR` is now `2`: every field pattern compiles with `re.IGNORECASE`. Decision 4 says that upgrading makes coverage rise. More precisely, coverage usually rises, but because `none` clauses now match more text too, a record can lose a category or become uncoded, and the `conflicting` count can fall. This follows from `_category_matches` in `src/prismabib/taxonomy/coder.py`, where a `none` match suppresses an otherwise-fired category. The how-to `docs/how-to/write-taxonomy-rules.md` states this. This note does not change the record above.
