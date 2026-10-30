@@ -248,8 +248,16 @@ class CrossrefTdmClient:
         params = self._mailto_params()
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
-            logger.info("crossref.lookup", endpoint=url, cache="hit")
-            return _parse_json(cached)
+            try:
+                hit = _parse_json(cached)
+            except ValidationError:
+                # Poisoned entry (ADR 0038: cache is advisory): evict and refetch.
+                logger.warning("crossref.lookup.cache_poisoned_entry_discarded", endpoint=url)
+                assert self._cache is not None
+                self._cache.discard(url, params)
+            else:
+                logger.info("crossref.lookup", endpoint=url, cache="hit")
+                return hit
 
         # `follow_redirects=False`: Crossref's own API does not redirect, so a
         # redirect here is untrustworthy, exactly the reasoning

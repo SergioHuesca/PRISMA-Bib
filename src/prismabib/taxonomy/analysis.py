@@ -44,6 +44,7 @@ import polars as pl
 
 from prismabib.bibliometrics.base import AnalysisResult, build_provenance
 from prismabib.store.load import Corpus
+from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.coder import CodingResult, distribution
 from prismabib.taxonomy.schema import CountingUnit, TaxonomySchema
 
@@ -80,7 +81,8 @@ def dimension_distribution(
         ``"uncoded"``, then ``"reviewed_none"``: a fixed, data-derived order,
         never a ``dict``/``set`` iteration artefact -- see
         :func:`~prismabib.taxonomy.coder.distribution`). ``params`` carries
-        ``dimension``, ``counting_unit`` and ``multi_label``, so
+        ``dimension``, ``counting_unit``, ``multi_label`` and
+        ``taxonomy_engine_behaviour`` (ADR 0039), so
         :meth:`~prismabib.bibliometrics.base.AnalysisResult.caption` states
         the unit BUILD_PLAN requires every taxonomy figure to state.
 
@@ -104,6 +106,7 @@ def dimension_distribution(
         "dimension": dimension_id,
         "counting_unit": counting_unit.value,
         "multi_label": dimension.multi_label,
+        "taxonomy_engine_behaviour": TAXONOMY_ENGINE_BEHAVIOUR,
     }
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
@@ -200,6 +203,7 @@ def dimension_evolution(
         "dimension": dimension_id,
         "counting_unit": counting_unit.value,
         "multi_label": dimension.multi_label,
+        "taxonomy_engine_behaviour": TAXONOMY_ENGINE_BEHAVIOUR,
     }
     return AnalysisResult(data=data, params=params, provenance=provenance)
 

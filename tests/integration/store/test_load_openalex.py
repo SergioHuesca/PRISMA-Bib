@@ -7,7 +7,9 @@ never licensed data.
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from prismabib.capture.layout import NON_RUN_DIRNAMES, OPENALEX_DIRNAME
 from prismabib.errors import StoreError
 from prismabib.prisma.flow import compute_flow_counts
 from prismabib.project import Project
+from prismabib.sources import openalex
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import table_checksums
 from prismabib.store.db import connect
@@ -319,6 +322,96 @@ def test_build_store__manifest_disagrees_with_bytes__fails_loudly(tmp_path: Path
     with pytest.raises(StoreError, match="disagrees"):
         build_store(project, rebuild=True)
     assert not project.db_path.exists()
+
+
+def _legacy_title_key(title: str) -> str:
+    """OpenAlex's title key before the shared normaliser: lowercase, delete ``P*``, keep accents."""
+    kept = "".join(c for c in title.lower() if not unicodedata.category(c).startswith("P"))
+    return " ".join(kept.split())
+
+
+def _title_project(tmp_path: Path, record_title: str) -> Project:
+    project = Project.init("oa", title="OpenAlex titles", root=tmp_path)
+    entry = make_entry(eid="2-s2.0-800000000001", title=record_title, cover_date="2020-03-01")
+    write_sealed_run(
+        project.raw_dir, _SEARCH_RUN, [entry], started_at=datetime(2025, 1, 1, tzinfo=UTC)
+    )
+    return project
+
+
+def _title_request(requested: str, work_title: str) -> dict[str, object]:
+    work = make_openalex_work(
+        openalex_id="https://openalex.org/W1", doi=None, title=work_title, year=2020, topics=["T"]
+    )
+    return {
+        "lookup": "title_search",
+        "identifiers": [{"title": requested, "year": 2020}],
+        "works": [work],
+    }
+
+
+def _stored_outcome(project: Project) -> str:
+    manifest = project.raw_dir / OPENALEX_DIRNAME / _OA_RUN_1 / "manifest.json"
+    return str(
+        json.loads(manifest.read_text(encoding="utf-8"))["requests"][0]["outcomes"][0]["outcome"]
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("requested", "work_title", "stored", "topics"),
+    [
+        # Case A: the legacy rule kept accents and deleted the hyphen, so it missed this pair.
+        ("Well being: Etudes", "Well-being: Études", "not_found", set()),
+        # Case B: the legacy rule joined "Well-being" to "Wellbeing"; the shared rule does not.
+        ("Wellbeing", "Well-being", "value", {"T"}),
+    ],
+)
+def test_build_store__run_sealed_under_the_legacy_title_rule__still_loads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    requested: str,
+    work_title: str,
+    stored: str,
+    topics: set[str],
+) -> None:
+    project = _title_project(tmp_path, requested)
+    with monkeypatch.context() as patch:
+        patch.setattr(openalex, "normalise_title", _legacy_title_key)
+        write_sealed_openalex_run(
+            project.raw_dir, _OA_RUN_1, [_title_request(requested, work_title)]
+        )
+    assert _stored_outcome(project) == stored
+    build_store(project, rebuild=True)
+    assert _topics(project) == topics
+
+
+@pytest.mark.integration
+def test_build_store__run_sealed_under_the_shared_title_rule__is_verified_and_attached(
+    tmp_path: Path,
+) -> None:
+    project = _title_project(tmp_path, "Well being: Etudes")
+    write_sealed_openalex_run(
+        project.raw_dir, _OA_RUN_1, [_title_request("Well being: Etudes", "Well-being: Études")]
+    )
+    assert _stored_outcome(project) == "value"
+    build_store(project, rebuild=True)
+    assert _topics(project) == {"T"}
+
+
+@pytest.mark.integration
+def test_build_store__title_outcome_matching_neither_rule__fails_loudly(tmp_path: Path) -> None:
+    project = _title_project(tmp_path, "Exact Title")
+    write_sealed_openalex_run(
+        project.raw_dir, _OA_RUN_1, [_title_request("Exact Title", "Exact Title")]
+    )
+    manifest = project.raw_dir / OPENALEX_DIRNAME / _OA_RUN_1 / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    # Both rules match this pair, so a stored not_found is a tampered outcome.
+    data["requests"][0]["outcomes"][0].update(outcome="not_found", openalex_id=None)
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(StoreError, match="disagrees"):
+        build_store(project, rebuild=True)
 
 
 @pytest.mark.integration

@@ -247,6 +247,34 @@ def test_capture_openalex__title_search__exact_match_is_value_near_miss_is_not_f
     ]
 
 
+@pytest.mark.integration
+def test_capture_openalex__titles_differing_by_accents_and_hyphens__are_one_request(
+    tmp_path: Path,
+) -> None:
+    fake = Fake(_serve({"10.1/a": _work("10.1/a", title="Well-being: Études", year=2020)}))
+    manifest = _run(
+        _project(tmp_path),
+        fake,
+        titles=[("Well-being: Études", 2020), ("Well being: Etudes", 2020)],
+    )
+    assert manifest is not None
+    assert len(manifest.requests) == len(fake.requests) == 1
+    assert manifest.requests[0].identifiers == [
+        OpenAlexTitle(title="Well-being: Études", year=2020)
+    ]
+    assert manifest.requests[0].outcomes[0].outcome == "value"
+
+
+@pytest.mark.integration
+def test_capture_openalex__held_title__is_skipped_under_the_other_spelling(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    fake = Fake(_serve({"10.1/a": _work("10.1/a", title="Well-being: Études", year=2020)}))
+    assert _run(project, fake, titles=[("Well being: Etudes", 2020)]) is not None
+    sent = len(fake.requests)
+    assert _run(project, fake, titles=[("Well-being: Études", 2020)]) is None
+    assert len(fake.requests) == sent
+
+
 # --- the opt-in record, refusals ---------------------------------------------------------------
 
 

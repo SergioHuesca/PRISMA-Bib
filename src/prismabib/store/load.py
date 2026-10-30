@@ -156,6 +156,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -170,7 +171,6 @@ import polars as pl
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
-from prismabib.capture.candidates import normalise_title as _candidate_title_key
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
@@ -207,6 +207,7 @@ from prismabib.sources import openalex as _openalex
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.db import connect
+from prismabib.titles import normalise_title
 
 logger = structlog.get_logger(__name__)
 
@@ -1644,7 +1645,7 @@ def _openalex_record_index(acc: _Accumulator) -> _OpenAlexIndex:
         if doi:
             by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
         if title and year is not None:
-            by_title.setdefault((_openalex.normalise_title(title), year), []).append(record_id)
+            by_title.setdefault((normalise_title(title), year), []).append(record_id)
     return by_doi, by_title
 
 
@@ -1657,6 +1658,31 @@ def _openalex_body_works(body: Any) -> list[dict[str, Any]] | None:
     return None
 
 
+def _openalex_legacy_title_key(title: str) -> str:
+    """OpenAlex's title key before the shared normaliser (lowercase, delete ``P*``, keep accents).
+
+    Used only to verify sealed runs captured under that rule; nothing is written with it.
+    """
+    kept = "".join(c for c in title.lower() if not unicodedata.category(c).startswith("P"))
+    return " ".join(kept.split())
+
+
+def _legacy_title_outcome(
+    works: list[dict[str, Any]], title: str, year: int
+) -> tuple[str, str | None, list[str]]:
+    """The ``(outcome, openalex_id, absent_fields)`` the legacy title rule would have stored."""
+    wanted = _openalex_legacy_title_key(title)
+    for work in map(_openalex.parse_work, works):
+        if (
+            work.title
+            and work.publication_year == year
+            and _openalex_legacy_title_key(work.title) == wanted
+        ):
+            absent = [n for n, o in _openalex.field_outcomes(work).items() if o.outcome == "absent"]
+            return "value", work.openalex_id, absent
+    return "not_found", None, []
+
+
 def _check_openalex_outcome(
     run_id: str,
     request: OpenAlexRequest,
@@ -1667,31 +1693,42 @@ def _check_openalex_outcome(
 
     Matching and the absent-field list come from the capture's own
     :func:`~prismabib.sources.openalex.lookup_outcome`, so the writer and the
-    loader cannot drift. A ``refused`` outcome has no body to recompute.
+    loader cannot drift. A title outcome is also accepted if the legacy title
+    rule (:func:`_openalex_legacy_title_key`) derives it, so a run sealed before
+    the shared normaliser still loads; the new rule is tried first. A ``refused``
+    outcome has no body to recompute.
 
     Returns:
-        The matched work's raw dict for a ``value`` outcome, else ``None``.
+        The matched work's raw dict for a ``value`` outcome, else ``None``. The
+        work is the one the manifest names by ``openalex_id``, not a re-derived match.
     """
     if outcome.outcome == "refused":
         return None
     identifier = outcome.identifier
+    acceptable: list[tuple[str, str | None, list[str]]] = []
     if isinstance(identifier, OpenAlexTitle):
         found, absent = _openalex.lookup_outcome(
             (_openalex.parse_work(w) for w in works), title=identifier.title, year=identifier.year
         )
+        acceptable.append(
+            ("value", found.openalex_id, absent) if found else ("not_found", None, [])
+        )
+        acceptable.append(_legacy_title_outcome(works, identifier.title, identifier.year))
     else:
         found, absent = _openalex.lookup_outcome(
             (_openalex.parse_work(w) for w in works), doi=identifier
         )
-    expected = ("value", found.openalex_id, absent) if found else ("not_found", None, [])
-    if (outcome.outcome, outcome.openalex_id, outcome.absent_fields) != expected:
+        acceptable.append(
+            ("value", found.openalex_id, absent) if found else ("not_found", None, [])
+        )
+    if (outcome.outcome, outcome.openalex_id, outcome.absent_fields) not in acceptable:
         raise StoreError(
             f"OpenAlex run {run_id} request {request.index}: the manifest outcome for "
             f"{identifier!r} disagrees with the stored response bytes."
         )
-    if found is None:
+    if outcome.outcome != "value":
         return None
-    return next(w for w in works if w.get("id") == found.openalex_id)
+    return next(w for w in works if w.get("id") == outcome.openalex_id)
 
 
 def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) -> None:
@@ -1744,7 +1781,7 @@ def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) 
                 continue
             identifier = outcome.identifier
             if isinstance(identifier, OpenAlexTitle):
-                key = (_openalex.normalise_title(identifier.title), identifier.year)
+                key = (normalise_title(identifier.title), identifier.year)
                 targets = by_title.get(key, [])
             else:
                 targets = by_doi.get(_openalex.normalise_doi(identifier), [])
@@ -2136,7 +2173,7 @@ def _fold_registrations(
         if doi:
             by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
         if title and year is not None:
-            by_title.setdefault((_candidate_title_key(title), year), []).append(record_id)
+            by_title.setdefault((normalise_title(title), year), []).append(record_id)
     pending: list[tuple[str, str, Literal["doi", "title_year"]]] = []
     for event in active_registrations(events):
         try:
@@ -2147,7 +2184,7 @@ def _fold_registrations(
                 "registration (reverse_registration) unblocks the build."
             ) from exc
         by_doi_hit = by_doi.get(derived.doi)
-        hit = by_doi_hit or by_title.get((_candidate_title_key(derived.title), derived.year))
+        hit = by_doi_hit or by_title.get((normalise_title(derived.title), derived.year))
         if hit:
             pending.append((event.event_id, min(hit), "doi" if by_doi_hit else "title_year"))
             continue

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.coder import code
 from prismabib.taxonomy.overrides import OverrideLog
 from prismabib.taxonomy.review import (
@@ -61,6 +62,9 @@ def test_coverage_report__reports_rule_vs_human_split_and_audit_agreement(tmp_pa
     result = code(corpus, [rule_file], overrides)
     report = build_coverage_report(project, result, schema, [rule_file], overrides)
 
+    assert report.taxonomy_engine_behaviour == TAXONOMY_ENGINE_BEHAVIOUR
+    queue = build_review_queue(result, schema, [rule_file], project_slug="cov")
+    assert report.audit_seeds == queue.audit_seeds  # ADR 0039 Q8: regenerable from the report
     (dimension_coverage,) = report.dimensions
     assert dimension_coverage.dimension == "learning_paradigm"
     assert dimension_coverage.corpus_size == 4

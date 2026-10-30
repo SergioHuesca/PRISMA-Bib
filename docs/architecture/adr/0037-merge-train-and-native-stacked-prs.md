@@ -344,6 +344,12 @@ Each PR is green on its own and changes nothing the train does until PR 4.
 > `sha` before it runs; `audit-stop` prints the PR number or `none` (not the word `halt`); the facts record has the optional keys
 > `parent.head_sha` and `parent.state`; the job has a 20-minute limit and the merge client's fetch a 120-second limit.
 
+> **Note added 2026-10-29 (owner decision, closed-unmerged cap; this note does not change the record above).** The
+> closed-unmerged list is now requested with `--limit 1000` (`.github/workflows/update-behind-prs.yml`, PR #216), up from
+> 100, and the train halts when that list reaches `CLOSED_LIMIT = 1000` entries (`scripts/train_step.py`). This answers
+> open question 4 by raising the cap. The "Pre-existing cliff" paragraph of Decision 3 (about L140-141) and open question 4
+> (about L366) state the old cap of 100 and are left as written. The open list stays at `--limit 100` (`LIST_LIMIT`).
+
 ### What was cut, and why
 
 | Cut | Why |

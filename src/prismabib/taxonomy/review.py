@@ -17,8 +17,9 @@ exists, even one asserting ``categories: ()``) is never re-queued for that
 dimension: the reviewer's verdict already stands.
 
 **ADR 0023 Decision 5: the audit seed is data-derived.** ``sha256`` over the
-project slug, the dimension id, the rule file's declared ``version``, and
-the sorted coded record ids -- not ``hash()`` (varies with
+project slug, the dimension id, the rule file's declared ``version``, the
+``engine-behaviour=N`` token (only when N != 1; ADR 0039), and the sorted
+coded record ids -- not ``hash()`` (varies with
 ``PYTHONHASHSEED``), not the clock, not an unseeded :mod:`random`. The seed
 changes when what is being audited changes: a rule-version bump re-draws the
 sample, which is exactly when the previous sample has stopped being evidence
@@ -38,6 +39,7 @@ from typing import Literal
 
 from prismabib.errors import ConfigError
 from prismabib.project import Project
+from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.coder import CodingResult, FieldDiagnostic
 from prismabib.taxonomy.overrides import OverrideEvent, OverrideFoldKey, fold_override_events
 from prismabib.taxonomy.rules import CompiledRuleFile
@@ -92,15 +94,24 @@ class ReviewQueue:
             proceeds, while this is the stable set the agreement rate is
             measured over (ADR 0023 Decision 5b). Conflating the two is what
             made the rate permanently uncomputable.
+        taxonomy_engine_behaviour: The engine behaviour that produced the
+            queue (ADR 0039): :data:`prismabib.taxonomy.TAXONOMY_ENGINE_BEHAVIOUR`.
+            Required, no default, so no queue carries a stamp it did not compute.
     """
 
     entries: tuple[QueueEntry, ...]
     audit_seeds: Mapping[str, int]
+    taxonomy_engine_behaviour: int
     audit_samples: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def audit_sample_seed(
-    *, project_slug: str, dimension_id: str, rule_version: str, record_ids: Sequence[str]
+    *,
+    project_slug: str,
+    dimension_id: str,
+    rule_version: str,
+    engine_behaviour: int,
+    record_ids: Sequence[str],
 ) -> int:
     """Derive the audit sample's seed (ADR 0023 Decision 5).
 
@@ -111,10 +122,18 @@ def audit_sample_seed(
     year. Sorting ``record_ids`` first makes the digest independent of
     whatever order the caller happened to iterate them in.
 
+    ADR 0039: ``engine_behaviour`` enters the digest as the token
+    ``engine-behaviour=N`` after the rule version, **only when N != 1**, so
+    every seed recorded under the original (case-sensitive) engine stays
+    byte-identical and reproducible.
+
     Args:
         project_slug: The project's slug.
         dimension_id: The dimension being audited.
         rule_version: The rule file's declared ``version``.
+        engine_behaviour: The :data:`prismabib.taxonomy.TAXONOMY_ENGINE_BEHAVIOUR`
+            the sample is drawn under. Keyword-only with no default, so a
+            caller cannot seed silently with the current engine's value.
         record_ids: Every record id in the coded stage -- **not** only the
             coded ones. The seed digests the corpus, so it changes when the
             corpus does; which of those records are eligible for the audit
@@ -125,9 +144,10 @@ def audit_sample_seed(
     Returns:
         A seed suitable for :class:`random.Random`.
     """
+    engine_token = () if engine_behaviour == 1 else (f"engine-behaviour={engine_behaviour}",)
     digest = hashlib.sha256(
         _SEED_SEPARATOR.join(
-            (project_slug, dimension_id, rule_version, *sorted(record_ids))
+            (project_slug, dimension_id, rule_version, *engine_token, *sorted(record_ids))
         ).encode("utf-8")
     ).hexdigest()
     return int(digest[:16], 16)
@@ -256,6 +276,7 @@ def build_review_queue(
             project_slug=project_slug,
             dimension_id=dimension.id,
             rule_version=rule_file.version,
+            engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
             record_ids=result.record_ids,
         )
         audit_seeds[dimension.id] = seed
@@ -291,6 +312,7 @@ def build_review_queue(
     return ReviewQueue(
         entries=tuple(uncoded_entries) + tuple(conflicting_entries) + tuple(audit_entries),
         audit_seeds=audit_seeds,
+        taxonomy_engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
         audit_samples=audit_samples,
     )
 
@@ -386,9 +408,21 @@ class DimensionCoverage:
 
 @dataclass(frozen=True)
 class CoverageReport:
-    """The full coverage/audit report: one :class:`DimensionCoverage` per rule file's dimension."""
+    """The full coverage/audit report: one :class:`DimensionCoverage` per rule file's dimension.
+
+    Attributes:
+        dimensions: One summary per rule file's dimension.
+        taxonomy_engine_behaviour: The engine behaviour that produced the
+            report (ADR 0039). Required, no default.
+        audit_seeds: ``dimension -> resolved audit seed`` (the queue's own
+            :attr:`ReviewQueue.audit_seeds`), so an audit agreement rate
+            quoted from the report can be regenerated from the report alone
+            (ADR 0039 Question 8).
+    """
 
     dimensions: tuple[DimensionCoverage, ...]
+    taxonomy_engine_behaviour: int
+    audit_seeds: Mapping[str, int]
 
 
 def _percentage(count: int, corpus_size: int) -> float:
@@ -519,7 +553,11 @@ def build_coverage_report(
             )
         )
 
-    return CoverageReport(dimensions=tuple(dimensions))
+    return CoverageReport(
+        dimensions=tuple(dimensions),
+        taxonomy_engine_behaviour=queue.taxonomy_engine_behaviour,
+        audit_seeds=queue.audit_seeds,
+    )
 
 
 __all__ = [

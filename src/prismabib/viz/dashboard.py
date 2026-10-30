@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -43,7 +44,7 @@ import panel as pn
 import param
 import polars as pl
 
-from prismabib.bibliometrics import geography, keywords, network, trends, venues
+from prismabib.bibliometrics import citations, geography, keywords, network, trends, venues
 from prismabib.bibliometrics.base import AnalysisResult
 from prismabib.errors import ConfigError
 from prismabib.prisma.flow import compute_flow_counts
@@ -58,7 +59,6 @@ from prismabib.viz import figures
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from datetime import datetime
 
     from prismabib.project import Project
     from prismabib.taxonomy.coder import CodingResult
@@ -114,16 +114,35 @@ def _year_filtered(result: AnalysisResult, state: FilterState) -> AnalysisResult
         :class:`~prismabib.bibliometrics.base.AnalysisResult` with the same
         ``params``/``provenance`` and a row-filtered ``data``.
     """
-    if "year" not in result.data.columns:
-        return result
     if state.year_start is None and state.year_end is None:
         return result
-    data = result.data
+    # `provenance` (hence the caption's `n`) deliberately stays the stage's
+    # count, which equals the PRISMA flow count; the range is stated beside it.
+    return dataclasses.replace(result, data=_year_filtered_frame(result.data, state))
+
+
+def _year_filtered_frame(frame: pl.DataFrame, state: FilterState) -> pl.DataFrame:
+    """``frame`` restricted to ``state``'s inclusive year range, if it has a ``year`` column.
+
+    A null ``year`` is in no range, so such rows drop once any bound is set;
+    callers that show counts say so.
+    """
+    if "year" not in frame.columns:
+        return frame
     if state.year_start is not None:
-        data = data.filter(pl.col("year") >= state.year_start)
+        frame = frame.filter(pl.col("year") >= state.year_start)
     if state.year_end is not None:
-        data = data.filter(pl.col("year") <= state.year_end)
-    return dataclasses.replace(result, data=data)
+        frame = frame.filter(pl.col("year") <= state.year_end)
+    return frame
+
+
+def _year_range_text(state: FilterState) -> str:
+    """The active year range as ``"2020-2021"`` (open end as ``"..."``); ``""`` when unbounded."""
+    if state.year_start is None and state.year_end is None:
+        return ""
+    start = "..." if state.year_start is None else str(state.year_start)
+    end = "..." if state.year_end is None else str(state.year_end)
+    return f"{start}-{end}"
 
 
 def _load_taxonomy(
@@ -235,13 +254,30 @@ class Dashboard:
         # here. The distinction is the whole layering rule -- a sidebar that
         # derives the corpus's year range itself is a second definition of
         # it, and the AST guard now says so.
-        year_bounds = (years[0], years[-1]) if years else (2000, 2000)
+        # Bokeh rejects start == end (E-1021), and this layer may not do
+        # arithmetic (so no widening to (y, y + 1)): fewer than two distinct
+        # years means there is no range to choose, hence a disabled placeholder.
+        year_label = "Year range"
+        selectable = bool(years) and years[0] != years[-1]
+        if selectable:
+            year_bounds = (years[0], years[-1])
+        else:
+            year_bounds = (0, 1)
+            year_label = (
+                f"Year range (only {years[0]} at this stage)"
+                if years
+                else "Year range (no dated records at this stage)"
+            )
 
         self._project_selector = pn.widgets.Select(
             label="Project", options=[self._project.slug], value=self._project.slug
         )
         self._year_range = pn.widgets.IntRangeSlider(
-            label="Year range", start=year_bounds[0], end=year_bounds[1], value=year_bounds
+            label=year_label,
+            start=year_bounds[0],
+            end=year_bounds[1],
+            value=year_bounds,
+            disabled=not selectable,
         )
         self._year_range.param.watch(self._on_year_range_changed, "value")
 
@@ -252,6 +288,7 @@ class Dashboard:
         self._taxonomy_dimension_selector = pn.widgets.Select(
             label="Taxonomy dimension", options=dimension_options, value=dimension_options[0]
         )
+        self._taxonomy_dimension_selector.param.watch(self._on_taxonomy_dimension_changed, "value")
 
         snapshot_frame = self._corpus.citations()
         snapshot_options = ["(latest)"]
@@ -262,6 +299,7 @@ class Dashboard:
         self._citation_snapshot_selector = pn.widgets.Select(
             label="Citation snapshot", options=snapshot_options, value=snapshot_options[0]
         )
+        self._citation_snapshot_selector.param.watch(self._on_citation_snapshot_changed, "value")
 
         return pn.Column(
             pn.pane.Markdown(f"## {self._project.title}"),
@@ -274,6 +312,18 @@ class Dashboard:
     def _on_year_range_changed(self, event: param.parameterized.Event) -> None:
         start, end = event.new
         self.apply_filters(year_start=start, year_end=end)
+
+    # These two must be able to go *back* to "(all)"/"(latest)", i.e. to
+    # `None`, which `apply_filters` reads as "keep the current value".
+    def _on_taxonomy_dimension_changed(self, event: param.parameterized.Event) -> None:
+        dimension = None if event.new == "(all)" else str(event.new)
+        self._filter_state = dataclasses.replace(self._filter_state, taxonomy_dimension=dimension)
+        self._rebuild_tabs()
+
+    def _on_citation_snapshot_changed(self, event: param.parameterized.Event) -> None:
+        snapshot = None if event.new == "(latest)" else datetime.fromisoformat(str(event.new))
+        self._filter_state = dataclasses.replace(self._filter_state, citation_snapshot=snapshot)
+        self._rebuild_tabs()
 
     def apply_filters(
         self,
@@ -368,16 +418,43 @@ class Dashboard:
         self._tab_corpus_handles[tab] = self._corpus
         return self._corpus
 
-    def _caption_pane(self, text: str) -> pn.pane.Markdown:
-        return pn.pane.Markdown(f"*{text}*")
+    def _caption_pane(self, text: str, *, by_year: bool = True) -> pn.pane.Markdown:
+        """A caption, plus how the year range touched this view (when one is set).
+
+        ``by_year=False`` marks a view whose engine returns no per-year rows to
+        restrict, so it is said to be unfiltered rather than left looking filtered.
+        """
+        years = _year_range_text(self._filter_state)
+        note = (
+            f" Year range {years} applied."
+            if by_year
+            else f" Year range {years} does not apply to this view (not broken down by year)."
+        )
+        return pn.pane.Markdown(f"*{text}{note if years else ''}*")
 
     def _overview_tab(self) -> pn.viewable.Viewable:
         counts = compute_flow_counts(self._project)
+        corpus = self._corpus_for("Overview")
+        state = self._filter_state
+        stats = citations.citation_statistics(corpus, stage=state.stage, at=state.citation_snapshot)
+        per_year = _year_filtered(
+            citations.citations_by_year(corpus, stage=state.stage, at=state.citation_snapshot),
+            state,
+        )
+        per_year_table = pn.widgets.Tabulator(
+            pd.DataFrame({name: per_year.data[name].to_list() for name in per_year.data.columns}),
+            disabled=True,
+        )
+        # `n included` is the flow count and is never year-filtered: it must
+        # equal the PRISMA tab's.
         return pn.Column(
             pn.pane.Markdown(f"# {self._project.title}"),
             pn.pane.Markdown(
                 f"n included = {counts.included}; criteria version {self._project.criteria.version}"
             ),
+            self._caption_pane(figures._caption(stats), by_year=False),
+            per_year_table,
+            self._caption_pane(figures._caption(per_year)),
         )
 
     def _prisma_tab(self) -> pn.viewable.Viewable:
@@ -389,31 +466,42 @@ class Dashboard:
         )
 
     def _trends_tab(self) -> pn.viewable.Viewable:
-        result = trends.annual_counts(self._corpus_for("Trends"), stage=self._filter_state.stage)
+        result = _year_filtered(
+            trends.annual_counts(self._corpus_for("Trends"), stage=self._filter_state.stage),
+            self._filter_state,
+        )
         plotly_figure, _mpl_figure = figures.trend_figure(result)
         pane = pn.pane.Plotly(plotly_figure)
         self._panes["Trends"] = pane
         return pn.Column(pane, self._caption_pane(figures._caption(result)))
 
+    # Geography, Venues and Network aggregate over the whole stage: their
+    # engines take no year range and return no per-year rows, so the year
+    # filter cannot reach them and their captions say so.
     def _geography_tab(self) -> pn.viewable.Viewable:
         result = geography.country_counts(
             self._corpus_for("Geography"), stage=self._filter_state.stage
         )
         plotly_figure, _mpl_figure = figures.geography_figure(result)
         return pn.Column(
-            pn.pane.Plotly(plotly_figure), self._caption_pane(figures._caption(result))
+            pn.pane.Plotly(plotly_figure),
+            self._caption_pane(figures._caption(result), by_year=False),
         )
 
     def _venues_tab(self) -> pn.viewable.Viewable:
         result = venues.top_venues(self._corpus_for("Venues"), stage=self._filter_state.stage)
         plotly_figure, _mpl_figure = figures.venues_figure(result)
         return pn.Column(
-            pn.pane.Plotly(plotly_figure), self._caption_pane(figures._caption(result))
+            pn.pane.Plotly(plotly_figure),
+            self._caption_pane(figures._caption(result), by_year=False),
         )
 
     def _keywords_tab(self) -> pn.viewable.Viewable:
-        result = keywords.keyword_evolution(
-            self._corpus_for("Keywords"), stage=self._filter_state.stage, min_occurrence=1
+        result = _year_filtered(
+            keywords.keyword_evolution(
+                self._corpus_for("Keywords"), stage=self._filter_state.stage, min_occurrence=1
+            ),
+            self._filter_state,
         )
         plotly_figure, _mpl_figure = figures.keywords_figure(result)
         return pn.Column(
@@ -426,7 +514,8 @@ class Dashboard:
         )
         plotly_figure, _mpl_figure = figures.network_figure(result)
         return pn.Column(
-            pn.pane.Plotly(plotly_figure), self._caption_pane(figures._caption(result))
+            pn.pane.Plotly(plotly_figure),
+            self._caption_pane(figures._caption(result), by_year=False),
         )
 
     def _taxonomy_tab(self) -> pn.viewable.Viewable:
@@ -440,23 +529,33 @@ class Dashboard:
                 "No `taxonomy/dimensions.yaml` declared for this project -- nothing to show."
             )
         schema, coding_result, units = self._taxonomy
+        wanted = self._filter_state.taxonomy_dimension
+        dimension_ids = [d.id for d in schema.dimensions if wanted in (None, d.id)]
+        if not dimension_ids:
+            raise ConfigError(f"Taxonomy dimension {wanted!r} is not declared in dimensions.yaml.")
         distribution_results: Sequence[AnalysisResult] = [
-            dimension_distribution(corpus, coding_result, schema, dimension.id, units[dimension.id])
-            for dimension in schema.dimensions
+            dimension_distribution(corpus, coding_result, schema, dim_id, units[dim_id])
+            for dim_id in dimension_ids
         ]
         evolution_results: Sequence[AnalysisResult] = [
-            dimension_evolution(corpus, coding_result, schema, dimension.id, units[dimension.id])
-            for dimension in schema.dimensions
+            _year_filtered(
+                dimension_evolution(corpus, coding_result, schema, dim_id, units[dim_id]),
+                self._filter_state,
+            )
+            for dim_id in dimension_ids
         ]
         dist_plotly, _dist_mpl = figures.taxonomy_distribution_figure(distribution_results)
         evo_plotly, _evo_mpl = figures.taxonomy_evolution_figure(evolution_results)
         return pn.Column(
             pn.pane.Plotly(dist_plotly),
+            self._caption_pane("Distribution over every year.", by_year=False),
             pn.pane.Plotly(evo_plotly),
+            self._caption_pane("Evolution by year."),
         )
 
     def _corpus_browser_tab(self) -> pn.viewable.Viewable:
-        records = self._corpus_for("Corpus browser").records(self._filter_state.stage)
+        all_records = self._corpus_for("Corpus browser").records(self._filter_state.stage)
+        records = _year_filtered_frame(all_records, self._filter_state)
         # `origin` is mandatory (ADR 0032): a missing column must fail loudly
         # here, never vanish from the table.
         columns = [
@@ -470,7 +569,14 @@ class Dashboard:
         # already is one.
         as_pandas = pd.DataFrame({column: records[column].to_list() for column in columns})
         table = pn.widgets.Tabulator(as_pandas, disabled=True, page_size=25)
-        return pn.Column(pn.pane.Markdown(f"{records.height} records"), table)
+        years = _year_range_text(self._filter_state)
+        summary = (
+            f"{records.height} of {all_records.height} records (year range {years}; "
+            "records without a year are excluded)"
+            if years
+            else f"{records.height} records"
+        )
+        return pn.Column(pn.pane.Markdown(summary), table)
 
 
 def dashboard(project: Project, *, corpus: Corpus | None = None) -> pn.viewable.Viewable:

@@ -831,18 +831,25 @@ class ScopusClient:
         """
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
-            page = _parse_json(cached)
-            if validate is not None:
-                validate(page)
-            logger.info(
-                "scopus.request",
-                endpoint=url,
-                cursor=params.get("cursor"),
-                result_count=_result_count(page),
-                remaining_quota=None,
-                cache="hit",
-            )
-            return page
+            try:
+                page = _parse_json(cached)
+                if validate is not None:
+                    validate(page)
+            except ValidationError:
+                # Poisoned entry (ADR 0038: cache is advisory): evict and refetch.
+                logger.warning("scopus.cache.poisoned_entry_discarded", endpoint=url)
+                assert self._cache is not None
+                self._cache.discard(url, params)
+            else:
+                logger.info(
+                    "scopus.request",
+                    endpoint=url,
+                    cursor=params.get("cursor"),
+                    result_count=_result_count(page),
+                    remaining_quota=None,
+                    cache="hit",
+                )
+                return page
 
         self.network_requests += 1
         response = self._request_with_retry(url, params, view=view)

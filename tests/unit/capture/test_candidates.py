@@ -103,6 +103,33 @@ def test_parse__non_integer_year_rejected(bad: str) -> None:
         parse_pasted_rows(bad)
 
 
+@pytest.mark.parametrize("year", ["1999", "2024", "1000", "2100"])
+def test_parse__year_in_range_accepted(year: str) -> None:
+    assert parse_pasted_rows(f"T	{year}")[0].year == int(year)
+
+
+@pytest.mark.parametrize("year", ["0", "0000", "20245", "999", "2101", "99999999999"])
+def test_parse__year_out_of_range_rejected_with_reason(year: str) -> None:
+    with pytest.raises(ValidationError, match=rf"line 1: year '{year}' is outside 1000-2100"):
+        parse_pasted_rows(f"T	{year}")
+
+
+@pytest.mark.parametrize("year", [0, 999, 2101, 20245])
+def test_from_row__year_out_of_range_rejected(year: int) -> None:
+    with pytest.raises(ValidationError, match="outside 1000-2100"):
+        _event(year=year)
+
+
+def test_log__legacy_out_of_range_year_still_loads(tmp_path: Path) -> None:
+    log = CandidateLog(tmp_path / "c.jsonl")
+    legacy = CandidateEvent.model_construct(
+        candidate_id=candidate_id("Old", 20245), title="Old", year=20245, doi=None,
+        pasted_at=NOW, reviewer="sh", schema_version=1,
+    )  # fmt: skip
+    log._store.write_event(legacy)
+    assert [e.year for e in log.load()] == [20245]
+
+
 def test_parse__too_many_tab_columns_rejected() -> None:
     with pytest.raises(ValidationError, match="line 1"):
         parse_pasted_rows("a\t2020\t10.1/x\textra")
