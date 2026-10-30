@@ -175,3 +175,12 @@ Tests PR4 adds or changes. Each new test must be shown to fail on `bf14af4`.
   `CHANGELOG.md`. The resume message in `cli.py` (about L323) and its test stay true, as do
   `docs/how-to/run-a-new-review.md` about L234 (cursor resume) and L306 (legacy dirname skipped).
 - The tests above.
+
+> **Note added 2026-10-29 (clarifications; this note does not change the record above).**
+> 1. `default_chain(..., cache_dir=None)` means no cache: the three clients are built without an `HttpCache`
+>    (`src/prismabib/fulltext/resolve.py`, about L905-940). Production always passes the run's `_http/` (Decision 9).
+> 2. In `capture_fulltext` (`src/prismabib/fulltext/capture.py`, about L693-883) the `with ExitStack()` block encloses the
+>    attempt loop and the seal (manifest build, atomic write, `progress.json` unlink). The clients close when that `with`
+>    exits, after the seal.
+> 3. `_http/` is removed by `shutil.rmtree(..., ignore_errors=True)` after the `with` exits, and only if the run is sealed.
+>    An unsealed or budget-stopped run keeps `_http/` (Decision 2).
