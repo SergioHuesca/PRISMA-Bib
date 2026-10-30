@@ -1,0 +1,12 @@
+{
+  "inputs": {
+    "dimension_id": "learning_paradigm",
+    "project_slug": "golden-project",
+    "record_ids": ["scopus:2-s2.0-3", "doi:10.1/b", "scopus:2-s2.0-1", "openalex:W2"],
+    "rule_version": "1.0.0"
+  },
+  "seed_by_engine_behaviour": {
+    "1": 10485534412256336289,
+    "2": 3143154954114525135
+  }
+}

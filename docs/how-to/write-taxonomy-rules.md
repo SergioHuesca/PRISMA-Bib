@@ -205,12 +205,19 @@ A record you have already overridden for a dimension — even with `categories: 
 re-queued for it; your verdict already stands.
 
 The audit sample's seed is derived from data, not the clock: `sha256` over the project slug,
-the dimension id, the rule file's `version`, and the sorted coded record ids
+the dimension id, the rule file's `version`, the engine's behaviour number, and the sorted
+coded record ids
 ([ADR 0023](../architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md)
-Decision 5). Bump the rule version and the sample re-draws itself — exactly when the previous
+Decision 5; the engine input is
+[ADR 0039](../architecture/adr/0039-taxonomy-engine-behaviour-stamp.md)). The engine's
+behaviour number (`prismabib.taxonomy.TAXONOMY_ENGINE_BEHAVIOUR`, currently `1`: patterns match
+case-sensitively) enters the digest only when it is not `1`, so every seed drawn so far stays
+reproducible. Bump the rule version and the sample re-draws itself — exactly when the previous
 sample has stopped being evidence about the current rules. `queue.audit_seeds` carries the
-resolved seed for every dimension, so an agreement rate quoted in a methods section can be
-regenerated from the number printed beside it.
+resolved seed for every dimension, and so does `report.audit_seeds`, so an agreement rate
+quoted in a methods section can be regenerated from the number printed beside it. Both
+`queue.taxonomy_engine_behaviour` and `report.taxonomy_engine_behaviour` state which engine
+produced them, and the taxonomy figure captions carry `taxonomy_engine_behaviour=1`.
 
 ## Step 7: read the coverage report
 
@@ -229,8 +236,8 @@ sampled record has actually been reviewed: "no evidence yet" and "0% agreement" 
 facts, and this stage never conflates them.
 
 **The audit sample does not move as you review it.** It is designated once per
-`(project, dimension, rule version, corpus)` — `queue.audit_samples[dimension]` — and stays
-put while you work through it. Only `queue.entries` shrinks, because that is the *work list*.
+`(project, dimension, rule version, engine behaviour, corpus)` —
+`queue.audit_samples[dimension]` — and stays put while you work through it. Only `queue.entries` shrinks, because that is the *work list*.
 Those being two different things is what makes the rate computable at all: an earlier version
 drew the sample from the work list, so reviewing a sampled record removed it from the pool, the
 next run re-drew a different sample, and the rate was permanently `None` for every corpus.
@@ -264,7 +271,10 @@ at a green test.
   one reviewable diff.
 - **"The regex is too broad; it's catching unrelated papers."** Add a `none` clause, or narrow
   the `any` pattern. Re-run `code()` — every existing override survives, and the audit sample
-  re-draws itself only if you also bumped `version`.
+  re-draws itself only if you also bumped `version` (or the engine's behaviour number changed,
+  which a new release of this tool announces in its changelog). When an upgrade changes the
+  engine's behaviour, bump each affected rule file's `version` in the same commit, so the git
+  history explains why the sample re-drew.
 - **"Thirty records are miscoded; should I rewrite the rule?"** Only if the miscoding is
   systematic. A handful of one-off errors are exactly what `OverrideLog.append` is for — thirty
   separate, reasoned overrides are cheaper and more auditable than a regex rewrite chasing edge

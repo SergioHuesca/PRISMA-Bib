@@ -13,6 +13,7 @@ import pytest
 
 from prismabib.errors import ConfigError
 from prismabib.stage import PrismaStage
+from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.coder import CodingResult
 from prismabib.taxonomy.overrides import OverrideEvent, fold_override_events
 from prismabib.taxonomy.review import (
@@ -209,6 +210,7 @@ def test_review_queue__audit_sample__is_10pct_and_reproducible_from_seed(tmp_pat
         project_slug="proj",
         dimension_id="learning_paradigm",
         rule_version="1.0.0",
+        engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
         record_ids=record_ids,
     )
 
@@ -240,6 +242,54 @@ def test_review_queue__audit_sample__changes_when_rule_version_changes(tmp_path)
 
 
 @pytest.mark.unit
+def test_audit_sample_seed__baseline__matches_pre_adr_digest() -> None:
+    """ADR 0039: engine 1 omits the token, so the pre-ADR digest is reproduced byte for byte.
+
+    The pinned value was computed by the pre-ADR formula on `main` before the
+    `engine_behaviour` parameter existed. It fails if the token is added for 1.
+    """
+    seed = audit_sample_seed(
+        project_slug="golden-project",
+        dimension_id="learning_paradigm",
+        rule_version="1.0.0",
+        engine_behaviour=1,
+        record_ids=("scopus:2-s2.0-3", "doi:10.1/b", "scopus:2-s2.0-1", "openalex:W2"),
+    )
+
+    assert seed == 10485534412256336289
+
+
+@pytest.mark.unit
+def test_audit_sample_seed__engine_bump__changes_seed() -> None:
+    """ADR 0039: the same inputs under engine 1 and engine 2 seed differently."""
+    inputs = {
+        "project_slug": "p",
+        "dimension_id": "d",
+        "rule_version": "1.0.0",
+        "record_ids": ("scopus:1", "scopus:2"),
+    }
+
+    assert audit_sample_seed(**inputs, engine_behaviour=1) != audit_sample_seed(
+        **inputs, engine_behaviour=2
+    )
+
+
+@pytest.mark.unit
+def test_review_queue__stamps_engine_behaviour(tmp_path) -> None:
+    result = CodingResult(
+        stage=PrismaStage.INCLUDED,
+        record_ids=(),
+        assignments=(),
+        field_diagnostics=(),
+        human_reviewed=frozenset(),
+    )
+
+    queue = build_review_queue(result, _SCHEMA, [_rule_file(tmp_path)], project_slug="p")
+
+    assert queue.taxonomy_engine_behaviour == TAXONOMY_ENGINE_BEHAVIOUR
+
+
+@pytest.mark.unit
 def test_audit_sample_seed__fixture_that_would_fail_on_a_constant_seed(tmp_path) -> None:
     """A fixture strong enough to fail if the seed were ever hardcoded to a constant.
 
@@ -251,12 +301,14 @@ def test_audit_sample_seed__fixture_that_would_fail_on_a_constant_seed(tmp_path)
         project_slug="p",
         dimension_id="d",
         rule_version="1.0.0",
+        engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
         record_ids=("scopus:1", "scopus:2"),
     )
     seed_b = audit_sample_seed(
         project_slug="p",
         dimension_id="d",
         rule_version="1.0.0",
+        engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
         record_ids=("scopus:1", "scopus:3"),
     )
 
@@ -350,6 +402,7 @@ def test_review_queue__empty_input__is_the_empty_queue(tmp_path) -> None:
     assert queue == ReviewQueue(
         entries=(),
         audit_seeds={"learning_paradigm": queue.audit_seeds["learning_paradigm"]},
+        taxonomy_engine_behaviour=TAXONOMY_ENGINE_BEHAVIOUR,
         audit_samples={"learning_paradigm": ()},
     )
 

@@ -27,4 +27,14 @@ command in this stage, and none of the five modules below imports
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from typing import Final
+
+#: The matching behaviour of the engine (ADR 0039). Bump it by any change that
+#: can change what ``code()`` returns for an unchanged rule file, corpus and
+#: override log (compile flags, the field text, the matching, normalisation).
+#: ``1`` is case-sensitive matching. It is folded into the audit seed (for
+#: values other than 1) and stamped on analysis ``params``, the review queue
+#: and the coverage report.
+TAXONOMY_ENGINE_BEHAVIOUR: Final[int] = 1
+
+__all__ = ["TAXONOMY_ENGINE_BEHAVIOUR"]
