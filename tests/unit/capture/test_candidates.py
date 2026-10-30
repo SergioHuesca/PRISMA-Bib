@@ -394,10 +394,10 @@ def test_candidate_id__trailing_punctuation_dropped_by_design() -> None:
 @pytest.mark.parametrize(
     ("title", "expected"),
     [
-        ("Quo?", "93aea16c62632e827d8ae5a62807cf68"),
-        ("Hello World", "86dd518b8fb88b5e815e8c42c9ed4095"),
-        ("Caf\u00e9-au-lait", "ad11b2ccb4c97418657b26fcee034eec"),
-        ("Well-being", "359766c6f7d8ad8cd60d12e2cb04becb"),
+        ("Quo?", "93aea16c62632e827d8ae5a62807cf68"),  # pragma: allowlist secret
+        ("Hello World", "86dd518b8fb88b5e815e8c42c9ed4095"),  # pragma: allowlist secret
+        ("Caf\u00e9-au-lait", "ad11b2ccb4c97418657b26fcee034eec"),  # pragma: allowlist secret
+        ("Well-being", "359766c6f7d8ad8cd60d12e2cb04becb"),  # pragma: allowlist secret
     ],
 )
 def test_candidate_id__golden_values_pinned(title: str, expected: str) -> None:
