@@ -425,8 +425,16 @@ class OpenAlexClient:
         single = url != self.ENDPOINT
         cached = self._cache.load(url, params) if self._cache is not None else None
         if cached is not None:
-            logger.info("openalex.works", cache="hit")
-            return _parse_results(cached, single=single)
+            try:
+                hit = _parse_results(cached, single=single)
+            except ValidationError:
+                # Poisoned entry (ADR 0038: cache is advisory): evict and refetch.
+                logger.warning("openalex.works.cache_poisoned_entry_discarded")
+                assert self._cache is not None
+                self._cache.discard(url, params)
+            else:
+                logger.info("openalex.works", cache="hit")
+                return hit
 
         response = self._request_with_retry(url, params)
         if response.status_code == 404:

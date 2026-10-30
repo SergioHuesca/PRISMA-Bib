@@ -68,6 +68,9 @@ def test_ratelimit__zero_remaining_reset_days_away__raises_quota_error_without_s
 
     with pytest.raises(QuotaExceededError, match="259200"):
         limiter.acquire()
+    # the reset is a readable UTC time, not a raw epoch
+    with pytest.raises(QuotaExceededError, match=r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC"):
+        limiter.acquire()
     assert clock.sleeps == []
     # The refusal is sticky: a retry must not slip through and hit the API.
     with pytest.raises(QuotaExceededError):
