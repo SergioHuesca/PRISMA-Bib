@@ -64,12 +64,13 @@ def test_dashboard__constructs_headlessly(rich_project: Project) -> None:
 
 
 #: The tabs that read corpus data, and must therefore share one handle.
-#: `Overview` and `PRISMA` read `FlowCounts` from the project instead, so
-#: they legitimately record no handle -- named here rather than left as a
-#: silent absence, so a tab that *stops* reading the corpus shows up as a
+#: `PRISMA` reads `FlowCounts` from the project instead, so it legitimately
+#: records no handle (`Overview` also reads citation statistics, so it does)
+#: -- named here rather than left as a silent absence, so a tab that *stops* reading the corpus shows up as a
 #: diff in this list rather than as a test that quietly checks one fewer
 #: thing.
 CORPUS_READING_TABS = (
+    "Overview",
     "Trends",
     "Geography",
     "Venues",

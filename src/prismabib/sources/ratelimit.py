@@ -24,6 +24,7 @@ process.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from time import sleep as _real_sleep
 from time import time as _real_time
 
@@ -189,9 +190,10 @@ class RateLimiter:
         remaining = self._reset_at - now
         if remaining > QUOTA_RESET_THRESHOLD_SECONDS:
             # `_reset_at` is kept so every later acquire() refuses too.
+            reset_utc = datetime.fromtimestamp(self._reset_at, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
             raise QuotaExceededError(
                 f"Rate limiter: quota exhausted (X-RateLimit-Remaining: 0) and the "
-                f"reset is {remaining:.0f} s away (epoch {self._reset_at:.0f}), beyond "
+                f"reset is {remaining:.0f} s away ({reset_utc} UTC), beyond "
                 f"the {QUOTA_RESET_THRESHOLD_SECONDS:.0f} s wait limit; "
                 "this will not recover within a single run."
             )
