@@ -78,7 +78,7 @@ def _citations_for_stage(
     """
     records = corpus.records(stage)
     citations = corpus.citations(at)
-    if records.height and "record_id" in records.columns:
+    if "record_id" in records.columns:  # empty stage -> empty id set -> no citations
         record_ids = set(records.get_column("record_id").to_list())
         citations = citations.filter(pl.col("record_id").is_in(record_ids))
     return records, citations

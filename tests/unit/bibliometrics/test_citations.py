@@ -171,6 +171,19 @@ def test_citation_statistics__empty_corpus__all_zero_not_a_crash(tmp_path: Path)
 
 
 @pytest.mark.integration
+def test_citation_statistics__empty_stage_nonempty_corpus__all_zero(tmp_path: Path) -> None:
+    """An unscreened project has no INCLUDED records: no citations, not the whole corpus's."""
+    records = [BibRecordSpec(number=i, cited_by_count=c) for i, c in enumerate([4, 1], start=1)]
+    corpus = open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=records)))
+
+    result = citation_statistics(corpus, stage=PrismaStage.INCLUDED)
+
+    row = result.data.row(0, named=True)
+    assert row["records_with_a_snapshot"] == 0
+    assert row["total"] == 0
+
+
+@pytest.mark.integration
 def test_citations__figure__carries_its_snapshot_date(tmp_path: Path) -> None:
     """The reproducibility trap from BUILD_PLAN §5 risk 6: a snapshot date on the provenance, always."""
     project = build_bib_project(
