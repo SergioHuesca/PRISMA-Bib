@@ -277,11 +277,17 @@ at a green test.
 
 - **"I changed a rule's case behaviour / upgraded prismabib and the coverage numbers moved."**
   The engine's case-insensitive default (engine behaviour 2, 2026-10-30) widens what
-  already-written patterns match: coverage rises and `multi_label: false` dimensions can gain
-  `conflicting` entries. The audit sample re-draws by itself, because the engine number is in the
-  seed. `version` is a rule-file field that nothing derives from the engine, so bump each
-  affected rule file's `version` in the upgrade commit, so the git history explains why the
-  sample re-drew and your methods section can say which rules produced which numbers.
+  already-written patterns match, in both `any` and `none` clauses. Coverage usually rises, and
+  `multi_label: false` dimensions can gain `conflicting` entries. But a wider `none` (exclusion)
+  clause can also suppress a category a record used to get, so some records can lose a category
+  or become `uncoded`, and the `conflicting` count can fall. For a `multi_label: false` dimension
+  whose rule file uses `counting_unit: papers`, a record that now carries more than one effective
+  category makes `distribution()` raise `ValidationError` (the sum-to-`|C|` guard, ADR 0023
+  Decision 4). Remedy: narrow the rule (word boundaries, a `none` clause, or `(?-i:...)`), or
+  append an override for that record. The audit sample re-draws by itself, because the engine
+  number is in the seed. `version` is a rule-file field that nothing derives from the engine, so
+  bump each affected rule file's `version` in the upgrade commit, so the git history explains why
+  the sample re-drew and your methods section can say which rules produced which numbers.
 - **"Add a new method category for X."** Add the category to `dimensions.yaml`, add a
   category rule to the relevant `taxonomy/rules/*.yaml`, bump its `version`, commit both as
   one reviewable diff.
