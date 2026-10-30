@@ -18,8 +18,12 @@ BUILD_PLAN.md is frozen and is not present in this worktree or at the main check
 
 ## Context
 
-**The gap.** A rule file's `version` is author-declared. `RuleFile` (`src/prismabib/taxonomy/rules.py`) checks only that
-it is shaped like a semantic version, and nothing ties it to what the engine does. On `main`, `_compile_pattern`
+**The gap.** A rule file's `version` is author-declared. `RuleFile` (`src/prismabib/taxonomy/rules.py`) declares `version`
+as a required `str` and has one validator on it, `_require_semantic_version` (lines 154-175), which calls
+`_SEMVER_RE.match` (`_SEMVER_RE`, line 66: `^\d+\.\d+\.\d+([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$`). That validator
+runs when `load_rule_file` calls `RuleFile.model_validate` (line 311). Nothing else checks the value: not that it changed
+when the rules or the engine changed, not its relation to the file's content, and not the engine's behaviour. Because
+`re.match` anchors `$` before a trailing newline, a value such as `"1.0.0\n"` also passes. Nothing ties the version to what the engine does. On `main`, `_compile_pattern`
 (`rules.py`, around line 272) compiles every field pattern with no flags. PR #227 changes that to `re.IGNORECASE`, with
 `(?-i:...)` as the per-pattern opt-out. After it lands, a rule file that is byte-identical and carries the same
 `version` produces different assignments on the two engines.
@@ -95,9 +99,13 @@ sha256( slug US dimension US rule_version [ US "engine-behaviour=N" when N != 1 
   byte-identical, so `audit_sample_seed(..., engine_behaviour=1)` reproduces any pre-ADR designated sample and any rate
   quoted from it. ADR 0023 Decision 5 requires exactly that.
 - The first step of the sequence (Decision 4) is then a no-op for every project's seeds.
-- The token contains no colon. Record ids carry a `source:` prefix (ADR 0005's example, `scopus:2-s2.0-85101234567`), so
-  the token cannot equal a record id, and it sits in a fixed position before the variable record list. The digest stays
-  unambiguous.
+- The token contains no colon, so it can equal a record id only if some id contains no colon. The id sources that were
+  traced all prefix their ids: Scopus ids are `scopus:<eid>` or `scopus-source:<id>` (`store/load.py`, the functions
+  around lines 719-732 and 914-924), and registered ids are `registered:<event_id>` (`capture/registrations.py`,
+  `RECORD_ID_PREFIX`). The loader refuses a Scopus row whose id starts with `registered:` (V9, `store/load.py`, around
+  line 2124). This is a convention of the id sources, not a type guarantee: rows from OpenAlex were not traced in this
+  review, so the claim that no record id can equal the token rests on that convention for every source. The token sits in
+  a fixed position before the variable record list, so the digest is unambiguous as long as no record id equals it.
 - This departs from the wording "add the constant to the seed" in one respect: the constant is folded in for every
   non-baseline engine, not for the baseline. The owner confirmed this (Question 1). The alternative is in "Alternatives
   considered".
@@ -115,7 +123,7 @@ over the overlap, so it may become `None`, or move, with no new review.
 
 | Place | Change | Why |
 | --- | --- | --- |
-| `AnalysisResult.params` of `dimension_distribution` and `dimension_evolution` (`taxonomy/analysis.py`) | adds `taxonomy_engine_behaviour` | ADR 0022 Decision 3 puts every knob that affects data in `params`, and therefore in the caption. The taxonomy figures caption from `params`. The caption renders `taxonomy_engine_behaviour=2` (key=value, as the other params render; Question 7). |
+| `AnalysisResult.params` of `dimension_distribution` and `dimension_evolution` (`taxonomy/analysis.py`) | adds `taxonomy_engine_behaviour` | ADR 0022 requires every knob that affects data to be in `params`, and therefore in the caption: Decision 1 defines the `params` field, Decisions 4 and 7 apply the rule (the counting method; the clustering seed), and the Constraints list restates it. The taxonomy figures caption from `params`. The caption renders `taxonomy_engine_behaviour=2` (key=value, as the other params render; Question 7). |
 | `ReviewQueue` (`taxonomy/review.py`) | adds a required field `taxonomy_engine_behaviour: int` | The queue carries `audit_seeds`. The stamp sits beside the seed a reader regenerates from. |
 | `CoverageReport` (`taxonomy/review.py`) | adds required fields `taxonomy_engine_behaviour: int` and `audit_seeds: Mapping[str, int]` | The report carries `audit_agreement_rate`, the number a methods section quotes. Adding `audit_seeds` lets that rate be regenerated from the report alone (Question 8). |
 | Not changed: `CodingResult`, `Distribution` and its `caption()`, `Assignment` and `as_dataframe()`, the override log, `DimensionCoverage` | none | `code()` results are never persisted (ADR 0023 Decision 1), so the process holding a `CodingResult` is the run that made it. `Distribution.caption()` is pinned by three golden tests and stays unchanged (Question 7). The `Assignment` columns are frozen. |
@@ -190,9 +198,12 @@ Two steps, in this order. The owner approved the split (Question 2).
 - `tests/golden/taxonomy/__snapshots__/audit_seed.json`: the seed of one fixed fixture at engine 1 and at engine 2. It pins
   the value across machines, which is the Stage 11 check for this class of defect.
 
-**PR #227 itself.** Its changed-file list was not visible when this ADR was drafted. Its description reports 106 taxonomy
-tests passing and mentions no golden change. That suggests none moves, but it is unverified and must be read off the diff
-when the PR is reviewed.
+**PR #227 itself.** `git diff --stat origin/main...origin/fix/taxonomy-rules-case-insensitive` changes exactly three files:
+`docs/how-to/write-taxonomy-rules.md` (+13), `src/prismabib/taxonomy/rules.py` (3 lines, +2/-1, the `re.IGNORECASE`
+change in `_compile_pattern`), and `tests/unit/taxonomy/test_rules.py` (+45). No golden or snapshot is among them, and
+`CHANGELOG.md` is not. The step-1 implementation PR's docs change (Decision 5) edits the same how-to file, so it must
+rebase on the 13 lines #227 adds, or #227 must be rebased on it; the two must not add the same guidance twice. The PR's
+description reports 106 taxonomy tests passing.
 
 **Templates.** No template changes, because no `numbers.json` key is added.
 
@@ -307,7 +318,7 @@ when the PR is reviewed.
 - [ADR 0023](0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md): derived assignments (Decision 1),
   the seed (Decision 5), the papers guard (Decision 4).
 - [ADR 0022](0022-the-analysis-result-contract-and-its-provenance.md): every knob that affects data is in `params`, and so
-  in the caption (Decision 3).
+  in the caption. Decision 1 defines `params`; Decisions 4 and 7 and the Constraints list require the knobs in it.
 - [ADR 0025](0025-figures-render-what-the-engines-computed.md): figures render what the engines computed, through the caption
   path used here.
 - [ADR 0018](0018-abstract-runs-in-layer-1.md): Layer 1 is a function of Layer 0, which is why no table stores assignments.
