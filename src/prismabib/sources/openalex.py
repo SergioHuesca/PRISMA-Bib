@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Self
@@ -46,6 +45,7 @@ from prismabib.errors import (
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import register_secret_for_redaction
+from prismabib.titles import normalise_title
 
 logger = structlog.get_logger(__name__)
 
@@ -148,12 +148,6 @@ class TopicKeyword:
     name: str
     score: float | None
     kind: str = KEYWORD_KIND
-
-
-def normalise_title(title: str) -> str:
-    """Lowercase, delete punctuation, collapse whitespace (ADR 0028 Decision 4)."""
-    kept = "".join(c for c in title.lower() if not unicodedata.category(c).startswith("P"))
-    return " ".join(kept.split())
 
 
 def normalise_doi(doi: str) -> str:
