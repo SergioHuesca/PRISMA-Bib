@@ -83,8 +83,8 @@ categories:
   compared against a threshold anywhere in this stage.
 - **Patterns match case-insensitively by default** (`re.IGNORECASE`), in both `any` and
   `none`: `\btransformer\b` fires on `Transformer Networks for Vision`, `TRANSFORMER` and
-  `transformer`. Earlier versions of the engine were case-sensitive, which silently sent
-  capitalised titles to `uncoded`. To require an exact case for part of a pattern, such as an
+  `transformer`. Engine behaviour 1 was case-sensitive, which silently sent capitalised titles
+  to `uncoded`. To require an exact case for part of a pattern, such as an
   acronym that is also a common word, wrap that part in a scoped inline group:
   `(?-i:SAR)` matches `SAR imagery` but not `sar imagery`. To make a whole pattern
   case-sensitive, wrap all of it: `(?-i:\bViT\b)`. Write patterns in whatever case reads best;
@@ -218,14 +218,14 @@ coded record ids
 ([ADR 0023](../architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md)
 Decision 5; the engine input is
 [ADR 0039](../architecture/adr/0039-taxonomy-engine-behaviour-stamp.md)). The engine's
-behaviour number (`prismabib.taxonomy.TAXONOMY_ENGINE_BEHAVIOUR`, currently `1`: patterns match
-case-sensitively) enters the digest only when it is not `1`, so every seed drawn so far stays
-reproducible. Bump the rule version and the sample re-draws itself — exactly when the previous
+behaviour number (`prismabib.taxonomy.TAXONOMY_ENGINE_BEHAVIOUR`, currently `2`: patterns match
+case-insensitively; `1` was case-sensitive) enters the digest only when it is not `1`, so every
+seed drawn under engine 1 stays reproducible. Bump the rule version and the sample re-draws itself — exactly when the previous
 sample has stopped being evidence about the current rules. `queue.audit_seeds` carries the
 resolved seed for every dimension, and so does `report.audit_seeds`, so an agreement rate
 quoted in a methods section can be regenerated from the number printed beside it. Both
 `queue.taxonomy_engine_behaviour` and `report.taxonomy_engine_behaviour` state which engine
-produced them, and the taxonomy figure captions carry `taxonomy_engine_behaviour=1`.
+produced them, and the taxonomy figure captions carry `taxonomy_engine_behaviour=2`.
 
 ## Step 7: read the coverage report
 
@@ -268,26 +268,27 @@ this project is in its pipeline, not a gap in the taxonomy engine.
 Rule *content* is validated by the audit agreement rate, not by the unit test suite
 ([ADR 0023](../architecture/adr/0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md)
 Decision 7). A test asserting `\btransformer\b` matches `"transformer"` tests the `re` module,
-not this system — so do not add one. If you want to know whether `architecture.yaml` is a
+not this system — so do not add one. The single exception is the engine-behaviour golden, which
+pins the engine's default case policy on a fixed probe (ADR 0039). If you want to know whether `architecture.yaml` is a
 *good* rule file, look at the coverage report's audit agreement rate after a review round, not
 at a green test.
 
 ## Common patterns
 
 - **"I changed a rule's case behaviour / upgraded prismabib and the coverage numbers moved."**
-  The engine's case-insensitive default (2026-10-30) widens what already-written patterns
-  match, and `version` is a rule-file field that nothing derives from the engine. Bump the rule
-  file's `version` when you re-code after upgrading, so the new audit sample is drawn against
-  the new behaviour and your methods section can say which rules produced which numbers.
+  The engine's case-insensitive default (engine behaviour 2, 2026-10-30) widens what
+  already-written patterns match: coverage rises and `multi_label: false` dimensions can gain
+  `conflicting` entries. The audit sample re-draws by itself, because the engine number is in the
+  seed. `version` is a rule-file field that nothing derives from the engine, so bump each
+  affected rule file's `version` in the upgrade commit, so the git history explains why the
+  sample re-drew and your methods section can say which rules produced which numbers.
 - **"Add a new method category for X."** Add the category to `dimensions.yaml`, add a
   category rule to the relevant `taxonomy/rules/*.yaml`, bump its `version`, commit both as
   one reviewable diff.
 - **"The regex is too broad; it's catching unrelated papers."** Add a `none` clause, or narrow
   the `any` pattern. Re-run `code()` — every existing override survives, and the audit sample
   re-draws itself only if you also bumped `version` (or the engine's behaviour number changed,
-  which a new release of this tool announces in its changelog). When an upgrade changes the
-  engine's behaviour, bump each affected rule file's `version` in the same commit, so the git
-  history explains why the sample re-drew.
+  which a new release of this tool announces in its changelog).
 - **"Thirty records are miscoded; should I rewrite the rule?"** Only if the miscoding is
   systematic. A handful of one-off errors are exactly what `OverrideLog.append` is for — thirty
   separate, reasoned overrides are cheaper and more auditable than a regex rewrite chasing edge
