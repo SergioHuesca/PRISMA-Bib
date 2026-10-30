@@ -15,7 +15,15 @@ from datetime import UTC, datetime
 import polars as pl
 import pytest
 
-from prismabib.bibliometrics.base import AnalysisResult, Provenance, _max_datetime, _serialise
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    Provenance,
+    _max_datetime,
+    _serialise,
+    normalise_years,
+    restrict_to_years,
+    years_label,
+)
 from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
 
@@ -181,3 +189,230 @@ def test_serialise__different_data__is_different_bytes() -> None:
     second = AnalysisResult(data=pl.DataFrame({"a": [2]}), params={}, provenance=provenance)
 
     assert _serialise(first) != _serialise(second)
+
+
+# --- ADR 0040: restrict_to_years and the year-range caption rule ---------------------------
+
+#: Years 2019..2022 once each, plus two null-year rows; ``record_id`` is the row key.
+_YEARS_FRAME = pl.DataFrame(
+    {"record_id": ["a", "b", "c", "d", "e", "f"], "year": [2020, None, 2019, 2022, None, 2021]},
+    schema={"record_id": pl.String, "year": pl.Int64},
+)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", [None, (None, None)])
+def test_restrict_to_years__no_range__returns_the_same_frame_and_zero(
+    years: tuple[int | None, int | None] | None,
+) -> None:
+    frame, dropped = restrict_to_years(_YEARS_FRAME, years)
+
+    assert frame is _YEARS_FRAME
+    assert dropped == 0
+
+
+@pytest.mark.unit
+def test_restrict_to_years__both_bounds__are_inclusive_and_keep_row_order() -> None:
+    frame, _ = restrict_to_years(_YEARS_FRAME, (2020, 2021))
+
+    assert frame.get_column("record_id").to_list() == ["a", "f"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("years", "expected"),
+    [((2021, None), ["d", "f"]), ((None, 2020), ["a", "c"])],
+    ids=["open-end", "open-start"],
+)
+def test_restrict_to_years__open_bound__is_unbounded_on_that_side(
+    years: tuple[int | None, int | None], expected: list[str]
+) -> None:
+    frame, _ = restrict_to_years(_YEARS_FRAME, years)
+
+    assert frame.get_column("record_id").to_list() == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", [(2020, 2021), (2021, None), (None, 2020)])
+def test_restrict_to_years__any_bound_set__drops_null_years_and_counts_them(
+    years: tuple[int | None, int | None],
+) -> None:
+    frame, dropped = restrict_to_years(_YEARS_FRAME, years)
+
+    assert dropped == 2
+    assert frame.get_column("year").null_count() == 0
+
+
+@pytest.mark.unit
+def test_restrict_to_years__start_after_end__raises_analysis_error() -> None:
+    with pytest.raises(AnalysisError, match=r"2022.*2020"):
+        restrict_to_years(_YEARS_FRAME, (2022, 2020))
+
+
+@pytest.mark.unit
+def test_restrict_to_years__equal_bounds__is_a_single_year() -> None:
+    frame, _ = restrict_to_years(_YEARS_FRAME, (2022, 2022))
+
+    assert frame.get_column("record_id").to_list() == ["d"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", [("2020", None), (None, 2020.5), (True, None)])
+def test_restrict_to_years__non_int_bound__raises_analysis_error(
+    bad: tuple[object, object],
+) -> None:
+    with pytest.raises(AnalysisError, match="int"):
+        restrict_to_years(_YEARS_FRAME, bad)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_restrict_to_years__empty_frame__keeps_the_schema() -> None:
+    empty = _YEARS_FRAME.clear()
+
+    frame, dropped = restrict_to_years(empty, (2020, 2021))
+
+    assert frame.height == 0
+    assert frame.schema == _YEARS_FRAME.schema
+    assert dropped == 0
+
+
+@pytest.mark.unit
+def test_restrict_to_years__range_outside_the_data__is_empty_with_the_schema() -> None:
+    frame, dropped = restrict_to_years(_YEARS_FRAME, (1990, 1991))
+
+    assert frame.height == 0
+    assert frame.schema == _YEARS_FRAME.schema
+    assert dropped == 2
+
+
+_SNAPSHOT = datetime(2026, 9, 2, tzinfo=UTC)
+_CAVEAT = "older papers have had longer to accumulate citations"
+
+
+@pytest.mark.unit
+def test_caption__years_param__is_a_clause_and_not_a_key_value_pair() -> None:
+    result = AnalysisResult(
+        data=EMPTY_DATA,
+        params={"years": "2020-2021", "method": "full", "n_in_range": 640, "n_no_year_dropped": 3},
+        provenance=_provenance(corpus_size=1293, retrieved_at=_SNAPSHOT),
+    )
+
+    assert result.caption() == (
+        "n = 1293 (included); corpus as at 2026-09-02; papers published in 2020-2021; "
+        "method=full, n_in_range=640, n_no_year_dropped=3."
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", ["2020-...", "...-2021"])
+def test_caption__open_ended_years__are_stated_verbatim(years: str) -> None:
+    result = AnalysisResult(data=EMPTY_DATA, params={"years": years}, provenance=_provenance())
+
+    assert f"papers published in {years}" in result.caption()
+    assert "years=" not in result.caption()
+
+
+@pytest.mark.unit
+def test_caption__years_with_citation_snapshot__adds_the_age_caveat_after_the_citation_clause() -> (
+    None
+):
+    result = AnalysisResult(
+        data=EMPTY_DATA,
+        params={"years": "2020-2021", "n_in_range": 5},
+        provenance=_provenance(retrieved_at=_SNAPSHOT, citation_snapshot=_SNAPSHOT),
+    )
+
+    assert result.caption() == (
+        "n = 7 (included); corpus as at 2026-09-02; papers published in 2020-2021; "
+        f"citations as at 2026-09-02; {_CAVEAT}; n_in_range=5."
+    )
+
+
+@pytest.mark.unit
+def test_caption__years_with_non_uniform_snapshot__still_adds_the_caveat() -> None:
+    result = AnalysisResult(
+        data=EMPTY_DATA,
+        params={"years": "2020-2021"},
+        provenance=_provenance(citation_snapshot=_SNAPSHOT, citation_snapshot_is_uniform=False),
+    )
+
+    caption = result.caption()
+    assert "latest citation snapshot per record" in caption
+    assert _CAVEAT in caption
+
+
+@pytest.mark.unit
+def test_caption__years_without_citation_snapshot__has_no_caveat() -> None:
+    result = AnalysisResult(
+        data=EMPTY_DATA, params={"years": "2020-2021"}, provenance=_provenance()
+    )
+
+    assert _CAVEAT not in result.caption()
+
+
+@pytest.mark.unit
+def test_caption__citation_snapshot_without_years__has_no_caveat() -> None:
+    result = AnalysisResult(
+        data=EMPTY_DATA, params={"top_n": 3}, provenance=_provenance(citation_snapshot=_SNAPSHOT)
+    )
+
+    assert result.caption() == (
+        "n = 7 (included); corpus as at 2026-03-04; citations as at 2026-09-02; top_n=3."
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", [None, (None, None)])
+def test_normalise_years__no_range__is_none(years: tuple[int | None, int | None] | None) -> None:
+    assert normalise_years(years) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", [(2020, 2021), (2020, None), (None, 2021), (2020, 2020)])
+def test_normalise_years__a_range__is_returned_unchanged(
+    years: tuple[int | None, int | None],
+) -> None:
+    assert normalise_years(years) == years
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", [(2022, 2020), ("2020", None), (None, 2020.5), (True, None)])
+def test_normalise_years__invalid__raises_analysis_error(bad: tuple[object, object]) -> None:
+    with pytest.raises(AnalysisError):
+        normalise_years(bad)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("years", "label"),
+    [
+        (None, None),
+        ((None, None), None),
+        ((2020, 2021), "2020-2021"),
+        ((2020, None), "2020-..."),
+        ((None, 2021), "...-2021"),
+        ((2020, 2020), "2020-2020"),
+    ],
+)
+def test_years_label__each_form__is_the_documented_string(
+    years: tuple[int | None, int | None] | None, label: str | None
+) -> None:
+    assert years_label(years) == label
+
+
+@pytest.mark.unit
+def test_years_label__start_after_end__raises_analysis_error() -> None:
+    with pytest.raises(AnalysisError):
+        years_label((2022, 2020))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("years", [(2020, 2021), (2020, None), (None, 2021)])
+def test_years_label__matches_the_dashboards_year_range_text(
+    years: tuple[int | None, int | None],
+) -> None:
+    dashboard = pytest.importorskip("prismabib.viz.dashboard")
+
+    state = dashboard.FilterState(year_start=years[0], year_end=years[1])
+
+    assert years_label(years) == dashboard._year_range_text(state)
