@@ -18,6 +18,7 @@ back exactly what you put in".
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from collections.abc import Mapping
@@ -90,6 +91,12 @@ class HttpCache:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         tmp_path.write_bytes(body)
         tmp_path.replace(path)
+
+    def discard(self, url: str, params: Mapping[str, str]) -> None:
+        """Delete a cache entry (e.g. one that no longer parses); a missing entry is fine."""
+        # Advisory cache (ADR 0038): a stuck file just means the next write replaces it.
+        with contextlib.suppress(OSError):
+            self._path_for(self.key_for(url, params)).unlink(missing_ok=True)
 
     def _path_for(self, key: str) -> Path:
         """Resolve the on-disk path for a cache key, sharded by its first two hex digits.

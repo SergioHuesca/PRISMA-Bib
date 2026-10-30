@@ -872,3 +872,32 @@ def test_reason_button__an_accepted_exclusion__files_it_under_that_code(
         (on_screen, "exclude", REASON_CODES[1])
     ]
     assert not screener.awaiting_reason
+
+
+@pytest.mark.integration
+def test_panes__markup_in_record_text__is_escaped_not_rendered(project: Project) -> None:
+    """Store text must reach the reviewer verbatim: no live tag in any Markdown pane."""
+    import html
+
+    view = build_screener(project)
+    current = view.queue.current
+    assert current is not None
+    view._records[current] = ui.ScreeningRecord(
+        record_id=current,
+        title="T <img src=x onerror=alert(1)>\nsecond line",
+        abstract="a<b and c>d <jats:p>x</jats:p> <img src=x onerror=alert(1)>",
+    )
+    view.refresh()
+
+    def rendered(pane: Any) -> str:
+        # Panel wraps the markdown-it output in a further escape layer; undo it once.
+        return html.unescape(pane._transform_object(pane.object)["object"])
+
+    for pane in (view.record_pane, view._progress_pane, view._status_pane):
+        assert "<img" not in rendered(pane)
+        assert "<jats:p>" not in rendered(pane)
+    shown = rendered(view.record_pane)
+    assert "&lt;img src=x onerror=alert(1)&gt;" in shown
+    assert "a&lt;b and c&gt;d" in shown
+    assert "<h3>T " in shown
+    assert "second line</h3>" in shown

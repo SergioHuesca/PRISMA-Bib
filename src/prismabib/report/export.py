@@ -341,7 +341,6 @@ def export_project(project: Project) -> ExportResult:
     counts.assert_consistent()
 
     root = project.root / "exports"
-    _clear_stale_artefacts(root)
     numbers = numbers_map(project, counts=counts, orphans=orphans)
     manifest = _build_manifest(project, counts)
 
@@ -364,27 +363,30 @@ def export_project(project: Project) -> ExportResult:
             ),
         )
 
-    figures: list[Path] = []
-    figures.append(
-        _write(
-            root / "figures" / "prisma_flow.svg",
-            flow_diagram_svg(
-                counts,
-                title=project.title,
-                orphaned_decisions=len(orphans),
-            ),
-        )
-    )
-    figures.append(_write(root / "figures" / "prisma_flow.csv", to_csv(_flow_source_rows(counts))))
+    # Everything that can raise is computed before the first deletion, so a failed
+    # export leaves the previous exports/ intact.
+    svg = flow_diagram_svg(counts, title=project.title, orphaned_decisions=len(orphans))
+    flow_csv = to_csv(_flow_source_rows(counts))
+    rendered = [
+        (table.slug, to_csv(table), to_markdown(table), to_latex(table))
+        for table in build_tables(project, numbers)
+    ]
+    numbers_text = json.dumps(numbers, indent=2, sort_keys=True) + "\n"
+    manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
 
+    _clear_stale_artefacts(root)
+    figures: list[Path] = [
+        _write(root / "figures" / "prisma_flow.svg", svg),
+        _write(root / "figures" / "prisma_flow.csv", flow_csv),
+    ]
     tables: list[Path] = []
-    for table in build_tables(project, numbers):
-        tables.append(_write(root / "tables" / f"{table.slug}.csv", to_csv(table)))
-        tables.append(_write(root / "tables" / f"{table.slug}.md", to_markdown(table)))
-        tables.append(_write(root / "tables" / f"{table.slug}.tex", to_latex(table)))
+    for slug, csv_text, md_text, tex_text in rendered:
+        tables.append(_write(root / "tables" / f"{slug}.csv", csv_text))
+        tables.append(_write(root / "tables" / f"{slug}.md", md_text))
+        tables.append(_write(root / "tables" / f"{slug}.tex", tex_text))
 
-    _write(root / "numbers.json", json.dumps(numbers, indent=2, sort_keys=True) + "\n")
-    _write(root / "manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    _write(root / "numbers.json", numbers_text)
+    _write(root / "manifest.json", manifest_text)
 
     _log.info(
         "report.export.complete",

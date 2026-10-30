@@ -507,3 +507,33 @@ def test_export__a_researcher_s_own_file_beside_the_bundle__is_left_alone(
     export_project(project)
 
     assert manuscript.read_text(encoding="utf-8") == "# Draft\n"
+
+
+def _hash_tree(root: Path) -> dict[str, str]:
+    import hashlib
+
+    return {
+        p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("target", ["numbers_map", "build_tables", "_build_manifest"])
+def test_export__step_raises__previous_exports_untouched(
+    project: Project, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """A failed export must not delete the last good figures/ and tables/."""
+    result = export_project(project)
+    before = _hash_tree(result.root)
+    assert before
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(f"prismabib.report.export.{target}", boom)
+    with pytest.raises(RuntimeError, match="boom"):
+        export_project(project)
+
+    assert _hash_tree(result.root) == before
