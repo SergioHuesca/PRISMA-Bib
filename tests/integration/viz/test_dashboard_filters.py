@@ -11,11 +11,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import polars as pl
 import pytest
 from bokeh.core.validation import check_integrity
 
-from prismabib.errors import ConfigError
-from prismabib.viz.dashboard import Dashboard
+from prismabib.bibliometrics.base import restrict_to_years
+from prismabib.errors import AnalysisError, ConfigError
+from prismabib.viz.dashboard import Dashboard, FilterState, _year_filtered_frame
 from tests.bibliometrics_helpers import (
     BibCorpusSpec,
     BibRecordSpec,
@@ -205,3 +207,76 @@ def test_citation_snapshot_selector__changes_the_snapshot_the_citation_views_rea
 
     assert dashboard.filter_state.citation_snapshot is None
     assert _texts(_tab(dashboard, "Overview")) == latest
+
+
+@pytest.mark.integration
+def test_apply_filters__start_after_end__raises_and_leaves_state_and_tabs_untouched(
+    tmp_path: Path,
+) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    dashboard.apply_filters(year_start=2020, year_end=2021)
+    before = dashboard.filter_state
+    browser_before = _texts(_tab(dashboard, "Corpus browser"))
+
+    with pytest.raises(AnalysisError, match=r"2022.*2021"):
+        dashboard.apply_filters(year_start=2022)
+
+    assert dashboard.filter_state is before
+    assert _texts(_tab(dashboard, "Corpus browser")) == browser_before
+    dashboard.apply_filters(year_end=2022)  # the next valid change still rebuilds
+    assert dashboard.filter_state.year_end == 2022
+    assert "3 of 4 records" in _texts(_tab(dashboard, "Corpus browser"))
+
+
+@pytest.mark.integration
+def test_filter_state__start_after_end__raises_on_construction() -> None:
+    with pytest.raises(AnalysisError):
+        FilterState(year_start=2022, year_end=2020)
+    assert FilterState(year_start=2020, year_end=2020).year_start == 2020
+
+
+@pytest.mark.integration
+def test_apply_filters__undeclared_dimension__keeps_the_previous_state(
+    taxonomy_project: Project,
+) -> None:
+    dashboard = Dashboard(taxonomy_project)
+    before = dashboard.filter_state
+
+    with pytest.raises(ConfigError):
+        dashboard.apply_filters(taxonomy_dimension="not_a_dimension")
+
+    assert dashboard.filter_state is before
+    dashboard.apply_filters(taxonomy_dimension="architecture")  # no longer poisoned
+    assert dashboard.filter_state.taxonomy_dimension == "architecture"
+
+
+_YEAR_CASES = [
+    pytest.param((2020, 2021), id="inclusive-both"),
+    pytest.param((2021, None), id="open-end"),
+    pytest.param((None, 2020), id="open-start"),
+    pytest.param((2022, 2022), id="single-year"),
+    pytest.param((1990, 1991), id="outside-the-data"),
+    pytest.param((None, None), id="no-range"),
+]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("years", _YEAR_CASES)
+def test_year_filtered_frame__agrees_with_restrict_to_years(
+    years: tuple[int | None, int | None],
+) -> None:
+    frame = pl.DataFrame(
+        {"record_id": ["a", "b", "c", "d", "e", "f"], "year": [2020, None, 2019, 2022, None, 2021]},
+        schema={"record_id": pl.String, "year": pl.Int64},
+    )
+
+    filtered = _year_filtered_frame(frame, FilterState(year_start=years[0], year_end=years[1]))
+
+    assert filtered.equals(restrict_to_years(frame, years)[0])
+
+
+@pytest.mark.integration
+def test_year_filtered_frame__frame_without_year__is_returned_unchanged() -> None:
+    frame = pl.DataFrame({"k": [1, 2]})
+
+    assert _year_filtered_frame(frame, FilterState(year_start=2020)) is frame

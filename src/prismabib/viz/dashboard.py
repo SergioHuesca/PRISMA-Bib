@@ -45,7 +45,12 @@ import param
 import polars as pl
 
 from prismabib.bibliometrics import citations, geography, keywords, network, trends, venues
-from prismabib.bibliometrics.base import AnalysisResult
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    normalise_years,
+    restrict_to_years,
+    years_label,
+)
 from prismabib.errors import ConfigError
 from prismabib.prisma.flow import compute_flow_counts
 from prismabib.stage import PrismaStage
@@ -100,6 +105,11 @@ class FilterState:
     taxonomy_dimension: str | None = None
     citation_snapshot: datetime | None = None
 
+    def __post_init__(self) -> None:
+        # A start after the end raises here, so no code path can hold (or assign)
+        # an invalid state; the same `AnalysisError` the engines raise (ADR 0040).
+        normalise_years((self.year_start, self.year_end))
+
 
 def _year_filtered(result: AnalysisResult, state: FilterState) -> AnalysisResult:
     """``result`` with its ``data`` restricted to ``state``'s year range, if it has a ``year`` column.
@@ -129,20 +139,12 @@ def _year_filtered_frame(frame: pl.DataFrame, state: FilterState) -> pl.DataFram
     """
     if "year" not in frame.columns:
         return frame
-    if state.year_start is not None:
-        frame = frame.filter(pl.col("year") >= state.year_start)
-    if state.year_end is not None:
-        frame = frame.filter(pl.col("year") <= state.year_end)
-    return frame
+    return restrict_to_years(frame, (state.year_start, state.year_end))[0]
 
 
 def _year_range_text(state: FilterState) -> str:
     """The active year range as ``"2020-2021"`` (open end as ``"..."``); ``""`` when unbounded."""
-    if state.year_start is None and state.year_end is None:
-        return ""
-    start = "..." if state.year_start is None else str(state.year_start)
-    end = "..." if state.year_end is None else str(state.year_end)
-    return f"{start}-{end}"
+    return years_label((state.year_start, state.year_end)) or ""
 
 
 def _load_taxonomy(
@@ -317,13 +319,13 @@ class Dashboard:
     # `None`, which `apply_filters` reads as "keep the current value".
     def _on_taxonomy_dimension_changed(self, event: param.parameterized.Event) -> None:
         dimension = None if event.new == "(all)" else str(event.new)
-        self._filter_state = dataclasses.replace(self._filter_state, taxonomy_dimension=dimension)
-        self._rebuild_tabs()
+        self._set_filter_state(
+            dataclasses.replace(self._filter_state, taxonomy_dimension=dimension)
+        )
 
     def _on_citation_snapshot_changed(self, event: param.parameterized.Event) -> None:
         snapshot = None if event.new == "(latest)" else datetime.fromisoformat(str(event.new))
-        self._filter_state = dataclasses.replace(self._filter_state, citation_snapshot=snapshot)
-        self._rebuild_tabs()
+        self._set_filter_state(dataclasses.replace(self._filter_state, citation_snapshot=snapshot))
 
     def apply_filters(
         self,
@@ -345,20 +347,45 @@ class Dashboard:
             year_end: See ``year_start``.
             taxonomy_dimension: New value, or ``None`` to keep the current one.
             citation_snapshot: New value, or ``None`` to keep the current one.
+
+        Raises:
+            AnalysisError: The resulting year range has its start after its end.
+            ConfigError: The taxonomy dimension is not declared.
+            In both cases :attr:`filter_state` and the tabs are left as they were.
         """
         current = self._filter_state
-        self._filter_state = FilterState(
-            stage=stage if stage is not None else current.stage,
-            year_start=year_start if year_start is not None else current.year_start,
-            year_end=year_end if year_end is not None else current.year_end,
-            taxonomy_dimension=(
-                taxonomy_dimension if taxonomy_dimension is not None else current.taxonomy_dimension
-            ),
-            citation_snapshot=(
-                citation_snapshot if citation_snapshot is not None else current.citation_snapshot
-            ),
+        self._set_filter_state(
+            FilterState(
+                stage=stage if stage is not None else current.stage,
+                year_start=year_start if year_start is not None else current.year_start,
+                year_end=year_end if year_end is not None else current.year_end,
+                taxonomy_dimension=(
+                    taxonomy_dimension
+                    if taxonomy_dimension is not None
+                    else current.taxonomy_dimension
+                ),
+                citation_snapshot=(
+                    citation_snapshot
+                    if citation_snapshot is not None
+                    else current.citation_snapshot
+                ),
+            )
         )
-        self._rebuild_tabs()
+
+    def _set_filter_state(self, state: FilterState) -> None:
+        """Adopt ``state`` and rebuild the tabs; if the rebuild raises, keep the previous state.
+
+        An invalid ``state`` never gets here (``FilterState`` validates on construction).
+        Without the restore, a state that builds but then fails to render (an undeclared
+        taxonomy dimension) stayed assigned and made every later rebuild raise too.
+        """
+        previous = self._filter_state
+        self._filter_state = state
+        try:
+            self._rebuild_tabs()
+        except Exception:
+            self._filter_state = previous
+            raise
 
     def _rebuild_tabs(self) -> None:
         """Rebuild every tab against the current filter state.
