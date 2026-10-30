@@ -24,7 +24,15 @@ from datetime import datetime
 
 import polars as pl
 
-from prismabib.bibliometrics.base import AnalysisResult, build_provenance
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    YearRange,
+    build_provenance,
+    normalise_years,
+    range_params,
+    restrict_to_years,
+    semi_join_records,
+)
 from prismabib.bibliometrics.citations import _citations_for_stage
 from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
@@ -125,7 +133,11 @@ def _weighted_membership(membership: pl.DataFrame, method: str) -> pl.DataFrame:
 
 
 def country_counts(
-    corpus: Corpus, *, stage: PrismaStage = PrismaStage.INCLUDED, method: str = "full"
+    corpus: Corpus,
+    *,
+    stage: PrismaStage = PrismaStage.INCLUDED,
+    method: str = "full",
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """Publication counts and shares by country.
 
@@ -133,6 +145,8 @@ def country_counts(
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to count over.
         method: ``"full"`` or ``"fractional"``; see this module's docstring.
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040). Shares then divide by the in-range record count.
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -142,11 +156,16 @@ def country_counts(
         country.
 
     Raises:
-        AnalysisError: ``method`` is not one of :data:`COUNTING_METHODS`.
+        AnalysisError: ``method`` is not one of :data:`COUNTING_METHODS`, or
+            ``years`` is invalid.
     """
     _require_valid_method(method)
-    records = corpus.records(stage)
+    normalise_years(years)
+    stage_records = corpus.records(stage)
+    records, n_no_year = restrict_to_years(stage_records, years)
     affiliations = corpus.affiliations(stage)
+    if records is not stage_records:
+        affiliations = semi_join_records(affiliations, records)
     membership = _record_country_membership(records, affiliations)
 
     if records.height == 0:
@@ -162,8 +181,9 @@ def country_counts(
             .select(["country", "count", "share"])
         )
 
-    provenance = build_provenance(corpus, stage=stage, records=records)
-    return AnalysisResult(data=data, params={"method": method}, provenance=provenance)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records)
+    params = range_params({"method": method}, years, records.height, n_no_year)
+    return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
 def citation_impact_by_country(
@@ -172,6 +192,7 @@ def citation_impact_by_country(
     stage: PrismaStage = PrismaStage.INCLUDED,
     method: str = "full",
     at: datetime | None = None,
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """Per-paper citation impact by country.
 
@@ -185,6 +206,8 @@ def citation_impact_by_country(
             once per country under ``"full"``.
         at: Forwarded to :meth:`~prismabib.store.load.Corpus.citations`;
             ``None`` uses the latest snapshot per record.
+        years: Inclusive ``(start, end)`` bounds (ADR 0040): papers published in the
+            range with their cumulative snapshot citations.
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -200,8 +223,13 @@ def citation_impact_by_country(
         AnalysisError: ``method`` is not one of :data:`COUNTING_METHODS`.
     """
     _require_valid_method(method)
-    records, citations = _citations_for_stage(corpus, stage=stage, at=at)
+    normalise_years(years)
+    stage_records, citations = _citations_for_stage(corpus, stage=stage, at=at)
+    records, n_no_year = restrict_to_years(stage_records, years)
     affiliations = corpus.affiliations(stage)
+    if records is not stage_records:
+        affiliations = semi_join_records(affiliations, records)
+        citations = semi_join_records(citations, records)
     membership = _record_country_membership(records, affiliations)
 
     if records.height == 0:
@@ -238,8 +266,9 @@ def citation_impact_by_country(
             .select(["country", "n_records", "total_citations", "mean_citations"])
         )
 
-    provenance = build_provenance(corpus, stage=stage, records=records, citations=citations)
-    return AnalysisResult(data=data, params={"method": method}, provenance=provenance)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records, citations=citations)
+    params = range_params({"method": method}, years, records.height, n_no_year)
+    return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
 __all__ = ["COUNTING_METHODS", "citation_impact_by_country", "country_counts"]

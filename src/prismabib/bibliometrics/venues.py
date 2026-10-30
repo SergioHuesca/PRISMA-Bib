@@ -22,7 +22,15 @@ from typing import Any
 
 import polars as pl
 
-from prismabib.bibliometrics.base import AnalysisResult, build_provenance
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    YearRange,
+    build_provenance,
+    normalise_years,
+    range_params,
+    restrict_to_years,
+    semi_join_records,
+)
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
 
@@ -143,15 +151,34 @@ def _group_venues(venues: pl.DataFrame) -> list[tuple[str, str, int]]:
     return rows
 
 
+def _restricted(
+    corpus: Corpus, stage: PrismaStage, years: YearRange | None
+) -> tuple[pl.DataFrame, pl.DataFrame, int, int]:
+    """``(stage_records, in_range_venues, n_in_range, n_no_year_dropped)`` (ADR 0040)."""
+    normalise_years(years)
+    stage_records = corpus.records(stage)
+    records, n_no_year = restrict_to_years(stage_records, years)
+    venues = corpus.venues(stage)
+    if records is not stage_records:
+        venues = semi_join_records(venues, records)
+    return stage_records, venues, records.height, n_no_year
+
+
 def top_venues(
-    corpus: Corpus, *, stage: PrismaStage = PrismaStage.INCLUDED, top_n: int = DEFAULT_TOP_N
+    corpus: Corpus,
+    *,
+    stage: PrismaStage = PrismaStage.INCLUDED,
+    top_n: int = DEFAULT_TOP_N,
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """The most frequent publication venues, after name normalisation.
 
     Args:
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to count over.
-        top_n: How many venues to return.
+        top_n: How many venues to return (applied after any year filtering).
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040).
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -163,8 +190,7 @@ def top_venues(
         (naming the disagreement is more useful to a reader than silently
         picking one), and ``""`` when no variant carries one.
     """
-    records = corpus.records(stage)
-    venues = corpus.venues(stage)
+    stage_records, venues, n_in_range, n_no_year = _restricted(corpus, stage, years)
 
     if venues.height == 0:
         data = pl.DataFrame(schema=_EMPTY_VENUE_SCHEMA)
@@ -174,18 +200,21 @@ def top_venues(
             rows, schema=["venue", "venue_type", "count"], orient="row"
         ).with_columns(pl.col("count").cast(pl.Int64))
 
-    provenance = build_provenance(corpus, stage=stage, records=records)
-    return AnalysisResult(data=data, params={"top_n": top_n}, provenance=provenance)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records)
+    params = range_params({"top_n": top_n}, years, n_in_range, n_no_year)
+    return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
 def venue_type_split(
-    corpus: Corpus, *, stage: PrismaStage = PrismaStage.INCLUDED
+    corpus: Corpus, *, stage: PrismaStage = PrismaStage.INCLUDED, years: YearRange | None = None
 ) -> AnalysisResult:
     """Record counts by ``venues.venue_type`` (journal, conference, ...).
 
     Args:
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to count over.
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040).
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -194,8 +223,7 @@ def venue_type_split(
         carries no ``venue_type`` is reported under ``"unknown"``, never
         dropped.
     """
-    records = corpus.records(stage)
-    venues = corpus.venues(stage)
+    stage_records, venues, n_in_range, n_no_year = _restricted(corpus, stage, years)
 
     if venues.height == 0:
         data = pl.DataFrame(schema=_EMPTY_TYPE_SCHEMA)
@@ -210,8 +238,9 @@ def venue_type_split(
             .with_columns(pl.col("count").cast(pl.Int64))
         )
 
-    provenance = build_provenance(corpus, stage=stage, records=records)
-    return AnalysisResult(data=data, params={}, provenance=provenance)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records)
+    params = range_params({}, years, n_in_range, n_no_year)
+    return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
 __all__ = ["DEFAULT_TOP_N", "top_venues", "venue_type_split"]

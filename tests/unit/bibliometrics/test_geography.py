@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -15,6 +17,7 @@ from prismabib.bibliometrics.geography import (
 )
 from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
+from prismabib.store.load import Corpus
 from tests.bibliometrics_helpers import (
     AffiliationSpec,
     BibCorpusSpec,
@@ -252,3 +255,156 @@ def test_citation_impact_by_country__empty_stage__provenance_has_no_citation_sna
     result = citation_impact_by_country(corpus, stage=PrismaStage.INCLUDED)
 
     assert result.provenance.citation_snapshot is None
+
+
+# --- ADR 0040: the `years` engine argument ------------------------------------------------
+
+_USA = (AffiliationSpec(afid="AF1", country="USA"),)
+_JPN = (AffiliationSpec(afid="AF3", country="JPN"),)
+_YEAR_RECORDS = [
+    BibRecordSpec(number=1, year=2019, cited_by_count=100, affiliations=_USA),
+    BibRecordSpec(number=2, year=2020, cited_by_count=10, affiliations=_USA),
+    BibRecordSpec(number=3, year=2021, cited_by_count=4, affiliations=_JPN),
+    BibRecordSpec(number=4, year=2022, cited_by_count=50, affiliations=_JPN),
+]
+
+
+def _year_corpus(tmp_path: Path) -> Corpus:
+    return open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=_YEAR_RECORDS)))
+
+
+@pytest.mark.integration
+def test_country_counts__years__counts_and_denominator_are_in_range(tmp_path: Path) -> None:
+    result = country_counts(_year_corpus(tmp_path), stage=PrismaStage.RAW, years=(2020, 2021))
+
+    by_country = {row["country"]: row for row in result.data.to_dicts()}
+    assert by_country["USA"]["count"] == pytest.approx(1.0)
+    assert by_country["JPN"]["count"] == pytest.approx(1.0)
+    assert by_country["USA"]["share"] == pytest.approx(0.5)  # 1 of n_in_range=2, not of 4
+    assert result.params == {
+        "method": "full",
+        "years": "2020-2021",
+        "n_in_range": 2,
+        "n_no_year_dropped": 0,
+    }
+    assert "papers published in 2020-2021" in result.caption()
+
+
+@pytest.mark.integration
+def test_country_counts__open_bound__label_and_filter(tmp_path: Path) -> None:
+    result = country_counts(_year_corpus(tmp_path), stage=PrismaStage.RAW, years=(2021, None))
+
+    assert result.params["years"] == "2021-..."
+    assert result.params["n_in_range"] == 2
+
+
+@pytest.mark.integration
+def test_country_counts__years__provenance_stays_stage_level(tmp_path: Path) -> None:
+    corpus = _year_corpus(tmp_path)
+    plain = country_counts(corpus, stage=PrismaStage.RAW)
+    ranged = country_counts(corpus, stage=PrismaStage.RAW, years=(2020, 2020))
+
+    assert ranged.provenance == plain.provenance
+    assert ranged.provenance.corpus_size == 4
+
+
+@pytest.mark.integration
+def test_country_counts__no_years__params_have_no_years_keys_and_output_unchanged(
+    tmp_path: Path,
+) -> None:
+    corpus = _year_corpus(tmp_path)
+    plain = country_counts(corpus, stage=PrismaStage.RAW)
+
+    assert plain.params == {"method": "full"}
+    assert plain.data.get_column("count").sum() == pytest.approx(4.0)
+    for years in (None, (None, None)):
+        same = country_counts(corpus, stage=PrismaStage.RAW, years=years)
+        assert same.params == {"method": "full"}
+        assert same.data.equals(plain.data)
+        assert same.caption() == plain.caption()
+
+
+@pytest.mark.integration
+def test_country_counts__null_year__dropped_and_counted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus = _year_corpus(tmp_path)
+    original = corpus.records
+
+    def with_null_year(stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        frame = original(stage)
+        return frame.with_columns(
+            pl.when(pl.col("record_id") == frame.item(0, "record_id"))
+            .then(None)
+            .otherwise(pl.col("year"))
+            .alias("year")
+        )
+
+    monkeypatch.setattr(corpus, "records", with_null_year)
+
+    result = country_counts(corpus, stage=PrismaStage.RAW, years=(2000, 2030))
+
+    assert result.params["n_no_year_dropped"] == 1
+    assert result.params["n_in_range"] == 3
+    assert result.provenance.corpus_size == 4
+    assert country_counts(corpus, stage=PrismaStage.RAW).params == {"method": "full"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("fn", [country_counts, citation_impact_by_country])
+def test_geography__inverted_range__raises(fn: Any) -> None:
+    with pytest.raises(AnalysisError):
+        fn(None, years=(2021, 2020))
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__years__in_range_papers_with_snapshot_caveat(
+    tmp_path: Path,
+) -> None:
+    corpus = _year_corpus(tmp_path)
+
+    result = citation_impact_by_country(corpus, stage=PrismaStage.RAW, years=(2020, 2021))
+
+    by_country = {row["country"]: row for row in result.data.to_dicts()}
+    assert by_country["USA"]["total_citations"] == pytest.approx(10.0)  # not 110
+    assert by_country["JPN"]["total_citations"] == pytest.approx(4.0)  # not 54
+    assert result.params["n_in_range"] == 2
+    assert result.provenance.corpus_size == 4
+    caption = result.caption()
+    assert "older papers have had longer to accumulate citations" in caption
+    assert "papers published in 2020-2021" in caption
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__no_years__unchanged(tmp_path: Path) -> None:
+    corpus = _year_corpus(tmp_path)
+    plain = citation_impact_by_country(corpus, stage=PrismaStage.RAW)
+
+    same = citation_impact_by_country(corpus, stage=PrismaStage.RAW, years=None)
+
+    assert same.params == {"method": "full"}
+    assert same.data.equals(plain.data)
+    assert same.caption() == plain.caption()
+    assert "older papers" not in plain.caption()
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__years__snapshot_follows_only_in_range_citations(
+    tmp_path: Path,
+) -> None:
+    """The out-of-range record sits in the later run, so its snapshot is the corpus's latest."""
+    early, late = datetime(2025, 6, 15, tzinfo=UTC), datetime(2025, 9, 1, tzinfo=UTC)
+    records = [
+        BibRecordSpec(number=1, year=2020, cited_by_count=1, affiliations=_USA),
+        BibRecordSpec(number=2, year=2021, cited_by_count=2, affiliations=_USA),
+        BibRecordSpec(number=3, year=2023, cited_by_count=3, affiliations=_JPN),
+    ]
+    spec = BibCorpusSpec(records=records, run_started_ats=(early, late))
+    corpus = open_corpus(build_bib_project(tmp_path, spec))
+
+    plain = citation_impact_by_country(corpus, stage=PrismaStage.RAW)
+    ranged = citation_impact_by_country(corpus, stage=PrismaStage.RAW, years=(2020, 2021))
+
+    assert plain.provenance.citation_snapshot.date() == late.date()
+    assert ranged.provenance.citation_snapshot.date() == early.date()
+    assert ranged.provenance.corpus_size == 3
