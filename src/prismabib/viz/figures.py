@@ -73,6 +73,10 @@ from prismabib.bibliometrics.base import AnalysisResult
 from prismabib.report.flow_diagram import flow_diagram_svg
 from prismabib.viz import theme
 
+# Labels come from untrusted titles/venues/keywords: `$...$` must stay literal text, never
+# mathtext. Text reads this at construction, so a module-level default covers every label.
+matplotlib.rcParams["text.parse_math"] = False
+
 if TYPE_CHECKING:
     from prismabib.prisma.flow import FlowCounts
     from prismabib.project import Project
