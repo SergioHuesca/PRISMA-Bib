@@ -198,3 +198,5 @@ whose premise is that numbers and pictures are checked rather than chosen.
   counting unit every taxonomy figure must state in its caption
 - [ADR 0015](0015-stage-order-and-stage-10-scope.md) — why Stage 10 shipped first, and therefore
   why figure 9 already exists
+
+> **Note added 2026-10-30 (year range; this note does not change the record above).** The Geography, Venues, Network and Taxonomy-distribution tabs are year-filtered by their engines, not by the figure layer or a tab filter ([ADR 0040](0040-year-range-in-analysis-engines.md)). The figure layer computes nothing new, and Decision 7 (one `Corpus` handle, one frozen filter state) is unchanged. Those tabs' captions say "applied" when a range is set, instead of "does not apply". Consequence 5 still holds: the dashboard's browser behaviour is not covered by CI.

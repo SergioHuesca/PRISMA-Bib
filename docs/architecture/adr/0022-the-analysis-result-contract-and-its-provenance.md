@@ -345,3 +345,5 @@ ships a bundle whose table and whose prose disagree, which is §1.4 stated as a 
   provenance is derivable rather than recorded
 - [ADR 0015](0015-stage-order-and-stage-10-scope.md) — why Stage 10 exists before Stage 7, and
   therefore why Decision 5 is a re-pointing rather than a first wiring
+
+> **Note added 2026-10-30 (year range; this note does not change the record above).** Seven public functions in `geography`, `venues`, `network` and `taxonomy/analysis` gain an optional keyword-only `years` argument, so that the engines can be restricted to a publication-year range before any counting (see [ADR 0040](0040-year-range-in-analysis-engines.md)). With a range set, `params` gains `years`, `n_in_range` and `n_no_year_dropped`, and `provenance.corpus_size` and `stage` stay the stage's. The citation snapshot follows the citation rows the analysis read. With no range, `params` and `provenance` are unchanged.
