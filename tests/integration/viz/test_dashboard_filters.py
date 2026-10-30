@@ -280,3 +280,24 @@ def test_year_filtered_frame__frame_without_year__is_returned_unchanged() -> Non
     frame = pl.DataFrame({"k": [1, 2]})
 
     assert _year_filtered_frame(frame, FilterState(year_start=2020)) is frame
+
+
+@pytest.mark.integration
+def test_apply_filters__failed_rebuild__restores_the_handle_and_pane_registries(
+    taxonomy_project: Project,
+) -> None:
+    dashboard = Dashboard(taxonomy_project)
+    # Only tabs that read the corpus are recorded (the PRISMA tab does not).
+    handles = dict(dashboard._tab_corpus_handles)
+    assert {"Trends", "Taxonomy", "Corpus browser"} <= handles.keys()
+    panes = dict(dashboard._panes)
+    assert "Trends" in panes
+
+    with pytest.raises(ConfigError):
+        dashboard.apply_filters(taxonomy_dimension="not_a_dimension")
+
+    # The registry is cleared at the start of a rebuild and Taxonomy fails before Corpus browser runs;
+    # without the restore, corpus_handle_for_tab raised KeyError for those tabs.
+    assert {name: dashboard.corpus_handle_for_tab(name) for name in handles} == handles
+    assert dashboard._panes.keys() == panes.keys()
+    assert all(dashboard._panes[key] is pane for key, pane in panes.items())

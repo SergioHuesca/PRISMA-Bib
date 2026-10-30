@@ -373,18 +373,27 @@ class Dashboard:
         )
 
     def _set_filter_state(self, state: FilterState) -> None:
-        """Adopt ``state`` and rebuild the tabs; if the rebuild raises, keep the previous state.
+        """Adopt ``state`` and rebuild the tabs; if the rebuild raises, keep everything as it was.
+
+        "Everything" is the filter state, the tabs, and the two dicts the builders fill as
+        they run (``_tab_corpus_handles``, ``_panes``), which a mid-build failure would
+        otherwise leave half-populated.
 
         An invalid ``state`` never gets here (``FilterState`` validates on construction).
         Without the restore, a state that builds but then fails to render (an undeclared
         taxonomy dimension) stayed assigned and made every later rebuild raise too.
         """
         previous = self._filter_state
+        handles, panes = dict(self._tab_corpus_handles), dict(self._panes)
         self._filter_state = state
         try:
             self._rebuild_tabs()
         except Exception:
             self._filter_state = previous
+            self._tab_corpus_handles.clear()
+            self._tab_corpus_handles.update(handles)
+            self._panes.clear()
+            self._panes.update(panes)
             raise
 
     def _rebuild_tabs(self) -> None:
