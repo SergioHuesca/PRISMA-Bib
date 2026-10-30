@@ -57,13 +57,16 @@ serves every range.
 Each of the seven functions in the table above gains a keyword-only argument:
 
 ```python
-years: YearRange | None = None  # YearRange = tuple[int | None, int | None]; inclusive; None bound = open
+# YearRange = tuple[int | None, int | None]; inclusive; None bound = open
+years: YearRange | None = None
 ```
 
 `YearRange` is defined in `bibliometrics/base.py`, beside `AnalysisResult`. The one helper, also in `base.py`, is:
 
 ```python
-def restrict_to_years(records: pl.DataFrame, years: YearRange | None) -> tuple[pl.DataFrame, int]: ...
+def restrict_to_years(
+    records: pl.DataFrame, years: YearRange | None
+) -> tuple[pl.DataFrame, int]: ...
 ```
 
 It returns the in-range rows of `records` and the number of rows it dropped for a null `year`. It is the only code that
