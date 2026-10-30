@@ -124,6 +124,7 @@ nav:
           - "ADR 0037: merge train and native stacked PRs": architecture/adr/0037-merge-train-and-native-stacked-prs.md
           - "ADR 0038: refresh semantics of the HTTP cache": architecture/adr/0038-refresh-semantics-of-the-http-cache.md
           - "ADR 0039: taxonomy engine behaviour is stamped": architecture/adr/0039-taxonomy-engine-behaviour-stamp.md
+          - "ADR 0040: year range is an engine argument": architecture/adr/0040-year-range-in-analysis-engines.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
