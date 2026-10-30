@@ -148,8 +148,11 @@ browser already says this in its summary line (`_corpus_browser_tab`).
   records, in that order (owner decision 5). Community ids restart at `0` for each range, so they are not comparable across
   ranges. The layout is computed by `viz/figures.py::network_figure` from the data it receives, so it follows without a change
   to the engine. Determinism: the existing construction sorts record and node ids before it iterates, so the output does not
-  depend on the row order of any input frame. This property is kept and tested (Verification). The author label rule is
-  pinned in Decision 12.
+  depend on the row order of any input frame. This property is kept and tested (Verification). Author labels are
+  order-independent by schema: `author_id` is the primary key of `authors` (`store/schema.sql`), and the loader keeps one row
+  per id (`store/load.py`, `acc.authors.setdefault`), so each author has exactly one surname. A null surname is not replaced
+  by the author id: `labels.get(node_id, node_id)` returns the stored `None`, so such a node's label is null, as it is today.
+  This record does not change that.
 - **`dimension_distribution`.** `result` is replaced by a view whose `record_ids` are the in-range ids in their original
   order, via `dataclasses.replace`. `coder.distribution()` and its sum-to-|C| guard are unchanged, and they run over the
   in-range records. So `uncoded`, `reviewed_none` and `Distribution.corpus_size` count in-range records (owner decision 6).
@@ -205,7 +208,7 @@ existing caller changes.
    tests, the two pointer notes and the nav line. No engine changes.
 2. **Geography and Venues.** `country_counts`, `citation_impact_by_country`, `top_venues`, `venue_type_split`.
 3. **Taxonomy distribution.** `dimension_distribution`.
-4. **Networks.** `keyword_cooccurrence_network`, `coauthorship_network`, and the author label rule of Decision 12.
+4. **Networks.** `keyword_cooccurrence_network`, `coauthorship_network`.
 5. **Dashboard wiring.** `FilterState.years`, the four tab builders, and captions that read "applied". The PR 5 description
    must say that the hard-coded taxonomy caption `"Distribution over every year."` (`viz/dashboard.py`, the `_taxonomy_tab`
    method, line 551, `by_year=False`) changes when a range applies, and what it changes to. Today it says "every year" over a
@@ -213,26 +216,7 @@ existing caller changes.
 
 Every PR leaves `numbers.json`, the goldens and the report exports unchanged. The five-PR plan is confirmed (Question 1).
 
-### 12. Author labels are pinned
-
-`coauthorship_network` builds its label map as `dict(zip(author_id, surname))` over every author row (`network.py`, the
-`labels` assignment in `coauthorship_network`). When one `author_id` has several surnames across its records, the last row in
-the frame wins, and a range can change which row is last. So the label could change with the range, or with row order.
-
-The rule is pinned in the networks PR: **the label of an author node is the lexicographically smallest non-null `surname` among
-that author's in-range rows.** The minimum is order-independent, and it is computed over the rows the engine reads, consistent
-with Decision 5. An author whose in-range rows all have a null surname gets no label entry, so `labels.get(node_id, node_id)`
-falls back to the author id. Today such an author gets a `None` label. That is a change for a case that the fixtures must
-show, and the PR says so.
-
-Labels are per call, like community ids. The same author can carry a different label under a different range, and this is
-accepted as part of Decision 5.
-
-The same labels feed the VOSviewer export (`_export_vosviewer` reads `node_a_label` and `node_b_label` from the edge rows). If
-the VOSviewer golden fixture contains an author with several surnames, the rule would move that golden, and the goldens rule
-(Verification) forbids that in any PR. This record does not pre-approve such a change: PR 4 stops and the owner decides.
-
-### 13. Future work, not part of this record: a venue-missing snippet
+### 12. Future work, not part of this record: a venue-missing snippet
 
 The owner decided, on 2026-10-30, that a later optional `methods.*` snippet will report how many stage records had no venue
 name. Such a snippet is exempt from `report/fill.py`'s unused-key check, which exempts only `methods.*` (ADR 0039 Decision 3
@@ -257,7 +241,6 @@ snippet is built. It needs its own short ADR note at that time, and this record 
 - **Citations received within the range.** Rejected (owner decision 4). The store holds cumulative snapshots, not citation history.
 - **A fourth `params` key for the age caveat.** Rejected. The caveat belongs to the citation clause, and a `params` entry would
   add a knob that changes no number.
-- **Last-row-wins author labels, as today.** Rejected in Decision 12. The label would depend on row order and on the range.
 
 ## Consequences
 
@@ -265,7 +248,7 @@ snippet is built. It needs its own short ADR note at that time, and this record 
 - Seven public signatures change, all additively. Their tests and the four tab captions change in PRs 2 to 5.
 - Shares and rankings inside a range are over the range's records, so they do not match the stage's `n` on the PRISMA tab.
   The caption states `n_in_range` beside `n` so the difference is visible.
-- Community numbering is per call. Communities in two ranges cannot be matched by id. Author labels are per call too (Decision 12).
+- Community numbering is per call. Communities in two ranges cannot be matched by id.
 - **Citation impact by range compares papers of different ages.** A 2020 paper has had longer to accrue citations than a 2025
   paper, so a range's mean reflects its age profile. Decision 3 puts the caveat in the caption (Question 6).
 - A range drops records with no year. `n_no_year_dropped` puts the drop into the caption rather than leaving it silent.
@@ -294,9 +277,8 @@ For each engine (PRs 2 to 4), every new test is shown to fail on the defect it g
   `dimension_distribution`, the result has one zero-count row per declared category and per bucket, not an empty frame.
 - **Row order.** Every input frame is reversed and `_serialise` of the result is unchanged. For the networks this includes the
   community assignment under the fixed `seed`.
-- **Author label.** A fixture in which one `author_id` carries two surnames across two records, for example `Smith` and
-  `Adams`. Reversing the input rows gives identical bytes, and the label is `Adams`. With a range that keeps only the `Smith`
-  record, the label is `Smith`. The first assertion fails on last-row-wins, because reversal changes the label.
+- **Author labels need no multi-surname fixture.** Author labels are order-independent by schema: `author_id` is the primary
+  key of `authors`, so the networks' row-order determinism test needs no fixture with several surnames per author.
 - **Dimension distribution.** The guard for `multi_label: false` over the in-range subset is tested with an over-assigned record
   outside the range, which must not raise, and inside the range, which must raise.
 - **Citation caveat.** With a range and a citation snapshot, the caption contains the age caveat; without a range it does not.
@@ -328,7 +310,7 @@ accepts, the same form ADR 0038 and ADR 0039 use (Question 3).
 - [ADR 0023](0023-taxonomy-assignments-are-derived-and-overrides-replace-a-dimension.md): counting units and the sum-to-|C| guard
   that `dimension_distribution` runs over the range.
 - [ADR 0039](0039-taxonomy-engine-behaviour-stamp.md): the `taxonomy_engine_behaviour` entry in `params`, which a range leaves
-  in place, and the `methods.*` exemption from the unused-key check that Decision 13 relies on.
+  in place, and the `methods.*` exemption from the unused-key check that Decision 12 relies on.
 - [ADR 0038](0038-refresh-semantics-of-the-http-cache.md): the precedent for appended, dated notes on a frozen record, and for
   the Status wording used here.
 
