@@ -524,6 +524,28 @@ def test_lookup_outcome__doi_and_title__match_exactly_and_report_absent_fields()
 
 
 @pytest.mark.unit
+def test_lookup_outcome__title_with_accents_and_hyphen__matches_the_plain_form() -> None:
+    work = OpenAlexWork("W1", None, "Well-being: Études", 2020)
+    assert lookup_outcome([work], title="Well being: Etudes", year=2020)[0] is work
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("title", "work_title", "year"),
+    [
+        ("wellbeing", "Well being", 2020),  # a fused word is not the split one
+        ("Well being", "Well being", 2019),  # year mismatch
+        ("Well being stud", "Well being study", 2020),  # prefix near miss
+    ],
+)
+def test_lookup_outcome__title_near_misses__stay_not_found(
+    title: str, work_title: str, year: int
+) -> None:
+    work = OpenAlexWork("W1", None, work_title, 2020)
+    assert lookup_outcome([work], title=title, year=year) == (None, [])
+
+
+@pytest.mark.unit
 def test_httpx_filter__empty_key__leaves_the_message_intact() -> None:
     # replace("", "***") would insert *** between every character.
     assert _scrub({"", "secret"}, "HTTP Request: GET /x?k=secret") == "HTTP Request: GET /x?k=***"
