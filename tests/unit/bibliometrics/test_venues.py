@@ -50,6 +50,24 @@ def test_normalise_venue_name__variants__fold_to_the_same_key(raw: str, expected
 
 
 @pytest.mark.integration
+def test_top_venues__records_without_venue_name__are_not_a_venue(tmp_path: Path) -> None:
+    """Two real-journal records + two nameless ones: one venue, never ''."""
+    records = [
+        BibRecordSpec(number=1, venue_name="Real Journal", source_id="1"),
+        BibRecordSpec(number=2, venue_name="Real Journal", source_id="1"),
+        BibRecordSpec(number=3, venue_name="", source_id="2"),
+        BibRecordSpec(number=4, venue_name="", source_id="3"),
+    ]
+    corpus = open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=records)))
+
+    data = top_venues(corpus, stage=PrismaStage.RAW, top_n=10).data
+
+    assert data.height == 1
+    assert data.item(0, "venue") == "Real Journal"
+    assert data.item(0, "count") == 2
+
+
+@pytest.mark.integration
 def test_venues__name_variants__group_together(tmp_path: Path) -> None:
     """Four raw variants of one venue, three records of a second -- all by hand."""
     # Every distinct raw name variant gets its own `source_id`: that is what
