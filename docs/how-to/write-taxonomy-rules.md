@@ -81,6 +81,14 @@ categories:
   "transformer oil" case above.
 - `confidence` is recorded on every assignment this category produces; it is not itself
   compared against a threshold anywhere in this stage.
+- **Patterns match case-insensitively by default** (`re.IGNORECASE`), in both `any` and
+  `none`: `\btransformer\b` fires on `Transformer Networks for Vision`, `TRANSFORMER` and
+  `transformer`. Earlier versions of the engine were case-sensitive, which silently sent
+  capitalised titles to `uncoded`. To require an exact case for part of a pattern, such as an
+  acronym that is also a common word, wrap that part in a scoped inline group:
+  `(?-i:SAR)` matches `SAR imagery` but not `sar imagery`. To make a whole pattern
+  case-sensitive, wrap all of it: `(?-i:\bViT\b)`. Write patterns in whatever case reads best;
+  they no longer need `[Tt]ransformer`-style character classes.
 
 ```python
 from prismabib.taxonomy.rules import load_rule_file
@@ -266,6 +274,11 @@ at a green test.
 
 ## Common patterns
 
+- **"I changed a rule's case behaviour / upgraded prismabib and the coverage numbers moved."**
+  The engine's case-insensitive default (2026-10-30) widens what already-written patterns
+  match, and `version` is a rule-file field that nothing derives from the engine. Bump the rule
+  file's `version` when you re-code after upgrading, so the new audit sample is drawn against
+  the new behaviour and your methods section can say which rules produced which numbers.
 - **"Add a new method category for X."** Add the category to `dimensions.yaml`, add a
   category rule to the relevant `taxonomy/rules/*.yaml`, bump its `version`, commit both as
   one reviewable diff.
