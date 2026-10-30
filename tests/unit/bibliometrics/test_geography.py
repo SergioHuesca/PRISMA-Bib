@@ -219,3 +219,36 @@ def test_country_counts__default_included_stage__hand_computed_value_matches(
 def test_counting_methods__is_exactly_full_and_fractional() -> None:
     """The closed set ADR 0022 Decision 4 names -- a third needs its own ADR."""
     assert COUNTING_METHODS == ("full", "fractional")
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__empty_stage_nonempty_corpus__empty_result(
+    tmp_path: Path,
+) -> None:
+    """Pins the empty-stage path: no INCLUDED records -> empty frame, never the corpus's citations."""
+    records = [
+        BibRecordSpec(
+            number=1, cited_by_count=7, affiliations=(AffiliationSpec(afid="AF1", country="USA"),)
+        )
+    ]
+    corpus = open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=records)))
+
+    empty = citation_impact_by_country(corpus, stage=PrismaStage.INCLUDED)
+    full = citation_impact_by_country(corpus, stage=PrismaStage.RAW)
+
+    assert empty.data.height == 0
+    assert empty.data.columns == ["country", "n_records", "total_citations", "mean_citations"]
+    assert full.data.row(0, named=True)["total_citations"] == pytest.approx(7.0)
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__empty_stage__provenance_has_no_citation_snapshot(
+    tmp_path: Path,
+) -> None:
+    """An empty stage read no citations, so the caption must not cite the corpus's snapshot date."""
+    records = [BibRecordSpec(number=1, cited_by_count=7)]
+    corpus = open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=records)))
+
+    result = citation_impact_by_country(corpus, stage=PrismaStage.INCLUDED)
+
+    assert result.provenance.citation_snapshot is None
