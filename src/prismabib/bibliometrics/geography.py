@@ -21,7 +21,6 @@ every other share quietly larger.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 import polars as pl
 
@@ -30,8 +29,9 @@ from prismabib.bibliometrics.base import (
     YearRange,
     build_provenance,
     normalise_years,
+    range_params,
     restrict_to_years,
-    years_label,
+    semi_join_records,
 )
 from prismabib.bibliometrics.citations import _citations_for_stage
 from prismabib.errors import AnalysisError
@@ -114,23 +114,6 @@ def _record_country_membership(records: pl.DataFrame, affiliations: pl.DataFrame
     return pl.concat([known, unknown], how="vertical")
 
 
-def _in_records(frame: pl.DataFrame, records: pl.DataFrame) -> pl.DataFrame:
-    """Rows of ``frame`` whose ``record_id`` is in ``records`` (ADR 0040: secondary frames semi-join)."""
-    if frame.height == 0:  # an empty `Corpus._query` frame has Null dtypes; nothing to filter
-        return frame
-    return frame.filter(pl.col("record_id").is_in(records.get_column("record_id").to_list()))
-
-
-def _range_params(
-    params: dict[str, Any], years: YearRange | None, n_in_range: int, n_no_year: int
-) -> dict[str, Any]:
-    """Add ADR 0040's three keys to ``params`` -- only when a range is set."""
-    label = years_label(years)
-    if label is not None:
-        params |= {"years": label, "n_in_range": n_in_range, "n_no_year_dropped": n_no_year}
-    return params
-
-
 def _weighted_membership(membership: pl.DataFrame, method: str) -> pl.DataFrame:
     """``membership`` with a ``weight`` column applying ``method``.
 
@@ -182,7 +165,7 @@ def country_counts(
     records, n_no_year = restrict_to_years(stage_records, years)
     affiliations = corpus.affiliations(stage)
     if records is not stage_records:
-        affiliations = _in_records(affiliations, records)
+        affiliations = semi_join_records(affiliations, records)
     membership = _record_country_membership(records, affiliations)
 
     if records.height == 0:
@@ -199,7 +182,7 @@ def country_counts(
         )
 
     provenance = build_provenance(corpus, stage=stage, records=stage_records)
-    params = _range_params({"method": method}, years, records.height, n_no_year)
+    params = range_params({"method": method}, years, records.height, n_no_year)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
@@ -245,8 +228,8 @@ def citation_impact_by_country(
     records, n_no_year = restrict_to_years(stage_records, years)
     affiliations = corpus.affiliations(stage)
     if records is not stage_records:
-        affiliations = _in_records(affiliations, records)
-        citations = _in_records(citations, records)
+        affiliations = semi_join_records(affiliations, records)
+        citations = semi_join_records(citations, records)
     membership = _record_country_membership(records, affiliations)
 
     if records.height == 0:
@@ -284,7 +267,7 @@ def citation_impact_by_country(
         )
 
     provenance = build_provenance(corpus, stage=stage, records=stage_records, citations=citations)
-    params = _range_params({"method": method}, years, records.height, n_no_year)
+    params = range_params({"method": method}, years, records.height, n_no_year)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 

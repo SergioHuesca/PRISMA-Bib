@@ -27,8 +27,9 @@ from prismabib.bibliometrics.base import (
     YearRange,
     build_provenance,
     normalise_years,
+    range_params,
     restrict_to_years,
-    years_label,
+    semi_join_records,
 )
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
@@ -158,19 +159,9 @@ def _restricted(
     stage_records = corpus.records(stage)
     records, n_no_year = restrict_to_years(stage_records, years)
     venues = corpus.venues(stage)
-    if records is not stage_records and venues.height:
-        venues = venues.filter(pl.col("record_id").is_in(records.get_column("record_id").to_list()))
+    if records is not stage_records:
+        venues = semi_join_records(venues, records)
     return stage_records, venues, records.height, n_no_year
-
-
-def _range_params(
-    params: dict[str, Any], years: YearRange | None, n_in_range: int, n_no_year: int
-) -> dict[str, Any]:
-    """Add ADR 0040's three keys to ``params`` -- only when a range is set."""
-    label = years_label(years)
-    if label is not None:
-        params |= {"years": label, "n_in_range": n_in_range, "n_no_year_dropped": n_no_year}
-    return params
 
 
 def top_venues(
@@ -210,7 +201,7 @@ def top_venues(
         ).with_columns(pl.col("count").cast(pl.Int64))
 
     provenance = build_provenance(corpus, stage=stage, records=stage_records)
-    params = _range_params({"top_n": top_n}, years, n_in_range, n_no_year)
+    params = range_params({"top_n": top_n}, years, n_in_range, n_no_year)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
@@ -248,7 +239,7 @@ def venue_type_split(
         )
 
     provenance = build_provenance(corpus, stage=stage, records=stage_records)
-    params = _range_params({}, years, n_in_range, n_no_year)
+    params = range_params({}, years, n_in_range, n_no_year)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 

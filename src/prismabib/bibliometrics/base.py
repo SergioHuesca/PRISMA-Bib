@@ -408,6 +408,46 @@ def restrict_to_years(records: pl.DataFrame, years: YearRange | None) -> tuple[p
     return records.filter(keep), records.get_column("year").null_count()
 
 
+def range_params(
+    params: dict[str, Any], years: YearRange | None, n_in_range: int, n_no_year_dropped: int
+) -> dict[str, Any]:
+    """Add ADR 0040's ``years``/``n_in_range``/``n_no_year_dropped`` to ``params`` -- only when a range is set.
+
+    Args:
+        params: The engine's own params; mutated and returned.
+        years: ``(start, end)`` or ``None``.
+        n_in_range: Records inside the range.
+        n_no_year_dropped: Stage records dropped for a null ``year``.
+
+    Returns:
+        ``params``, unchanged when there is no range.
+
+    Raises:
+        AnalysisError: As :func:`normalise_years`.
+    """
+    label = years_label(years)
+    if label is not None:
+        params |= {"years": label, "n_in_range": n_in_range, "n_no_year_dropped": n_no_year_dropped}
+    return params
+
+
+def semi_join_records(frame: pl.DataFrame, records: pl.DataFrame) -> pl.DataFrame:
+    """Rows of ``frame`` whose ``record_id`` is in ``records`` (ADR 0040: secondary frames).
+
+    An empty ``frame`` comes back as is: ``Corpus._query`` types its columns ``Null``.
+
+    Args:
+        frame: Any ``Corpus`` frame carrying ``record_id``.
+        records: The in-range records.
+
+    Returns:
+        The matching rows, order preserved.
+    """
+    if frame.height == 0:
+        return frame
+    return frame.filter(pl.col("record_id").is_in(records.get_column("record_id").to_list()))
+
+
 def first_incomplete_year(corpus: Corpus) -> int | None:
     """The first publication year this corpus's capture cannot have observed in full.
 
@@ -477,6 +517,8 @@ __all__ = [
     "build_provenance",
     "first_incomplete_year",
     "normalise_years",
+    "range_params",
     "restrict_to_years",
+    "semi_join_records",
     "years_label",
 ]

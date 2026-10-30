@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -385,3 +386,25 @@ def test_citation_impact_by_country__no_years__unchanged(tmp_path: Path) -> None
     assert same.data.equals(plain.data)
     assert same.caption() == plain.caption()
     assert "older papers" not in plain.caption()
+
+
+@pytest.mark.integration
+def test_citation_impact_by_country__years__snapshot_follows_only_in_range_citations(
+    tmp_path: Path,
+) -> None:
+    """The out-of-range record sits in the later run, so its snapshot is the corpus's latest."""
+    early, late = datetime(2025, 6, 15, tzinfo=UTC), datetime(2025, 9, 1, tzinfo=UTC)
+    records = [
+        BibRecordSpec(number=1, year=2020, cited_by_count=1, affiliations=_USA),
+        BibRecordSpec(number=2, year=2021, cited_by_count=2, affiliations=_USA),
+        BibRecordSpec(number=3, year=2023, cited_by_count=3, affiliations=_JPN),
+    ]
+    spec = BibCorpusSpec(records=records, run_started_ats=(early, late))
+    corpus = open_corpus(build_bib_project(tmp_path, spec))
+
+    plain = citation_impact_by_country(corpus, stage=PrismaStage.RAW)
+    ranged = citation_impact_by_country(corpus, stage=PrismaStage.RAW, years=(2020, 2021))
+
+    assert plain.provenance.citation_snapshot.date() == late.date()
+    assert ranged.provenance.citation_snapshot.date() == early.date()
+    assert ranged.provenance.corpus_size == 3
