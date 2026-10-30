@@ -25,6 +25,7 @@ from datetime import datetime
 import polars as pl
 
 from prismabib.bibliometrics.base import AnalysisResult, build_provenance
+from prismabib.bibliometrics.citations import _citations_for_stage
 from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
@@ -199,12 +200,8 @@ def citation_impact_by_country(
         AnalysisError: ``method`` is not one of :data:`COUNTING_METHODS`.
     """
     _require_valid_method(method)
-    records = corpus.records(stage)
+    records, citations = _citations_for_stage(corpus, stage=stage, at=at)
     affiliations = corpus.affiliations(stage)
-    citations = corpus.citations(at)
-    if records.height and "record_id" in records.columns:
-        record_ids = set(records.get_column("record_id").to_list())
-        citations = citations.filter(pl.col("record_id").is_in(record_ids))
     membership = _record_country_membership(records, affiliations)
 
     if records.height == 0:
