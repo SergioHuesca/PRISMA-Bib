@@ -61,7 +61,15 @@ import networkx as nx
 import polars as pl
 from networkx.algorithms.community import louvain_communities
 
-from prismabib.bibliometrics.base import AnalysisResult, build_provenance
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    YearRange,
+    build_provenance,
+    normalise_years,
+    range_params,
+    restrict_to_years,
+    semi_join_records,
+)
 from prismabib.bibliometrics.keywords import _load_stopwords
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
@@ -414,6 +422,7 @@ def keyword_cooccurrence_network(
     resolution: float = 1.0,
     seed: int = 0,
     stopwords_path: Path | None = None,
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """The keyword co-occurrence graph, clustered by Louvain community.
 
@@ -429,6 +438,9 @@ def keyword_cooccurrence_network(
             so a clustering is reproducible (ADR 0022 Decision 7).
         stopwords_path: See
             :func:`prismabib.bibliometrics.keywords._load_stopwords`.
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040). Edges, frequencies and communities come only from
+            in-range records; ``top_n`` applies after filtering.
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -440,9 +452,16 @@ def keyword_cooccurrence_network(
         also carries ``"communities"``: ``node_id -> community_id`` for
         every node in the (untruncated) graph -- see
         :func:`_label_communities`.
+
+    Raises:
+        AnalysisError: ``years`` is invalid.
     """
-    records = corpus.records(stage)
+    normalise_years(years)
+    stage_records = corpus.records(stage)
+    records, n_no_year = restrict_to_years(stage_records, years)
     keywords = corpus.keywords(kind, stage)
+    if records is not stage_records:
+        keywords = semi_join_records(keywords, records)
     stopwords = _load_stopwords(stopwords_path)
     if stopwords:
         keywords = keywords.filter(~pl.col("term_norm").is_in(sorted(stopwords)))
@@ -461,7 +480,8 @@ def keyword_cooccurrence_network(
         "seed": seed,
         "communities": dict(sorted(communities.items())),
     }
-    provenance = build_provenance(corpus, stage=stage, records=records)
+    range_params(params, years, records.height, n_no_year)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
@@ -473,6 +493,7 @@ def coauthorship_network(
     top_n: int = 50,
     resolution: float = 1.0,
     seed: int = 0,
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """The co-authorship graph, clustered by Louvain community.
 
@@ -484,6 +505,9 @@ def coauthorship_network(
         top_n: How many edges to return, by weight.
         resolution: Forwarded to ``louvain_communities``.
         seed: Forwarded to ``louvain_communities``; recorded in ``params``.
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040). Edges, frequencies and communities come only from
+            in-range records; ``top_n`` applies after filtering.
 
     Returns:
         An :class:`~prismabib.bibliometrics.base.AnalysisResult` whose
@@ -493,9 +517,16 @@ def coauthorship_network(
         surname, ``frequency`` the author's record count, ``cluster`` their
         community) followed by an ``"edge"`` row per surviving
         co-authorship. ``params`` also carries ``"communities"``.
+
+    Raises:
+        AnalysisError: ``years`` is invalid.
     """
-    records = corpus.records(stage)
+    normalise_years(years)
+    stage_records = corpus.records(stage)
+    records, n_no_year = restrict_to_years(stage_records, years)
     authors = corpus.authors(stage)
+    if records is not stage_records:
+        authors = semi_join_records(authors, records)
     edge_weights, frequency = _author_edge_weights(authors, min_occurrence)
     communities = _label_communities(edge_weights, resolution=resolution, seed=seed)
     labels = (
@@ -519,7 +550,8 @@ def coauthorship_network(
         "seed": seed,
         "communities": dict(sorted(communities.items())),
     }
-    provenance = build_provenance(corpus, stage=stage, records=records)
+    range_params(params, years, records.height, n_no_year)
+    provenance = build_provenance(corpus, stage=stage, records=stage_records)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
