@@ -227,7 +227,7 @@ def test_level4__fills_every_blank_field_with_its_own_provenance(tmp_path: Path)
             "Beta Study",
             2021,
             abstract_words=["An", "open", "abstract"],
-            authors=["Carla Diaz", "Eve Fox"],
+            authors=["Carla Diaz", "Eve"],
             institutions=[("Seoul National University", "KR"), ("Nowhere Institute", None)],
             topics=["Graph Theory"],
         ),
@@ -246,7 +246,7 @@ def test_level4__fills_every_blank_field_with_its_own_provenance(tmp_path: Path)
         "SELECT a.surname, a.given_name, ra.position FROM record_authors ra "
         "JOIN authors a USING (author_id) WHERE ra.record_id = ? ORDER BY ra.position",
         R2,
-    ) == [("Diaz", None, 1), ("Fox", None, 2)]  # surname only, as the ADR rewrite does
+    ) == [("Diaz", "Carla", 1), ("Eve", None, 2)]  # plain fill keeps the given name
     assert _sql(
         project,
         "SELECT a.name, a.city, a.country_iso3 FROM record_affiliations ra "
@@ -791,3 +791,37 @@ def test_layer0__is_byte_identical_before_and_after_the_build(tmp_path: Path) ->
     build_store(project, rebuild=True)
     assert digest() == before
     assert json.loads(next((project.raw_dir / SEARCH_RUN).glob("manifest.json")).read_text())
+
+
+@pytest.mark.integration
+def test_level4__same_surname_different_given_names__stay_distinct_rows(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    _oa_run(
+        project,
+        OA_1,
+        _oa_work(2, D2, "Beta Study", 2021, authors=["J Smith", "K Smith", "Maria de la Cruz"]),
+    )
+    build_store(project, rebuild=True)
+    assert _sql(
+        project,
+        "SELECT a.surname, a.given_name FROM record_authors ra JOIN authors a USING (author_id) "
+        "WHERE ra.record_id = ? ORDER BY ra.position",
+        R2,
+    ) == [("Smith", "J"), ("Smith", "K"), ("Cruz", "Maria de la")]
+
+
+@pytest.mark.integration
+def test_build_report__unreadable_previous_store__is_not_reported_as_lacking_provenance(
+    tmp_path: Path,
+) -> None:
+    import structlog
+
+    project = _project(tmp_path)
+    project.db_path.parent.mkdir(parents=True, exist_ok=True)
+    project.db_path.write_bytes(b"not a duckdb file")
+    with structlog.testing.capture_logs() as logs:
+        stats = build_store(project, rebuild=True)
+    events = {e["event"] for e in logs}
+    assert "store.load.previous_store_unreadable" in events
+    assert "store.load.previous_store_had_no_provenance" not in events
+    assert "previous_store_had_provenance" not in stats.provenance_report

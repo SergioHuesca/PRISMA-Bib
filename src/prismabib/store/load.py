@@ -1349,6 +1349,12 @@ def _surname_of(display_name: str) -> str:
     return tokens[-1] if tokens else ""
 
 
+def _split_display_name(display_name: str) -> _Person:
+    """An OpenAlex display name as ``(surname, given)``: last token, and the tokens before it."""
+    tokens = display_name.split()
+    return (tokens[-1], " ".join(tokens[:-1]) or None) if tokens else ("", None)
+
+
 def _countries(cand: _Cand) -> frozenset[str]:
     """The alpha-3 codes of a candidate's institutions; ``unmapped`` ones are removed."""
     codes = set()
@@ -2132,7 +2138,7 @@ def _openalex_cands(work: dict[str, Any], ref: str, absent: Sequence[str]) -> di
             "openalex",
             ref,
             list(people.authors),
-            people=tuple((_surname_of(a), None) for a in people.authors),
+            people=tuple(_split_display_name(a) for a in people.authors),
             id_prefix=prefix,
         ),
         "affiliations": _Cand(
@@ -2750,7 +2756,9 @@ def _fold_resolutions(
         )
         id_prefix = f"resolved:{resolution.event_id}"
         if side == "openalex":
-            chosen[key] = replace(conflict.openalex, id_prefix=id_prefix)
+            # The rewrite is surname-only, given NULL (ADR 0041 Decision 2).
+            surnames = tuple((surname, None) for surname, _ in conflict.openalex.people)
+            chosen[key] = replace(conflict.openalex, id_prefix=id_prefix, people=surnames)
         elif side == "manual":
             chosen[key] = _typed_candidate(
                 resolution.field,
@@ -3117,22 +3125,27 @@ def _stats_from_connection(
 
 
 def _store_has_provenance(db_path: Path) -> bool | None:
-    """Whether the store at ``db_path`` has the ADR 0041 provenance columns; ``None`` if no store."""
+    """Whether the store at ``db_path`` has the ADR 0041 provenance columns.
+
+    ``None`` if there is no store, or if it cannot be read (locked, corrupt): that is logged as
+    its own warning and is not reported as "no provenance".
+    """
     if not db_path.is_file():
         return None
     try:
         connection = duckdb.connect(str(db_path), read_only=True)
-    except duckdb.Error:
-        return False
-    try:
-        row = connection.execute(
-            "SELECT count(*) FROM information_schema.columns "
-            "WHERE table_name = 'records' AND column_name = 'abstract_source'"
-        ).fetchone()
-    except duckdb.Error:
-        return False
-    finally:
-        connection.close()
+        try:
+            row = connection.execute(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'records' AND column_name = 'abstract_source'"
+            ).fetchone()
+        finally:
+            connection.close()
+    except duckdb.Error as exc:
+        logger.warning(
+            "store.load.previous_store_unreadable", db_path=str(db_path), detail=str(exc)
+        )
+        return None
     return bool(row and row[0])
 
 
@@ -3370,6 +3383,17 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 db_path.unlink(missing_ok=True)
         raise
 
+    unapplied = {
+        key: int(stats.provenance_report.get(key, 0))
+        for key in (
+            "manual_superseded",
+            "manual_orphaned",
+            "conflict_resolution_orphaned",
+            "conflict_resolution_stale",
+        )
+    }
+    if any(unapplied.values()):  # never silent: an event the build did not apply is named
+        logger.warning("store.load.provenance_folds_not_applied", **unapplied)
     if had_provenance is False:
         logger.warning("store.load.previous_store_had_no_provenance", db_path=str(db_path))
     if stats.malformed_entries_skipped:

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import structlog
 
 from prismabib.errors import LogError, StoreError
 from prismabib.models import (
@@ -630,3 +631,41 @@ def test_rebuild__with_manual_entries_resolutions_and_a_reversal__reproduces_eve
     assert _conflict(project, "abstract") == ("open", None, None)
     assert _conflict(project, "affiliations")[:2] == ("resolved", "openalex")
     assert _conflict(project, "authors")[:2] == ("resolved", "manual")
+
+
+_WARNING_COUNTS = (
+    "manual_superseded",
+    "manual_orphaned",
+    "conflict_resolution_orphaned",
+    "conflict_resolution_stale",
+)
+
+
+def _fold_warnings(project: Project) -> list[dict[str, Any]]:
+    with structlog.testing.capture_logs() as logs:
+        _build(project)
+    return [e for e in logs if e["event"] == "store.load.provenance_folds_not_applied"]
+
+
+@pytest.mark.integration
+def test_warning__clean_build__is_silent(tmp_path: Path) -> None:
+    assert _fold_warnings(_project(tmp_path)) == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("kind", _WARNING_COUNTS)
+def test_warning__each_unapplied_fold__is_named_with_its_count(tmp_path: Path, kind: str) -> None:
+    project = _project(tmp_path)
+    _build(project)
+    digest = "0" * 64
+    if kind == "manual_superseded":
+        _manual(project, 1, R1, "abstract", "x")
+    elif kind == "manual_orphaned":
+        _manual(project, 1, "scopus:2-s2.0-999", "abstract", "x")
+    elif kind == "conflict_resolution_orphaned":
+        _resolve(project, 1, "abstract", "scopus", record_id=R2, digests=(digest, digest))
+    else:
+        _resolve(project, 1, "abstract", "scopus", digests=(digest, digest))
+    (event,) = _fold_warnings(project)
+    assert event["log_level"] == "warning"
+    assert {k: event[k] for k in _WARNING_COUNTS} == {k: int(k == kind) for k in _WARNING_COUNTS}
