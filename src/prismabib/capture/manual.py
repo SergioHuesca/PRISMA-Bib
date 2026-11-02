@@ -54,8 +54,11 @@ def check_field_and_value(field: str, value: str) -> None:
     if not value.strip():
         raise ValidationError("the value is blank")
     if field == "affiliations":
-        for line in value.splitlines():
-            if line.strip() and line.count(";") > 2:
+        # Mirror store.load._typed_candidate exactly (CRLF/CR -> LF, split on "\n" only, strip);
+        # str.splitlines() also splits on \x0c, U+2028 etc., which the loader does not.
+        text = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+        for line in (part.strip() for part in text.split("\n")):
+            if line and len(line.split(";")) > 3:
                 raise ValidationError(
                     f"the affiliation line {line.strip()!r} has more than three ';' parts; "
                     "use 'Name; City; Country' and shorten a name that contains ';'"

@@ -35,6 +35,9 @@ from tests.integration.store.test_provenance_folds import (
 runner = CliRunner()
 
 
+LINE_SEP = chr(0x2028)  # written via chr(): ruff RUF001 rejects the literal and the escape
+
+
 def _cli(project: Project, *args: str) -> tuple[int, str]:
     result = runner.invoke(app, [*args, "--root", str(project.root.parent)])
     return result.exit_code, result.output
@@ -102,6 +105,9 @@ def test_manual_entry__cli_round_trip_with_reversal(tmp_path: Path) -> None:
         (R2, "abstract", "  ", "kp", "blank"),
         (R1, "abstract", "x", "kp", "not unavailable"),
         (R2, "affiliations", "A; B; C; D", "kp", "more than three"),
+        # str.splitlines() would split here; the loader splits on "\n" only
+        (R2, "affiliations", "A; B\x0cC; D; E", "kp", "more than three"),
+        (R2, "affiliations", "A; B" + LINE_SEP + "C; D; E", "kp", "more than three"),
         (R2, "abstract", "x", "  ", "reviewer"),
     ],
 )
@@ -240,6 +246,9 @@ def test_conflict__cli_manual_side_takes_the_typed_value(tmp_path: Path) -> None
         (R1, "abstract", "both", None, "chosen_side"),
         (R1, "keywords", "openalex", None, "field"),
         (R1, "affiliations", "manual", "A; B; C; D", "more than three"),
+        # str.splitlines() would split here; the loader splits on "\n" only
+        (R1, "affiliations", "manual", "A; B\x0cC; D; E", "more than three"),
+        (R1, "affiliations", "manual", "A; B" + LINE_SEP + "C; D; E", "more than three"),
     ],
 )
 def test_conflict__refusals_raise_cleanly_and_write_nothing(
