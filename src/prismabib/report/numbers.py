@@ -26,10 +26,14 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from prismabib.bibliometrics.citations import citation_statistics
-from prismabib.bibliometrics.venues import top_venues
+from prismabib.bibliometrics.venues import count_unnamed_venues, top_venues
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts_with_orphans
 from prismabib.prisma.orphans import OrphanedDecision
-from prismabib.report.methods import orphaned_decisions_text, registered_sentence
+from prismabib.report.methods import (
+    orphaned_decisions_text,
+    registered_sentence,
+    venue_unnamed_sentence,
+)
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus
@@ -254,6 +258,9 @@ def numbers_map(
         corpus = Corpus(connection)
         numbers.update(_citation_numbers(corpus))
         numbers.update(_venue_numbers(corpus))
+        # Only inside the methods snippet, never a required key: a plain key would make
+        # every existing manuscript fail fill's unused-key check (ADR 0040 Decision 12).
+        unnamed_venues = count_unnamed_venues(corpus, stage=PrismaStage.RAW)
     finally:
         connection.close()
 
@@ -261,6 +268,9 @@ def numbers_map(
     numbers["citations.registered_unavailable"] = resolved.registered
     # Methods snippets for `{{methods.*}}` placeholders; "" when there is nothing to say.
     numbers["methods.registered_sentence"] = registered_sentence(numbers)
+    numbers["methods.venue_unnamed_sentence"] = venue_unnamed_sentence(
+        unnamed_venues, numbers["corpus.size"]
+    )
     numbers["methods.orphaned_decisions_text"] = orphaned_decisions_text(found)
 
     for key, value in numbers.items():
