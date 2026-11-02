@@ -23,7 +23,11 @@ the three tables arrive with the stages that own their data.
 from prismabib.report.export import ExportResult, export_project
 from prismabib.report.fill import FillError, fill_manuscript
 from prismabib.report.flow_diagram import flow_diagram_svg
-from prismabib.report.methods import orphaned_decisions_text, registered_sentence
+from prismabib.report.methods import (
+    orphaned_decisions_text,
+    registered_sentence,
+    venue_unnamed_sentence,
+)
 from prismabib.report.numbers import numbers_map
 
 __all__ = [
@@ -35,4 +39,5 @@ __all__ = [
     "numbers_map",
     "orphaned_decisions_text",
     "registered_sentence",
+    "venue_unnamed_sentence",
 ]

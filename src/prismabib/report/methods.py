@@ -39,6 +39,26 @@ def registered_sentence(numbers: Mapping[str, Any]) -> str:
     )
 
 
+def venue_unnamed_sentence(unnamed: int, corpus_size: int) -> str:
+    """The sentence stating how many records have no venue name, or ``""`` for none.
+
+    Args:
+        unnamed: Records with no venue name, from
+            :func:`~prismabib.bibliometrics.venues.count_unnamed_venues`.
+        corpus_size: ``corpus.size``.
+
+    Returns:
+        ``"N of M records have no venue name and are not counted among the venues."``;
+        empty when every record is named, where the sentence would assert nothing.
+    """
+    if not unnamed:
+        return ""
+    return (
+        f"{unnamed} of {corpus_size} records have no venue name "
+        "and are not counted among the venues."
+    )
+
+
 def orphaned_decisions_text(orphans: Sequence[OrphanedDecision]) -> str:
     """The methods paragraph listing orphaned decisions (ADR 0033 §3).
 
@@ -64,4 +84,4 @@ def orphaned_decisions_text(orphans: Sequence[OrphanedDecision]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["orphaned_decisions_text", "registered_sentence"]
+__all__ = ["orphaned_decisions_text", "registered_sentence", "venue_unnamed_sentence"]

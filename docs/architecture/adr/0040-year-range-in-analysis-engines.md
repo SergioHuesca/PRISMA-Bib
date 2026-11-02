@@ -335,3 +335,21 @@ accepts, the same form ADR 0038 and ADR 0039 use (Question 3).
    `AnalysisError` (Decision 1).
 8. **Not wired today.** **Answer: noted as a fact.** `citation_impact_by_country` and `venue_type_split` have no dashboard caller
    today, and PR 5 wires no view for them unless a view exists by then (Decision 7).
+
+> **Note added 2026-11-02 (Decision 12, implemented; this note does not change the record above).** The venue-missing
+> snippet that Decision 12 lists as future work is done, as one optional key. Correction to the premise of Decision 12:
+> `top_venues` did not already expose an unnamed-venue count. `_group_venues` silently skipped blank names. The count
+> comes from a new public `count_unnamed_venues(corpus, *, stage)` in `bibliometrics/venues.py`, which shares one
+> predicate (`_is_unnamed`) with `_group_venues`, so the count cannot drift from the venues actually counted.
+>
+> - **Key.** `methods.venue_unnamed_sentence`, worded "{N} of {corpus.size} records have no venue name and are not
+>   counted among the venues." (for example "3 of 96 ..."). It is the empty string when none is unnamed, as with
+>   `methods.registered_sentence` and `methods.orphaned_decisions_text`. The key is always present.
+> - **Counts.** Optional keys go from 2 to 3, and total keys from 43 to 44. The 41 required keys are unchanged.
+> - **Scope.** The count runs over the RAW stage, as `venues.total` does. Report code passes no `years`, per Decision 6.
+> - **Not in `top_venues.params`.** Its params contract is pinned by tests, so the count is not added there.
+> - **No plain `venues.unnamed` key.** A non-`methods` key is "required" to `fill`'s unused-key check, so every existing
+>   manuscript would fail `fill`. The count lives only inside the `methods.*` sentence, which is exempt. This keeps
+>   Decision 12's "no existing template breaks".
+> - **Golden.** `numbers_keys.json` gains the key. `reference_numbers.json` gains `"methods.venue_unnamed_sentence": ""`,
+>   because the reference corpus has no unnamed venues.

@@ -89,6 +89,27 @@ def _normalise_venue_name(raw: str) -> str:
     return text.casefold()
 
 
+def _is_unnamed(raw: str) -> bool:
+    """True when ``raw`` normalises to nothing: the one definition of "no venue name"."""
+    return not _normalise_venue_name(raw)
+
+
+def count_unnamed_venues(corpus: Corpus, *, stage: PrismaStage = PrismaStage.INCLUDED) -> int:
+    """Records :func:`top_venues` leaves out of every venue count for lack of a name.
+
+    Uses the same predicate as :func:`_group_venues`, so the number cannot drift
+    from the venues actually counted. Deliberately takes no ``years`` (ADR 0040).
+
+    Args:
+        corpus: The corpus to read.
+        stage: Which PRISMA-flow set to count over.
+
+    Returns:
+        The number of venue rows whose name is blank after normalisation.
+    """
+    return sum(_is_unnamed(name) for name in corpus.venues(stage).get_column("name").to_list())
+
+
 def _group_venues(venues: pl.DataFrame) -> list[tuple[str, str, int]]:
     """Group raw venue rows by normalised name into ``(display_name, venue_type, count)``.
 
@@ -116,7 +137,7 @@ def _group_venues(venues: pl.DataFrame) -> list[tuple[str, str, int]]:
         venues.get_column("name").to_list(), venues.get_column("venue_type").to_list(), strict=True
     ):
         norm = _normalise_venue_name(name)
-        if not norm:
+        if _is_unnamed(name):
             # No venue name (Scopus omitted prism:publicationName) is not a venue
             # named ''; it must not count in venues.total or top-N.
             continue
