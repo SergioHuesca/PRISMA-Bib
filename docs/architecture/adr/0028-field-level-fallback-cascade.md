@@ -232,3 +232,5 @@ evidence.
 7. **Reproducibility.** The reproducibility claim applies to the recorded Layer 0 payloads, not to live
    re-queries. A fresh OpenAlex or Scopus call is a new run with its own checksum. ADR 0027's cross-runner
    test keeps running on the frozen reference fixture, which contains no enrichment.
+
+> **Note added 2026-11-02 (PR #255, ADR 0041 PR 3; this note does not change the record above).** The amendments to this record are stated in [ADR 0041](0041-field-level-provenance-and-cascade-completion.md), Section 10. They are: Decision 1, under which levels 2 and 3 supply affiliations only, not authors, and level 1 supplies the abstract from the search payload; Decision 2, under which the provenance map is held as 16 columns on `records`, per-level attempt outcomes are not repeated in Layer 1, and keyword provenance keeps the `openalex-topic` label; and Resolved item 4, under which the opt-in is recorded in `CascadeRunManifest.fallback_opt_in`, not in `RunManifest`.

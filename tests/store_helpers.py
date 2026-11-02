@@ -428,6 +428,8 @@ def make_openalex_work(
     year: int,
     topics: list[str] | None = None,
     abstract_words: list[str] | None = None,
+    authors: list[str] | None = None,
+    institutions: list[tuple[str, str | None]] | None = None,
 ) -> dict[str, Any]:
     """Build one synthetic OpenAlex work payload (no licensed data; ADR 0031 ``select`` fields).
 
@@ -438,7 +440,18 @@ def make_openalex_work(
         year: ``publication_year``.
         topics: Topic ``display_name``s, in the order given (score is fixed).
         abstract_words: Words placed in ``abstract_inverted_index`` by position.
+        authors: Author ``display_name``s, one authorship each, in the order given.
+        institutions: ``(display_name, country_code)`` pairs, all on the first authorship.
     """
+    authorships: list[dict[str, Any]] = [
+        {"author": {"display_name": name}, "institutions": []} for name in authors or []
+    ]
+    if institutions:
+        if not authorships:
+            authorships.append({"author": {}, "institutions": []})
+        authorships[0]["institutions"] = [
+            {"display_name": name, "country_code": code} for name, code in institutions
+        ]
     return {
         "id": openalex_id,
         "doi": f"https://doi.org/{doi}" if doi else None,
@@ -447,9 +460,98 @@ def make_openalex_work(
         "abstract_inverted_index": (
             {word: [i] for i, word in enumerate(abstract_words)} if abstract_words else None
         ),
-        "authorships": [],
+        "authorships": authorships,
         "topics": [{"display_name": name, "score": 0.9} for name in topics or []],
     }
+
+
+def scopus_affiliation(
+    name: str, city: str, country: str, *, afid: str | None = None
+) -> dict[str, str]:
+    """One Scopus ``affiliation`` object as a STANDARD or META view reports it (synthetic)."""
+    item = {"affilname": name, "affiliation-city": city, "affiliation-country": country}
+    if afid is not None:
+        item["afid"] = afid
+    return item
+
+
+def write_sealed_cascade_run(
+    raw_dir: Path,
+    run_id: str,
+    requests: list[dict[str, Any]],
+    *,
+    fallback_opt_in: bool = True,
+    bad_outcomes: bool = False,
+) -> Path:
+    """Write one sealed ``raw/scopus-cascade/<run_id>/`` run by hand (ADR 0041 Decision 6).
+
+    Outcomes come from PR 2's own ``_outcomes`` so a test only describes the responses. Bodies
+    are synthetic; no licensed Scopus payload is used.
+
+    Args:
+        raw_dir: The project's ``raw/`` directory.
+        run_id: Directory name; must sort after any earlier cascade run.
+        requests: One dict per HTTP response: ``view`` (``STANDARD`` or ``META``),
+            ``identifiers`` (normalised DOIs, or bare Scopus ids), ``http_status`` (default 200),
+            and ``body`` (written as the JSON value) or ``raw_bytes`` (written as is).
+        fallback_opt_in: The manifest's ``fallback_opt_in``.
+        bad_outcomes: Flip every outcome so the manifest disagrees with the bytes.
+    """
+    from prismabib.capture.cascade import _outcomes
+    from prismabib.capture.manifest import CascadeRunManifest
+
+    run_dir = raw_dir / "scopus-cascade" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    moment = "2026-11-02T00:00:00Z"
+    manifest_requests: list[dict[str, Any]] = []
+    files: list[str] = []
+    for index, spec in enumerate(requests):
+        name = f"response-{index:04d}.jsonl"
+        status = spec.get("http_status", 200)
+        data = spec["raw_bytes"] if "raw_bytes" in spec else json.dumps(spec["body"]).encode()
+        (run_dir / name).write_bytes(data + b"\n")
+        outcomes = [
+            o.model_dump() for o in _outcomes(spec["view"], spec["identifiers"], status, data, name)
+        ]
+        if bad_outcomes:
+            for o in outcomes:
+                o["outcome"] = "absent" if o["outcome"] == "value" else "value"
+        files.append(name)
+        manifest_requests.append(
+            {
+                "index": index,
+                "file": name,
+                "sha256": hashlib.sha256((run_dir / name).read_bytes()).hexdigest(),
+                "encoding": "verbatim",
+                "view": spec["view"],
+                "identifiers": spec["identifiers"],
+                "http_status": status,
+                "retrieved_at": moment,
+                "outcomes": outcomes,
+            }
+        )
+    manifest = CascadeRunManifest.model_validate(
+        {
+            "run_id": run_id,
+            "started_at": moment,
+            "finished_at": moment,
+            "endpoint": "https://api.elsevier.com/content",
+            "client_version": "0.1.0",
+            "criteria_version": "1.0.0",
+            "fallback_opt_in": fallback_opt_in,
+            "api_key_used": False,
+            "budget_requests": 10,
+            "requests_made": len(requests),
+            "stop_reason": "complete",
+            "requests": manifest_requests,
+            "payload_files": files,
+            "payload_sha256": hashlib.sha256(
+                b"".join((run_dir / name).read_bytes() for name in files)
+            ).hexdigest(),
+        }
+    )
+    (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    return run_dir
 
 
 def write_sealed_openalex_run(
@@ -567,7 +669,9 @@ __all__ = [
     "make_openalex_work",
     "read_reference_entry",
     "reference_run_dir",
+    "scopus_affiliation",
     "write_sealed_abstract_run",
+    "write_sealed_cascade_run",
     "write_sealed_openalex_run",
     "write_sealed_run",
 ]

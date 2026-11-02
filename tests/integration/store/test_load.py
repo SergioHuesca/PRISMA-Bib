@@ -76,6 +76,22 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("open_access", "BOOLEAN", False),
         ("payload_file", "VARCHAR", False),
         ("payload_line", "INTEGER", False),
+        ("abstract_source", "VARCHAR", False),
+        ("abstract_level", "INTEGER", False),
+        ("abstract_outcome", "VARCHAR", False),
+        ("abstract_payload_ref", "VARCHAR", False),
+        ("authors_source", "VARCHAR", False),
+        ("authors_level", "INTEGER", False),
+        ("authors_outcome", "VARCHAR", False),
+        ("authors_payload_ref", "VARCHAR", False),
+        ("affiliations_source", "VARCHAR", False),
+        ("affiliations_level", "INTEGER", False),
+        ("affiliations_outcome", "VARCHAR", False),
+        ("affiliations_payload_ref", "VARCHAR", False),
+        ("keywords_source", "VARCHAR", False),
+        ("keywords_level", "INTEGER", False),
+        ("keywords_outcome", "VARCHAR", False),
+        ("keywords_payload_ref", "VARCHAR", False),
     ),
     "venues": (
         ("venue_id", "VARCHAR", True),
@@ -192,10 +208,28 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("match_rule", "VARCHAR", False),
         ("reviewer", "VARCHAR", False),
         ("registered_ts", "TIMESTAMP", False),
+        ("authors_json", "VARCHAR", False),  # ADR 0041 Decision 3
+        ("affiliations_json", "VARCHAR", False),
+        ("keywords_json", "VARCHAR", False),
+    ),
+    # Not from the BUILD_PLAN schema: added by ADR 0041 Decision 2.
+    "provenance_conflicts": (
+        ("record_id", "VARCHAR", True),
+        ("field", "VARCHAR", True),
+        ("scopus_level", "INTEGER", False),
+        ("scopus_source", "VARCHAR", False),
+        ("scopus_payload_ref", "VARCHAR", False),
+        ("scopus_value", "VARCHAR", False),
+        ("openalex_payload_ref", "VARCHAR", False),
+        ("openalex_value", "VARCHAR", False),
+        ("status", "VARCHAR", False),
+        ("resolved_side", "VARCHAR", False),
+        ("resolution_event_id", "VARCHAR", False),
     ),
 }
 
-# ADR 0032 Decision 1: the 13 `records` columns plus origin, venue_type, venue_name.
+# ADR 0032 Decision 1: the 13 `records` columns plus origin, venue_type, venue_name, then the
+# 16 provenance columns of ADR 0041 Decision 3.
 _EXPECTED_RECORDS_ALL: tuple[tuple[str, str, bool], ...] = (
     ("record_id", "VARCHAR", False),
     ("origin", "VARCHAR", False),
@@ -213,6 +247,22 @@ _EXPECTED_RECORDS_ALL: tuple[tuple[str, str, bool], ...] = (
     ("payload_line", "INTEGER", False),
     ("venue_type", "VARCHAR", False),
     ("venue_name", "VARCHAR", False),
+    ("abstract_source", "VARCHAR", False),
+    ("abstract_level", "INTEGER", False),
+    ("abstract_outcome", "VARCHAR", False),
+    ("abstract_payload_ref", "VARCHAR", False),
+    ("authors_source", "VARCHAR", False),
+    ("authors_level", "INTEGER", False),
+    ("authors_outcome", "VARCHAR", False),
+    ("authors_payload_ref", "VARCHAR", False),
+    ("affiliations_source", "VARCHAR", False),
+    ("affiliations_level", "INTEGER", False),
+    ("affiliations_outcome", "VARCHAR", False),
+    ("affiliations_payload_ref", "VARCHAR", False),
+    ("keywords_source", "VARCHAR", False),
+    ("keywords_level", "INTEGER", False),
+    ("keywords_outcome", "VARCHAR", False),
+    ("keywords_payload_ref", "VARCHAR", False),
 )
 
 
@@ -649,6 +699,9 @@ def test_schema__sql_file__matches_live_duckdb_introspection(tmp_path: Path) -> 
     assert not_null == {c for c, _, _ in _EXPECTED_COLUMNS["registered_records"]} - {
         "abstract",
         "language",
+        "authors_json",  # ADR 0041 Decision 3: nullable JSON columns
+        "affiliations_json",
+        "keywords_json",
     }
 
 

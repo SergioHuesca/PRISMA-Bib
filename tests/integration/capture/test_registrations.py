@@ -711,6 +711,9 @@ def test_build_store__registration__row_appears_with_every_derived_column(env: E
         "doi",
         "sh",
         datetime(2026, 10, 23, 12, 0),  # noqa: DTZ001  (a naive TIMESTAMP column reads back naive)
+        None,  # authors_json, affiliations_json, keywords_json: the fixture body has none (ADR 0041)
+        None,
+        None,
     )
     assert env.rows("SELECT area_code FROM subject_areas WHERE record_id = ?", event.record_id) == [
         ("1702",)
@@ -1028,3 +1031,93 @@ def test_read_response__pre_amendment_select__says_to_recapture(env: Env) -> Non
 
     with pytest.raises(RegistrationRefusal, match="Re-capture the OpenAlex lookup"):
         reg.read_response(env.project.raw_dir, PAYLOAD)
+
+
+# -- registered provenance (ADR 0041 Decision 3, "Registered values"; PR 3) -------------------
+
+_PROVENANCE_COLUMNS = (
+    "abstract_source, abstract_level, abstract_outcome, abstract_payload_ref, "
+    "authors_source, authors_level, authors_outcome, authors_payload_ref, "
+    "affiliations_source, affiliations_level, affiliations_outcome, affiliations_payload_ref, "
+    "keywords_source, keywords_level, keywords_outcome, keywords_payload_ref"
+)
+_OA_REF = f"{PAYLOAD}#https://openalex.org/W2000000001"
+
+
+def _with_people(works: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    works[0]["authorships"] = [
+        {
+            "author": {"display_name": "Ann Lee"},
+            "institutions": [{"display_name": "Seoul National University", "country_code": "KR"}],
+        },
+        {"author": {"display_name": "Bo Park"}, "institutions": []},
+    ]
+    works[0]["topics"] = [{"display_name": "Graph Theory", "score": 0.9}]
+    return works
+
+
+@pytest.mark.integration
+def test_registered_provenance__body_with_authorships__is_openalex_level_4_with_a_reference(
+    env: Env,
+) -> None:
+    env.write_run(_with_people(_works()))
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+
+    env.build()
+
+    assert env.rows(
+        "SELECT authors_json, affiliations_json, keywords_json FROM registered_records"
+    ) == [('["Ann Lee","Bo Park"]', '["Seoul National University"]', '["Graph Theory"]')]
+    (row,) = env.rows(
+        f"SELECT {_PROVENANCE_COLUMNS} FROM records_all WHERE record_id = ?", event.record_id
+    )
+    assert row == (
+        "openalex", 4, "value", _OA_REF,
+        "openalex", 4, "value", _OA_REF,
+        "openalex", 4, "value", _OA_REF,
+        "openalex-topic", 4, "value", _OA_REF,
+    )  # fmt: skip
+
+
+@pytest.mark.integration
+def test_registered_provenance__body_with_empty_lists__is_unavailable_in_all_four_columns(
+    env: Env,
+) -> None:
+    works = _works()
+    works[0]["abstract_inverted_index"] = None
+    env.write_run(works)
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+
+    env.build()
+
+    assert env.rows(
+        "SELECT authors_json, affiliations_json, keywords_json, abstract FROM registered_records"
+    ) == [(None, None, None, None)]
+    (row,) = env.rows(
+        f"SELECT {_PROVENANCE_COLUMNS} FROM records_all WHERE record_id = ?", event.record_id
+    )
+    assert row == ("unavailable", 0, "unavailable", None) * 4
+
+
+@pytest.mark.integration
+def test_registered_provenance__later_scopus_match__drops_the_row_and_scopus_columns_apply(
+    env: Env,
+) -> None:
+    env.write_run(_with_people(_works()))
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    env.build()
+    env.scopus_run(
+        "20250102T000000Z-22222222",
+        _scopus("2-s2.0-800000000002", TITLE_ONE, "2021-02-01", DOI_ONE),
+    )
+
+    env.build()
+
+    assert env.registered_ids() == []
+    assert env.rows("SELECT origin FROM records_all WHERE record_id = ?", event.record_id) == []
+    (row,) = env.rows(
+        f"SELECT {_PROVENANCE_COLUMNS} FROM records_all WHERE record_id = 'scopus:2-s2.0-800000000002'"
+    )
+    assert row[0] == "scopus-complete"  # make_entry carries a description: the record's own level 1
+    # The OpenAlex run names the same DOI, so the ordinary level-4 fill now applies to the record.
+    assert row[4:8] == ("openalex", 4, "value", _OA_REF)

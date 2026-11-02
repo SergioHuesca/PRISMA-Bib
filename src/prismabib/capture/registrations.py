@@ -57,7 +57,12 @@ from prismabib.openalex_map import (
     work_type_to_doc_type,
 )
 from prismabib.project import Project
-from prismabib.sources.openalex import parse_work, rebuild_abstract
+from prismabib.sources.openalex import (
+    authorships_to_fields,
+    parse_work,
+    rebuild_abstract,
+    topics_to_keywords,
+)
 
 CURRENT_REGISTRATION_SCHEMA_VERSION: Final = 1
 REGISTRATIONS_FILENAME: Final = "registrations.jsonl"
@@ -407,6 +412,49 @@ def derive_registration(raw_dir: Path, event: RegisterEvent) -> DerivedRegistrat
     if derived.doi != event.doi:
         raise RegistrationRefusal(f"the stored work's DOI {derived.doi!r} is not {event.doi!r}")
     return derived
+
+
+@dataclass(frozen=True)
+class RegisteredValues:
+    """The authors, affiliation names and keywords of a registration's own OpenAlex body.
+
+    Each is a JSON array of text in source order, or ``None`` when the body lacks the field
+    (stored as NULL and read as ``unavailable``; ADR 0041 Decision 3, "Registered values").
+    """
+
+    authors_json: str | None
+    affiliations_json: str | None
+    keywords_json: str | None
+
+
+def derive_registered_values(raw_dir: Path, event: RegisterEvent) -> RegisteredValues:
+    """Derive a ``register`` event's three JSON columns from the body it references.
+
+    Uses the functions the OpenAlex loader uses (``authorships_to_fields`` and
+    ``topics_to_keywords``), so a registered value and a record's level-4 value cannot drift.
+
+    Raises:
+        RegistrationRefusal: As :func:`read_response`, or if the body holds no such work.
+    """
+    ref = event.source_payload_ref
+    work = next(
+        (w for w in read_response(raw_dir, ref.file).works if w.get("id") == ref.openalex_id), None
+    )
+    if work is None:
+        raise RegistrationRefusal(f"{ref.file!r} holds no work {ref.openalex_id!r}")
+    parsed = parse_work(work)
+    people = authorships_to_fields(parsed)
+
+    def as_json(values: Sequence[str]) -> str | None:
+        return (
+            json.dumps(list(values), ensure_ascii=False, separators=(",", ":")) if values else None
+        )
+
+    return RegisteredValues(
+        authors_json=as_json(people.authors),
+        affiliations_json=as_json(people.affiliations),
+        keywords_json=as_json([t.name for t in topics_to_keywords(parsed)]),
+    )
 
 
 # -- the writer ----------------------------------------------------------------------------------
