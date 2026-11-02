@@ -121,6 +121,8 @@ def project(tmp_path: Path) -> Project:
             f"INSERT INTO records VALUES ('scopus:2-s2.0-{sid}', '{doi}', '{title}', {year}, "
             f"{', '.join(states)})"
         )
+    con.execute("CREATE VIEW records_all AS SELECT *, 'scopus' AS origin FROM records")
+    con.execute("CREATE TABLE provenance_conflicts (record_id TEXT, field TEXT, status TEXT)")
     con.close()
     CandidateLog(p.root / "decisions" / "candidates.jsonl").add(
         CandidateEvent.from_row(
@@ -280,9 +282,47 @@ def test_cascade__real_run__rebuilds_the_store_and_reports_per_field(
 
     assert code == 0, out
     assert BUILDS == [{"rebuild": True}]
-    assert "abstract: level 1 1, level 2 0, level 3 0, level 4 0, level 5 0, unavailable 2" in out
-    assert "keywords: level 1 1, level 2 0, level 3 0, level 4 0, level 5 0, unavailable 2" in out
+    cells = "level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2"
+    assert f"abstract: {cells}, conflicts open 0, resolved 0" in out
+    assert f"keywords: {cells}, conflicts open 0, resolved 0" in out
     assert "build --rebuild" not in out
+
+
+@pytest.mark.integration
+def test_cascade__real_run__counts_conflicts_and_lists_registered_openalex_records(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    con = duckdb.connect(str(project.db_path))
+    con.execute("INSERT INTO provenance_conflicts VALUES ('x', 'abstract', 'open')")
+    con.execute("INSERT INTO provenance_conflicts VALUES ('y', 'abstract', 'resolved')")
+    con.execute("INSERT INTO provenance_conflicts VALUES ('y', 'authors', 'resolved')")
+    con.execute("DROP VIEW records_all")
+    con.execute(
+        "CREATE VIEW records_all AS SELECT record_id, 'scopus' AS origin, abstract_level, "
+        "authors_level, affiliations_level, keywords_level FROM records UNION ALL "
+        "SELECT 'registered:1', 'registered', 4, 4, 0, 0"
+    )
+    con.close()
+
+    code, out = _cascade(project.root.parent)
+
+    assert code == 0, out
+    assert "abstract: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2, " in out
+    assert "conflicts open 1, resolved 1" in out
+    assert "authors: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2, " in out
+    assert "conflicts open 0, resolved 1" in out
+    assert "per field, registered OpenAlex records (from the store):" in out
+    assert "abstract: level 4 1, unavailable 0" in out
+    assert "affiliations: level 4 0, unavailable 1" in out
+
+
+@pytest.mark.integration
+def test_cascade__dry_run__says_write_back_dois_are_not_counted(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    _, out = _cascade(project.root.parent, "--dry-run")
+
+    assert "DOIs that OpenAlex finds for DOI-less candidates are not counted" in out
 
 
 @pytest.mark.integration
@@ -385,3 +425,54 @@ def test_cascade__candidate_also_a_record__is_looked_up_once(
 
     assert code == 0, out
     assert [r for r in fakes["openalex"].requests if "search" in r.url.params] == []
+
+
+def _title_run(project: Project, fakes: dict[str, Fake], doi: str, *, refresh: bool) -> None:
+    """Seal one OpenAlex run holding the title search for "Findable" that answers ``doi``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        work = {
+            "id": "https://openalex.org/W77",
+            "title": "Findable",
+            "publication_year": 2017,
+            "doi": f"https://doi.org/{doi}",
+        }
+        return _json({"results": [work]})
+
+    fakes["openalex"]._handler = handler
+    cascade_commands.capture_openalex(
+        project, titles=[("Findable", 2017)], fallback_opt_in=False, refresh=refresh
+    )
+
+
+@pytest.mark.integration
+def test_openalex__nothing_to_request__still_writes_back_dois_of_an_earlier_sealed_run(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    log = _add_findable(project)
+    _title_run(project, fakes, "10.1/n", refresh=False)  # sealed, but the process died here
+    fakes["openalex"]._handler = _openalex
+    cascade_commands.capture_openalex(
+        project, dois=["10.1/a", "10.1/b", "10.1/c"], fallback_opt_in=False
+    )  # every DOI is held too, so the command has nothing to request
+    assert log.load_enrichments() == []
+
+    r = runner.invoke(app, ["openalex", "demo", "--root", str(project.root.parent)])
+
+    assert r.exit_code == 0, r.output
+    assert "nothing to request" in r.output
+    assert [e.doi for e in log.load_enrichments()] == ["10.1/n"]
+
+
+@pytest.mark.integration
+def test_found_dois__two_sealed_runs__the_latest_run_wins(
+    project: Project, fakes: dict[str, Fake], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ids = iter(["20250101T000000Z-00000001", "20250101T000000Z-00000002"])
+    monkeypatch.setattr("prismabib.capture.openalex.new_run_id", lambda: next(ids))
+    _add_findable(project)
+    _title_run(project, fakes, "10.1/stale", refresh=False)
+    _title_run(project, fakes, "10.1/fresh", refresh=True)
+    key = cascade_commands._title_key("Findable", 2017)
+
+    assert cascade_commands._found_dois(project, {key}) == {key: "10.1/fresh"}

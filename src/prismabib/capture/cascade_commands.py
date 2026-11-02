@@ -8,7 +8,8 @@ explicit ``--scopus-budget``. Identifiers a *sealed* earlier run already answere
 ``refused``) are not asked again. An unsealed Scopus run is never resumed; OpenAlex resumes a
 refusal-free unsealed run with an identical plan. The first report table is read back from
 the sealed manifests on disk, not from this process's memory. A real run then rebuilds the
-store and prints the second table, per field, from the provenance columns of ``records``.
+store and prints the second table, per field, from the provenance columns of ``records_all``
+(Scopus records, then the registered OpenAlex records as a second labelled group).
 ``openalex`` is the level 4 path alone, over the same targets.
 """
 
@@ -196,9 +197,12 @@ def _openalex_inputs(
 
 
 def _found_dois(project: Project, wanted: set[tuple[str, int]]) -> dict[tuple[str, int], str]:
-    """The DOI the sealed OpenAlex title searches returned, per wanted (title, year)."""
+    """The DOI the sealed OpenAlex title searches returned, per wanted (title, year).
+
+    Runs are read newest first, so after ``--refresh`` the latest sealed body is the one used.
+    """
     found: dict[tuple[str, int], str] = {}
-    for run_dir in _sealed(project.raw_dir / OPENALEX_DIRNAME):
+    for run_dir in reversed(_sealed(project.raw_dir / OPENALEX_DIRNAME)):  # latest run wins
         manifest = OpenAlexRunManifest.model_validate_json(
             (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
         )
@@ -248,25 +252,44 @@ def _write_back(project: Project, targets: list[_Target]) -> None:
 
 
 def _field_report(project: Project) -> list[str]:
-    """Per-field counts by level, read from the provenance columns of the rebuilt store."""
+    """Per-field counts (ADR 0041 Decision 7), read from the provenance columns of the store.
+
+    The first group is the Decision 5 numbers: Scopus records, levels 1 to 4, manual (level 5),
+    unavailable, and open and resolved conflicts. The second group is the registered records,
+    whose fields come from OpenAlex (level 4) or are unavailable; they have no conflicts.
+    """
     try:
         con = duckdb.connect(str(project.db_path), read_only=True)
         try:
             lines = ["per field, Scopus records (from the store):"]
+            registered = ["per field, registered OpenAlex records (from the store):"]
             for f in _FIELDS:
-                rows = con.execute(
-                    f"SELECT {f}_level, count(*) FROM records WHERE starts_with(record_id, ?) "
-                    "GROUP BY 1",
-                    [_SCOPUS_PREFIX],
-                ).fetchall()
-                n = dict(rows)
-                levels = ", ".join(f"level {i} {n.get(i, 0)}" for i in range(1, 6))
-                lines.append(f"{f}: {levels}, unavailable {n.get(0, 0)}")
+                counts: dict[str, Counter[int]] = {"scopus": Counter(), "registered": Counter()}
+                for origin, level, n in con.execute(
+                    f"SELECT origin, {f}_level, count(*) FROM records_all GROUP BY 1, 2"
+                ).fetchall():
+                    counts[origin][level] = n
+                n = counts["scopus"]
+                conflicts = dict(
+                    con.execute(
+                        "SELECT status, count(*) FROM provenance_conflicts WHERE field = ? "
+                        "GROUP BY 1",
+                        [f],
+                    ).fetchall()
+                )
+                levels = ", ".join(f"level {i} {n[i]}" for i in range(1, 5))
+                lines.append(
+                    f"{f}: {levels}, manual {n[5]}, unavailable {n[0]}, "
+                    f"conflicts open {conflicts.get('open', 0)}, "
+                    f"resolved {conflicts.get('resolved', 0)}"
+                )
+                r = counts["registered"]
+                registered.append(f"{f}: level 4 {r[4]}, unavailable {r[0]}")
         finally:
             con.close()
     except duckdb.Error as exc:
         raise StoreError(f"cannot read the store {project.db_path}: {exc}") from exc
-    return lines
+    return lines + registered
 
 
 def _line(label: str, final: dict[str, str], *names: str) -> str:
@@ -348,6 +371,7 @@ def cascade(
             )
             _echo(f"level 3: up to {len(ids)} Scopus ids planned" if opt_in else "level 3: skipped")
             _echo(f"openalex: {len(oa_dois)} DOIs, {len(oa_titles)} titles planned")
+            _echo("note: DOIs that OpenAlex finds for DOI-less candidates are not counted above")
             return
 
         # Decision 9: DOI-less targets go to OpenAlex first, so a DOI it finds reaches Scopus.
@@ -419,10 +443,10 @@ def openalex(
         manifest = capture_openalex(
             project, dois=dois, titles=titles, fallback_opt_in=opt_in, refresh=refresh
         )
+        _write_back(project, targets)  # also for a title search sealed by an earlier, died run
         if manifest is None:
             _echo("openalex: nothing to request; no run created")
             return
-        _write_back(project, targets)
         outcomes = [o for r in manifest.requests for o in r.outcomes]
         counts = Counter(o.outcome for o in outcomes)
         _echo(

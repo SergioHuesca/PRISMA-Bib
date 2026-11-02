@@ -154,8 +154,17 @@ def _store_table(project: Project) -> list[str]:
         lines = [_HEADER]
         for f in _FIELDS:
             levels = [r[0] for r in con.execute(f"SELECT {f}_level FROM records").fetchall()]
-            cells = ", ".join(f"level {i} {levels.count(i)}" for i in range(1, 6))
-            lines.append(f"{f}: {cells}, unavailable {levels.count(0)}")
+            cells = ", ".join(f"level {i} {levels.count(i)}" for i in range(1, 5))
+            conflicts = dict(
+                con.execute(
+                    "SELECT status, count(*) FROM provenance_conflicts WHERE field = ? GROUP BY 1",
+                    [f],
+                ).fetchall()
+            )
+            lines.append(
+                f"{f}: {cells}, manual {levels.count(5)}, unavailable {levels.count(0)}, "
+                f"conflicts open {conflicts.get('open', 0)}, resolved {conflicts.get('resolved', 0)}"
+            )
         return lines
     finally:
         con.close()
@@ -206,7 +215,7 @@ def test_cascade_rebuild__openalex_abstract__is_level_4_for_that_record_only(
     assert _level(project, R1, "abstract") == 1  # Scopus supplied it
     assert _level(project, R2, "abstract") == 4
     assert _level(project, R3, "abstract") == 0
-    assert "abstract: level 1 1, level 2 0, level 3 0, level 4 1, level 5 0, unavailable 1" in out
+    assert "abstract: level 1 1, level 2 0, level 3 0, level 4 1, manual 0, unavailable 1" in out
 
 
 @pytest.mark.integration
