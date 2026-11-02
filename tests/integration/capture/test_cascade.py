@@ -196,3 +196,21 @@ def test_seal__fallback_opt_in_false__refused(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
         _seal(run_dir, progress, api_key_used=True, criteria_version="v1")
     assert not is_sealed(run_dir)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("kwargs", "bad"),
+    [
+        ({"dois": ["10.1/ok", '10.1/"q']}, '10.1/"q'),
+        ({"dois": ["10.1/ok"], "scopus_ids": ["5", "abc"]}, "abc"),
+    ],
+)
+def test_capture__bad_identifier__no_request_and_no_directory(
+    tmp_path: Path, kwargs: dict[str, Any], bad: str
+) -> None:
+    project, fake = _project(tmp_path), Fake(lambda r: _search([]))
+    with pytest.raises(ValidationError, match=bad):
+        _run(project, fake, **kwargs)
+    assert fake.requests == [] and _runs(project) == []
+    assert not (project.raw_dir / "scopus-cascade").exists()

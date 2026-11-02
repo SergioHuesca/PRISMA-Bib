@@ -57,7 +57,7 @@ from prismabib.errors import QuotaExceededError, ValidationError
 from prismabib.project import Project
 from prismabib.sources.openalex import normalise_doi
 from prismabib.sources.ratelimit import RateLimiter
-from prismabib.sources.scopus import ScopusClient, _as_list
+from prismabib.sources.scopus import _EID_RE, ScopusClient, _as_list
 
 logger = structlog.get_logger(__name__)
 
@@ -262,7 +262,8 @@ def capture_scopus_cascade(
         scopus_ids: Scopus ids for level 3 (``META``, one request each); a
             ``scopus:`` prefix or ``2-s2.0-`` is accepted and stripped.
         fallback_opt_in: Must be true; recorded in the manifest.
-        budget_requests: Cap on HTTP responses received (positive).
+        budget_requests: Cap on HTTP responses received (positive); approximate, since
+            retried 429s inside one unit can overshoot it by up to ``MAX_ATTEMPTS - 1``.
         settings: Environment settings (the API key); defaults to ``Settings()``.
         transport: An ``httpx`` transport, for tests.
         rate_limiter: An injectable limiter, for tests.
@@ -271,8 +272,8 @@ def capture_scopus_cascade(
         The sealed run's manifest, or ``None`` when there is nothing to ask for.
 
     Raises:
-        ValidationError: Without opt-in or with a non-positive budget (no request, no
-            directory); on duplicate ids in one response (the run stays unsealed).
+        ValidationError: Without opt-in, with a non-positive budget or a bad DOI or Scopus
+            id (no request, no directory); on duplicate ids in one response (the run stays unsealed).
         ApiKeyInBodyError: If a response body contains the key or token.
     """
     if not fallback_opt_in:
@@ -283,6 +284,13 @@ def capture_scopus_cascade(
     id_plan = list(
         dict.fromkeys(i.removeprefix("scopus:").removeprefix("2-s2.0-") for i in scopus_ids)
     )
+    # Reject what the client would reject mid-run, before any request or directory.
+    if bad := next((d for d in doi_plan if '"' in d), None):
+        raise ValidationError(f"DOI {bad!r} contains a double quote and cannot be queried.")
+    if bad := next((i for i in id_plan if not _EID_RE.fullmatch(f"2-s2.0-{i}")), None):
+        raise ValidationError(
+            f"Scopus id {bad!r} is not numeric (expected digits or 2-s2.0-<digits>)."
+        )
     if not doi_plan and not id_plan:
         logger.info("scopus_cascade.capture.nothing_to_request")
         return None
