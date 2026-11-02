@@ -51,6 +51,7 @@ from prismabib.capture.candidates import CandidateLog
 from prismabib.capture.cascade_commands import cascade as _cascade_command
 from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
+from prismabib.capture.manual_commands import register_manual_commands
 from prismabib.capture.registrations import (
     REVERSAL_REASONS,
     MatchRule,
@@ -100,6 +101,7 @@ app = typer.Typer(
 
 app.add_typer(candidates_app)
 app.command("cascade")(_cascade_command)
+register_manual_commands(app)
 
 _ROOT_OPTION = typer.Option(
     "--root",
