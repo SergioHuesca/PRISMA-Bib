@@ -41,6 +41,10 @@ from prismabib.asjc import KNOWN_ABBREVS
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import ConfigError
 
+#: The Layer 2 logs of ADR 0041 Decisions 2 and 4, beside ``registrations.jsonl`` in ``decisions/``.
+MANUAL_ENTRIES_FILENAME = "manual_entries.jsonl"
+CONFLICT_RESOLUTIONS_FILENAME = "conflict_resolutions.jsonl"
+
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$")
 
 
@@ -617,6 +621,24 @@ class Project:
             The path. Not created by :meth:`Project.init`; the first registration creates it.
         """
         return self.root / "decisions" / "registrations.jsonl"
+
+    @property
+    def manual_entries_path(self) -> Path:
+        """The Layer 2 manual-entry log, ``<root>/decisions/manual_entries.jsonl`` (ADR 0041 §4).
+
+        Returns:
+            The path. Not created by :meth:`Project.init`; the first entry creates it.
+        """
+        return self.root / "decisions" / MANUAL_ENTRIES_FILENAME
+
+    @property
+    def conflict_resolutions_path(self) -> Path:
+        """The Layer 2 conflict-resolution log, ``decisions/conflict_resolutions.jsonl`` (ADR 0041 §2).
+
+        Returns:
+            The path. Not created by :meth:`Project.init`; the first resolution creates it.
+        """
+        return self.root / "decisions" / CONFLICT_RESOLUTIONS_FILENAME
 
     @property
     def fulltext_dir(self) -> Path:

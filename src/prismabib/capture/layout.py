@@ -74,10 +74,15 @@ ABSTRACTS_DIRNAME = "abstracts"
 #: The OpenAlex response runs under ``raw/openalex/<run_id>/`` (ADR 0031).
 OPENALEX_DIRNAME = "openalex"
 
+#: The Scopus level 2 and 3 cascade runs under ``raw/scopus-cascade/<run_id>/`` (ADR 0041).
+SCOPUS_CASCADE_DIRNAME = "scopus-cascade"
+
 #: Every immediate child of ``raw/`` that is not a search run directory. Any
 #: code iterating ``raw/`` looking for runs must skip these by name rather than
 #: relying on their contents to disqualify them.
-NON_RUN_DIRNAMES = frozenset({CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME})
+NON_RUN_DIRNAMES = frozenset(
+    {CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME, SCOPUS_CASCADE_DIRNAME}
+)
 
 
 class SealedRunError(PrismabibError):
@@ -163,6 +168,7 @@ __all__ = [
     "NON_RUN_DIRNAMES",
     "OPENALEX_DIRNAME",
     "RUN_MANIFEST_FILENAME",
+    "SCOPUS_CASCADE_DIRNAME",
     "SealedRunError",
     "atomic_write_bytes",
     "guard_writable",

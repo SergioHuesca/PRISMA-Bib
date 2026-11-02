@@ -110,7 +110,9 @@ def test_load__duplicate_doi__both_records_retained_and_flagged() -> None:
     create_schema(connection)
     for record in (record_a, record_b):
         connection.execute(
-            'INSERT INTO "records" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO "records" (record_id, run_id, doi, title, abstract, year, cover_date, '
+            "doc_type, language, venue_id, open_access, payload_file, payload_line) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 record.record_id,
                 "run-x",

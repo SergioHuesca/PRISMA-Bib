@@ -407,3 +407,62 @@ class OpenAlexRunManifest(BaseModel):
     payload_sha256: str
     client_version: str
     criteria_version: str
+
+
+class CascadeIdentifierOutcome(BaseModel):
+    """What one identifier of one cascade request returned (ADR 0041 Decision 6).
+
+    ``identifier`` is a normalised DOI (``STANDARD``) or a bare Scopus id (``META``).
+    ``affiliations`` counts the affiliations returned, zero when none.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    identifier: str
+    outcome: Literal["value", "absent", "not_found", "refused"]
+    http_status: int
+    affiliations: int = 0
+
+
+class CascadeRequest(BaseModel):
+    """One HTTP response of a cascade run, and the one file that holds it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int
+    file: str
+    sha256: str
+    encoding: Literal["verbatim", "compact"]
+    raw_sha256: str | None = None
+    view: Literal["STANDARD", "META"]
+    identifiers: list[str]
+    http_status: int
+    retrieved_at: datetime
+    quota_remaining: int | None = None
+    outcomes: list[CascadeIdentifierOutcome]
+
+
+class CascadeRunManifest(BaseModel):
+    """The manifest for one Scopus level 2/3 cascade run (ADR 0041 Decision 6).
+
+    Written to ``raw/scopus-cascade/<run_id>/manifest.json``; its presence is the seal.
+    ``api_key_used`` is a boolean, never the key. ``requests_made`` counts every HTTP
+    response received, including retried 429s that are not stored.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    started_at: datetime
+    finished_at: datetime
+    endpoint: str
+    client_version: str
+    criteria_version: str
+    fallback_opt_in: bool
+    api_key_used: bool
+    budget_requests: int
+    requests_made: int
+    stop_reason: Literal["complete", "budget", "quota"]
+    requests: list[CascadeRequest]
+    payload_files: list[str]
+    payload_sha256: str

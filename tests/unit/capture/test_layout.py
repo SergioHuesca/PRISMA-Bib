@@ -36,6 +36,7 @@ from prismabib.capture.layout import (
     NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
     RUN_MANIFEST_FILENAME,
+    SCOPUS_CASCADE_DIRNAME,
     SealedRunError,
     atomic_write_bytes,
     guard_writable,
@@ -47,7 +48,12 @@ from prismabib.store.load import _sealed_run_dirs
 
 @pytest.mark.unit
 def test_layout__non_run_dirnames__names_both_non_run_directories() -> None:
-    assert set(NON_RUN_DIRNAMES) == {CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME}
+    assert set(NON_RUN_DIRNAMES) == {
+        CACHE_DIRNAME,
+        ABSTRACTS_DIRNAME,
+        OPENALEX_DIRNAME,
+        SCOPUS_CASCADE_DIRNAME,
+    }
 
 
 @pytest.mark.unit
@@ -205,6 +211,7 @@ def test_layout__module__exports_exactly_the_shared_vocabulary() -> None:
         "NON_RUN_DIRNAMES",
         "OPENALEX_DIRNAME",
         "RUN_MANIFEST_FILENAME",
+        "SCOPUS_CASCADE_DIRNAME",
         "SealedRunError",
         "atomic_write_bytes",
         "guard_writable",
