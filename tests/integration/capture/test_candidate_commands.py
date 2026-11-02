@@ -16,7 +16,7 @@ runner = CliRunner()
 PASTE = "Title\tYear\nDeep learning for sleep staging\t2021\nAnother study of sleep\t2019\n"
 
 
-def _add(root: Path, *args: str, input: str | None = None) -> tuple[int, str]:
+def _add(root: Path, *args: str, input: str | bytes | None = None) -> tuple[int, str]:
     result = runner.invoke(
         app,
         ["candidates", "add", "demo", "--reviewer", "sh", "--root", str(root), *args],
@@ -96,3 +96,59 @@ def test_candidates_add__missing_file__fails_cleanly(project: Project, tmp_path:
 
     assert code == 1
     assert "Traceback" not in out
+
+
+@pytest.mark.integration
+def test_candidates_add__bom_file_with_header__header_is_skipped(
+    project: Project, tmp_path: Path
+) -> None:
+    paste = tmp_path / "bom.tsv"
+    paste.write_bytes(b"\xef\xbb\xbf" + PASTE.encode("utf-8"))
+
+    code, out = _add(project.root.parent, "--file", str(paste))
+
+    assert code == 0
+    assert "added 2" in out
+
+
+@pytest.mark.integration
+def test_candidates_add__non_ascii_title__stdin_and_file_give_the_same_id(
+    project: Project, tmp_path: Path
+) -> None:
+    row = "Café señal\t2020\n"
+    paste = tmp_path / "u.tsv"
+    paste.write_bytes(row.encode("utf-8"))
+
+    assert _add(project.root.parent, input=row.encode("utf-8"))[0] == 0
+    code, out = _add(project.root.parent, "--file", str(paste))
+
+    (view,) = _log(project).view()
+    assert view.event.title == "Café señal"
+    assert code == 0
+    assert "already present 1" in out
+
+
+@pytest.mark.integration
+def test_candidates_add__invalid_utf8_stdin__fails_cleanly(project: Project) -> None:
+    code, out = _add(project.root.parent, input=b"\xff\xfe\x00bad\t2020\n")
+
+    assert code == 1
+    assert "ValidationError" in out
+    assert "Traceback" not in out
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("reviewer", ["", "   "])
+def test_candidates_add__blank_reviewer__fails_and_writes_nothing(
+    project: Project, reviewer: str
+) -> None:
+    result = runner.invoke(
+        app,
+        ["candidates", "add", "demo", "--reviewer", reviewer, "--root", str(project.root.parent)],
+        input=PASTE,
+    )
+
+    assert result.exit_code == 1
+    assert "ValidationError" in result.output
+    assert "Traceback" not in result.output
+    assert not (project.root / "decisions" / "candidates.jsonl").exists()

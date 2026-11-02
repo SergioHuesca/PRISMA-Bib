@@ -43,10 +43,17 @@ def add(
     from prismabib.cli import _echo, _reporting_errors
 
     with _reporting_errors():
+        if not reviewer.strip():
+            raise ValidationError("--reviewer must not be blank")
         try:
-            text = file.read_text(encoding="utf-8") if file else sys.stdin.read()
+            # utf-8-sig on both paths: a BOM must not turn the header into data, and stdin must
+            # not follow the Windows code page.
+            raw = file.read_bytes() if file else sys.stdin.buffer.read()
+            text = raw.decode("utf-8-sig")
         except (OSError, UnicodeDecodeError) as exc:
-            raise ValidationError(f"cannot read the pasted rows from {file}: {exc}") from exc
+            raise ValidationError(
+                f"cannot read the pasted rows from {file or 'stdin'}: {exc}"
+            ) from exc
         rows = parse_pasted_rows(text)
         if not rows:
             raise ValidationError("no rows to add: paste at least one 'title, year' line")
