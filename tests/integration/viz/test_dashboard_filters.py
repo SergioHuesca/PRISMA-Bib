@@ -242,6 +242,108 @@ def test_year_range__widget_rejects_bad_range__shows_message_and_keeps_view(
     assert dashboard._status.object == ""
 
 
+def _count_rebuilds(dashboard: Dashboard, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    calls: list[int] = []
+    real = dashboard._rebuild_tabs
+
+    def counting() -> None:
+        calls.append(1)
+        real()
+
+    monkeypatch.setattr(dashboard, "_rebuild_tabs", counting)
+    return calls
+
+
+@pytest.mark.integration
+def test_year_range__widget_rejects_bad_range__slider_returns_to_restored_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    dashboard._year_range.value = (2020, 2021)
+    calls = _count_rebuilds(dashboard, monkeypatch)
+
+    dashboard._year_range.value = (2022, 2020)  # real watcher path, then the reset
+
+    assert dashboard._year_range.value == (2020, 2021)
+    assert (dashboard.filter_state.year_start, dashboard.filter_state.year_end) == (2020, 2021)
+    assert "Filter not applied" in dashboard._status.object
+    assert calls == []  # rejected before any rebuild; the reset did not re-enter the handler
+
+
+@pytest.mark.integration
+def test_year_range__rejected_with_no_prior_filter__slider_returns_to_full_range(
+    tmp_path: Path,
+) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+
+    dashboard._year_range.value = (2022, 2020)
+
+    assert dashboard._year_range.value == (2019, 2022)
+    assert dashboard.filter_state.year_start is None
+
+
+@pytest.mark.integration
+def test_selectors__rejected_change__return_to_restored_state(
+    taxonomy_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dashboard = Dashboard(taxonomy_project)
+    dashboard._taxonomy_dimension_selector.value = "architecture"
+    chosen = dashboard.filter_state
+    calls: list[int] = []
+
+    def failing() -> None:
+        calls.append(1)
+        raise ConfigError("nope")
+
+    monkeypatch.setattr(dashboard, "_rebuild_tabs", failing)
+
+    dashboard._taxonomy_dimension_selector.value = "learning_paradigm"
+    dashboard._citation_snapshot_selector.value = dashboard._citation_snapshot_selector.options[1]
+
+    assert dashboard.filter_state is chosen
+    assert dashboard._taxonomy_dimension_selector.value == "architecture"
+    assert dashboard._citation_snapshot_selector.value == "(latest)"
+    assert len(calls) == 2  # one attempt per change; the resets triggered no more
+    assert "Filter not applied" in dashboard._status.object
+
+
+@pytest.mark.integration
+def test_status__stale_rejection__cleared_by_later_success(tmp_path: Path) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    dashboard._year_range.value = (2022, 2020)
+    assert dashboard._status.object
+
+    dashboard.apply_filters(year_start=2020, year_end=2021)
+
+    assert dashboard._status.object == ""
+
+
+@pytest.mark.integration
+def test_status__rejected_apply_filters__still_raises_and_keeps_message(tmp_path: Path) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    dashboard._year_range.value = (2022, 2020)
+    message = dashboard._status.object
+
+    with pytest.raises(AnalysisError):
+        dashboard.apply_filters(year_start=2022, year_end=2020)
+
+    assert dashboard._status.object == message
+
+
+@pytest.mark.integration
+def test_year_range__accepted_change__rebuilds_once_and_keeps_slider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    calls = _count_rebuilds(dashboard, monkeypatch)
+
+    dashboard._year_range.value = (2020, 2021)
+
+    assert calls == [1]
+    assert dashboard._year_range.value == (2020, 2021)
+    assert dashboard._status.object == ""
+
+
 @pytest.fixture
 def taxonomy_project(tmp_path: Path) -> Project:
     project = build_taxonomy_project(
