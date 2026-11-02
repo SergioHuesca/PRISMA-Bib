@@ -348,7 +348,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
     """Run (or resume) one Scopus acquisition and seal it into a Layer 0 run directory.
 
     Fetches every page of ``query`` via :class:`~prismabib.sources.scopus.ScopusClient`
-    (always ``view=COMPLETE``, per BUILD_PLAN line 763 -- never degrades),
+    (always ``view=COMPLETE``, per BUILD_PLAN line 763 -- never silently lowered),
     writing each as ``raw/<run_id>/page-NNNN.jsonl`` and finishing with
     ``raw/<run_id>/manifest.json`` (S02-AC1). See the module docstring for
     exactly how verbatim pre-parse persistence, sealing, and resumption fit
@@ -378,7 +378,9 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             ``total_results`` could ever be determined.
         AuthError: On HTTP 401 from Scopus; never retried.
         EntitlementError: On HTTP 403 for ``view=COMPLETE``; never retried,
-            never degrades to ``STANDARD`` (BUILD_PLAN §5 risk 1).
+            never silently lowered to ``STANDARD`` (BUILD_PLAN §5 risk 1).
+            Only the opt-in, recorded field-level cascade (ADR 0041) may
+            fill the refused fields.
         QuotaExceededError: On HTTP 429 indicating the weekly quota is
             exhausted.
         RateLimitError: On HTTP 429 exhausting the retry budget.

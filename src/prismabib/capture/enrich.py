@@ -150,7 +150,7 @@ cheap error, and the alternative -- probing a second record to disambiguate --
 buys it at the price of making "1,800 wasted calls" reachable again through a
 different door.
 
-**The view never degrades.** ``view=FULL`` throughout. ``view=META`` is cheaper
+**The view is never changed silently.** ``view=FULL`` throughout. ``view=META`` is cheaper
 and *does* carry subject areas, which is what makes it tempting; it is refused
 for the same reason ``view=STANDARD`` is refused on the search side (§5 risk 1).
 A corpus whose subject areas came from two different views is not one filter,
@@ -669,7 +669,7 @@ def capture_abstracts(
 
     Fetches one Abstract Retrieval record per record id via
     :meth:`prismabib.sources.scopus.ScopusClient.abstract` (always
-    ``view=FULL``; never degrades), writing them verbatim to
+    ``view=FULL``; never silently lowered), writing them verbatim to
     ``raw/abstracts/<run_id>/abstracts-NNNN.jsonl`` and finishing with
     ``raw/abstracts/<run_id>/manifest.json``. See the module docstring for how
     placement, sealing, resumption, and the entitlement probe fit together.

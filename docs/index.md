@@ -72,7 +72,7 @@ What works:
 
 - **Scopus acquisition** into an immutable, sealed Layer 0 archive: cursor pagination, a
   header-aware rate limiter, an HTTP cache, and a resumable cursor so an interrupted run
-  costs no quota to continue. `view=COMPLETE` is mandatory and never degrades.
+  costs no quota to continue. `view=COMPLETE` is mandatory; the client never silently falls back to a lesser view.
 - **The Layer 1 DuckDB store**, rebuilt from Layer 0 by one function (`build_store`), with
   deterministic per-table checksums that do not depend on the DuckDB version or on the
   machine's timezone.

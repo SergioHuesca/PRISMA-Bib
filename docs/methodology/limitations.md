@@ -9,11 +9,17 @@ is, and what to do instead.
 
 Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
 
-## Coverage: Scopus only
+## Coverage: Scopus first, other sources only by explicit opt-in
 
-**Current state, and deliberate.** The only implemented source is the Scopus Search API.
-There is no Web of Science, no OpenAlex, no Crossref, no PubMed, no Dimensions, and no
-manual-import path for records exported from another database.
+**Current state, and deliberate.** The only search source is the Scopus Search API.
+There is no Web of Science, Crossref, PubMed or Dimensions search, and no manual-import path
+for records exported from another database. Other sources can fill individual *fields* of a
+Scopus record, never add records to the search: when Scopus refuses a field, an explicit,
+opt-in, recorded field-level cascade may ask a lower level (Scopus `STANDARD` or abstract
+retrieval, then OpenAlex) and labels each value with the source that supplied it
+([ADR 0028](../architecture/adr/0028-field-level-fallback-cascade.md),
+ADR 0041, which is not yet linked here). It
+never runs by default, and a field no level supplies stays unavailable rather than imputed.
 
 Consequences for your review:
 
@@ -27,8 +33,9 @@ Consequences for your review:
   are counted separately as `registered` ("other methods"), never added into `identified`;
   `identified` stays the Scopus total alone
   ([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md)).
-- Fields Scopus does not index are invisible to the whole pipeline. There is no second
-  source to fill a gap with.
+- Fields Scopus refuses stay missing unless you opt in to the cascade. A cascade-filled
+  value carries its source label, and a review that opts in must report which fields came
+  from which level.
 - The "Registers" column of the PRISMA 2020 diagram is empty.
 
 If your protocol requires multi-database coverage — most methodological guidance does —
@@ -307,9 +314,10 @@ These are Scopus's, not prismabib's, and they will still be true when every stag
 built.
 
 - **`COMPLETE` entitlement is required.** It is granted to subscribing institutions, not to
-  personal or free API keys, and prismabib refuses to degrade to `STANDARD` (which omits
-  author keywords, the full author block, and abstracts). Without the entitlement, this tool
-  cannot run your review.
+  personal or free API keys, and the search itself never silently drops to `STANDARD` (which
+  omits author keywords, the full author block, and abstracts). Without the entitlement the
+  search is refused. Only the explicit, opt-in, recorded field-level cascade may supply the
+  missing fields from a lower level, each labelled with its source.
 - **Index drift.** Scopus revises records retroactively. Re-running the same query months
   later can return different results. Layer 0 manifests are the mitigation: the query, the
   view, the result count and a payload hash are sealed at capture time, so a past claim

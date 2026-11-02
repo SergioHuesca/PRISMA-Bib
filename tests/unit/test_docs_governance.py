@@ -141,3 +141,27 @@ def test_changelog__bare_unreleased_heading__is_checked_against_head(
 
     assert _changelog_definitions() == _expected_definitions()
     assert _expected_definitions()["Unreleased"] == f"{REPOSITORY_URL}/compare/v1.0.0...HEAD"
+
+
+#: Wording that denied the opt-in field-level cascade (ADR 0041 Decision 10).
+#: ``no OpenAlex,`` (with the comma) is the "no OpenAlex, no Crossref" list;
+#: "has no OpenAlex id" and "no OpenAlex topics" are true statements and stay.
+STALE_PHRASES = ("never degrades", "refuses to degrade", "no OpenAlex,", "Scopus only")
+
+
+def test_public_text__denying_the_field_level_cascade__is_absent() -> None:
+    """Docs and source say the cascade exists, is opt-in and is recorded.
+
+    The frozen ADRs and BUILD_PLAN.md quote the old wording and are not scanned.
+    """
+    docs = (REPO_ROOT / "docs").rglob("*.md")
+    sources = (REPO_ROOT / "src" / "prismabib").rglob("*.py")
+    hits = [
+        f"{path.relative_to(REPO_ROOT)}: {phrase!r}"
+        for path in (*docs, *sources)
+        if ADR_DIR not in path.parents
+        for text in [path.read_text(encoding="utf-8")]
+        for phrase in STALE_PHRASES
+        if phrase in text
+    ]
+    assert hits == []
