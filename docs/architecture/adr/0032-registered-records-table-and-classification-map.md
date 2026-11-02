@@ -765,3 +765,5 @@ this record is accepted on the merge of PR #150, which the owner approves, after
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the stored OpenAlex body, the `PayloadRef` form, and the select
   amendment (deviation vi).
 - [ADR 0033](0033-flowcounts-registered-count-and-orphaned-decisions.md): the Stage 4 counts that read `records_all`.
+
+> **Note added 2026-11-02 (PR #255, ADR 0041 PR 3; this note does not change the record above).** [ADR 0041](0041-field-level-provenance-and-cascade-completion.md), Decision 3, adds three JSON columns to `registered_records`: `authors_json`, `affiliations_json` and `keywords_json`. Each is a JSON array of text, or NULL. The registered branch of `records_all` carries the same 16 provenance columns as literals, in the same order as the columns of `records`. The older text of this record, including the table and the view above, is unchanged.
