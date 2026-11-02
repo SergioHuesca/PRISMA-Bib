@@ -221,12 +221,33 @@ def test_acquisition__stays_complete_and_never_reaches_cascade_steps() -> None:
     assert [r.request.url.params["view"] for r in route.calls] == ["COMPLETE"]
 
 
+# The one capture module allowed to call the cascade steps: the opt-in Layer 0 cascade writer.
+_CASCADE_WRITER = "cascade.py"
+
+
+def _cascade_step_references(capture: Path) -> list[str]:
+    """Names of files under ``capture`` (bar the cascade writer) naming a cascade step."""
+    return sorted(
+        path.name
+        for path in capture.rglob("*.py")
+        if path.name != _CASCADE_WRITER
+        and any(
+            step in path.read_text(encoding="utf-8")
+            for step in ("search_standard_by_dois", "abstract_meta")
+        )
+    )
+
+
 def test_acquisition__capture_code_does_not_reference_cascade_steps() -> None:
     capture = Path(__file__).parents[3] / "src" / "prismabib" / "capture"
-    for path in capture.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        assert "search_standard_by_dois" not in text, path
-        assert "abstract_meta" not in text, path
+    assert (capture / _CASCADE_WRITER).is_file()
+    assert _cascade_step_references(capture) == []
+
+
+def test_acquisition__guard_flags_any_other_capture_module(tmp_path: Path) -> None:
+    (tmp_path / _CASCADE_WRITER).write_text("client.abstract_meta(x)", encoding="utf-8")
+    (tmp_path / "writer.py").write_text("client.search_standard_by_dois(x)", encoding="utf-8")
+    assert _cascade_step_references(tmp_path) == ["writer.py"]
 
 
 _REFUSAL_TEXT = "Synthetic: view not available to this key"
