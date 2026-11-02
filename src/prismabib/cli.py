@@ -46,6 +46,7 @@ import typer
 from structlog.typing import EventDict, WrappedLogger
 
 from prismabib import __version__
+from prismabib.capture.candidate_commands import candidates_app
 from prismabib.capture.candidates import CandidateLog
 from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
@@ -95,6 +96,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+app.add_typer(candidates_app)
 
 _ROOT_OPTION = typer.Option(
     "--root",
