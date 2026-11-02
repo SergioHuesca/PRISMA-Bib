@@ -218,3 +218,54 @@ def test_cascade__unknown_project__is_a_clean_error(tmp_path: Path) -> None:
 
     assert code != 0
     assert "Traceback" not in out
+
+
+@pytest.mark.integration
+def test_cascade__openalex_refused__is_requested_again_value_is_not(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    args = ("--opt-in", "--scopus-budget", "10")
+    fakes["openalex"]._handler = lambda r: httpx.Response(403)
+    _cascade(project.root.parent, *args)
+    fakes["openalex"]._handler = _openalex
+    fakes["openalex"].requests.clear()
+
+    _, dry = _cascade(project.root.parent, *args, "--dry-run")
+    code, out = _cascade(project.root.parent, *args)
+
+    assert code == 0, out
+    assert "openalex: 3 DOIs" in dry
+    assert _dois(fakes["openalex"]) == {"10.1/a", "10.1/b", "10.1/c"}
+    fakes["openalex"].requests.clear()
+    _cascade(project.root.parent, *args)
+    assert fakes["openalex"].requests == []  # now value: held
+
+
+@pytest.mark.integration
+def test_cascade__doi_with_quote__is_skipped_with_a_note(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    con = duckdb.connect(str(project.db_path))
+    con.execute(
+        "INSERT INTO records VALUES ('scopus:2-s2.0-5', '10.1/q\"x', 'Q', 2020, "
+        "'unavailable','unavailable','unavailable','unavailable')"
+    )
+    con.close()
+
+    code, out = _cascade(project.root.parent, "--opt-in", "--scopus-budget", "10")
+
+    assert code == 0, out
+    assert '10.1/q"x' in out and "skipped" in out
+    assert _dois(fakes["scopus"]) == {"10.1/a", "10.1/b", "10.1/c"}
+    assert any("/abstract/eid/" in r.url.path for r in fakes["scopus"].requests)  # level 3 ran
+
+
+@pytest.mark.integration
+def test_cascade__real_run__says_rebuild_is_needed(
+    project: Project, fakes: dict[str, Fake]
+) -> None:
+    _, out = _cascade(project.root.parent)
+    _, dry = _cascade(project.root.parent, "--dry-run")
+
+    assert "prismabib build --rebuild" in out
+    assert "prismabib build --rebuild" not in dry

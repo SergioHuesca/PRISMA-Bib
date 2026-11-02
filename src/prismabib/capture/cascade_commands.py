@@ -3,7 +3,8 @@
 Order: Scopus STANDARD by DOI (level 2), Scopus META by Scopus id (level 3), then OpenAlex
 (level 4), each through its own Layer 0 writer. Levels 2 and 3 run only with ``--opt-in`` and an
 explicit ``--scopus-budget``. Identifiers a *sealed* earlier run already answered (anything but
-``refused``) are not asked again; an unsealed run is never resumed here. The closing report is
+``refused``) are not asked again. An unsealed Scopus run is never resumed; OpenAlex resumes a
+refusal-free unsealed run with an identical plan. The closing report is
 read back from the sealed manifests on disk, not from this process's memory.
 
 Not here yet: the ``openalex`` command, the store rebuild, and the Decision 9 step that gets a
@@ -30,6 +31,7 @@ from prismabib.capture.layout import (
     is_sealed,
 )
 from prismabib.capture.manifest import CascadeRunManifest, OpenAlexRunManifest
+from prismabib.capture.openalex import _held as _oa_held
 from prismabib.capture.openalex import capture_openalex
 from prismabib.errors import StoreError, ValidationError
 from prismabib.project import Project
@@ -214,7 +216,8 @@ def cascade(
     """Fill missing fields: Scopus STANDARD, Scopus META, then OpenAlex.
 
     Levels 2 and 3 run only with --opt-in and --scopus-budget. Identifiers already
-    answered by a sealed earlier run are not asked again; an unsealed run is not resumed.
+    answered by a sealed earlier run are not asked again. An unsealed Scopus run is not
+    resumed; OpenAlex resumes a refusal-free unsealed run with an identical plan.
     """
     # Imported here: cli.py imports this module to register the command.
     from prismabib.cli import _echo, _reporting_errors
@@ -229,7 +232,11 @@ def cascade(
         project = Project.open(slug, root=root)
         targets = _targets(project)
         dois, ids = _plan(project, targets) if opt_in else ([], [])
-        oa_held = set() if refresh else set(_final_openalex(project))
+        quoted = [d for d in dict.fromkeys(dois) if '"' in d]
+        for d in quoted:  # capture_scopus_cascade rejects the whole batch for one such DOI
+            _echo(f"level 2: skipped DOI {d!r} (contains a double quote)")
+        dois = [d for d in dois if d not in quoted]
+        oa_held = set() if refresh else _oa_held(project.raw_dir / OPENALEX_DIRNAME)
         oa_dois = list(dict.fromkeys(t.doi for t in targets if t.doi and t.doi not in oa_held))
         oa_titles = [(t.title, t.year) for t in targets if not t.doi and t.key not in oa_held]
 
@@ -265,6 +272,7 @@ def cascade(
         )
         for line in _report(project, targets):
             _echo(line)
+        _echo("Fetched data reaches `records` only after `prismabib build --rebuild`.")
 
 
 __all__ = ["cascade"]
