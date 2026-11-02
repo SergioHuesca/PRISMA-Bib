@@ -11,6 +11,7 @@ schema.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -20,7 +21,9 @@ from prismabib.bibliometrics.network import (
     coauthorship_network,
     keyword_cooccurrence_network,
 )
+from prismabib.errors import AnalysisError
 from prismabib.stage import PrismaStage
+from prismabib.store.load import Corpus
 from tests.bibliometrics_helpers import (
     AuthorSpec,
     BibCorpusSpec,
@@ -267,3 +270,163 @@ def test_vosviewer_export__creates_the_directory(tmp_path: Path) -> None:
 
     assert map_path.parent == target
     assert network_path.parent == target
+
+
+# --- ADR 0040: the `years` engine argument ------------------------------------------------
+
+_NETWORKS: list[tuple[Any, dict[str, Any]]] = [
+    (keyword_cooccurrence_network, {"min_occurrence": 1}),
+    (coauthorship_network, {"min_occurrence": 1}),
+]
+_NET_IDS = ["keywords", "authors"]
+
+
+def _au(*ids: str) -> tuple[AuthorSpec, ...]:
+    return tuple(AuthorSpec(author_id=i, surname=i.upper()) for i in ids)
+
+
+#: Out-of-range pair (x, y) twice in 2019; in-range pair (a, b) in 2020 and 2021;
+#: (a, x) in 2022. Range 2020-2021 keeps only the (a, b) edge, weight 2.
+_YEAR_NET_RECORDS = [
+    BibRecordSpec(number=1, year=2019, author_keywords=("x", "y"), authors=_au("x", "y")),
+    BibRecordSpec(number=2, year=2019, author_keywords=("x", "y"), authors=_au("x", "y")),
+    BibRecordSpec(number=3, year=2020, author_keywords=("a", "b"), authors=_au("a", "b")),
+    BibRecordSpec(number=4, year=2021, author_keywords=("a", "b"), authors=_au("a", "b")),
+    BibRecordSpec(number=5, year=2022, author_keywords=("a", "x"), authors=_au("a", "x")),
+]
+
+
+def _year_net_corpus(tmp_path: Path) -> Corpus:
+    return open_corpus(build_bib_project(tmp_path, BibCorpusSpec(records=_YEAR_NET_RECORDS)))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__edges_only_from_in_range_papers(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+
+    result = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2021), **kwargs)
+
+    edges = _edge_dicts(result.data)
+    assert [(e["node_a"], e["node_b"], e["weight"]) for e in edges] == [("a", "b", 2)]
+    assert {n["id"]: n["frequency"] for n in _node_dicts(result.data)} == {"a": 2, "b": 2}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__communities_recomputed_on_in_range_graph(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+
+    whole = fn(corpus, stage=PrismaStage.RAW, **kwargs)
+    ranged = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2021), **kwargs)
+
+    assert set(whole.params["communities"]) == {"a", "b", "x", "y"}
+    assert ranged.params["communities"] == {"a": 0, "b": 0}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__top_n_and_threshold_apply_after_filtering(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+
+    # In 2020-2022 the edges are a-b (2) and a-x (1): top_n=1 keeps a-b and drops x.
+    top1 = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2022), **{**kwargs, "top_n": 1})
+    assert {n["id"] for n in _node_dicts(top1.data)} == {"a", "b"}
+    # min_occurrence=3: a appears on 3 papers overall but only 2 in 2020-2021.
+    strict = {**kwargs, "min_occurrence": 3}
+    assert _edge_dicts(fn(corpus, stage=PrismaStage.RAW, years=(2020, 2021), **strict).data) == []
+    assert _node_dicts(fn(corpus, stage=PrismaStage.RAW, years=(2019, 2022), **strict).data) != []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__params_provenance_and_caption(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+    plain = fn(corpus, stage=PrismaStage.RAW, **kwargs)
+
+    ranged = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2021), **kwargs)
+
+    assert ranged.params["years"] == "2020-2021"
+    assert ranged.params["n_in_range"] == 2
+    assert ranged.params["n_no_year_dropped"] == 0
+    assert ranged.provenance == plain.provenance  # unrestricted stage frame
+    assert ranged.provenance.corpus_size == 5
+    assert "papers published in 2020-2021" in ranged.caption()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__no_years__params_have_no_years_keys_and_output_unchanged(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+    plain = fn(corpus, stage=PrismaStage.RAW, **kwargs)
+
+    assert not {"years", "n_in_range", "n_no_year_dropped"} & set(plain.params)
+    for years in (None, (None, None)):
+        same = fn(corpus, stage=PrismaStage.RAW, years=years, **kwargs)
+        assert same.params == plain.params
+        assert same.data.equals(plain.data)
+        assert same.caption() == plain.caption()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__null_year__dropped_and_counted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+    original = corpus.records
+
+    def with_null_year(stage: PrismaStage = PrismaStage.INCLUDED) -> pl.DataFrame:
+        frame = original(stage)
+        return frame.with_columns(
+            pl.when(pl.col("year") == 2019).then(None).otherwise(pl.col("year")).alias("year")
+        )
+
+    monkeypatch.setattr(corpus, "records", with_null_year)
+
+    result = fn(corpus, stage=PrismaStage.RAW, years=(2000, 2030), **kwargs)
+
+    assert result.params["n_no_year_dropped"] == 2
+    assert result.params["n_in_range"] == 3
+    assert result.provenance.corpus_size == 5
+    assert "y" not in result.params["communities"]  # the x-y papers dropped
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__inverted_range__raises_before_any_read(fn: Any, kwargs: dict[str, Any]) -> None:
+    with pytest.raises(AnalysisError):
+        fn(None, years=(2021, 2020), **kwargs)  # corpus=None: a read would AttributeError
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__result_independent_of_input_row_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+    baseline = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2022), **kwargs)
+    originals = {name: getattr(corpus, name) for name in ("records", "authors", "keywords")}
+
+    def shuffled(original: Any, seed: int) -> Any:
+        def read(*args: Any, **kw: Any) -> pl.DataFrame:
+            return original(*args, **kw).sample(fraction=1.0, shuffle=True, seed=seed)
+
+        return read
+
+    for seed in (1, 2, 3):
+        for name, original in originals.items():
+            monkeypatch.setattr(corpus, name, shuffled(original, seed))
+        again = fn(corpus, stage=PrismaStage.RAW, years=(2020, 2022), **kwargs)
+        assert again.data.equals(baseline.data)
+        assert again.params == baseline.params
