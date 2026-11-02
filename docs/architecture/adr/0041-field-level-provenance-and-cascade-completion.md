@@ -61,7 +61,7 @@ The owner took these decisions on 2026-11-02. They are recorded here as given, w
 | 2 | `scopus-standard` | Search `STANDARD`, batched by DOI | affiliations | `raw/scopus-cascade/<run_id>/` (Decision 6) |
 | 3 | `scopus-meta` | Abstract `META`, one record per request, by `scopus_id` | affiliations | `raw/scopus-cascade/<run_id>/` |
 | 4 | `openalex` (keywords: `openalex-topic`) | OpenAlex works (ADR 0031) | abstract, authors, affiliations, keywords (topics) | `raw/openalex/<run_id>/` (existing) |
-| 5 | `manual` | Entered by a named reviewer | abstract, authors, affiliations | `manual_entries.jsonl` (Layer 2, Decision 4) |
+| 5 | `manual` | Entered by a named reviewer | abstract, authors, affiliations | `decisions/manual_entries.jsonl` (Layer 2, Decision 4) |
 
 **1a. Levels 2 and 3 supply `affiliations` only.** `CascadeResult` carries affiliations, a first author and identifiers. It does
 not carry an abstract, a full author list or keywords. A first-author list stored as `authors` would be a partial field reported
@@ -163,21 +163,22 @@ It is read-only in this record. Resolving a conflict is out of scope (Open quest
 | `<field>_source` | TEXT, NOT NULL | The allowed set per field, below |
 | `<field>_level` | INTEGER, NOT NULL | 0 to 5: the supplying level, fixed by the source (see the CHECK); 0 when the field is unavailable |
 | `<field>_outcome` | TEXT, NOT NULL | `value` or `unavailable` |
-| `<field>_payload_ref` | TEXT, nullable | The payload address, relative to `raw/`, in the forms listed below. NULL when unavailable |
+| `<field>_payload_ref` | TEXT, nullable | The payload address, in the forms listed below. NULL when unavailable |
 
-The payload reference forms, one per source (all relative to `raw/`):
+The payload reference forms, one per source. Levels 1 to 4 are relative to `raw/`. Level 5 is the one exception, and it is
+project-relative:
 
 - level 1: `<run_id>/page-NNNN.jsonl#<line>`, the record's `payload_file` and `payload_line`. The name `page-NNNN.jsonl` is the
-  Scopus search page name (`payload_files` in `RunManifest`, `capture/manifest.py` line 65, and `store/load.py` line 60), and
-  `<line>` is the record's 0-based line index in that page.
+  Scopus search page name that the writer uses (`capture/writer.py`) and that `RunManifest.payload_files` lists (`capture/manifest.py`).
+  `<line>` is the record's 0-based line index in that page, as the module docstring of `store/load.py` describes.
 - level 2 and 3: `scopus-cascade/<run_id>/response-NNNN.jsonl#<scopus_id>`. The `<id>` addresses an entry inside one response body,
   because a STANDARD response holds many DOIs and each response is one line. `<scopus_id>` is the bare numeric Scopus id, the
   part after `scopus:` in the record id. If an entry carries no Scopus id, `<id>` is `doi:<normalised DOI>` (`normalise_doi`). The
   writer emits the id from the entry it parsed, in body order, and it fails loudly when two entries of one response carry the same
   id, so an id is unique per record per response file. A META response holds one entry, addressed the same way.
 - level 4: `openalex/<run_id>/response-NNNN.jsonl#<openalex_id>` (ADR 0031 Decision 2).
-- level 5: **the one exception.** `manual_entries.jsonl#<event_id>` is relative to the project directory, not to `raw/`. The file
-  sits beside `registrations.jsonl` in the Layer 2 decisions directory, as ADR 0029 Decision 8 places it. No other form is
+- level 5: **the one exception.** `decisions/manual_entries.jsonl#<event_id>` is relative to the project directory, not to `raw/`.
+  The file sits beside `decisions/registrations.jsonl`, the shared Layer 2 log location of ADR 0029 Decision 8. No other form is
   project-relative.
 
 Allowed `<field>_source` values per field: `abstract`: `scopus-complete`, `openalex`, `manual`, `unavailable`.
@@ -243,12 +244,12 @@ provenance columns. `prismabib build --rebuild` produces the new columns, and th
 
 ### 4. Manual entry (level 5)
 
-**Event.** A new Layer 2 log, `manual_entries.jsonl`, in the project directory beside `registrations.jsonl`. It uses the
+**Event.** A new Layer 2 log, `decisions/manual_entries.jsonl`, beside `decisions/registrations.jsonl`. It uses the
 append-only, checksum-guarded machinery of ADR 0024 (`prismabib.log.AppendOnlyLog`), and writes no other file.
 
 | Field | Content |
 |---|---|
-| `event_id` | Generated as for registrations (ADR 0029 Decision 2) |
+| `event_id` | A ULID, as for registrations (ADR 0029 Decision 2) |
 | `schema_version` | `1` |
 | `action` | `manual_entry` |
 | `ts` | UTC time of the write |
@@ -575,7 +576,7 @@ directly.
 - **PR5 (Scholar-paste entry point).** Independent of PR2 and PR3. Adds `prismabib candidates add <slug> --reviewer R [--file PATH]`
   as a registration in `cli.py`, its command module `capture/candidate_commands.py`, and the candidate store writes through the
   existing `parse_pasted_rows` and `CandidateLog.add`. It runs no HTTP request: enrichment is PR4's. Acceptance: a pasted row writes
-  one candidate event and no `records` row, and a second identical paste is refused by `CandidateLog`. Failing tests first: a paste
+  one candidate event and no `records` row. Failing tests first: a paste
   creates no record.
 
 **Batch 3.**
