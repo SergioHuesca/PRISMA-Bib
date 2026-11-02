@@ -17,10 +17,45 @@ CREATE TABLE runs (
   total_results INTEGER, payload_sha256 TEXT, criteria_version TEXT
 );
 
+-- ADR 0041 Decision 3 adds the 16 provenance columns after payload_line: per field (abstract,
+-- authors, affiliations, keywords) the source, the level (0 when unavailable, else 1-5), the final
+-- outcome (`value` or `unavailable`) and the payload reference. The CHECKs are the closed sets of
+-- that Decision, tightened so an `unavailable` outcome also needs the `unavailable` source. The
+-- DEFAULTs are the honest "nothing known" triple, so an INSERT that names only the original
+-- columns still works; the loader always writes all 16 explicitly. The 13 original columns are
+-- unchanged. This is a deviation from the frozen BUILD_PLAN clause, recorded in ADR 0041.
 CREATE TABLE records (
   record_id TEXT PRIMARY KEY, run_id TEXT, doi TEXT, title TEXT, abstract TEXT,
   year INTEGER, cover_date DATE, doc_type TEXT, language TEXT,
-  venue_id TEXT, open_access BOOLEAN, payload_file TEXT, payload_line INTEGER
+  venue_id TEXT, open_access BOOLEAN, payload_file TEXT, payload_line INTEGER,
+  abstract_source TEXT NOT NULL DEFAULT 'unavailable', abstract_level INTEGER NOT NULL DEFAULT 0,
+  abstract_outcome TEXT NOT NULL DEFAULT 'unavailable', abstract_payload_ref TEXT,
+  authors_source TEXT NOT NULL DEFAULT 'unavailable', authors_level INTEGER NOT NULL DEFAULT 0,
+  authors_outcome TEXT NOT NULL DEFAULT 'unavailable', authors_payload_ref TEXT,
+  affiliations_source TEXT NOT NULL DEFAULT 'unavailable', affiliations_level INTEGER NOT NULL DEFAULT 0,
+  affiliations_outcome TEXT NOT NULL DEFAULT 'unavailable', affiliations_payload_ref TEXT,
+  keywords_source TEXT NOT NULL DEFAULT 'unavailable', keywords_level INTEGER NOT NULL DEFAULT 0,
+  keywords_outcome TEXT NOT NULL DEFAULT 'unavailable', keywords_payload_ref TEXT,
+  CHECK ((abstract_source, abstract_level) IN (('scopus-complete', 1), ('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((abstract_outcome = 'unavailable' AND abstract_source = 'unavailable'
+           AND abstract_payload_ref IS NULL)
+      OR (abstract_outcome = 'value' AND abstract_payload_ref IS NOT NULL
+          AND abstract_source <> 'unavailable'))),
+  CHECK ((authors_source, authors_level) IN (('scopus-complete', 1), ('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((authors_outcome = 'unavailable' AND authors_source = 'unavailable'
+           AND authors_payload_ref IS NULL)
+      OR (authors_outcome = 'value' AND authors_payload_ref IS NOT NULL
+          AND authors_source <> 'unavailable'))),
+  CHECK ((affiliations_source, affiliations_level) IN (('scopus-complete', 1), ('scopus-standard', 2), ('scopus-meta', 3), ('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((affiliations_outcome = 'unavailable' AND affiliations_source = 'unavailable'
+           AND affiliations_payload_ref IS NULL)
+      OR (affiliations_outcome = 'value' AND affiliations_payload_ref IS NOT NULL
+          AND affiliations_source <> 'unavailable'))),
+  CHECK ((keywords_source, keywords_level) IN (('scopus-complete', 1), ('openalex-topic', 4), ('unavailable', 0))
+    AND ((keywords_outcome = 'unavailable' AND keywords_source = 'unavailable'
+           AND keywords_payload_ref IS NULL)
+      OR (keywords_outcome = 'value' AND keywords_payload_ref IS NOT NULL
+          AND keywords_source <> 'unavailable')))
 );
 
 CREATE TABLE venues (
@@ -167,7 +202,28 @@ CREATE TABLE registered_records (
   doc_type TEXT NOT NULL, language TEXT, venue_type TEXT NOT NULL,
   venue_name TEXT NOT NULL, openalex_id TEXT NOT NULL, payload_file TEXT NOT NULL,
   payload_line INTEGER NOT NULL, match_rule TEXT NOT NULL, reviewer TEXT NOT NULL,
-  registered_ts TIMESTAMP NOT NULL
+  registered_ts TIMESTAMP NOT NULL,
+  -- ADR 0041 Decision 3: JSON arrays of text, or NULL when the body lacks the field.
+  authors_json TEXT, affiliations_json TEXT, keywords_json TEXT
+);
+
+-- Added by ADR 0041 Decision 2, not part of the frozen BUILD_PLAN schema. One row per
+-- (record, field) where a Scopus level and OpenAlex both hold a value and the values differ
+-- under the fixed comparison rule. Every value column is the canonical JSON text of that side.
+CREATE TABLE provenance_conflicts (
+  record_id TEXT, field TEXT,
+  scopus_level INTEGER CHECK (scopus_level IN (1, 2, 3)),
+  scopus_source TEXT,
+  scopus_payload_ref TEXT, scopus_value TEXT,
+  openalex_payload_ref TEXT, openalex_value TEXT,
+  status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+  resolved_side TEXT CHECK (resolved_side IN ('scopus', 'openalex', 'manual')),
+  resolution_event_id TEXT,
+  PRIMARY KEY (record_id, field),
+  CHECK ((scopus_level, scopus_source) IN
+    ((1, 'scopus-complete'), (2, 'scopus-standard'), (3, 'scopus-meta'))),
+  CHECK ((status = 'open' AND resolved_side IS NULL AND resolution_event_id IS NULL)
+    OR (status = 'resolved' AND resolved_side IS NOT NULL AND resolution_event_id IS NOT NULL))
 );
 
 -- The one reader of S_raw (ADR 0032 Decision 1): Scopus rows plus registrations.
@@ -178,10 +234,32 @@ CREATE VIEW records_all AS
   SELECT r.record_id, 'scopus' AS origin, r.run_id, r.doi, r.title, r.abstract, r.year,
          r.cover_date, r.doc_type, r.language, r.venue_id, r.open_access,
          r.payload_file, r.payload_line,
-         v.venue_type, v.name AS venue_name
+         v.venue_type, v.name AS venue_name,
+         r.abstract_source, r.abstract_level, r.abstract_outcome, r.abstract_payload_ref,
+         r.authors_source, r.authors_level, r.authors_outcome, r.authors_payload_ref,
+         r.affiliations_source, r.affiliations_level, r.affiliations_outcome,
+         r.affiliations_payload_ref,
+         r.keywords_source, r.keywords_level, r.keywords_outcome, r.keywords_payload_ref
     FROM records r LEFT JOIN venues v ON v.venue_id = r.venue_id
   UNION ALL
+  -- A registered record's provenance is OpenAlex, level 4, from its own body (ADR 0041 Decision 3).
   SELECT record_id, 'registered', NULL, doi, title, abstract, year,
          NULL, doc_type, language, NULL, NULL,
-         payload_file, payload_line, venue_type, venue_name
+         payload_file, payload_line, venue_type, venue_name,
+         CASE WHEN abstract IS NOT NULL THEN 'openalex' ELSE 'unavailable' END,
+         CASE WHEN abstract IS NOT NULL THEN 4 ELSE 0 END,
+         CASE WHEN abstract IS NOT NULL THEN 'value' ELSE 'unavailable' END,
+         CASE WHEN abstract IS NOT NULL THEN payload_file || '#' || openalex_id END,
+         CASE WHEN authors_json IS NOT NULL THEN 'openalex' ELSE 'unavailable' END,
+         CASE WHEN authors_json IS NOT NULL THEN 4 ELSE 0 END,
+         CASE WHEN authors_json IS NOT NULL THEN 'value' ELSE 'unavailable' END,
+         CASE WHEN authors_json IS NOT NULL THEN payload_file || '#' || openalex_id END,
+         CASE WHEN affiliations_json IS NOT NULL THEN 'openalex' ELSE 'unavailable' END,
+         CASE WHEN affiliations_json IS NOT NULL THEN 4 ELSE 0 END,
+         CASE WHEN affiliations_json IS NOT NULL THEN 'value' ELSE 'unavailable' END,
+         CASE WHEN affiliations_json IS NOT NULL THEN payload_file || '#' || openalex_id END,
+         CASE WHEN keywords_json IS NOT NULL THEN 'openalex-topic' ELSE 'unavailable' END,
+         CASE WHEN keywords_json IS NOT NULL THEN 4 ELSE 0 END,
+         CASE WHEN keywords_json IS NOT NULL THEN 'value' ELSE 'unavailable' END,
+         CASE WHEN keywords_json IS NOT NULL THEN payload_file || '#' || openalex_id END
     FROM registered_records;

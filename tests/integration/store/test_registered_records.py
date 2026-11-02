@@ -120,7 +120,7 @@ def test_records_all__registered_row__has_nulls_for_run_cover_date_venue_and_ope
 
 
 @pytest.mark.integration
-def test_corpus_records__raw_with_registered_row__includes_it_with_16_columns(
+def test_corpus_records__raw_with_registered_row__includes_it_with_32_columns(
     project: Project,
 ) -> None:
     _insert(project)
@@ -129,7 +129,7 @@ def test_corpus_records__raw_with_registered_row__includes_it_with_16_columns(
         frame = corpus.records(PrismaStage.RAW)
     finally:
         connection.close()
-    assert frame.width == 16
+    assert frame.width == 32  # 16 + the 16 provenance columns of ADR 0041 Decision 3
     assert set(frame.get_column("origin").to_list()) == {"scopus", "registered"}
     row = frame.filter(frame["record_id"] == REGISTERED).row(0, named=True)
     assert (row["run_id"], row["cover_date"], row["venue_id"], row["open_access"]) == (None,) * 4

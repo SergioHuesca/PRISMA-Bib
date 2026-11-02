@@ -25,14 +25,24 @@ depending on anything acquisition-related.
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 import structlog
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from prismabib.countries import normalise_country
+from prismabib.log import AppendOnlyLog
 
 logger = structlog.get_logger(__name__)
 
@@ -267,3 +277,183 @@ def dedup_key(record: Record) -> DedupKey:
     first_author_surname = _normalise_text_key(record.authors[0].surname)
     normalised_title = _normalise_text_key(record.title)
     return ("fallback", normalised_title, first_author_surname, record.year)
+
+
+# -- Layer 2 events of ADR 0041 (manual entry, conflict resolution) -----------------------------
+#
+# Both logs ride on :class:`~prismabib.log.AppendOnlyLog` (ADR 0024), exactly as the registration
+# log does. Their writers, CLI and panel are PR6; the loader folds them (``store/load.py``).
+
+CURRENT_PROVENANCE_EVENT_SCHEMA_VERSION: Final = 1
+#: Fields a reviewer may enter or resolve. Keywords take neither (ADR 0041 Decisions 1b and 4).
+ManualField = Literal["abstract", "authors", "affiliations"]
+ChosenSide = Literal["scopus", "openalex", "manual"]
+ManualReverseReason = Literal["wrong_value", "wrong_field", "duplicate_entry", "other"]
+ConflictReverseReason = Literal["wrong_side", "wrong_value", "other"]
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+
+
+class _ProvenanceEvent(BaseModel):
+    """The shared envelope: ``event_id`` (a ULID from the writer), version, UTC ``ts``, reviewer."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_id: str
+    schema_version: int = CURRENT_PROVENANCE_EVENT_SCHEMA_VERSION
+    ts: datetime
+    project: str
+    reviewer: str
+
+    @field_validator("schema_version")
+    @classmethod
+    def _current_version(cls, value: int) -> int:
+        if value != CURRENT_PROVENANCE_EVENT_SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema_version {value}")
+        return value
+
+    @field_validator("event_id", "project", "reviewer")
+    @classmethod
+    def _nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("ts")
+    @classmethod
+    def _aware_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("ts must be timezone-aware")
+        return value.astimezone(UTC)
+
+    @field_serializer("ts", when_used="json")
+    def _serialize_ts(self, value: datetime) -> str:
+        return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+class _Reversal(_ProvenanceEvent):
+    action: Literal["reverse"] = "reverse"
+    reverses: str
+    reason: str  # narrowed to a closed set by each subclass
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _other_needs_a_note(self) -> _Reversal:
+        if self.reason == "other" and not (self.note or "").strip():
+            raise ValueError("reason 'other' requires a non-empty note")
+        return self
+
+
+class ManualEntry(_ProvenanceEvent):
+    """A reviewer fills one ``unavailable`` field by hand (ADR 0041 Decision 4)."""
+
+    action: Literal["manual_entry"] = "manual_entry"
+    record_id: str
+    field: ManualField
+    value: str
+    doi: str | None = None
+    note: str | None = None
+
+    @field_validator("value")
+    @classmethod
+    def _value_present(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a manual entry needs a value")
+        return value
+
+
+class ManualReverse(_Reversal):
+    """A reviewer removes a manual entry it names; nothing is deleted."""
+
+    reason: ManualReverseReason
+
+
+class ConflictResolution(_ProvenanceEvent):
+    """A reviewer settles one conflict row (ADR 0041 Decision 2).
+
+    ``scopus_digest`` and ``openalex_digest`` are the SHA-256 of the stored JSON text of each
+    side's value, as the reviewer saw it; the fold applies the event only if they still match.
+    """
+
+    action: Literal["conflict_resolution"] = "conflict_resolution"
+    record_id: str
+    field: ManualField
+    chosen_side: ChosenSide
+    value: str | None = None
+    scopus_digest: str
+    openalex_digest: str
+    note: str | None = None
+
+    @field_validator("scopus_digest", "openalex_digest")
+    @classmethod
+    def _sha256_hex(cls, value: str) -> str:
+        if not _DIGEST_RE.fullmatch(value):
+            raise ValueError("a digest is 64 lowercase hex characters")
+        return value
+
+    @model_validator(mode="after")
+    def _manual_side_needs_a_value(self) -> ConflictResolution:
+        if self.chosen_side == "manual" and not (self.value or "").strip():
+            raise ValueError("chosen_side 'manual' requires a value")
+        return self
+
+
+class ConflictReverse(_Reversal):
+    """A reviewer removes a conflict resolution it names; the key goes back to ``open``."""
+
+    reason: ConflictReverseReason
+
+
+class ManualRecord(
+    RootModel[Annotated[ManualEntry | ManualReverse, Field(discriminator="action")]]
+):
+    """One line of ``manual_entries.jsonl``."""
+
+
+class ConflictRecord(
+    RootModel[Annotated[ConflictResolution | ConflictReverse, Field(discriminator="action")]]
+):
+    """One line of ``conflict_resolutions.jsonl``."""
+
+
+def manual_entries_log(path: Path) -> AppendOnlyLog[ManualRecord]:
+    """The manual-entry log over ``path``, on the shared append-only machinery (ADR 0024)."""
+    return AppendOnlyLog(
+        path,
+        model=ManualRecord,
+        current_schema_version=CURRENT_PROVENANCE_EVENT_SCHEMA_VERSION,
+        event_id=lambda record: record.root.event_id,
+        noun="manual entry",
+        event_description="manual entry",
+        recovery_hint="the manual-entry writer",
+        writer_name="the manual-entry writer",
+        labour="human entry",
+    )
+
+
+def conflict_resolutions_log(path: Path) -> AppendOnlyLog[ConflictRecord]:
+    """The conflict-resolution log over ``path``, on the shared append-only machinery."""
+    return AppendOnlyLog(
+        path,
+        model=ConflictRecord,
+        current_schema_version=CURRENT_PROVENANCE_EVENT_SCHEMA_VERSION,
+        event_id=lambda record: record.root.event_id,
+        noun="conflict resolution",
+        event_description="conflict resolution",
+        recovery_hint="the conflict-resolution writer",
+        writer_name="the conflict-resolution writer",
+        labour="human resolution",
+    )
+
+
+def load_manual_events(path: Path) -> list[ManualEntry | ManualReverse]:
+    """Every event in ``path`` in file order; empty, and not created, when the file is absent."""
+    if not path.is_file():
+        return []
+    return [record.root for record in manual_entries_log(path).load()]
+
+
+def load_conflict_events(path: Path) -> list[ConflictResolution | ConflictReverse]:
+    """Every event in ``path`` in file order; empty, and not created, when the file is absent."""
+    if not path.is_file():
+        return []
+    return [record.root for record in conflict_resolutions_log(path).load()]

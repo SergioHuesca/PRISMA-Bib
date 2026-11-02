@@ -157,11 +157,11 @@ import json
 import os
 import re
 import unicodedata
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
-from hashlib import sha1
+from hashlib import sha1, sha256
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -171,15 +171,18 @@ import polars as pl
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
+from prismabib.capture.cascade import _entry_ref, _outcomes
 from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
     RUN_MANIFEST_FILENAME,
+    SCOPUS_CASCADE_DIRNAME,
     is_sealed,
 )
 from prismabib.capture.manifest import (
     AbstractRunManifest,
+    CascadeRunManifest,
     FullTextRunManifest,
     OpenAlexOutcome,
     OpenAlexRequest,
@@ -191,19 +194,34 @@ from prismabib.capture.registrations import (
     RECORD_ID_PREFIX,
     RegistrationRefusal,
     active_registrations,
+    derive_registered_values,
     derive_registration,
     load_registration_events,
     supersede_registration,
 )
-from prismabib.countries import normalise_country
-from prismabib.errors import StoreError, ValidationError
+from prismabib.countries import ALPHA2_TO_ALPHA3, normalise_country
+from prismabib.errors import LogError, StoreError, ValidationError
 from prismabib.fulltext.capture import sealed_fulltext_run_dirs
 from prismabib.fulltext.extract import Section, extract_pdf, extract_sciencedirect_xml
 from prismabib.fulltext.resolve import _refusal_entitled
-from prismabib.models import Affiliation, Author, PayloadRef, Record, Venue, normalise_doi
+from prismabib.models import (
+    Affiliation,
+    Author,
+    ConflictResolution,
+    ConflictReverse,
+    ManualEntry,
+    ManualReverse,
+    PayloadRef,
+    Record,
+    Venue,
+    load_conflict_events,
+    load_manual_events,
+    normalise_doi,
+)
 from prismabib.openalex_map import ClassificationRefusal
-from prismabib.project import Project
+from prismabib.project import CONFLICT_RESOLUTIONS_FILENAME, MANUAL_ENTRIES_FILENAME, Project
 from prismabib.sources import openalex as _openalex
+from prismabib.sources.scopus import _as_list
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.db import connect
@@ -451,6 +469,14 @@ class StoreStats(BaseModel):
     ``assets/`` bytes, fresh on every rebuild (see
     :func:`_finalise_fulltext_sections`)."""
 
+    provenance_report: dict[str, int | str] = Field(default_factory=dict, exclude=True)
+    """The ADR 0041 part of the build report: ``unidata_version`` (Risk 3), the
+    ``manual_superseded`` / ``manual_orphaned`` and ``conflict_resolution_orphaned`` /
+    ``conflict_resolution_stale`` counters (Decisions 2 and 4), and
+    ``previous_store_had_provenance`` (``0`` or ``1``) when a store existed before this rebuild.
+    Not a Layer 1 table, so empty on the ``rebuild=False`` reuse path; excluded from
+    ``model_dump`` so the frozen ``row_counts`` golden does not move."""
+
     unmatched_fulltext_record_ids: tuple[str, ...]
     """Sorted, deduplicated record ids that at least one loaded full-text run
     described but that are not in ``records``. The same ADR 0018-style
@@ -592,6 +618,14 @@ class _Accumulator:
     #: ``registered_records`` rows, in schema column order, from :func:`_fold_registrations`
     #: (ADR 0032); empty for a store with no registration.
     registered_rows: list[tuple[Any, ...]] = field(default_factory=list)
+    #: record_id -> field -> the level-1 candidate of a first-seen Scopus record (ADR 0041).
+    level1: dict[str, dict[str, _Cand]] = field(default_factory=dict)
+    #: record_id -> {2 or 3: the affiliation candidate of the latest sealed cascade run with a value}.
+    cascade_affiliations: dict[str, dict[int, _Cand]] = field(default_factory=dict)
+    #: record_id -> field -> the level-4 candidate of the latest sealed OpenAlex run with a value.
+    openalex_fields: dict[str, dict[str, _Cand]] = field(default_factory=dict)
+    #: ``provenance_conflicts`` rows, in ``schema.sql`` column order, from :func:`_apply_provenance`.
+    conflicts: list[tuple[Any, ...]] = field(default_factory=list)
 
 
 def _optional_str(value: object) -> str | None:
@@ -1238,6 +1272,134 @@ def _accumulate_keyword(acc: _Accumulator, *, record_id: str, raw_term: str, kin
     acc.record_keywords.add((record_id, keyword_id, kind))
 
 
+# -- field-level provenance (ADR 0041) -----------------------------------------------------------
+
+_FIELDS: Final = ("abstract", "authors", "affiliations", "keywords")
+#: The fields that can conflict and take a manual value; keywords do neither (Decisions 1b and 4).
+_CONFLICT_FIELDS: Final = ("abstract", "authors", "affiliations")
+_LEVELS: Final = {
+    "scopus-complete": 1,
+    "scopus-standard": 2,
+    "scopus-meta": 3,
+    "openalex": 4,
+    "openalex-topic": 4,
+    "manual": 5,
+}
+#: A 200 cascade body that is not the documented shape (ADR 0041 Decision 6; ADR 0012).
+_REASON_MALFORMED_CASCADE_BODY: Final = "malformed_cascade_body"
+
+_Person = tuple[str, str | None]  # (surname, given_name)
+_Institution = tuple[str, str | None, str | None, str | None]  # (name, city, country_iso3, afid)
+
+
+@dataclass(frozen=True)
+class _Cand:
+    """One level's candidate value for one field of one record (ADR 0041 Decision 2).
+
+    ``value`` is the content that goes to ``provenance_conflicts`` as canonical JSON: a ``str``
+    for an abstract, a ``list[str]`` otherwise. ``people`` and ``institutions`` are the rows the
+    value becomes in ``authors`` / ``affiliations`` when this candidate is the one kept; ids are
+    ``<id_prefix>:<n>`` unless the institution carries its own Scopus ``afid``.
+    """
+
+    source: str
+    ref: str
+    value: Any
+    people: tuple[_Person, ...] = ()
+    institutions: tuple[_Institution, ...] = ()
+    id_prefix: str = ""
+
+    @property
+    def level(self) -> int:
+        return _LEVELS[self.source]
+
+
+def _normal_form(text: str) -> str:
+    """The fixed comparison form (ADR 0041 Decision 2): NFKC, casefold, one space, stripped."""
+    return _WHITESPACE_RE.sub(" ", unicodedata.normalize("NFKC", text).casefold()).strip()
+
+
+def _canon(value: Any) -> str:
+    """The canonical JSON text of a conflict value (ADR 0041 Decision 2, "New table")."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _digest(text: str) -> str:
+    return sha256(text.encode("utf-8")).hexdigest()
+
+
+def _names_value(names: Sequence[str]) -> list[str]:
+    """Institution names unique and sorted by their normal form (blank names dropped)."""
+    by_form: dict[str, str] = {}
+    for name in names:
+        by_form.setdefault(_normal_form(name), name)
+    by_form.pop("", None)
+    return [by_form[form] for form in sorted(by_form)]
+
+
+def _surname_of(display_name: str) -> str:
+    """The comparison surname of a non-Scopus author string (ADR 0041 Decision 2).
+
+    ``Surname, Given`` takes the text before the first comma; anything else takes its last
+    whitespace-separated token. Particles are not split.
+    """
+    if "," in display_name:
+        return display_name.split(",", 1)[0].strip()
+    tokens = display_name.split()
+    return tokens[-1] if tokens else ""
+
+
+def _countries(cand: _Cand) -> frozenset[str]:
+    """The alpha-3 codes of a candidate's institutions; ``unmapped`` ones are removed."""
+    codes = set()
+    for _, _, country, _ in cand.institutions:
+        if country:
+            code, matched = normalise_country(country)
+            if matched:
+                codes.add(code)
+    return frozenset(codes)
+
+
+def _differs(field: str, scopus: _Cand, openalex: _Cand) -> bool:
+    """Whether a Scopus candidate and the OpenAlex one disagree under the fixed rule (Decision 2)."""
+    if field == "abstract":
+        return _normal_form(scopus.value) != _normal_form(openalex.value)
+    if field == "authors":
+        return [_normal_form(s) for s, _ in scopus.people] != [
+            _normal_form(s) for s, _ in openalex.people
+        ]
+    if scopus.level == 1:
+        return {_normal_form(i[0]) for i in scopus.institutions} != {
+            _normal_form(i[0]) for i in openalex.institutions
+        }
+    left, right = _countries(scopus), _countries(openalex)
+    return bool(left) and bool(right) and left != right
+
+
+def _level1_cands(record: Record, entry: dict[str, Any], ref: str) -> dict[str, _Cand]:
+    """The level-1 candidates of one Scopus record; a field with no value has no entry."""
+    out: dict[str, _Cand] = {}
+    if record.abstract:
+        out["abstract"] = _Cand("scopus-complete", ref, record.abstract)
+    # A bare `dc:creator` is a first author only, and is not an author list (Decision 1a).
+    people = tuple((a.surname, a.given_name) for a in record.authors if a.surname.strip())
+    if isinstance(entry.get("author"), list) and people:
+        value = [f"{surname}, {given}" if given else surname for surname, given in people]
+        out["authors"] = _Cand("scopus-complete", ref, value, people=people)
+    if record.affiliations:
+        institutions = tuple((a.name, a.city, a.country, a.afid) for a in record.affiliations)
+        out["affiliations"] = _Cand(
+            "scopus-complete",
+            ref,
+            _names_value([i[0] for i in institutions]),
+            institutions=institutions,
+        )
+    terms = [*record.author_keywords, *record.index_keywords]
+    if any(_normalise_keyword_term(term) for term in terms):
+        out["keywords"] = _Cand("scopus-complete", ref, terms)
+    return out
+
+
 def _as_naive_utc(moment: datetime) -> datetime:
     """Normalise a timestamp to naive UTC before it enters DuckDB.
 
@@ -1415,6 +1577,9 @@ def _load_run(acc: _Accumulator, raw_dir: Path, run_dir: Path) -> None:
                     )
                 continue
             acc.seen_record_ids.add(record_id)
+            acc.level1[record_id] = _level1_cands(
+                entry=entry, record=record, ref=f"{relative_payload_file}#{line_index}"
+            )
             acc.doi_by_record_id[record_id] = record.doi
             acc.counted_query_records.add((manifest.query, record_id))
 
@@ -1777,7 +1942,7 @@ def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) 
             works = parsed
         for outcome in request.outcomes:
             work = _check_openalex_outcome(run_id, request, outcome, works)
-            if work is None or "keywords" in outcome.absent_fields:
+            if work is None:
                 continue
             identifier = outcome.identifier
             if isinstance(identifier, OpenAlexTitle):
@@ -1788,9 +1953,15 @@ def _load_openalex_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) 
             if not targets:
                 acc.unmatched_openalex_identifiers.add(str(identifier))
                 continue
+            ref = f"{relative_file}#{work.get('id')}"
+            cands = _openalex_cands(work, ref, outcome.absent_fields)
             names = tuple(t.name for t in _openalex.topics_to_keywords(_openalex.parse_work(work)))
             for record_id in targets:
-                acc.openalex_topics[record_id] = names
+                # Per field, a newer `absent` leaves an older value alone (Decision 3, "Which
+                # sealed run wins").
+                acc.openalex_fields.setdefault(record_id, {}).update(cands)
+                if "keywords" not in outcome.absent_fields:
+                    acc.openalex_topics[record_id] = names
 
 
 def _finalise_openalex_topics(acc: _Accumulator) -> None:
@@ -1808,6 +1979,174 @@ def _finalise_openalex_topics(acc: _Accumulator) -> None:
         )
         for raw in names:
             _accumulate_keyword(acc, record_id=record_id, raw_term=raw, kind=_openalex.KEYWORD_KIND)
+
+
+def _sealed_cascade_run_dirs(raw_dir: Path) -> list[Path]:
+    """List every sealed Scopus cascade run under ``raw/scopus-cascade/``, oldest first (ADR 0041).
+
+    A run is sealed by ``manifest.json`` alone. ``progress.json`` marks an interrupted run and is
+    never read here: a run with both is not discovered by it, and one with only it is not a run.
+    Returns ``[]`` if the directory does not exist.
+    """
+    cascade_dir = raw_dir / SCOPUS_CASCADE_DIRNAME
+    if not cascade_dir.is_dir():
+        return []
+    candidates = [entry for entry in cascade_dir.iterdir() if entry.is_dir() and is_sealed(entry)]
+    return sorted(candidates, key=lambda path: path.name)
+
+
+def _cascade_institutions(raw: Any) -> tuple[_Institution, ...]:
+    """The affiliations of one STANDARD entry or META body as institution rows (no duplicates)."""
+    rows: list[_Institution] = []
+    seen: set[str] = set()
+    for item in _as_list(raw):
+        if not isinstance(item, Mapping):
+            continue
+        afid = _optional_str(item.get("afid") or item.get("@id"))
+        if afid is not None:
+            if afid in seen:
+                continue
+            seen.add(afid)
+        country = _optional_str(item.get("affiliation-country"))
+        rows.append(
+            (
+                _optional_str(item.get("affilname")) or "",
+                _optional_str(item.get("affiliation-city")),
+                normalise_country(country)[0] if country else None,
+                afid,
+            )
+        )
+    return tuple(rows)
+
+
+def _load_cascade_run(acc: _Accumulator, run_dir: Path, index: _OpenAlexIndex) -> None:
+    """Fold one sealed Scopus cascade run into ``acc`` (ADR 0041 Decisions 3 and 6).
+
+    Writes no ``runs`` row and creates no record. Every outcome in the manifest is recomputed
+    from the stored bytes with the capture's own ``_outcomes`` and a disagreement raises
+    :class:`StoreError`. A ``value`` outcome attaches the entry's affiliations to the records
+    it names: level 2 by normalised DOI, level 3 by Scopus id. The latest sealed run with a
+    ``value`` wins, and a newer ``absent``, ``not_found`` or ``refused`` never replaces it.
+
+    Raises:
+        StoreError: On an unreadable manifest, a run sealed without ``fallback_opt_in``, or an
+            outcome that disagrees with the stored bytes.
+    """
+    by_doi, _ = index
+    try:
+        manifest = CascadeRunManifest.model_validate_json(
+            (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+    except ValueError as exc:
+        raise StoreError(f"Cascade run {run_dir.name} has an unreadable manifest: {exc}") from exc
+    run_id = manifest.run_id
+    if not manifest.fallback_opt_in:
+        raise StoreError(
+            f"Cascade run {run_id} was sealed with fallback_opt_in false; a run of this kind "
+            "needs the opt-in (ADR 0041 Decision 6)."
+        )
+    for request in manifest.requests:
+        relative_file = f"{SCOPUS_CASCADE_DIRNAME}/{run_id}/{request.file}"
+        data = (run_dir / request.file).read_bytes()
+        try:
+            expected = _outcomes(
+                request.view, request.identifiers, request.http_status, data, request.file
+            )
+        except ValidationError as exc:
+            raise StoreError(f"Cascade run {run_id} request {request.index}: {exc}") from exc
+        if request.http_status == 200 and not expected:
+            acc.malformed_entries.append(
+                (run_id, relative_file, 0, None, _REASON_MALFORMED_CASCADE_BODY)
+            )
+            logger.warning("store.load.cascade_body_malformed", run_id=run_id, file=request.file)
+            continue
+        if expected != request.outcomes:
+            raise StoreError(
+                f"Cascade run {run_id} request {request.index}: the manifest outcomes disagree "
+                "with the stored response bytes."
+            )
+        if request.http_status != 200:
+            continue  # refused or not_found: no body to read
+        body = json.loads(data)  # `_outcomes` parsed it, so this cannot fail
+        entries: dict[str, Mapping[str, Any]] = {}
+        if request.view == "META":
+            record = body["abstracts-retrieval-response"]
+            entries[request.identifiers[0]] = record
+        else:
+            results = body.get("search-results", {})
+            for entry in _as_list(results.get("entry")):
+                if isinstance(entry, Mapping) and isinstance(entry.get("prism:doi"), str):
+                    entries[_openalex.normalise_doi(entry["prism:doi"])] = entry
+        for outcome in request.outcomes:
+            if outcome.outcome != "value":
+                continue
+            entry = entries[outcome.identifier]
+            if request.view == "META":
+                source, level = "scopus-meta", 3
+                record_id = f"scopus:2-s2.0-{outcome.identifier}"
+                targets = [record_id] if record_id in acc.seen_record_ids else []
+                coredata = entry.get("coredata")
+                ref_id = (_entry_ref(coredata) if isinstance(coredata, Mapping) else None) or (
+                    outcome.identifier
+                )
+            else:
+                source, level = "scopus-standard", 2
+                targets = by_doi.get(outcome.identifier, [])
+                ref_id = _entry_ref(entry) or f"doi:{outcome.identifier}"
+            institutions = _cascade_institutions(entry.get("affiliation"))
+            cand = _Cand(
+                source,
+                f"{relative_file}#{ref_id}",
+                sorted({i[2] for i in institutions if i[2]}),
+                institutions=institutions,
+                id_prefix=f"cascade:{ref_id}",
+            )
+            for record_id in targets:
+                acc.cascade_affiliations.setdefault(record_id, {})[level] = cand
+
+
+def _openalex_cands(work: dict[str, Any], ref: str, absent: Sequence[str]) -> dict[str, _Cand]:
+    """The level-4 candidates of one OpenAlex work, for every field its outcome holds a value for.
+
+    Authors carry the comparison surname and no given name, as the resolution rewrite does
+    (ADR 0041 Decision 2). An institution's ``country_code`` is mapped through
+    ``ALPHA2_TO_ALPHA3``; an institution with none, or an unmapped one, gets no country.
+    """
+    parsed = _openalex.parse_work(work)
+    people = _openalex.authorships_to_fields(parsed)
+    countries: dict[str, str | None] = {}
+    for authorship in parsed.authorships:
+        for inst in authorship.get("institutions") or ():
+            name = inst.get("display_name") if isinstance(inst, Mapping) else None
+            if isinstance(name, str) and name and name not in countries:
+                code = inst.get("country_code")
+                countries[name] = (
+                    ALPHA2_TO_ALPHA3.get(code.upper()) if isinstance(code, str) else None
+                )
+    names = _names_value(people.affiliations)
+    prefix = f"openalex:{ref.rsplit('/', 1)[-1]}"
+    abstract = _openalex.rebuild_abstract(parsed.abstract_inverted_index)
+    candidates: dict[str, _Cand | None] = {
+        "abstract": _Cand("openalex", ref, abstract) if abstract else None,
+        "authors": _Cand(
+            "openalex",
+            ref,
+            list(people.authors),
+            people=tuple((_surname_of(a), None) for a in people.authors),
+            id_prefix=prefix,
+        ),
+        "affiliations": _Cand(
+            "openalex",
+            ref,
+            names,
+            institutions=tuple((n, None, countries.get(n), None) for n in names),
+            id_prefix=prefix,
+        ),
+        "keywords": _Cand(
+            _openalex.KEYWORD_KIND, ref, [t.name for t in _openalex.topics_to_keywords(parsed)]
+        ),
+    }
+    return {f: c for f, c in candidates.items() if c is not None and f not in absent}
 
 
 def _load_fulltext_run(acc: _Accumulator, run_dir: Path) -> None:
@@ -2109,7 +2448,11 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     """
     # OpenAlex rows are enrichment audit, not search entries (`entries_seen` counts
     # search entries only), so they never trip this guard.
-    malformed = [r for r in acc.malformed_entries if r[4] != _REASON_MALFORMED_OPENALEX_BODY]
+    malformed = [
+        r
+        for r in acc.malformed_entries
+        if r[4] not in (_REASON_MALFORMED_OPENALEX_BODY, _REASON_MALFORMED_CASCADE_BODY)
+    ]
     skipped = len(malformed)
     seen = acc.entries_seen
     if skipped == 0 or seen == 0:
@@ -2135,6 +2478,311 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
         f"{_MAX_SKIPPED_ENTRY_RATIO:.0%} of them with at least "
         f"{_MIN_SKIPS_FOR_RATIO_GUARD} skips.)"
     )
+
+
+@dataclass
+class _Conflict:
+    """One ``provenance_conflicts`` row in the making (ADR 0041 Decision 2)."""
+
+    scopus: _Cand
+    openalex: _Cand
+    status: Literal["open", "resolved"] = "open"
+    resolved_side: str | None = None
+    event_id: str | None = None
+
+    def row(self, record_id: str, field: str) -> tuple[Any, ...]:
+        return (
+            record_id,
+            field,
+            self.scopus.level,
+            self.scopus.source,
+            self.scopus.ref,
+            _canon(self.scopus.value),
+            self.openalex.ref,
+            _canon(self.openalex.value),
+            self.status,
+            self.resolved_side,
+            self.event_id,
+        )
+
+
+_Chosen = dict[tuple[str, str], _Cand]
+
+
+def _merge_fields(acc: _Accumulator) -> tuple[_Chosen, dict[tuple[str, str], _Conflict]]:
+    """Choose each record's candidate per field and list the conflicts (ADR 0041 Decision 2).
+
+    The first Scopus level (1, 2, 3) with a value supplies the field and is never replaced by
+    OpenAlex here. OpenAlex fills a field no Scopus level supplied. Keywords take level 1, else
+    level 4, and never conflict. Nothing here reads the clock or the order of a directory.
+    """
+    chosen: _Chosen = {}
+    conflicts: dict[tuple[str, str], _Conflict] = {}
+    for row in acc.records:
+        record_id = row[0]
+        level1 = acc.level1.get(record_id, {})
+        cascade = acc.cascade_affiliations.get(record_id, {})
+        openalex = acc.openalex_fields.get(record_id, {})
+        for field_name in _FIELDS:
+            other = openalex.get(field_name)
+            if field_name == "keywords":
+                pick = level1.get(field_name) or other
+            else:
+                scopus = level1.get(field_name) or (
+                    (cascade.get(2) or cascade.get(3)) if field_name == "affiliations" else None
+                )
+                pick = scopus or other
+                if scopus is not None and other is not None and _differs(field_name, scopus, other):
+                    conflicts[(record_id, field_name)] = _Conflict(scopus, other)
+            if pick is not None:
+                chosen[(record_id, field_name)] = pick
+    return chosen, conflicts
+
+
+def _materialise(acc: _Accumulator, chosen: _Chosen) -> None:
+    """Write the 16 provenance cells of every record, and the rows a non-level-1 value implies.
+
+    Level-1 rows (``authors``, ``record_authors``, ...) were written while the search run was
+    read. Where the kept value comes from elsewhere, the level-1 rows of that field are dropped
+    and the kept value's rows are written, so ``records`` and the tables beside it agree.
+    """
+    drop_authors: set[str] = set()
+    drop_affiliations: set[str] = set()
+    new_people: list[tuple[str, _Cand]] = []
+    new_institutions: list[tuple[str, _Cand]] = []
+    rows: list[tuple[Any, ...]] = []
+    for row in acc.records:
+        record_id = row[0]
+        cells = list(row)
+        for field_name in _FIELDS:
+            cand = chosen.get((record_id, field_name))
+            if cand is None:
+                cells += ["unavailable", 0, "unavailable", None]
+                continue
+            cells += [cand.source, cand.level, "value", cand.ref]
+            if cand.source in ("scopus-complete", _openalex.KEYWORD_KIND):
+                continue  # rows already exist (level 1), or come from the topic pass
+            if field_name == "abstract":
+                cells[4] = cand.value
+            elif field_name == "authors":
+                drop_authors.add(record_id)
+                new_people.append((record_id, cand))
+            else:
+                drop_affiliations.add(record_id)
+                new_institutions.append((record_id, cand))
+        rows.append(tuple(cells))
+    acc.records = rows
+
+    if drop_authors:
+        acc.record_authors = [r for r in acc.record_authors if r[0] not in drop_authors]
+    if drop_affiliations:
+        acc.record_affiliations = [
+            r for r in acc.record_affiliations if r[0] not in drop_affiliations
+        ]
+    for record_id, cand in new_people:
+        for position, (surname, given) in enumerate(cand.people, start=1):
+            author_id = f"{cand.id_prefix}:{position}"
+            acc.authors.setdefault(author_id, (author_id, surname, given))
+            acc.record_authors.append((record_id, author_id, position))
+    for record_id, cand in new_institutions:
+        written: set[str] = set()
+        for position, (name, city, country, afid) in enumerate(cand.institutions, start=1):
+            afid = afid or f"{cand.id_prefix}:{position}"
+            if afid in written:
+                continue
+            written.add(afid)
+            acc.affiliations.setdefault(afid, (afid, name, city, country))
+            acc.record_affiliations.append((record_id, afid))
+    if drop_authors:  # a replaced level-1 author may now be referenced by no record
+        used = {r[1] for r in acc.record_authors}
+        acc.authors = {k: v for k, v in acc.authors.items() if k in used}
+    if drop_affiliations:
+        used = {r[1] for r in acc.record_affiliations}
+        acc.affiliations = {k: v for k, v in acc.affiliations.items() if k in used}
+
+
+def _typed_candidate(
+    field_name: str,
+    value: str,
+    *,
+    event_id: str,
+    ref: str,
+    id_prefix: str,
+    keep_given_name: bool,
+) -> _Cand:
+    """A reviewer-typed value as a level-5 candidate (ADR 0041 Decisions 2 and 4).
+
+    Line endings are stored as ``\\n``. Authors are one ``Surname, Given`` per line (the surname
+    is the text before the first comma, else the last token). Affiliations are one ``Name`` or
+    ``Name; City; Country`` per line; ``Country`` goes through ``normalise_country`` and is NULL
+    when it does not match.
+
+    Raises:
+        StoreError: For an affiliation line with more than three parts.
+    """
+    text = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if field_name == "abstract":
+        return _Cand("manual", ref, text)
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if field_name == "authors":
+        people = []
+        for line in lines:
+            given = (
+                line.split(",", 1)[1].strip() or None if keep_given_name and "," in line else None
+            )
+            people.append((_surname_of(line), given))
+        return _Cand("manual", ref, lines, people=tuple(people), id_prefix=id_prefix)
+    institutions: list[_Institution] = []
+    for line in lines:
+        parts = [part.strip() for part in line.split(";")]
+        if len(parts) > 3:
+            raise StoreError(
+                f"event {event_id}: the affiliation line {line!r} has more than three parts; "
+                "an institution name may not contain ';' (ADR 0041 Decision 4)."
+            )
+        city = parts[1] if len(parts) > 1 else ""
+        country = parts[2] if len(parts) > 2 else ""
+        code, matched = normalise_country(country) if country else ("", False)
+        institutions.append((parts[0], city or None, code if matched else None, None))
+    return _Cand(
+        "manual",
+        ref,
+        [i[0] for i in institutions],
+        institutions=tuple(institutions),
+        id_prefix=id_prefix,
+    )
+
+
+def _single_active(
+    events: Sequence[Any], kind: type[Any], reverse: type[Any], noun: str, key: Any
+) -> list[Any]:
+    """The events of ``kind`` that no ``reverse`` names, at most one per ``key(event)``.
+
+    Raises:
+        LogError: If a reversal names something that is not an event of ``kind``.
+        StoreError: If two active events share a key; the message names both, and reversing
+            one unblocks the build (ADR 0041 Decisions 2 and 4).
+    """
+    named = {e.event_id: e for e in events if isinstance(e, kind)}
+    removed: set[str] = set()
+    for event in events:
+        if isinstance(event, reverse):
+            if event.reverses not in named:
+                raise LogError(
+                    f"reverse {event.event_id!r} names {event.reverses!r}, which is not a {noun} "
+                    "event in the log"
+                )
+            removed.add(event.reverses)
+    active: dict[Any, Any] = {}
+    for event_id, event in named.items():  # file order
+        if event_id in removed:
+            continue
+        if key(event) in active:
+            raise StoreError(
+                f"two active {noun} events for {key(event)}: {active[key(event)].event_id} and "
+                f"{event_id}. Reverse one of them to unblock the build."
+            )
+        active[key(event)] = event
+    return list(active.values())
+
+
+def _fold_manual(
+    project: Project, acc: _Accumulator, chosen: _Chosen, report: dict[str, int | str]
+) -> None:
+    """Apply the active manual entries to the fields levels 1 to 4 left unavailable (Decision 4)."""
+    events = load_manual_events(project.manual_entries_path)
+    for entry in _single_active(
+        events, ManualEntry, ManualReverse, "manual entry", lambda e: (e.record_id, e.field)
+    ):
+        key = (entry.record_id, entry.field)
+        if entry.record_id not in acc.seen_record_ids:
+            report["manual_orphaned"] = int(report["manual_orphaned"]) + 1
+        elif key in chosen:
+            report["manual_superseded"] = int(report["manual_superseded"]) + 1
+        else:
+            chosen[key] = _typed_candidate(
+                entry.field,
+                entry.value,
+                event_id=entry.event_id,
+                ref=f"decisions/{MANUAL_ENTRIES_FILENAME}#{entry.event_id}",
+                id_prefix=f"manual:{entry.event_id}",
+                keep_given_name=True,
+            )
+
+
+def _fold_resolutions(
+    project: Project,
+    chosen: _Chosen,
+    conflicts: dict[tuple[str, str], _Conflict],
+    report: dict[str, int | str],
+) -> None:
+    """Apply the active conflict resolutions whose digests still match (ADR 0041 Decision 2).
+
+    A resolution for a key with no conflict row is orphaned; one whose named side's digest no
+    longer matches the stored value is stale. Neither is applied, neither fails the build, and
+    both are counted. A ``scopus`` resolution only marks the row resolved.
+    """
+    events = load_conflict_events(project.conflict_resolutions_path)
+    for resolution in _single_active(
+        events,
+        ConflictResolution,
+        ConflictReverse,
+        "conflict resolution",
+        lambda e: (e.record_id, e.field),
+    ):
+        key = (resolution.record_id, resolution.field)
+        conflict = conflicts.get(key)
+        if conflict is None:
+            report["conflict_resolution_orphaned"] = int(report["conflict_resolution_orphaned"]) + 1
+            continue
+        scopus_ok = resolution.scopus_digest == _digest(_canon(conflict.scopus.value))
+        openalex_ok = resolution.openalex_digest == _digest(_canon(conflict.openalex.value))
+        side = resolution.chosen_side
+        if not {"scopus": scopus_ok, "openalex": openalex_ok, "manual": scopus_ok and openalex_ok}[
+            side
+        ]:
+            report["conflict_resolution_stale"] = int(report["conflict_resolution_stale"]) + 1
+            continue
+        conflict.status, conflict.resolved_side, conflict.event_id = (
+            "resolved",
+            side,
+            resolution.event_id,
+        )
+        id_prefix = f"resolved:{resolution.event_id}"
+        if side == "openalex":
+            chosen[key] = replace(conflict.openalex, id_prefix=id_prefix)
+        elif side == "manual":
+            chosen[key] = _typed_candidate(
+                resolution.field,
+                resolution.value or "",
+                event_id=resolution.event_id,
+                ref=f"decisions/{CONFLICT_RESOLUTIONS_FILENAME}#{resolution.event_id}",
+                id_prefix=id_prefix,
+                keep_given_name=False,
+            )
+
+
+def _apply_provenance(project: Project, acc: _Accumulator) -> dict[str, int | str]:
+    """Derive the provenance columns and the conflicts table from Layer 0 and the Layer 2 logs.
+
+    Returns:
+        The provenance part of the build report (ADR 0041 Decisions 2 and 4, Risk 3).
+    """
+    report: dict[str, int | str] = {
+        "manual_superseded": 0,
+        "manual_orphaned": 0,
+        "conflict_resolution_orphaned": 0,
+        "conflict_resolution_stale": 0,
+        "unidata_version": unicodedata.unidata_version,
+    }
+    chosen, conflicts = _merge_fields(acc)
+    # Levels 1 to 4 are merged first; then the manual entries fill what is still unavailable, then
+    # the conflict resolutions settle the rows (ADR 0041 Decisions 2 and 4).
+    _fold_manual(project, acc, chosen, report)
+    _fold_resolutions(project, chosen, conflicts, report)
+    _materialise(acc, chosen)
+    acc.conflicts = [c.row(*key) for key, c in sorted(conflicts.items())]
+    return report
 
 
 def _fold_registrations(
@@ -2178,6 +2826,7 @@ def _fold_registrations(
     for event in active_registrations(events):
         try:
             derived = derive_registration(project.raw_dir, event)
+            values = derive_registered_values(project.raw_dir, event)
         except (RegistrationRefusal, ClassificationRefusal) as exc:
             raise StoreError(
                 f"registration {event.record_id} cannot be loaded: {exc}. Reversing the "
@@ -2206,6 +2855,9 @@ def _fold_registrations(
                 event.match_rule,
                 event.reviewer,
                 _as_naive_utc(event.ts),
+                values.authors_json,
+                values.affiliations_json,
+                values.keywords_json,
             )
         )
         acc.subject_areas.add((event.record_id, derived.subject_code))
@@ -2316,6 +2968,7 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
         ],
     )
     _insert_rows(connection, "malformed_entries", acc.malformed_entries)
+    _insert_rows(connection, "provenance_conflicts", acc.conflicts)
     _insert_rows(
         connection,
         "run_duplicates",
@@ -2377,6 +3030,7 @@ def _stats_from_connection(
     unmatched_abstract_record_ids: tuple[str, ...] = (),
     fulltext_runs_loaded: int = 0,
     unmatched_fulltext_record_ids: tuple[str, ...] = (),
+    provenance_report: dict[str, int | str] | None = None,
 ) -> StoreStats:
     """Compute a :class:`StoreStats` snapshot from a store's current content.
 
@@ -2458,7 +3112,28 @@ def _stats_from_connection(
         fulltext_assets_loaded=_count(connection, "fulltext_assets"),
         fulltext_sections_loaded=_count(connection, "fulltext_sections"),
         unmatched_fulltext_record_ids=unmatched_fulltext_record_ids,
+        provenance_report=provenance_report or {},
     )
+
+
+def _store_has_provenance(db_path: Path) -> bool | None:
+    """Whether the store at ``db_path`` has the ADR 0041 provenance columns; ``None`` if no store."""
+    if not db_path.is_file():
+        return None
+    try:
+        connection = duckdb.connect(str(db_path), read_only=True)
+    except duckdb.Error:
+        return False
+    try:
+        row = connection.execute(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = 'records' AND column_name = 'abstract_source'"
+        ).fetchone()
+    except duckdb.Error:
+        return False
+    finally:
+        connection.close()
+    return bool(row and row[0])
 
 
 def _install_store(built: Path, db_path: Path) -> None:
@@ -2599,6 +3274,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
 
     # Built beside the store and swapped in only when complete: any failure
     # (including KeyboardInterrupt) discards the build and leaves the old store as it was.
+    had_provenance = _store_has_provenance(db_path)
     build_path = db_path.with_name(db_path.name + ".tmp")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _remove_build_files(build_path)
@@ -2633,6 +3309,9 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             for openalex_run_dir in _sealed_openalex_run_dirs(project.raw_dir):
                 _load_openalex_run(accumulator, openalex_run_dir, openalex_index)
             _finalise_openalex_topics(accumulator)
+            # Scopus cascade runs (ADR 0041 Decision 6): affiliations for levels 2 and 3.
+            for cascade_run_dir in _sealed_cascade_run_dirs(project.raw_dir):
+                _load_cascade_run(accumulator, cascade_run_dir, openalex_index)
             if accumulator.unmatched_openalex_identifiers:
                 logger.warning(
                     "store.load.unmatched_openalex_identifiers",
@@ -2652,6 +3331,9 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # Registrations (ADR 0029/0032): after every Scopus record is known, so a
             # registration a Scopus record now holds is superseded rather than loaded.
             pending_supersedes = _fold_registrations(project, accumulator)
+            provenance_report = _apply_provenance(project, accumulator)
+            if had_provenance is not None:
+                provenance_report["previous_store_had_provenance"] = int(had_provenance)
             _write_accumulator(connection, accumulator)
             stats = _stats_from_connection(
                 connection,
@@ -2663,6 +3345,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 unmatched_fulltext_record_ids=tuple(
                     sorted(accumulator.unmatched_fulltext_record_ids)
                 ),
+                provenance_report=provenance_report,
             )
         finally:
             connection.close()
@@ -2687,6 +3370,8 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 db_path.unlink(missing_ok=True)
         raise
 
+    if had_provenance is False:
+        logger.warning("store.load.previous_store_had_no_provenance", db_path=str(db_path))
     if stats.malformed_entries_skipped:
         skipped = stats.malformed_entries_skipped
         logger.warning(
