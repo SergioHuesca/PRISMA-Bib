@@ -17,8 +17,10 @@ The rules behind every step are in [ADR 0029](../architecture/adr/0029-reviewer-
   them: a person pastes each candidate, as ADR 0028 Decision 5 requires.
 - **A sealed OpenAlex response that contains the paper.** The view reads the sealed runs
   under `raw/openalex/` ([ADR 0031](../architecture/adr/0031-openalex-responses-are-layer0-runs.md)).
-  Capturing one needs the network and stays its own step, `capture_openalex(project, ...)`;
-  the view never fetches anything. A capture made before the `type`, `primary_location` and
+  Capturing one needs the network and stays its own step, `prismabib openalex <slug>` (or
+  `prismabib cascade <slug>`, which also searches OpenAlex by title and year for every
+  DOI-less candidate and records the DOI it finds in the candidate log, never replacing one
+  already there); the view never fetches anything. A capture made before the `type`, `primary_location` and
   `primary_topic` fields were requested cannot back a registration. Recapture those
   identifiers with `refresh=True`.
 - **A built Layer 1 store**, for two checks. Without `uv run prismabib build <slug>` having

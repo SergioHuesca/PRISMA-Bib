@@ -275,7 +275,7 @@ def _units(dois: list[str], titles: list[OpenAlexTitle]) -> list[_Unit]:
     return units
 
 
-def _held(openalex_dir: Path) -> set[str | tuple[str, int]]:
+def held(openalex_dir: Path) -> set[str | tuple[str, int]]:
     """Identifiers a sealed run already holds as ``value`` or ``not_found`` (Decision 7)."""
     held: set[str | tuple[str, int]] = set()
     if not openalex_dir.is_dir():
@@ -390,13 +390,13 @@ def capture_openalex(
         ValidationError: On a malformed 200 body, or an unsealable run.
     """
     openalex_dir = project.raw_dir / OPENALEX_DIRNAME
-    held = set() if refresh else _held(openalex_dir)
-    doi_plan = [d for d in dict.fromkeys(normalise_doi(d) for d in dois) if d not in held]
+    already = set() if refresh else held(openalex_dir)
+    doi_plan = [d for d in dict.fromkeys(normalise_doi(d) for d in dois) if d not in already]
     title_plan: list[OpenAlexTitle] = []
     seen: set[tuple[str, int]] = set()
     for title, year in titles:
         key = (normalise_title(title), year)
-        if key not in held and key not in seen:
+        if key not in already and key not in seen:
             seen.add(key)
             title_plan.append(OpenAlexTitle(title=title, year=year))
     if not doi_plan and not title_plan:
