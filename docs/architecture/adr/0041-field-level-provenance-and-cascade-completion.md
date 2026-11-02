@@ -362,6 +362,13 @@ and `conflict_resolution_stale` (a digest mismatch, Decision 2). A stale resolut
 entered by hand get ids derived from the event: `manual:<event_id>:<n>`, with `n` the position in the value. Those ids are
 deterministic, so a rebuild reproduces them.
 
+**Affiliation lines.** A `manual_entry` affiliation line maps to one `affiliations` row, with the same city and country rules as the
+`conflict_resolution` rewrite (Decision 2, Rebuilt tables): `Name` alone gives city and country NULL. `Name; City; Country` gives
+`name`, `city` and `country_iso3`, where `Country` is passed through `normalise_country` and NULL when it does not match. The
+one-line shape does not support a `;` inside an institution name. The form takes the three parts as separate inputs, so the
+reviewer never types the separator. The CLI line shape splits on `;`, and it rejects a line with more than three parts with a
+message that names the line. Institution names with a `;` must use the form, or be shortened in the CLI.
+
 **GUI.** A new Panel view, `capture/manual_ui.py`, mounted as a tab beside the registration view (ADR 0035). It lists the record's
 unavailable fields, and has one text area per field. An "Open publisher page" button opens `https://doi.org/<doi>` in the default
 browser through `webbrowser`. The button is disabled, with a line of text, when the record has no DOI. "Save" calls the writer in
@@ -618,8 +625,8 @@ Every test is shown to fail on the defect it guards, following the rule ADR 0031
   - a `resolved` row takes the chosen side's value and provenance, and the Scopus payload file is byte-identical before and after
     the build;
   - a `chosen_side` `openalex` resolution changes the count from `level1` to `level4` for that field;
-  - a `reverse` of the resolution makes the row `open` again and restores the Scopus value, and the previous active resolution, if
-    any, becomes effective;
+  - a `reverse` of the resolution makes the row `open` again and restores the Scopus value; the key stays `open` until a new
+    resolution is written (Decision 2 fold);
   - two active resolutions for one key fail the build with a `StoreError` that names both, as for manual entries;
   - a resolution for a key with no conflict row is not applied and is counted as `conflict_resolution_orphaned`, and the build
     does not fail;
@@ -795,7 +802,7 @@ The owner answered on 2026-11-02. Each answer is applied in the sections named.
    (`scopus`, `openalex` or `manual` with a value), `reviewer`, `ts` and an optional `note`. It is reversible through a `reverse`
    event, as registrations are (ADR 0029 Decision 7), with the reasons `wrong_side`, `wrong_value` and `other`. The fold allows one
    active resolution per key, as the manual-entry fold does, and it applies a resolution only when its digests match. (The first
-   draft of this answer said "latest non-reversed wins"; the owner's mirror rule of the manual-entry fold replaces that wording.)
+   draft of this answer used a latest-wins rule; the owner's mirror rule of the manual-entry fold replaces it.)
    The effect on Layer 1 is the chosen side's value and provenance, and the conflict row gains
    `status` `resolved`. The Scopus value stays in Layer 0. The rule "never overrides" is amended for this one path only (Decision 2,
    rule 4). The model and fold are PR3's, and the writer, CLI and panel are PR6's. New keys: `methods.cascade_conflicts_open` and
