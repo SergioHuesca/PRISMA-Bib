@@ -30,6 +30,7 @@ from prismabib.bibliometrics.venues import count_unnamed_venues, top_venues
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts_with_orphans
 from prismabib.prisma.orphans import OrphanedDecision
 from prismabib.report.methods import (
+    cascade_sentence,
     orphaned_decisions_text,
     registered_sentence,
     venue_unnamed_sentence,
@@ -114,6 +115,51 @@ def _corpus_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
         "corpus.year_max": year_max,
         "corpus.year_span": year_max - year_min if size else 0,
     }
+
+
+#: The fields whose provenance is counted (ADR 0041 Decision 3).
+_CASCADE_FIELDS = ("abstract", "authors", "affiliations", "keywords")
+
+
+def _cascade_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
+    """``methods.cascade*`` count keys, from the ``records`` provenance columns (ADR 0041 D5).
+
+    Scopus records only (``records``, not ``records_all``). Every key is always present, with
+    0 where nothing happened, so the key set does not depend on which levels ran. Counts are
+    ``GROUP BY`` results looked up by name, so row order, locale and timezone play no part.
+
+    Args:
+        connection: An open, read-only Layer 1 connection.
+
+    Returns:
+        The 28 per-field integers and the two conflict totals; the sentence is added by
+        :func:`numbers_map`.
+    """
+    numbers: dict[str, Any] = {}
+    for field in _CASCADE_FIELDS:
+        counts = {
+            (int(level), str(outcome)): int(n)
+            for level, outcome, n in connection.execute(
+                f"SELECT {field}_level, {field}_outcome, count(*) FROM records GROUP BY 1, 2"
+            ).fetchall()
+        }
+        prefix = f"methods.cascade.{field}."
+        for level in (1, 2, 3, 4):
+            numbers[f"{prefix}level{level}"] = counts.get((level, "value"), 0)
+        numbers[f"{prefix}manual"] = counts.get((5, "value"), 0)
+        numbers[f"{prefix}unavailable"] = sum(n for (_, o), n in counts.items() if o != "value")
+        row = connection.execute(
+            "SELECT count(*) FROM provenance_conflicts WHERE field = ?", [field]
+        ).fetchone()
+        numbers[f"{prefix}conflicts"] = int(row[0]) if row else 0
+    status = dict(
+        connection.execute(
+            "SELECT status, count(*) FROM provenance_conflicts GROUP BY 1"
+        ).fetchall()
+    )
+    numbers["methods.cascade_conflicts_open"] = int(status.get("open", 0))
+    numbers["methods.cascade_conflicts_resolved"] = int(status.get("resolved", 0))
+    return numbers
 
 
 #: Passed as ``top_n`` to :func:`~prismabib.bibliometrics.venues.top_venues`
@@ -246,6 +292,7 @@ def numbers_map(
     connection = connect(project, read_only=True)
     try:
         numbers.update(_corpus_numbers(connection))
+        numbers.update(_cascade_numbers(connection))
         # A bare `Corpus(connection)` -- no `.open(project, ...)` -- is
         # deliberate and safe here: both delegated calls below pass
         # `stage=PrismaStage.RAW` (see `_citation_numbers`/`_venue_numbers`),
@@ -271,6 +318,7 @@ def numbers_map(
     numbers["methods.venue_unnamed_sentence"] = venue_unnamed_sentence(
         unnamed_venues, numbers["corpus.size"]
     )
+    numbers["methods.cascade_sentence"] = cascade_sentence(numbers)
     numbers["methods.orphaned_decisions_text"] = orphaned_decisions_text(found)
 
     for key, value in numbers.items():

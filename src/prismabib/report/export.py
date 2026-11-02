@@ -36,7 +36,15 @@ import structlog
 from prismabib.prisma.flow import compute_flow_counts_with_orphans
 from prismabib.report.flow_diagram import flow_diagram_svg
 from prismabib.report.numbers import numbers_map
-from prismabib.report.tables import Table, build_tables, to_csv, to_latex, to_markdown
+from prismabib.report.tables import (
+    Table,
+    build_tables,
+    provenance_conflicts_table,
+    records_provenance_table,
+    to_csv,
+    to_latex,
+    to_markdown,
+)
 from prismabib.store.db import connect
 
 if TYPE_CHECKING:
@@ -371,6 +379,12 @@ def export_project(project: Project) -> ExportResult:
         (table.slug, to_csv(table), to_markdown(table), to_latex(table))
         for table in build_tables(project, numbers)
     ]
+    connection = connect(project, read_only=True)
+    try:
+        records_csv = to_csv(records_provenance_table(connection))
+        conflicts_csv = to_csv(provenance_conflicts_table(connection))
+    finally:
+        connection.close()
     numbers_text = json.dumps(numbers, indent=2, sort_keys=True) + "\n"
     manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
 
@@ -385,6 +399,9 @@ def export_project(project: Project) -> ExportResult:
         tables.append(_write(root / "tables" / f"{slug}.md", md_text))
         tables.append(_write(root / "tables" / f"{slug}.tex", tex_text))
 
+    # Overwritten each run, so never stale; kept out of the cleared `tables/` directory.
+    _write(root / "records.csv", records_csv)
+    _write(root / "provenance_conflicts.csv", conflicts_csv)
     _write(root / "numbers.json", numbers_text)
     _write(root / "manifest.json", manifest_text)
 
