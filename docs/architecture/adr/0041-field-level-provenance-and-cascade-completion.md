@@ -57,10 +57,10 @@ The owner took these decisions on 2026-11-02. They are recorded here as given, w
 
 | Level | Source label | Request | Fields it may supply | Layer 0 or Layer 2 |
 |---|---|---|---|---|
-| 1 | `scopus-complete` | Search `COMPLETE` / Abstract `FULL` (acquisition, unchanged) | abstract, authors, affiliations, keywords | `raw/<run_id>/` (existing) |
+| 1 | `scopus-complete` | Search `COMPLETE` (acquisition, unchanged) | abstract, authors, affiliations, keywords | `raw/<run_id>/` (existing; see 1d for the abstract) |
 | 2 | `scopus-standard` | Search `STANDARD`, batched by DOI | affiliations | `raw/scopus-cascade/<run_id>/` (Decision 6) |
 | 3 | `scopus-meta` | Abstract `META`, one record per request, by `scopus_id` | affiliations | `raw/scopus-cascade/<run_id>/` |
-| 4 | `openalex` | OpenAlex works (ADR 0031) | abstract, authors, affiliations, keywords (topics) | `raw/openalex/<run_id>/` (existing) |
+| 4 | `openalex` (keywords: `openalex-topic`) | OpenAlex works (ADR 0031) | abstract, authors, affiliations, keywords (topics) | `raw/openalex/<run_id>/` (existing) |
 | 5 | `manual` | Entered by a named reviewer | abstract, authors, affiliations | `manual_entries.jsonl` (Layer 2, Decision 4) |
 
 **1a. Levels 2 and 3 supply `affiliations` only.** `CascadeResult` carries affiliations, a first author and identifiers. It does
@@ -69,9 +69,19 @@ as complete, which is the bias ADR 0028 Context names. So `authors` is supplied 
 table is narrowed to that.
 
 **1b. Keywords.** The `keywords` field is supplied by level 1 when the record has Scopus author or index keywords. Otherwise
-level 4 supplies it when the record has OpenAlex topics, with source `openalex`. The topics are also written as
-`openalex-topic` links in `record_keywords`, as ADR 0030 specifies, whether or not they fill the field. Keywords never conflict
-and take no manual entry, because no keyword kind exists for manual values.
+level 4 supplies it when the record has OpenAlex topics, with source `openalex-topic`, the label ADR 0028 Decision 2 already
+gives them. The topics are also written as `openalex-topic` links in `record_keywords`, as ADR 0030 specifies, whether or not
+they fill the field. Keywords never conflict and take no manual entry, because no keyword kind exists for manual values.
+
+**1d. Level-1 abstract input.** The abstract is not read from the Abstract Retrieval runs. The loader sets `records.abstract` from
+the search entry's `dc:description` (`_record_from_entry` in `src/prismabib/store/load.py`), so the level-1 abstract is that
+search payload's text. Its payload reference is the record's own `payload_file` and `payload_line`, the same address as
+`source_payload_ref`. The sealed Abstract Retrieval runs under `raw/abstracts/` (`ABSTRACTS_DIRNAME`, table `abstract_runs`,
+ADR 0018) feed subject areas only, and this record does not change that. Authors, affiliations and keywords at level 1 come from
+`raw/<run_id>/` in the same way.
+
+**1e. Levels 2 and 3 never set `abstract` or `keywords`.** Their results carry no abstract and no keywords (Decision 1a), so the
+`abstract_*` and `keywords_*` columns are never written with a level 2 or 3 source.
 
 **1c. Which records each level is asked about.**
 
@@ -94,19 +104,38 @@ For each field, in this order:
 4. Level 5 fills the field only when levels 1 to 4 left it unavailable.
 5. A field with no value after level 5 is `unavailable`.
 
-**Comparison.** Two values differ when their normalised forms differ. The normal form of an abstract or an affiliation name is
-the text casefolded with runs of whitespace collapsed. An author list is compared by its surname sequence in the same normal form.
+**Comparison (fixed rule).** The normal form of a string is `unicodedata.normalize("NFKC", s)`, then `casefold()`, then runs of
+whitespace collapsed to one space, then stripped. The Unicode database used is the one of the Python interpreter that runs the
+build. The build report records `unicodedata.unidata_version`, and a test pins the expected version and fails if a different
+one is used. Each field is compared as follows:
+
+- **abstract:** the normal form of the whole text.
+- **authors:** the sequence of surnames, in source order. A value of the form `Surname, Given` (manual entry) takes the text
+  before the first comma. Any other value (an OpenAlex display name, `Given Surname`) takes its last whitespace-separated token.
+  Scopus surnames are compared as stored. Particles such as "de la" are not split, so a name with a particle is compared by its last
+  token and may disagree with a Scopus surname. Such a disagreement is a conflict, and it is shown, not hidden.
+- **affiliations, when the Scopus side is level 1:** the set of normal-form institution names.
+- **affiliations, when the Scopus side is level 2 or 3:** the set of ISO 3166-1 alpha-3 country codes only. Level 2 and 3
+  affiliations carry city and country and no reliable institution name (ADR 0028 Consequence 4), so they are never compared by
+  name. A conflict arises only when the two country sets differ.
+
 OpenAlex abstracts are rebuilt from an inverted index, so punctuation and hyphenation differences may appear. That makes conflicts
 more frequent than real disagreement. Risk 4 covers it, and PR3 measures the rate before any count is published.
 
-**New table.** `provenance_conflicts` (added to `store/schema.sql` and to `_TABLE_SORT_KEYS`, which the golden checksums use):
+**New table.** `provenance_conflicts` (added to `store/schema.sql` and to `_TABLE_SORT_KEYS`, which the golden checksums use).
+Every value column holds a JSON text, written with `json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`.
+Abstracts are a JSON string. Authors are a JSON array of the source-order strings. Affiliations are a JSON array of names, sorted
+by their normal form and unique. A level 2 or 3 affiliation value is the JSON array of its country codes, sorted and unique.
 
 ```sql
 CREATE TABLE provenance_conflicts (
   record_id TEXT, field TEXT,
-  scopus_source TEXT, scopus_payload_ref TEXT, scopus_value TEXT,
+  scopus_level INTEGER CHECK (scopus_level IN (1, 2, 3)),
+  scopus_source TEXT,
+  scopus_payload_ref TEXT, scopus_value TEXT,
   openalex_payload_ref TEXT, openalex_value TEXT,
-  PRIMARY KEY (record_id, field)
+  PRIMARY KEY (record_id, field),
+  CHECK ((scopus_level, scopus_source) IN ((1, 'scopus-complete'), (2, 'scopus-standard'), (3, 'scopus-meta')))
 );
 ```
 
@@ -118,20 +147,35 @@ It is read-only in this record. Resolving a conflict is out of scope (Open quest
 
 | Column | Type | Closed set, or content |
 |---|---|---|
-| `<field>_source` | TEXT, NOT NULL | `scopus-complete`, `scopus-standard`, `scopus-meta`, `openalex`, `manual`, or `unavailable` |
-| `<field>_level` | INTEGER, NOT NULL | 1 to 5, the supplying level; 0 when the field is unavailable |
+| `<field>_source` | TEXT, NOT NULL | The allowed set per field, below |
+| `<field>_level` | INTEGER, NOT NULL | 0 to 5: the supplying level, fixed by the source (see the CHECK); 0 when the field is unavailable |
 | `<field>_outcome` | TEXT, NOT NULL | `value` or `unavailable` |
-| `<field>_payload_ref` | TEXT, nullable | The run-relative payload path, with `#<openalex_id>` for OpenAlex, or the manual `event_id`; NULL when unavailable |
+| `<field>_payload_ref` | TEXT, nullable | The payload address, relative to `raw/`: `<path>#<id>`. `<id>` is the line index for a Scopus payload, the work id for OpenAlex, or the `event_id` for manual. NULL when unavailable |
+
+Allowed `<field>_source` values per field: `abstract`: `scopus-complete`, `openalex`, `manual`, `unavailable`.
+`authors`: `scopus-complete`, `openalex`, `manual`, `unavailable`. `affiliations`: `scopus-complete`, `scopus-standard`,
+`scopus-meta`, `openalex`, `manual`, `unavailable`. `keywords`: `scopus-complete`, `openalex-topic`, `unavailable`. Keywords take
+no manual value.
 
 So the new columns are `abstract_source`, `abstract_level`, `abstract_outcome`, `abstract_payload_ref`, and the same four for
-`authors`, `affiliations` and `keywords`: 16 columns in all. Each carries a CHECK constraint on its closed set, in the form ADR
-0030 Decision 3 uses for `record_keywords.kind`:
+`authors`, `affiliations` and `keywords`: 16 columns in all. The closed sets are enforced by CHECK constraints, in the form ADR
+0030 Decision 3 uses for `record_keywords.kind`. The constraints for one field are shown for `abstract`; the other three follow
+the same pattern with their own source sets. Each `CHECK` is one table-level constraint, and the schema file wraps them.
 
 ```sql
-abstract_source TEXT NOT NULL CHECK (
-  abstract_source IN ('scopus-complete', 'scopus-standard', 'scopus-meta', 'openalex', 'manual', 'unavailable')
-),
+CHECK (
+  (abstract_source, abstract_level) IN (
+    ('scopus-complete', 1), ('openalex', 4), ('manual', 5), ('unavailable', 0)
+  )
+  AND ((abstract_outcome = 'unavailable' AND abstract_payload_ref IS NULL)
+    OR (abstract_outcome = 'value' AND abstract_payload_ref IS NOT NULL
+        AND abstract_source <> 'unavailable'))
+)
 ```
+
+The `value` and `unavailable` rows are tied together so that an unavailable field has level 0 and no payload reference, and a
+value has level 1 to 5 and a reference. The keywords pair list is `('scopus-complete', 1)`, `('openalex-topic', 4)` and
+`('unavailable', 0)`, and the same outcome clause applies.
 
 **The literal `unavailable`.** It is written in `<field>_source` and `<field>_outcome` for every field with no value after level 5.
 Exports and views never show a blank for these columns. An empty `<field>_payload_ref` is exported as the literal `unavailable`.
@@ -145,9 +189,22 @@ fifth column.
 **Rebuild.** The loader computes all 16 columns, and the conflicts table, from Layer 0 and from the Layer 2 manual log. Nothing is
 kept only in memory. A rebuild from the same runs and the same log must give identical checksums (Verification).
 
-**Registered records.** `records_all` (a view, not checksummed) gains the same 16 columns. For a registered record, `abstract`
-takes source `openalex`, level 4, when its abstract is present, else `unavailable`. The other three fields are `unavailable`,
-because `registered_records` (ADR 0032) stores no authors, affiliations or keywords. Open questions, item 2.
+**Which sealed run wins.** An identifier can have outcomes in several sealed runs, of OpenAlex or of the cascade kind. For each
+identifier and field, the value is taken from the latest sealed run, by run id, whose outcome for that field is `value`. If no
+sealed run holds a value, the latest outcome is used, and the field is `unavailable`. This applies ADR 0031 Decision 7 to every
+run kind in this record. A newer `absent` or `not_found` never replaces an older `value`.
+
+**Registered records.** `records_all` (a view, not checksummed) gains the same 16 columns, in the same order as in `records`:
+`abstract_source`, `abstract_level`, `abstract_outcome`, `abstract_payload_ref`, then the four `authors_*`, the four
+`affiliations_*`, and the four `keywords_*`. The registered branch of the view selects them as literals, from its own row:
+
+- `abstract_*`: `abstract_source` is `openalex` and `abstract_level` is 4 when `abstract` is not NULL, else `unavailable` and 0.
+  `abstract_outcome` is `value` or `unavailable` to match. `abstract_payload_ref` is `payload_file || '#' || openalex_id` when
+  the abstract is present, else NULL.
+- `authors_*`, `affiliations_*`, `keywords_*`: `unavailable`, 0, `unavailable`, NULL. `registered_records` (ADR 0032) stores none
+  of them. Open questions, item 2.
+
+The scopus branch of `records_all` selects the 16 columns from `records` in the same order.
 
 **Consequences for the schema.** `records` is named in the frozen BUILD_PLAN clause that `schema.sql` reproduces, and a column
 added there is a deviation. This record is the ADR for it, as ADR 0030 Decision 3 was for `record_keywords`. The new table
@@ -179,15 +236,21 @@ append-only, checksum-guarded machinery of ADR 0024 (`prismabib.log.AppendOnlyLo
 with a reviewer and a reason from a closed set: `wrong_value`, `wrong_field`, `duplicate_entry`, `other`. Nothing is deleted.
 The reversed entry is not applied.
 
-**Writer refusals.** `capture/manual.py` refuses a write when the record does not exist, when the field is not one of the three,
-when the value is blank after stripping, when the field is not `unavailable` in the current Layer 1 store, or when an active
-`manual_entry` already exists for that record and field. The first refusal comes from the writer's check of the store. A
-second refusal is raised by the fold, if a later build finds one.
+**Writer refusals.** `capture/manual.py` raises `ManualEntryRefusal` and writes nothing in these five cases, and only these:
 
-**Fold rule.** The loader runs levels 1 to 4 first. Then, for each `(record_id, field)` that is still `unavailable`, it applies the
-single active `manual_entry`. An active entry for a field that levels 1 to 4 supplied is not applied. It is counted in the build
-report as `manual_superseded` and is not a numbers key. Two active entries for one `(record_id, field)` fail the build with a
-`StoreError` that names both, and reversing one unblocks it, as ADR 0029 does for registrations.
+1. the record id is not an existing `scopus:` record;
+2. the field is not one of `abstract`, `authors`, `affiliations`;
+3. the value is blank after stripping;
+4. the field is not `unavailable` in the current Layer 1 store;
+5. an active `manual_entry` already exists for that record and field.
+
+Case 4 reads the store. A stale store can pass it, so the fold (below) applies the same rule again at build time.
+
+**Fold rule (implemented in PR3, not PR6).** The loader runs levels 1 to 4 first. Then, for each `(record_id, field)` that is
+still `unavailable`, it applies the single active `manual_entry`. An active entry for a field that levels 1 to 4 supplied is not
+applied. It is counted in the build report as `manual_superseded` and is not a numbers key. Two active entries for one
+`(record_id, field)` (the race that case 5 cannot prevent between two writers) fail the build with a `StoreError` that names both.
+Reversing one unblocks it, as ADR 0029 does for registrations.
 
 **Labelling.** The source is `manual`, the level is 5, and the payload reference is the `event_id`. Authors and affiliations
 entered by hand get ids derived from the event: `manual:<event_id>:<n>`, with `n` the position in the value. Those ids are
@@ -242,20 +305,35 @@ named in the pull request that makes it.
 deleted on seal, and `manifest.json` as the seal. The name is added to `layout.NON_RUN_DIRNAMES`, as ADR 0031 Decision 8 does
 for `openalex`. The run ids come from `layout.new_run_id()`, and every write goes through `guard_writable`.
 
-**Manifest.** `CascadeRunManifest`, a new model in `capture/manifest.py`, not the frozen `RunManifest`. Its fields:
+**Manifest.** `CascadeRunManifest`, a new model in `capture/manifest.py`, not the frozen `RunManifest`. This section is the
+contract PR3 builds against. PR3 uses fixtures of this exact shape and does not import the PR2 writer. Its top-level fields, all
+required unless marked:
 
-- `run_id`, `started_at`, `finished_at`, `endpoint` (the base URL only), `client_version`, `criteria_version`.
-- `fallback_opt_in` (bool). An opt-in is required to write any request in this run kind, and a sealed run with `false` is refused.
+- `run_id` (str), `started_at`, `finished_at` (UTC datetimes), `endpoint` (str, the base URL only), `client_version`,
+  `criteria_version` (str).
+- `fallback_opt_in` (bool). Required to be `true` for any request in this run kind, and a sealed run with `false` is refused.
 - `api_key_used` (bool). Never the key.
-- `budget_requests` (int, from `--scopus-budget`), `requests_made` (int), and `stop_reason`: `complete`, `budget` or `quota`.
-- `requests`: one entry per HTTP request, with `index`, `file`, `sha256`, `view` (`STANDARD` or `META`), `identifiers` (DOIs for
-  `STANDARD`, `scopus_id`s for `META`), `http_status`, `retrieved_at`, `quota_remaining` (from the header, or null), and `outcomes`.
-- Each outcome: `identifier`, `outcome` (`value`, `not_found` or `refused`), `http_status`, and `affiliations` (the count).
-- `payload_files`, `payload_sha256`.
+- `budget_requests` (int, from `--scopus-budget`), `requests_made` (int), `stop_reason` (`complete`, `budget` or `quota`).
+- `requests` (list), in request order. Each entry:
+  - `index` (int), `file` (str, `response-NNNN.jsonl`, with `NNNN` the zero-padded index), `sha256` (str), `encoding`
+    (`verbatim` or `compact`, as ADR 0031 Decision 2), `raw_sha256` (str or null, set when compact).
+  - `view` (`STANDARD` or `META`), `identifiers` (list of str: DOIs for `STANDARD`, Scopus ids for `META`).
+  - `http_status` (int), `retrieved_at` (UTC datetime), `quota_remaining` (int or null, from the header).
+  - `outcomes` (list). One entry per identifier of the request, each with `identifier` (str), `outcome`, `http_status` (int),
+    and `affiliations` (int, the count of affiliations returned, zero when none).
+- `payload_files` (list of str), `payload_sha256` (str), the digest of the stored bytes in request order.
+
+**Outcome set for a cascade identifier.** `value`: a 200 whose entry is present and has at least one affiliation. `absent`: a 200
+whose entry is present with zero affiliations. This is a real answer, not a miss, and it triggers level 3. `not_found`: a 200
+with no entry for the identifier, or a META 404. `refused`: a 401 or 403 in an opt-in run. A batch of identifiers that is not
+present in the 200 body gets `not_found`, one outcome per identifier. `absent` is stored in the manifest, computed when the run is
+written, as ADR 0031 Decision 4 stores its own outcomes.
+
+**Level 3 targets.** Records whose affiliations are not `value` after level 2: `absent`, `not_found` and `refused` all qualify.
 
 **Opt-in.** A run is created only with `--opt-in`. A 401 or 403 in such a run is recorded as `refused` for the affected identifiers,
-and the run continues (ADR 0028 Resolved item 1). Outside an opt-in run the existing `AuthError` and `EntitlementError` behaviour is
-unchanged.
+and the run continues (ADR 0028 Resolved item 1, as amended below). Outside an opt-in run the existing `AuthError` and
+`EntitlementError` behaviour is unchanged.
 
 **Budget and quota.** `--scopus-budget N` caps the requests made in the run, and it is required with `--opt-in`. When the cap is
 reached, the run stops, writes `stop_reason: budget`, and seals. A weekly-quota 429 (`QuotaExceededError`) stops the run the same
@@ -265,10 +343,11 @@ it (Decision 7 reuse rule). A `--dry-run` prints the planned requests per level 
 **Reuse.** An identifier is held when a sealed run of this kind holds a `value` or `not_found` for it. A `refused` outcome does not
 hold it. This is the rule ADR 0031 Decision 7 gives.
 
-**Loader.** `store/load.py` gains `_sealed_cascade_run_dirs`, which lists the sealed children of `raw/scopus-cascade/`, as ADR 0031
-Decision 8 does for OpenAlex. Attachment is by `scopus_id` for `META` and by normalised DOI for `STANDARD`. The loader recomputes
-every outcome from the stored bytes and fails on disagreement, as ADR 0031 Decision 4 does. A malformed body becomes a
-`malformed_entries` row (ADR 0012).
+**Loader (implemented in PR3, not PR2).** PR2 writes no `load.py` code. PR3 adds `_sealed_cascade_run_dirs` to `store/load.py`,
+which lists the sealed children of `raw/scopus-cascade/`, as ADR 0031 Decision 8 does for OpenAlex. Attachment is by `scopus_id`
+for `META` and by normalised DOI for `STANDARD`. The loader recomputes every outcome from the stored bytes and fails on disagreement,
+as ADR 0031 Decision 4 does. A malformed body becomes a `malformed_entries` row (ADR 0012). A sealed run with `fallback_opt_in`
+false fails the build with a `StoreError`.
 
 **Unverified batch form.** `search_standard_by_dois` documents that the multi-DOI `OR` form is not live-verified. PR2 verifies it
 against the live API before any run relies on it (Risk 6).
@@ -332,14 +411,25 @@ counts go on a separate line of the report, and they are not numbers keys.
 - `docs/methodology/limitations.md` (the "Scopus only" and "no OpenAlex" text, and the "refuses to degrade" text) is rewritten to
   describe the opt-in cascade and the labels. This is the public-text change ADR 0028 Resolved item 4 requires, and it lands in
   PR1.
-- The docstrings that say the view "never degrades" (`src/prismabib/sources/scopus.py` and `src/prismabib/enrich.py`) are corrected
-  in PR1.
+- The docstrings that say the view "never degrades" are corrected in PR1, in `src/prismabib/sources/scopus.py`,
+  `src/prismabib/capture/enrich.py`, `src/prismabib/capture/manifest.py` (line 157) and `src/prismabib/capture/writer.py` (lines 351
+  and 381). PR1's phrase test searches `docs/` and `src/prismabib/` for the phrases and excludes `docs/architecture/adr/`, because
+  frozen ADRs and this record quote them.
 - `docs/how-to/register-and-reverse-candidates.md` says to call `capture_openalex` by hand. That sentence is replaced by the
   command in PR4.
 - A dated pointer note is appended to **ADR 0031, Decision 9** in PR3. It says the loader computes abstract, authors and affiliations
   from the stored bodies from that pull request, and that it did not before. It edits no older text.
-- A dated pointer note is appended to **ADR 0028**, in PR3. It points to this record for the level 2 and 3 authors row (Decision
-  1a), the column form of Decision 2 (Decision 3), and the title match, which is unchanged. ADR 0028 is not edited in place.
+- A dated pointer note is appended to **ADR 0028**, in PR3. It points to this record for the amendments below. ADR 0028 is not
+  edited in place.
+
+**Amendments to ADR 0028 (stated here, applied by the notes above).**
+
+- **Decision 1 (the level table).** Levels 2 and 3 supply `affiliations` only, not `authors` (Decision 1a). Level 1 supplies the
+  abstract from the search payload (Decision 1d).
+- **Decision 2 (the provenance map).** The map is held as the columns of Decision 3, which is its column form. The per-level
+  attempt outcomes are not repeated in Layer 1. Keyword provenance keeps the `openalex-topic` label, as Decision 2 already states.
+- **Resolved item 4 (opt-in).** The opt-in for a cascade run is recorded in `CascadeRunManifest.fallback_opt_in`, not in
+  `RunManifest`. The frozen Scopus `RunManifest` has no such field, and this record does not add one.
 
 ### 11. Out of scope: the sealed runs already on disk
 
@@ -397,42 +487,64 @@ Every test is shown to fail on the defect it guards, following the rule ADR 0031
 
 ## Implementation plan
 
-Three batches. Each batch's pull requests are independent within the batch, and a later batch starts after the previous batch is
-merged. The hotspot files have one owner each: `src/prismabib/store/schema.sql`, `src/prismabib/models.py` and
-`src/prismabib/store/load.py` change only in PR3. The goldens and `docs/how-to/run-the-demo.md` key counts change only in PR7.
+Three batches. A later batch starts after the earlier batch is merged. Pull requests inside one batch are developed in parallel
+where the dependency column allows it.
+
+| Batch | PR | Depends on | Owns (hotspots) |
+|---|---|---|---|
+| 1 | PR0 (this record) | none | `docs/architecture/adr/0041-*.md`, `mkdocs.yml` |
+| 1 | PR1 (docs) | none | public docs and the docstrings listed in PR1 |
+| 2 | PR2 (Scopus levels 2 and 3, Layer 0 writer) | PR1 | `capture/cascade.py`, `capture/manifest.py`, `capture/layout.py` (`NON_RUN_DIRNAMES`) |
+| 2 | PR3 (provenance columns, conflicts, loader merge, manual fold) | PR0 (the shapes fixed here) | `store/schema.sql`, `models.py`, `store/load.py`, `store/checksums.py`, goldens for the checksum table only |
+| 2 | PR5 (candidate paste entry) | PR2 writer, existing `capture_openalex` | `capture/candidates.py` (CLI wiring in `cli.py`) |
+| 3 | PR4 (cascade and OpenAlex commands) | PR2, PR3, and PR5 (`cascade` runs the candidate step that PR5 writes) | `cli.py` (`cascade`, `openalex`), `capture/cascade.py` (orchestration only) |
+| 3 | PR6 (manual entry, writer, GUI, CLI) | PR3 (event model, log binding and fold) | `capture/manual.py`, `capture/manual_ui.py`, `cli.py` (`manual-entry`, `manual-reverse`). Does NOT touch `store/load.py` or `models.py`. |
+| 3 | PR7 (exports, methods, numbers keys, goldens, run-the-demo) | PR3, PR6 | `report/`, `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` |
+| 4 | PR8 (fresh real run, CHANGELOG) | all of the above | `CHANGELOG.md` |
+
+Hotspot ownership: `src/prismabib/store/schema.sql`, `src/prismabib/models.py` and `src/prismabib/store/load.py` change only in
+PR3. The goldens and `docs/how-to/run-the-demo.md` key counts change only in PR7, except the one checksum golden that PR3 regenerates
+(Risk 2). PR2 and PR3 both sit in batch 2. PR3 builds against the manifest shape fixed in Decision 6, using fixtures, so PR2 and PR3
+do not need each other to be merged. PR4 sits in batch 3, after PR5 in batch 2, because `cascade` runs the candidate step.
 
 **Batch 1.**
 
 - **PR0 (this record).** The ADR and its nav entry. Docs only, no code. Accepted when the owner approves the merge.
-- **PR1 (docs).** Rewrites `limitations.md`, and the "never degrades" docstrings in `scopus.py` and `enrich.py`. Acceptance:
-  `mkdocs build --strict` passes, and no public page says "no OpenAlex" or "refuses to degrade". Failing test first: a docs test
-  that asserts those phrases are absent from `docs/` and from the two docstrings, which fails on `main`.
+- **PR1 (docs).** Rewrites `limitations.md` and corrects the "never degrades" wording in the files listed in Section 10 (`scopus.py`,
+  `capture/enrich.py`, `capture/manifest.py` line 157, `capture/writer.py` lines 351 and 381). Acceptance: `mkdocs build --strict`
+  passes, and the phrase test below passes. Failing test first: a docs test that searches `docs/` and `src/prismabib/` for "no
+  OpenAlex", "refuses to degrade" and "never degrades", excluding `docs/architecture/adr/`, and fails on `main`.
 
 **Batch 2.**
 
-- **PR2 (Scopus levels 2 and 3, Layer 0).** `capture/cascade.py` (the writer), `CascadeRunManifest`, `NON_RUN_DIRNAMES`,
-  `_sealed_cascade_run_dirs`, and the opt-in and budget handling. Acceptance: a sealed run for a fake client that returns 200, 401 and
-  404, a budget stop, and a quota stop. The loader recognises the runs and computes outcomes from the bytes. The live batch form is
-  verified and the result is recorded in the PR. Failing tests first: refusal without opt-in writes no seal; a sealed run with
-  `fallback_opt_in` false is refused; a Scopus scan finds only Scopus runs; the key is in no stored file.
-- **PR3 (provenance columns, conflicts, loader merge).** `schema.sql` (16 columns and `provenance_conflicts`), `models.py`, `load.py`
-  (the merge, the conflict rows, the Layer 2 manual fold, though the manual writer lands in PR6), the `records_all` view, the checksum
-  list, and the two dated pointer notes (ADR 0031 Decision 9 and ADR 0028). Acceptance: the merge rule tests, the no-blank test, the
-  rebuild-determinism test, and the golden checksum change, named in the PR. Failing tests first: the no-blank test and the
-  never-overrides test, both failing on the current `load.py`.
+- **PR2 (Scopus levels 2 and 3, Layer 0 writer only).** `capture/cascade.py` (the writer), `CascadeRunManifest` in
+  `capture/manifest.py`, the `raw/scopus-cascade/` name in `NON_RUN_DIRNAMES`, and the opt-in, budget and quota handling. It writes
+  no `load.py` code, and it writes the files of Decision 6 exactly. Acceptance: a sealed run for a fake client that returns 200 (with
+  and without affiliations), 401, and 404, a budget stop, and a quota stop, each with the manifest shape of Decision 6. The live batch
+  form is verified and the result is recorded in the PR. Failing tests first: refusal without opt-in writes no seal; a run with
+  `fallback_opt_in` false is refused at seal; `NON_RUN_DIRNAMES` contains the name; the key is in no written file.
+- **PR3 (provenance columns, conflicts, loader merge, manual fold).** `store/schema.sql` (16 columns with the CHECKs of Decision 3,
+  and `provenance_conflicts`), `models.py` (the `ManualEntry` event model of Decision 4 and its binding to `AppendOnlyLog`, with a
+  stub reader), `store/load.py` (the merge of Decision 2, the conflict rows, the `_sealed_cascade_run_dirs` discovery and its
+  outcome check, and the manual fold of Decision 4), the `records_all` view, `store/checksums.py`, and the two dated pointer notes
+  (ADR 0031 Decision 9 and ADR 0028). It builds against the manifest shape of Decision 6 with fixtures. Acceptance: the merge tests,
+  the no-blank test, the rebuild-determinism test, the manual fold tests, and the checksum golden regenerated with its cause named in
+  the PR. Failing tests first: the no-blank test and the never-overrides test, both failing on the current `load.py`.
 - **PR5 (candidate paste entry).** `prismabib candidates add`, the enrichment order of Decision 9, and the registration view's
   evidence line. Acceptance: a pasted title with no match creates no record and no `records` row. A candidate with a DOI from
   level 4 reaches level 2. Failing tests first: a candidate title-only request goes to level 4 only, and no record is created.
 
 **Batch 3.**
 
-- **PR4 (cascade and OpenAlex commands).** `prismabib cascade`, `prismabib openalex`, the report tables, the exit codes, and the
-  replacement sentence in `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the dry-run test that makes no
-  call, and the budget-required-with-opt-in test. Failing tests first: a second call makes no request.
-- **PR6 (manual entry).** `manual_entries.jsonl`, `capture/manual.py`, `capture/manual_ui.py`, `prismabib manual-entry` and
-  `prismabib manual-reverse`, and the fold in `load.py` (whose only change in this PR is the call into the manual log). Acceptance:
-  the refusals, the reversal, the GUI and CLI parity test, and the disabled button for a DOI-less record. Failing tests first: a
-  manual value for a supplied field is refused; a reversed entry is not applied.
+- **PR4 (cascade and OpenAlex commands).** Depends on PR5, because `cascade` runs the candidate step PR5 writes. Adds
+  `prismabib cascade` and `prismabib openalex`, the report tables, the exit codes, and the replacement sentence in
+  `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the dry-run test that makes no call, and the
+  budget-required-with-opt-in test. Failing tests first: a second call makes no request.
+- **PR6 (manual entry, writer and GUI).** Depends on PR3 for the event model and the fold. Adds `capture/manual.py` (the writer,
+  the five refusals, and the reverse writer), `capture/manual_ui.py`, and the CLI commands `prismabib manual-entry` and
+  `prismabib manual-reverse`. It does not touch `store/load.py` or `models.py`; the fold and the event model are PR3's. Acceptance:
+  the five refusals, the reversal, the GUI and CLI parity test, and the disabled button for a DOI-less record. Failing tests first:
+  a manual value for a supplied field is refused by the writer.
 - **PR7 (exports, methods, numbers keys, goldens, run-the-demo).** The export columns, `methods.cascade_sentence`, the 29 keys,
   `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` (the 44 to 73 key count, the optional list, and the
   stale `33`), and the `limitations.md` label text. Acceptance: the golden tests pass with the stated changes, and `fill` on the demo
@@ -447,9 +559,11 @@ merged. The hotspot files have one owner each: `src/prismabib/store/schema.sql`,
    change is explained there.
 2. **Goldens.** The key set, the values and the reference checksums all change. PR7 owns the number goldens, and PR3 owns the checksum
    golden. A change without a named cause stops the pull request.
-3. **Machine dependence.** Casefolding and Unicode normalisation depend on the Unicode data of the Python build, and on the Python 3.11
-   patch release. Two machines may compare two abstracts differently, which would give different conflict counts. Mitigation: pin the
-   comparison to one documented function, test it against a fixed set of strings, and report the Python version in the build report.
+3. **Machine dependence.** NFKC normalisation and casefolding read the Unicode database of the Python interpreter. That database is
+   fixed for a Python minor version, and it can differ between minor versions (for example 3.11 and 3.12). Two machines on different
+   minor versions could give different conflict counts for the same store. Mitigation: the comparison is one documented function,
+   tested against a fixed set of strings, and the build report records `unicodedata.unidata_version`. A test pins that version and
+   fails when a different one is used. The project pins Python 3.11, so the pinned version is the one the test expects.
    Other sources of drift: path separators in `payload_ref` (always `/`), CRLF in manual text (stored as `\n`), dict order (every
    sort is explicit), and the clock (the loader reads none).
 4. **Conflict noise.** OpenAlex abstracts come from an inverted index, so formatting differences look like disagreement. PR3 measures
@@ -492,7 +606,7 @@ merged. The hotspot files have one owner each: `src/prismabib/store/schema.sql`,
 - [ADR 0022](0022-the-analysis-result-contract-and-its-provenance.md): analysis-level provenance. This record adds per-field provenance.
 - [ADR 0024](0024-one-implementation-of-append-only-durability.md): the append-only log used for `manual_entries.jsonl`.
 - [ADR 0028](0028-field-level-fallback-cascade.md): the cascade this record completes. It amends Decision 1 for the levels 2 and 3
-  authors row, and Decision 2 for the column form.
+  authors row, Decision 2 for the column form, and Resolved item 4 for where the opt-in is recorded (Section 10).
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the reversal pattern and the event envelope.
 - [ADR 0030](0030-openalex-topics-as-a-keyword-kind.md): the CHECK-constraint amendment form, and the topic kind.
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the OpenAlex run kind that levels 4 uses. Decision 9 is made true by PR3.
