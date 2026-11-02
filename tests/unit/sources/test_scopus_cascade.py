@@ -226,11 +226,11 @@ _CASCADE_WRITER = "cascade.py"
 
 
 def _cascade_step_references(capture: Path) -> list[str]:
-    """Names of files under ``capture`` (bar the cascade writer) naming a cascade step."""
+    """Paths (relative, posix) of files under ``capture`` (bar ``capture/cascade.py``) naming a cascade step."""
     return sorted(
-        path.name
+        path.relative_to(capture).as_posix()
         for path in capture.rglob("*.py")
-        if path.name != _CASCADE_WRITER
+        if path.relative_to(capture) != Path(_CASCADE_WRITER)
         and any(
             step in path.read_text(encoding="utf-8")
             for step in ("search_standard_by_dois", "abstract_meta")
@@ -247,7 +247,9 @@ def test_acquisition__capture_code_does_not_reference_cascade_steps() -> None:
 def test_acquisition__guard_flags_any_other_capture_module(tmp_path: Path) -> None:
     (tmp_path / _CASCADE_WRITER).write_text("client.abstract_meta(x)", encoding="utf-8")
     (tmp_path / "writer.py").write_text("client.search_standard_by_dois(x)", encoding="utf-8")
-    assert _cascade_step_references(tmp_path) == ["writer.py"]
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "cascade.py").write_text("client.abstract_meta(x)", encoding="utf-8")
+    assert _cascade_step_references(tmp_path) == ["sub/cascade.py", "writer.py"]
 
 
 _REFUSAL_TEXT = "Synthetic: view not available to this key"
