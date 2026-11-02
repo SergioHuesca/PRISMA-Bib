@@ -216,6 +216,7 @@ class Dashboard:
         self._project = project
         self._corpus = corpus if corpus is not None else Corpus.open(project, read_only=True)
         self._filter_state = FilterState()
+        self._resetting = False
         self._taxonomy = _load_taxonomy(project, self._corpus)
         self._tab_corpus_handles: dict[str, Corpus] = {}
         self._panes: dict[str, Any] = {}
@@ -325,13 +326,37 @@ class Dashboard:
         self._from_widget(lambda: self.apply_filters(year_start=start, year_end=end))
 
     def _from_widget(self, action: Callable[[], None]) -> None:
-        """Run a widget-driven change; a rejected one shows its message and keeps the old view."""
+        """Run a widget-driven change; a rejected one shows its message and keeps the old view.
+
+        A rejection also puts the widgets back on the restored state, so the UI never shows a
+        value that is not applied. That reset fires the watchers again; ``_resetting`` makes
+        them no-ops.
+        """
+        if self._resetting:
+            return
         try:
             action()
         except (AnalysisError, ConfigError) as error:
+            self._reset_widgets()
             self._status.object = f"**Filter not applied:** {error}"
         else:
             self._status.object = ""
+
+    def _reset_widgets(self) -> None:
+        state = self._filter_state
+        snapshot = state.citation_snapshot
+        self._resetting = True
+        try:
+            self._year_range.value = (
+                state.year_start if state.year_start is not None else self._year_range.start,
+                state.year_end if state.year_end is not None else self._year_range.end,
+            )
+            self._taxonomy_dimension_selector.value = state.taxonomy_dimension or "(all)"
+            self._citation_snapshot_selector.value = (
+                "(latest)" if snapshot is None else snapshot.isoformat()
+            )
+        finally:
+            self._resetting = False
 
     # These two must be able to go *back* to "(all)"/"(latest)", i.e. to
     # `None`, which `apply_filters` reads as "keep the current value".
@@ -395,6 +420,7 @@ class Dashboard:
                 ),
             )
         )
+        self._status.object = ""  # a successful change makes an earlier rejection message stale
 
     def _set_filter_state(self, state: FilterState) -> None:
         """Adopt ``state`` and rebuild the tabs; if the rebuild raises, keep everything as it was.
