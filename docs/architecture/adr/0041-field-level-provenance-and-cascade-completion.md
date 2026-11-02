@@ -90,10 +90,9 @@ ADR 0018) feed subject areas only, and this record does not change that. Authors
 `raw/<run_id>/` in the same way.
 
 **1e. Levels 2 and 3 never set `abstract` or `keywords`.** Their results carry no abstract and no keywords (Decision 1a), so the
-`abstract_*` and `keywords_*` columns are never written with a level 2 or 3 source. Level 2 and 3 affiliations take the payload
-reference `scopus-cascade/<run_id>/response-NNNN.jsonl#0`, built from the `CascadeRunManifest` fields `run_id` and the request's
-`file`. Each response file holds exactly one line (ADR 0031 Decision 2 form), so the line is always `0`. The reference form for
-every source is listed in Decision 3.
+`abstract_*` and `keywords_*` columns are never written with a level 2 or 3 source. A level 2 or 3 affiliation is addressed by its
+entry in the response, as described in Decision 3's list of reference forms. Each response is one JSONL line (ADR 0031 Decision 2
+form), and a STANDARD response holds many DOIs, so the line number cannot address one record.
 
 ### 2. The merge rule, per record and per field
 
@@ -123,11 +122,12 @@ one is used. Each field is compared as follows:
   name. A conflict arises only when the two country sets differ.
 
 **Country canonical form: ISO 3166-1 alpha-3.** This is the form `Affiliation.country` already stores. The existing code is
-`normalise_country` in `src/prismabib/countries.py`, which looks a string up in the pinned `_COUNTRY_TABLE` (the ISO short names,
+`normalise_country(raw: str) -> tuple[str, bool]` in `src/prismabib/countries.py`, which returns `(value, matched)`: the alpha-3
+code and `True` on a hit, or the raw string unchanged and `False` on a miss. It looks the string up in the pinned `_COUNTRY_TABLE` (the ISO short names,
 `_ALIASES`, and an identity entry for every alpha-3 code). Scopus country names therefore reach alpha-3 through that function, as
 the model validator already does. OpenAlex supplies alpha-2 codes (`country_code`), and `normalise_country` does not map them. PR3
 adds a pinned `ALPHA2_TO_ALPHA3` table beside `_COUNTRY_TABLE`, and a test checks that every target is a value of
-`_ISO_SHORT_NAMES`. For comparison only, a value that `normalise_country` leaves unmatched, or an alpha-2 code missing from the table,
+`_ISO_SHORT_NAMES`. For comparison only, a value for which `normalise_country` returns `matched` as `False`, or an alpha-2 code missing from the table,
 becomes the literal `unmapped`. The stored value keeps the raw string, as today. An `unmapped` member is removed before the sets are
 compared, so it never causes a conflict. If one side is empty after removal, there is no conflict. Tests pin one unmapped name and
 one unmapped alpha-2 code to this rule.
@@ -167,10 +167,18 @@ It is read-only in this record. Resolving a conflict is out of scope (Open quest
 
 The payload reference forms, one per source (all relative to `raw/`):
 
-- level 1: `<run_id>/page-NNNN.jsonl#<line>`, the record's `payload_file` and `payload_line`;
-- level 2 and 3: `scopus-cascade/<run_id>/response-NNNN.jsonl#0` (Decision 1e);
-- level 4: `openalex/<run_id>/response-NNNN.jsonl#<openalex_id>` (ADR 0031 Decision 2);
-- level 5: `manual_entries.jsonl#<event_id>`.
+- level 1: `<run_id>/page-NNNN.jsonl#<line>`, the record's `payload_file` and `payload_line`. The name `page-NNNN.jsonl` is the
+  Scopus search page name (`payload_files` in `RunManifest`, `capture/manifest.py` line 65, and `store/load.py` line 60), and
+  `<line>` is the record's 0-based line index in that page.
+- level 2 and 3: `scopus-cascade/<run_id>/response-NNNN.jsonl#<scopus_id>`. The `<id>` addresses an entry inside one response body,
+  because a STANDARD response holds many DOIs and each response is one line. `<scopus_id>` is the bare numeric Scopus id, the
+  part after `scopus:` in the record id. If an entry carries no Scopus id, `<id>` is `doi:<normalised DOI>` (`normalise_doi`). The
+  writer emits the id from the entry it parsed, in body order, and it fails loudly when two entries of one response carry the same
+  id, so an id is unique per record per response file. A META response holds one entry, addressed the same way.
+- level 4: `openalex/<run_id>/response-NNNN.jsonl#<openalex_id>` (ADR 0031 Decision 2).
+- level 5: **the one exception.** `manual_entries.jsonl#<event_id>` is relative to the project directory, not to `raw/`. The file
+  sits beside `registrations.jsonl` in the Layer 2 decisions directory, as ADR 0029 Decision 8 places it. No other form is
+  project-relative.
 
 Allowed `<field>_source` values per field: `abstract`: `scopus-complete`, `openalex`, `manual`, `unavailable`.
 `authors`: `scopus-complete`, `openalex`, `manual`, `unavailable`. `affiliations`: `scopus-complete`, `scopus-standard`,
@@ -573,10 +581,10 @@ directly.
 **Batch 3.**
 
 - **PR4 (cascade and OpenAlex commands).** Depends on PR2, PR3 and PR5. Adds `prismabib cascade` and `prismabib openalex` in
-  `capture/cascade_commands.py`, and runs candidates through the levels: the candidate step of `cascade` searches each candidate by DOI
-  at level 2, then level 3 by the `scopus_id` returned, and by title and year at level 4 to obtain a DOI. It also adds the report
-  tables, the exit codes, and the replacement sentence in `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the dry-run test that makes no call, and the
-  budget-required-with-opt-in test. Failing tests first: a second call makes no request.
+  `capture/cascade_commands.py`, and runs candidates through the levels in the order of Decision 9: first level 4 by title and year
+  to obtain a DOI, then level 2 by that DOI, then level 3 by the `scopus_id` that level 2 returned. It also adds the report tables,
+  the exit codes, and the replacement sentence in `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the
+  dry-run test that makes no call, and the budget-required-with-opt-in test. Failing tests first: a second call makes no request.
 - **PR6 (manual entry, writer and GUI).** Depends on PR3 for the event model and the fold. Adds `capture/manual.py` (the writer,
   the five refusals, and the reverse writer), `capture/manual_ui.py`, `capture/manual_commands.py` with the CLI commands
   `prismabib manual-entry` and `prismabib manual-reverse`, and one registration line in `cli.py`. It does not touch `store/load.py` or `models.py`; the fold and the event model are PR3's. Acceptance:
