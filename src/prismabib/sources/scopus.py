@@ -586,7 +586,7 @@ class ScopusClient:
         Raises:
             AuthError: On HTTP 401 (bad key); never retried.
             EntitlementError: On HTTP 403 for the requested ``view``;
-                never retried, never degrades to a lesser view.
+                never retried, never silently lowered to a lesser view.
             QuotaExceededError: On HTTP 429 where the response headers
                 indicate the weekly quota, not a transient throttle, is
                 exhausted.

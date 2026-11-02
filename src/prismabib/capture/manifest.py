@@ -154,7 +154,7 @@ class AbstractRunManifest(BaseModel):
             (``ScopusClient.ABSTRACT_ENDPOINT_TEMPLATE``) -- a template
             rather than a URL, since each record has its own.
         view: The Scopus response view used. Always ``"FULL"``; see
-            :mod:`prismabib.capture.enrich` for why it never degrades to
+            :mod:`prismabib.capture.enrich` for why it is never silently lowered to
             ``META`` even though ``META`` also carries subject areas.
         source_run_ids: The sealed search runs whose records this run was
             asked to enrich, sorted. Empty when the caller passed an
