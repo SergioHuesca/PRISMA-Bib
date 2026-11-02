@@ -108,6 +108,8 @@ def dimension_distribution(
     in_range, n_no_year = restrict_to_years(stage_records, years)
     if in_range is not stage_records:
         keep = frozenset(in_range.get_column("record_id").to_list())
+        # Only record_ids/assignments are year-sensitive for distribution(); the other fields
+        # (human_reviewed, superseded_rule_assignments, field_diagnostics) keep out-of-range entries it never reads.
         result = dataclasses.replace(
             result,
             record_ids=tuple(r for r in result.record_ids if r in keep),
