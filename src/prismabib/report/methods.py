@@ -84,4 +84,66 @@ def orphaned_decisions_text(orphans: Sequence[OrphanedDecision]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["orphaned_decisions_text", "registered_sentence", "venue_unnamed_sentence"]
+_MANUAL = ("manual", "entered manually")
+_COMPLETE = ("level1", "from Scopus COMPLETE")
+_OPENALEX = ("level4", "from OpenAlex")
+
+#: ``(field, Plural, "no <noun>", clauses)``. Keywords take no manual value (ADR 0041 Decision 3).
+_CASCADE_FIELDS: tuple[tuple[str, str, str, tuple[tuple[str, str], ...]], ...] = (
+    ("abstract", "Abstracts", "abstract", (_COMPLETE, _OPENALEX, _MANUAL)),
+    ("authors", "Author lists", "author list", (_COMPLETE, _OPENALEX, _MANUAL)),
+    (
+        "affiliations",
+        "Affiliations",
+        "affiliation data",
+        (
+            _COMPLETE,
+            ("level2", "from Scopus STANDARD"),
+            ("level3", "from Scopus META"),
+            _OPENALEX,
+            _MANUAL,
+        ),
+    ),
+    ("keywords", "Keywords", "keywords", (_COMPLETE, ("level4", "from OpenAlex topics"))),
+)
+_CONFLICT_NOUN = {"abstract": "abstract", "authors": "author", "affiliations": "affiliation"}
+
+
+def cascade_sentence(numbers: Mapping[str, Any]) -> str:
+    """The methods sentence describing where each field came from (ADR 0041 Decision 5).
+
+    Args:
+        numbers: The mapping holding the 30 integer ``methods.cascade*`` keys.
+
+    Returns:
+        One clause per field, with its conflict count after it (none for keywords), then
+        the open and resolved totals. Never empty: every key is always present.
+    """
+    parts: list[str] = []
+    for field, plural, none_noun, clauses in _CASCADE_FIELDS:
+
+        def count(suffix: str, field: str = field) -> int:
+            return int(numbers[f"methods.cascade.{field}.{suffix}"])
+
+        phrases = [f"{phrase} for {count(suffix)}" for suffix, phrase in clauses]
+        phrases[0] += " records"
+        taken = ", ".join(phrases[:-1]) + f" and {phrases[-1]}"
+        parts.append(f"{plural} were taken {taken}; {count('unavailable')} have no {none_noun}.")
+        if field in _CONFLICT_NOUN:
+            parts.append(
+                f"{count('conflicts')} {_CONFLICT_NOUN[field]} values differ between "
+                "Scopus and OpenAlex."
+            )
+    parts.append(
+        f"{int(numbers['methods.cascade_conflicts_open'])} conflicts remain open and "
+        f"{int(numbers['methods.cascade_conflicts_resolved'])} were resolved by a reviewer."
+    )
+    return " ".join(parts)
+
+
+__all__ = [
+    "cascade_sentence",
+    "orphaned_decisions_text",
+    "registered_sentence",
+    "venue_unnamed_sentence",
+]

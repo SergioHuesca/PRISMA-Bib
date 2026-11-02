@@ -325,6 +325,62 @@ def citation_statistics_table(numbers: dict[str, Any]) -> Table:
     )
 
 
+_PROVENANCE_COLUMNS = tuple(
+    f"{field}_{suffix}"
+    for field in ("abstract", "authors", "affiliations", "keywords")
+    for suffix in ("source", "level", "outcome", "payload_ref")
+)
+
+
+def _export_cell(name: str, value: Any) -> Any:
+    """NULL as the empty string (never the text ``None``); an empty payload ref as ``unavailable``."""
+    if value is None:
+        return "unavailable" if name.endswith("_payload_ref") else ""
+    return value
+
+
+def records_provenance_table(connection: duckdb.DuckDBPyConnection) -> Table:
+    """The records export: identifying columns plus the 16 provenance columns (ADR 0041 D3)."""
+    columns = ("record_id", "origin", "doi", "title", "year", *_PROVENANCE_COLUMNS)
+    rows = connection.execute(
+        f"SELECT {', '.join(columns)} FROM records_all ORDER BY record_id"
+    ).fetchall()
+    return Table(
+        slug="records",
+        caption="Records with per-field provenance",
+        columns=columns,
+        rows=tuple(
+            tuple(_export_cell(n, v) for n, v in zip(columns, row, strict=True)) for row in rows
+        ),
+    )
+
+
+def provenance_conflicts_table(connection: duckdb.DuckDBPyConnection) -> Table:
+    """One row per ``provenance_conflicts`` row, open or resolved (ADR 0041 D2)."""
+    columns = (
+        "record_id",
+        "field",
+        "status",
+        "resolved_side",
+        "resolution_event_id",
+        "scopus_level",
+        "scopus_source",
+        "scopus_payload_ref",
+        "scopus_value",
+        "openalex_payload_ref",
+        "openalex_value",
+    )
+    rows = connection.execute(
+        f"SELECT {', '.join(columns)} FROM provenance_conflicts ORDER BY record_id, field"
+    ).fetchall()
+    return Table(
+        slug="provenance_conflicts",
+        caption="Field provenance conflicts",
+        columns=columns,
+        rows=tuple(tuple("" if v is None else v for v in row) for row in rows),
+    )
+
+
 def build_tables(project: Project, numbers: dict[str, Any]) -> tuple[Table, ...]:
     """Every table this stage can generate, in a stable order.
 

@@ -36,6 +36,11 @@ Consequences for your review:
 - Fields Scopus refuses stay missing. The field-level cascade that would fill them from a
   lower level, with a source label on each value, is designed (ADR 0028) but not yet
   implemented; the only second-source data for Scopus records today is OpenAlex topics, loaded as keywords (registered records take their classification from their OpenAlex work, below).
+  Every exported record already carries a per-field source label for abstract, authors,
+  affiliations and keywords (`exports/records.csv`, columns `<field>_source`, `_level`,
+  `_outcome`, `_payload_ref`; a reviewer-entered value is labelled `manual`), and
+  `exports/provenance_conflicts.csv` lists every Scopus/OpenAlex disagreement, open or resolved
+  ([ADR 0041](../architecture/adr/0041-field-level-provenance-and-cascade-completion.md)).
 - The "Registers" column of the PRISMA 2020 diagram is empty.
 
 If your protocol requires multi-database coverage — most methodological guidance does —
