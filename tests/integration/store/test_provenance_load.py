@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -739,11 +740,22 @@ def test_normal_form__nfkc_casefold_and_whitespace() -> None:
     assert _normal_form("e\u0301") == _normal_form("\xe9")  # NFKC composes
 
 
+#: The Unicode database each supported interpreter minor ships (ADR 0041 Risk 3). CI runs both.
+_UNIDATA_BY_PYTHON = {(3, 11): "14.0.0", (3, 12): "15.0.0"}
+
+
 @pytest.mark.unit
-def test_unicode_database__is_the_pinned_version() -> None:
-    # Risk 3: NFKC and casefold read the interpreter's Unicode database (3.11 ships 14.0.0). A
-    # different interpreter could change conflict counts, so the version is pinned and reported.
-    assert unicodedata.unidata_version == "14.0.0"
+def test_unicode_database__is_the_one_pinned_for_this_python_minor() -> None:
+    # NFKC and casefold read the interpreter's Unicode database, so a different one could change
+    # conflict counts. A listed minor must ship exactly the pinned version; an unlisted minor
+    # fails until someone adds it here.
+    minor = sys.version_info[:2]
+    assert minor in _UNIDATA_BY_PYTHON, (
+        f"Python {minor[0]}.{minor[1]} ships Unicode {unicodedata.unidata_version}, which is not "
+        "pinned. Check the fixed-string cases of test_normal_form__nfkc_casefold_and_whitespace "
+        "against it, then add the version to _UNIDATA_BY_PYTHON."
+    )
+    assert unicodedata.unidata_version == _UNIDATA_BY_PYTHON[minor]
 
 
 @pytest.mark.integration
