@@ -364,6 +364,37 @@ def test_network__years__params_provenance_and_caption(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
+def test_network__years__range_with_no_papers__empty_frame_and_stage_provenance(
+    tmp_path: Path, fn: Any, kwargs: dict[str, Any]
+) -> None:
+    corpus = _year_net_corpus(tmp_path)
+
+    result = fn(corpus, stage=PrismaStage.RAW, years=(1900, 1901), **kwargs)
+
+    assert result.data.height == 0
+    assert dict(result.data.schema) == {
+        "row_kind": pl.Utf8,
+        "id": pl.Utf8,
+        "label": pl.Utf8,
+        "frequency": pl.Int64,
+        "cluster": pl.Int64,
+        "cluster_size": pl.Int64,
+        "node_a": pl.Utf8,
+        "node_a_label": pl.Utf8,
+        "node_b": pl.Utf8,
+        "node_b_label": pl.Utf8,
+        "weight": pl.Int64,
+    }
+    assert result.params["years"] == "1900-1901"
+    assert result.params["n_in_range"] == 0
+    assert result.params["n_no_year_dropped"] == 0
+    assert result.params["communities"] == {}
+    assert result.provenance.corpus_size == 5  # stage-level, not range-level
+    assert "papers published in 1900-1901" in result.caption()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("fn", "kwargs"), _NETWORKS, ids=_NET_IDS)
 def test_network__no_years__params_have_no_years_keys_and_output_unchanged(
     tmp_path: Path, fn: Any, kwargs: dict[str, Any]
 ) -> None:
