@@ -39,7 +39,8 @@ The owner took these decisions on 2026-11-02. They are recorded here as given, w
 2. **Merge rule.** The first level that returns a value wins per field. A lower level (OpenAlex) may fill a field that a Scopus
    record lacks, and never overrides a value Scopus supplied. When both have a value and they disagree, the pair goes to a
    conflicts review list, with both values recorded. Rationale: a silent overwrite would change Scopus data without a trace, and
-   a silent choice of either side would hide the disagreement. Decision 2 states the mechanics.
+   a silent choice of either side would hide the disagreement. Decision 2 states the mechanics. The owner's answer 3 (below)
+   amends "never overrides" for one path: a reviewer's `conflict_resolution` event may pick the OpenAlex or the manual value.
 3. **Provenance as columns on `records`.** Per field among abstract, authors, affiliations and keywords: source, level, outcome and
    payload reference. It is rebuilt from Layer 0 only. Decision 3 gives the names, the closed sets and the consequences. Rationale:
    the table form was the alternative, and four columns per field on one row avoid a join for every export and every methods
@@ -98,13 +99,39 @@ form), and a STANDARD response holds many DOIs, so the line number cannot addres
 
 For each field, in this order:
 
-1. The first Scopus level (1, then 2, then 3) that holds a value supplies the field. Its value is kept, and no later level replaces it.
+1. The first Scopus level (1, then 2, then 3) that holds a value supplies the field. The automatic merge keeps that value, and no
+   later automatic step replaces it.
 2. Level 4 supplies the field only when no Scopus level did.
 3. When a Scopus value and a level 4 value both exist and differ, a row is written to `provenance_conflicts` with both values and
-   both payload references. Layer 1 keeps the Scopus value, as rule 1 requires. The conflict is visible in the export and in the
+   both payload references, with status `open`. Layer 1 keeps the Scopus value. The conflict is visible in the export and in the
    count, so the choice is not silent.
-4. Level 5 fills the field only when levels 1 to 4 left it unavailable.
-5. A field with no value after level 5 is `unavailable`.
+4. A reviewer may resolve an open conflict through a `conflict_resolution` event (below). Only that event can make the
+   level 4 value, or a reviewer's manual value, replace a Scopus value. The owner decided this on 2026-11-02, and it amends the
+   "never overrides" wording of the owner decision 2 above for this one path only.
+5. Level 5 fills the field only when levels 1 to 4 left it unavailable.
+6. A field with no value after level 5 is `unavailable`.
+
+**Conflict resolution event.** Appended to `decisions/conflict_resolutions.jsonl`, a Layer 2 log beside `manual_entries.jsonl`,
+through the same append-only machinery (ADR 0024). Fields: `event_id` (ULID), `schema_version` (1), `action`
+(`conflict_resolution`), `ts` (UTC), `project`, `reviewer`, `record_id`, `field` (`abstract`, `authors` or `affiliations`; keywords
+never conflict), `chosen_side` (`scopus`, `openalex` or `manual`), `value` (text, required only when `chosen_side` is `manual`,
+entered in the same format as a manual entry, Decision 4), and `note` (optional).
+
+- **Conflict key:** `(record_id, field)`. One conflict row exists per key.
+- **Reversal:** a `reverse` action names the `conflict_resolution` event by `event_id`, with a reviewer and a reason from
+  `wrong_side`, `wrong_value` or `other`, as registrations are reversed (ADR 0029 Decision 7). Nothing is deleted.
+- **Fold rule:** for each conflict key, the latest non-reversed `conflict_resolution` wins, in log order. A reversal makes the
+  previous active one effective again. A key with no active resolution stays `open`.
+- **Effect on Layer 1:** the chosen side's value and its provenance (source, level, outcome, payload reference) replace the
+  record's column values, and the `provenance_conflicts` row gains `status` `resolved`, `resolved_side` and
+  `resolution_event_id`. `chosen_side` `scopus` changes no value and only marks the row resolved. `chosen_side` `openalex` takes the
+  `openalex` value of the row. `chosen_side` `manual` takes the reviewer's value with source `manual`, level 5 and the payload
+  reference `decisions/conflict_resolutions.jsonl#<event_id>`.
+- **Rebuilt tables:** for `authors`, the loader rewrites the record's `record_authors` rows from the chosen value, with `author_id`
+  `resolved:<event_id>:<n>` (the position `n`, from 1), the surname as the comparison surname and `given_name` NULL. For
+  `affiliations`, the rows are written with `afid` `resolved:<event_id>:<n>` and the name, with city and country NULL. For
+  `abstract`, `records.abstract` takes the chosen text.
+- **Layer 0 is untouched:** the Scopus value stays in its Scopus payload, and the OpenAlex value stays in its sealed run.
 
 **Comparison (fixed rule).** The normal form of a string is `unicodedata.normalize("NFKC", s)`, then `casefold()`, then runs of
 whitespace collapsed to one space, then stripped. The Unicode database used is the one of the Python interpreter that runs the
@@ -147,12 +174,18 @@ CREATE TABLE provenance_conflicts (
   scopus_source TEXT,
   scopus_payload_ref TEXT, scopus_value TEXT,
   openalex_payload_ref TEXT, openalex_value TEXT,
+  status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+  resolved_side TEXT CHECK (resolved_side IN ('scopus', 'openalex', 'manual')),
+  resolution_event_id TEXT,
   PRIMARY KEY (record_id, field),
-  CHECK ((scopus_level, scopus_source) IN ((1, 'scopus-complete'), (2, 'scopus-standard'), (3, 'scopus-meta')))
+  CHECK ((scopus_level, scopus_source) IN ((1, 'scopus-complete'), (2, 'scopus-standard'), (3, 'scopus-meta'))),
+  CHECK ((status = 'open' AND resolved_side IS NULL AND resolution_event_id IS NULL)
+    OR (status = 'resolved' AND resolved_side IS NOT NULL AND resolution_event_id IS NOT NULL))
 );
 ```
 
-It is read-only in this record. Resolving a conflict is out of scope (Open questions, item 3).
+`status` is `open` until a reviewer resolves the conflict, and it is `resolved` once the fold applies a `conflict_resolution`.
+The two CHECKs keep the status and the resolution columns consistent.
 
 ### 3. Provenance lives as columns on `records`, rebuilt from Layer 0
 
@@ -177,9 +210,10 @@ project-relative:
   writer emits the id from the entry it parsed, in body order, and it fails loudly when two entries of one response carry the same
   id, so an id is unique per record per response file. A META response holds one entry, addressed the same way.
 - level 4: `openalex/<run_id>/response-NNNN.jsonl#<openalex_id>` (ADR 0031 Decision 2).
-- level 5: **the one exception.** `decisions/manual_entries.jsonl#<event_id>` is relative to the project directory, not to `raw/`.
-  The file sits beside `decisions/registrations.jsonl`, the shared Layer 2 log location of ADR 0029 Decision 8. No other form is
-  project-relative.
+- level 5: **the exception.** `decisions/manual_entries.jsonl#<event_id>` is relative to the project directory, not to `raw/`.
+  The file sits beside `decisions/registrations.jsonl`, the shared Layer 2 log location of ADR 0029 Decision 8. A value that a
+  reviewer enters through a `conflict_resolution` with `chosen_side` `manual` has the same exception, as
+  `decisions/conflict_resolutions.jsonl#<event_id>`. No other form is project-relative.
 
 Allowed `<field>_source` values per field: `abstract`: `scopus-complete`, `openalex`, `manual`, `unavailable`.
 `authors`: `scopus-complete`, `openalex`, `manual`, `unavailable`. `affiliations`: `scopus-complete`, `scopus-standard`,
@@ -212,8 +246,8 @@ Exports and views never show a blank for these columns. An empty `<field>_payloa
 **Why the outcome set is two values here.** `<field>_outcome` records the final state of the field. The attempt outcomes `absent`,
 `not_found` and `refused` are per-level facts. They are already stored per identifier in the Layer 0 manifests (ADR 0031
 Decision 4) and are not repeated in Layer 1. The gap against ADR 0028 Decision 2, which asks for each earlier outcome in the
-provenance map, is recorded as an amendment of that decision. Open questions, item 1, asks whether the owner wants the trail as a
-fifth column.
+provenance map, is recorded as an amendment of that decision. The owner confirmed on 2026-11-02 that the trail stays in Layer 0
+only (Questions put to the owner, item 1).
 
 **Rebuild.** The loader computes all 16 columns, and the conflicts table, from Layer 0 and from the Layer 2 manual log. Nothing is
 kept only in memory. A rebuild from the same runs and the same log must give identical checksums (Verification).
@@ -230,10 +264,23 @@ run kind in this record. A newer `absent` or `not_found` never replaces an older
 - `abstract_*`: `abstract_source` is `openalex` and `abstract_level` is 4 when `abstract` is not NULL, else `unavailable` and 0.
   `abstract_outcome` is `value` or `unavailable` to match. `abstract_payload_ref` is `payload_file || '#' || openalex_id` when
   the abstract is present, else NULL.
-- `authors_*`, `affiliations_*`, `keywords_*`: `unavailable`, 0, `unavailable`, NULL. `registered_records` (ADR 0032) stores none
-  of them. Open questions, item 2.
+- `authors_*`: `authors_source` is `openalex` and `authors_level` is 4 when `registered_records.authors_json` holds at least one
+  name, else `unavailable` and 0. `authors_payload_ref` is `payload_file || '#' || openalex_id` when present, else NULL.
+  `authors_outcome` matches.
+- `affiliations_*`: the same rule, from `affiliations_json`, with source `openalex`, level 4.
+- `keywords_*`: the same rule, from `keywords_json`, with source `openalex-topic`, level 4.
 
 The scopus branch of `records_all` selects the 16 columns from `records` in the same order.
+
+**Registered values (owner answer 2).** `registered_records` (ADR 0032) gains three columns: `authors_json`, `affiliations_json`
+and `keywords_json`, each a JSON array of text or NULL. They are derived at load time from the registration's own OpenAlex body
+(the `payload_file`), by the functions the OpenAlex loader already uses: `authorships_to_fields` for the authors and the
+affiliation names, and `topics_to_keywords` for the keywords (`src/prismabib/sources/openalex.py`). The derivation runs in
+`_fold_registrations` beside `derive_registration` (`src/prismabib/capture/registrations.py`), which already reads that body. Authors
+are OpenAlex display names in source order, as the comparison of Decision 2 reads them. A body that lacks a field gives an empty
+array, which is stored as NULL and read as `unavailable`. The source is `openalex`, not a new `registration` label: the values come
+from OpenAlex, and the reviewer's act is only the choice of the work. A later Scopus match supersedes the registration (ADR 0029
+Decision 6), so the registered row is dropped and the Scopus record's own provenance applies.
 
 **Consequences for the schema.** `records` is named in the frozen BUILD_PLAN clause that `schema.sql` reproduces, and a column
 added there is a deviation. This record is the ADR for it, as ADR 0030 Decision 3 was for `record_keywords`. The new table
@@ -306,25 +353,35 @@ mechanism and is not taken here.
 | `methods.cascade.<field>.level1` ... `level4` | int | Records whose field was supplied by that level |
 | `methods.cascade.<field>.manual` | int | Records whose field was supplied by level 5 |
 | `methods.cascade.<field>.unavailable` | int | Records whose field is unavailable after level 5 |
-| `methods.cascade.<field>.conflicts` | int | Records in `provenance_conflicts` for that field (always 0 for keywords) |
+| `methods.cascade.<field>.conflicts` | int | Records with a row in `provenance_conflicts` for that field, open or resolved (always 0 for keywords) |
+| `methods.cascade_conflicts_open` | int | Conflict rows with `status` `open`, all fields together |
+| `methods.cascade_conflicts_resolved` | int | Conflict rows with `status` `resolved`, all fields together |
 | `methods.cascade_sentence` | str | Always present. The methods sentence below. |
 
 `<field>` is `abstract`, `authors`, `affiliations` or `keywords`. That is 4 fields times 7 integer keys, which is 28 integer
-keys, plus the one string, 29 keys in all. Every key is always present, with zero where nothing happened, so the key set does not
-depend on which levels ran.
+keys, plus two integer totals and one string, 31 keys in all. Every key is always present, with zero where nothing happened, so
+the key set does not depend on which levels ran.
+
+**Counts follow the current columns, over Scopus records.** The level and manual counts are taken from the `records` columns after
+resolution, and they cover Scopus records only. A registered record is not counted here. A record whose abstract was resolved to
+the OpenAlex value counts under `level4`, not `level1`. `conflicts` equals `conflicts_open` plus
+`conflicts_resolved` summed over the fields.
 
 **Consuming sentence.** `methods.cascade_sentence` is built from the counts by a pure function in `report/methods.py`, for example:
 
 > Abstracts were taken from Scopus COMPLETE for {level1} records, from OpenAlex for {level4} and entered manually for {manual};
 > {unavailable} have no abstract. ...
 
-with the same clause for each field, and the conflict count after each field's clause.
+with the same clause for each field, and the conflict count after each field's clause. The last sentence states the two totals:
+"{conflicts_open} conflicts remain open and {conflicts_resolved} were resolved by a reviewer."
 
-**Key counts.** Required keys stay at 41. Optional keys go from 3 to 32. Total keys go from 44 to 73. The count that
-`docs/how-to/run-the-demo.md` states must move to match, and so must the optional-key list in its paragraph on `fill`. The sample
-output in that file that prints `numbers.json keys 33` is stale already and is corrected in the same pull request.
+**Key counts.** Required keys stay at 41. Optional keys go from 3 to 34 (the 3 existing, plus the 31 new). Total keys go from 44
+to 75. The count that `docs/how-to/run-the-demo.md` states must move to match, and so must the optional-key list in its paragraph
+on `fill`. The sample output in that file that prints `numbers.json keys 33` is stale already and is corrected in the same pull
+request. The 75 is the count after PR7 with the three existing optional keys still present. `registered_records` and the
+provenance columns add no numbers key.
 
-**Goldens that change.** `tests/golden/report/__snapshots__/numbers_keys.json` gains the 29 keys. `reference_numbers.json` gains
+**Goldens that change.** `tests/golden/report/__snapshots__/numbers_keys.json` gains the 31 keys. `reference_numbers.json` gains
 their values. The values are not zero in general, because level 1 counts what the reference corpus already holds. Each change is
 named in the pull request that makes it.
 
@@ -472,8 +529,14 @@ the new cascade command, and the store is rebuilt from those new runs.
 
 - **A child table `record_field_provenance`, one row per record and field.** Rejected for the reason in Decision 3. It is a join for
   every export and every methods sentence, and the owner chose columns.
-- **Let OpenAlex override Scopus where they disagree.** Rejected. It changes Scopus data without a trace, and rule 2 forbids it.
+- **Let OpenAlex override Scopus where they disagree, automatically.** Rejected. It changes Scopus data without a trace. A reviewer
+  may still choose the OpenAlex value, but only through a `conflict_resolution` event (Decision 2, rule 4).
 - **Silently keep Scopus in the conflict case, with no list.** Rejected. It is a silent choice, which the owner ruled out.
+- **Resolve conflicts by editing the Scopus payload or deleting the Scopus value.** Rejected. Layer 0 is immutable, and the
+  resolution is an event, so the Scopus value stays available to every reader.
+- **Store the registered authors, affiliations and keywords as rows in `authors` and `affiliations`.** Rejected for registrations.
+  Those tables are keyed to Scopus records, and a registered record is not one. The JSON columns on `registered_records` keep the
+  values where the registration is stored.
 - **Manual entry from the screening view.** Rejected. Entering a field is not a decision (ADR 0003), and the screening view's keys
   and list are out of scope (ADR 0035 Decision 9).
 - **Plain `cascade.*` numbers keys.** Rejected for the reason in Decision 5.
@@ -483,13 +546,20 @@ the new cascade command, and the store is rebuilt from those new runs.
 
 1. Every field in every export says which level supplied it, or says `unavailable`. A reader can tell an absent value from an
    unasked one.
-2. The `records` checksum changes for every store, because each row now carries 16 more cells. The reference table checksums and
-   `reference_numbers.json` change in PR3 and PR7 respectively, and each changed file names the cause.
+2. The `records` checksum changes for every store, because each row now carries 16 more cells. `registered_records` changes too,
+   by its three JSON columns (Decision 3). The reference table checksums change in PR3, and `reference_numbers.json` in PR7.
+   Each changed file names the cause.
 3. The store is rebuilt, not migrated (Decision 3). A store built before this change has no provenance, and the build report says so.
-4. Conflicts make the methods more honest and make the record list longer. The count is a number a manuscript may cite.
-5. Levels 2 and 3 add Scopus requests. The budget is set by the owner each time, and the dry run shows the cost before it is spent.
+4. Conflicts make the methods more honest and make the record list longer. Open conflicts and resolved conflicts are reported
+   separately, and both are numbers a manuscript may cite.
+5. Levels 2 and 3 add Scopus requests. `--scopus-budget` is always given explicitly (no default value), and the dry run shows the
+   cost before it is spent.
 6. A manual value is a human step, so it is slow and it can be wrong. It is labelled, it is never the default, and a reversal
    removes it from the fold.
+7. A reviewer's `conflict_resolution` is the only path by which an OpenAlex or manual value replaces a Scopus value (Decision 2,
+   rule 4). Every such replacement is an event with a reviewer, a time and a note, and it is reversible.
+8. Registered records now show real author, affiliation and keyword provenance, taken from their OpenAlex body, in `records_all`.
+   The numbers keys of Decision 5 count Scopus records (the `records` table) only, so registrations add no number to them.
 
 ## Verification
 
@@ -513,23 +583,40 @@ Every test is shown to fail on the defect it guards, following the rule ADR 0031
 - **Manual.** Writes are refused for supplied fields and for blank values. Reversal removes the entry from the fold. The CLI and
   the Panel view call the same writer (a parity test in the style of ADR 0035).
 - **Keyword field.** No conflict and no manual entry for keywords.
+- **Conflict resolution (PR3 fold, PR6 writer).** Each test fails on the defect it names:
+  - a `resolved` row takes the chosen side's value and provenance, and the Scopus payload file is byte-identical before and after
+    the build;
+  - a `chosen_side` `openalex` resolution changes the count from `level1` to `level4` for that field;
+  - a `reverse` of the resolution makes the row `open` again and restores the Scopus value, and the previous active resolution, if
+    any, becomes effective;
+  - the latest non-reversed resolution wins when two are active;
+  - the CHECK constraints refuse `status` `resolved` without `resolution_event_id`, and `open` with one;
+  - the writer refuses a `manual` side without a value, and a resolution for a key with no conflict row;
+  - the CLI and the Panel view call the same writer (a parity test, as for manual entry).
+- **Registered provenance (PR3).** A registration whose body has an authorship list gives `authors_source` `openalex`, level 4, a
+  non-NULL reference, and `authors_outcome` `value`. A body with an empty list gives `unavailable` in all four columns. A later
+  Scopus match removes the registered row, and the Scopus record's own columns apply.
+- **Key counts (PR7).** `numbers_keys.json` has 75 keys: 41 required, 34 optional. The fixture test asserts these three counts
+  separately, so a count that drifts fails on the number, not only on the set.
 
 ## Implementation plan
 
 Three batches. A later batch starts after the earlier batch is merged. Pull requests inside one batch are developed in parallel
 where the dependency column allows it.
 
-| Batch | PR | Depends on | Owns (hotspots) |
-|---|---|---|---|
-| 1 | PR0 (this record) | none | `docs/architecture/adr/0041-*.md`, `mkdocs.yml` |
-| 1 | PR1 (docs) | none | public docs and the docstrings listed in PR1 |
-| 2 | PR2 (Scopus levels 2 and 3, Layer 0 writer) | PR1 | `capture/cascade.py` (writer), `capture/manifest.py` (`CascadeRunManifest`), `capture/layout.py` (`NON_RUN_DIRNAMES`) |
-| 2 | PR3 (provenance columns, conflicts, loader merge, manual fold), stacked on PR2 | PR2 (its branch base), PR0 | `store/schema.sql`, `models.py`, `store/load.py`, `store/checksums.py`, `countries.py` (`ALPHA2_TO_ALPHA3`), the checksum golden |
-| 2 | PR5 (Scholar-paste entry point: CLI and candidate store) | PR1 only; independent of PR2 and PR3 | `capture/candidates.py`, one registration line in `cli.py` |
-| 3 | PR4 (cascade and OpenAlex commands; runs candidates through the levels) | PR2, PR3, PR5 | `capture/cascade_commands.py` (new), one registration line in `cli.py` |
-| 3 | PR6 (manual entry, writer, GUI, CLI) | PR3 (event model, log binding and fold) | `capture/manual.py`, `capture/manual_ui.py`, `capture/manual_commands.py` (new), one registration line in `cli.py`. Does NOT touch `store/load.py` or `models.py`. |
-| 3 | PR7 (exports, methods, numbers keys, goldens, run-the-demo) | PR3 only; tests use fixture rows that carry the `manual` and `unavailable` values | `report/`, `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` |
-| 4 | PR8 (fresh real run, CHANGELOG) | all of the above | `CHANGELOG.md` |
+| Batch | PR | Size | Depends on | Owns (hotspots) |
+|---|---|---|---|---|
+| 1 | PR0 (this record) | S | none | `docs/architecture/adr/0041-*.md`, `mkdocs.yml` |
+| 1 | PR1 (docs) | S | none | public docs and the docstrings listed in PR1 |
+| 2 | PR2 (Scopus levels 2 and 3, Layer 0 writer) | M | PR1 | `capture/cascade.py` (writer), `capture/manifest.py` (`CascadeRunManifest`), `capture/layout.py` (`NON_RUN_DIRNAMES`) |
+| 2 | PR3 (provenance columns, conflicts, resolution fold, manual fold, registered values), stacked on PR2 | L | PR2 (its branch base), PR0 | `store/schema.sql`, `models.py`, `store/load.py`, `store/checksums.py`, `countries.py` (`ALPHA2_TO_ALPHA3`), `capture/registrations.py` (`_fold_registrations` derivation only), the checksum golden, the ADR 0031 and ADR 0028 pointer notes, the ADR 0032 pointer note |
+| 2 | PR5 (Scholar-paste entry point: CLI and candidate store) | S | PR1 only; independent of PR2 and PR3 | `capture/candidates.py`, one registration line in `cli.py` |
+| 3 | PR4 (cascade and OpenAlex commands; runs candidates through the levels) | M | PR2, PR3, PR5 | `capture/cascade_commands.py` (new), one registration line in `cli.py` |
+| 3 | PR6 (manual entry and conflict resolution: writer, CLI, GUI) | M-L | PR3 (event models and folds) | `capture/manual.py`, `capture/manual_ui.py`, `capture/manual_commands.py` (new), `capture/conflicts.py` (new: the resolution writer), one registration line in `cli.py`. Does NOT touch `store/load.py` or `models.py`. |
+| 3 | PR7 (exports, methods, numbers keys, goldens, run-the-demo) | M | PR3 only; tests use fixture rows that carry the `manual`, `resolved` and `unavailable` values | `report/`, `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` |
+| 4 | PR8 (fresh real run, CHANGELOG; sharing gate, see below) | S | all of the above | `CHANGELOG.md` |
+
+Size: S is under 150 changed lines, M under 600, and L is larger.
 
 **Stacking PR2 and PR3.** PR3 is stacked on PR2 under ADR 0037: its branch is created from PR2's branch. The train merges PR2 first,
 then PR3. PR2's head is frozen once PR3 starts, and PR3 may import PR2's `CascadeRunManifest` and `NON_RUN_DIRNAMES` constant.
@@ -565,14 +652,18 @@ directly.
   and without affiliations), 401, and 404, a budget stop, and a quota stop, each with the manifest shape of Decision 6. The live batch
   form is verified and the result is recorded in the PR. Failing tests first: refusal without opt-in writes no seal; a run with
   `fallback_opt_in` false is refused at seal; `NON_RUN_DIRNAMES` contains the name; the key is in no written file.
-- **PR3 (provenance columns, conflicts, loader merge, manual fold).** `store/schema.sql` (16 columns with the CHECKs of Decision 3,
-  and `provenance_conflicts`), `models.py` (the `ManualEntry` event model of Decision 4 and its binding to `AppendOnlyLog`, with a
-  stub reader), `store/load.py` (the merge of Decision 2, the conflict rows, the `_sealed_cascade_run_dirs` discovery and its
-  outcome check, and the manual fold of Decision 4), the `records_all` view, `store/checksums.py`, and the two dated pointer notes
-  (ADR 0031 Decision 9 and ADR 0028). It is stacked on PR2 and imports PR2's `CascadeRunManifest` and `NON_RUN_DIRNAMES` name, and
-  its tests may use both. Acceptance: the merge tests,
-  the no-blank test, the rebuild-determinism test, the manual fold tests, and the checksum golden regenerated with its cause named in
-  the PR. Failing tests first: the no-blank test and the never-overrides test, both failing on the current `load.py`.
+- **PR3 (provenance columns, conflicts, resolution fold, manual fold, registered values). Size L.** `store/schema.sql` (16 columns
+  with the CHECKs of Decision 3, `provenance_conflicts` with `status` and the resolution columns, and `registered_records` with
+  `authors_json`, `affiliations_json` and `keywords_json`), `models.py` (the `ManualEntry` and `ConflictResolution` event models of
+  Decisions 4 and 2, each bound to `AppendOnlyLog`, with stub readers), `store/load.py` (the merge of Decision 2, the conflict rows,
+  the `conflict_resolution` fold and its effect on the columns and the `authors` and `affiliations` rows, the `_sealed_cascade_run_dirs`
+  discovery and its outcome check, the manual fold of Decision 4, and the registered-value derivation in `_fold_registrations`),
+  `capture/registrations.py` (the derivation helper only, no writer change), `countries.py` (`ALPHA2_TO_ALPHA3`), the `records_all`
+  view, `store/checksums.py`, and four pointer notes: ADR 0031 Decision 9, ADR 0028, and ADR 0032 (its `registered_records` table gains
+  three columns). It is stacked on PR2 and imports PR2's `CascadeRunManifest` and `NON_RUN_DIRNAMES` name, and its tests may use both.
+  Acceptance: the merge tests, the no-blank test, the rebuild-determinism test, the manual and conflict fold tests, the registered
+  provenance tests, and the checksum golden regenerated with its cause named in the PR. Failing tests first: the no-blank test and
+  the never-overrides test, both failing on the current `load.py`.
 - **PR5 (Scholar-paste entry point).** Independent of PR2 and PR3. Adds `prismabib candidates add <slug> --reviewer R [--file PATH]`
   as a registration in `cli.py`, its command module `capture/candidate_commands.py`, and the candidate store writes through the
   existing `parse_pasted_rows` and `CandidateLog.add`. It runs no HTTP request: enrichment is PR4's. Acceptance: a pasted row writes
@@ -586,19 +677,27 @@ directly.
   to obtain a DOI, then level 2 by that DOI, then level 3 by the `scopus_id` that level 2 returned. It also adds the report tables,
   the exit codes, and the replacement sentence in `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the
   dry-run test that makes no call, and the budget-required-with-opt-in test. Failing tests first: a second call makes no request.
-- **PR6 (manual entry, writer and GUI).** Depends on PR3 for the event model and the fold. Adds `capture/manual.py` (the writer,
-  the five refusals, and the reverse writer), `capture/manual_ui.py`, `capture/manual_commands.py` with the CLI commands
-  `prismabib manual-entry` and `prismabib manual-reverse`, and one registration line in `cli.py`. It does not touch `store/load.py` or `models.py`; the fold and the event model are PR3's. Acceptance:
-  the five refusals, the reversal, the GUI and CLI parity test, and the disabled button for a DOI-less record. Failing tests first:
-  a manual value for a supplied field is refused by the writer.
-- **PR7 (exports, methods, numbers keys, goldens, run-the-demo).** Depends on PR3 only. Its tests use fixture rows that carry
-  `manual` and `unavailable` values in the columns PR3 adds, so it does not wait for PR6. The export columns, `methods.cascade_sentence`, the 29 keys,
-  `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` (the 44 to 73 key count, the optional list, and the
-  stale `33`), and the `limitations.md` label text. Acceptance: the golden tests pass with the stated changes, and `fill` on the demo
-  manuscript passes. Failing tests first: the key-set golden, which fails until the keys are added.
-- **PR8 (fresh real run, CHANGELOG).** Every level is captured anew with the new commands on the real project, the store is rebuilt
-  from those runs, and the numbers are reported in the CHANGELOG. The old runs are not used (Decision 11). The real project's data
-  is not committed.
+- **PR6 (manual entry and conflict resolution: writer, CLI, GUI). Size M-L.** Depends on PR3 for the event models and the folds.
+  Adds `capture/manual.py` (the manual writer, the five refusals, and its reverse writer), `capture/conflicts.py` (the
+  `conflict_resolution` writer, its refusals and its reverse writer), `capture/manual_ui.py` (the manual form and the conflict review
+  panel, which lists open conflicts with both values and the two `chosen_side` buttons), `capture/manual_commands.py` with the CLI
+  commands `prismabib manual-entry`, `prismabib manual-reverse`, `prismabib conflict-resolve` and `prismabib conflict-reverse`, and
+  one registration line in `cli.py`. It does not touch `store/load.py` or `models.py`; the folds and the event models are PR3's.
+  Acceptance: the five manual refusals, the conflict writer refusals listed in Verification, the reversal, the GUI and CLI parity
+  tests, and the disabled button for a DOI-less record. Failing tests first: a manual value for a supplied field is refused by the
+  writer, and a `chosen_side` `manual` without a value is refused.
+- **PR7 (exports, methods, numbers keys, goldens, run-the-demo). Size M.** Depends on PR3 only. Its tests use fixture rows that carry
+  `manual`, `resolved` and `unavailable` values in the columns PR3 adds, so it does not wait for PR6. The export columns, the
+  `resolved` status in the conflict export, `methods.cascade_sentence`, the 31 new keys (28 per-field integers, two conflict totals
+  and the sentence), `numbers_keys.json` (75 keys: 41 required, 34 optional), `reference_numbers.json`,
+  `docs/how-to/run-the-demo.md` (the key count, the optional list, and the stale `33`), and the `limitations.md` label text.
+  Acceptance: the golden tests pass with the stated changes, and `fill` on the demo manuscript passes. Failing tests first: the
+  key-set golden, which fails until the keys are added.
+- **PR8 (fresh real run, CHANGELOG). Size S.** Every level is captured anew with the new commands on the real project, the store is
+  rebuilt from those runs, and the numbers are reported in the CHANGELOG. The old runs are not used (Decision 11). The real project's
+  data is not committed. **Sharing gate:** nothing from PR8 may be shared, and no Scopus payload may be committed, until the owner has
+  confirmed the Elsevier terms (Questions put to the owner, item 4). This is a gate on the sharing step, not an implementation step:
+  PR8 proceeds without sharing, and any shared sample waits for the confirmation.
 
 ## Risks
 
@@ -620,27 +719,54 @@ directly.
 6. **Unverified batch form.** The multi-DOI `STANDARD` request is not live-verified. PR2 verifies it. If the batch form fails, level 2
    runs one DOI per request, which costs more quota.
 7. **Quota.** An opt-in run can spend a weekly quota. The budget is required, and the dry run prints the cost first.
-8. **Scopus data in shared outputs.** Level 2 and 3 payloads are Scopus data. Whether a shared sample may contain them is an open
-   question (item 4).
+8. **Scopus data in shared outputs.** Level 1, 2 and 3 payloads and Scopus values are Scopus data. No shared sample and no committed
+   file may contain them until the owner confirms the Elsevier terms (the sharing gate in PR8, item 4 below). `raw/` stays gitignored.
+9. **Registered values.** Registered authors, affiliations and keywords come from the registration's OpenAlex body. A body that is
+   sparse gives `unavailable`, which is correct but can look like a gap in the registered set. PR3's tests cover the empty and the
+   populated case, and the methods say the registered values are OpenAlex values.
+10. **Resolution side effects.** A `chosen_side` `openalex` resolution rewrites a record's author and affiliation rows with synthetic
+    ids. Those ids are deterministic (`resolved:<event_id>:<n>`), so the rebuild reproduces them. The Scopus rows are not deleted from
+    Layer 0, and a reversal restores the Scopus values. The rebuild-determinism test covers a resolution and its reversal.
+11. **Reviewer workload.** Conflicts must be resolved by a person. An open list that grows faster than it is resolved leaves the
+    methods with open conflicts. The `conflicts_open` count makes that visible rather than hiding it.
 
-## Open questions for the owner
+## Questions put to the owner, and the answers
 
-1. **Attempt trail.** Should `absent`, `not_found` and `refused` per field and level be kept in Layer 1, as a fifth column per field
-   (ADR 0028 Decision 2), or left in Layer 0 only, as this draft does?
-2. **Registered records.** Should `registered_records` store authors, affiliations and keywords, which needs a change to ADR 0032's
-   table? Until then, they are `unavailable` for registered records.
-3. **Conflict resolution.** Is the conflicts list read-only, as here, or should a reviewer resolve each conflict by a Layer 2 event?
-4. **Sharing.** May a shared sample contain level 2 and 3 Scopus payloads, or the Scopus abstracts from level 1, under the Scopus
-   terms? This is the sharing decision the plan lists as item 7.
-5. **Budget defaults.** Is there a standing `--scopus-budget` the owner wants as a default, or is it always given explicitly? The draft
-   requires it explicitly.
+The owner answered on 2026-11-02. Each answer is applied in the sections named.
+
+1. **Attempt trail.** Answer: **Layer 0 only**, as drafted. The attempt outcomes `absent`, `not_found` and `refused` stay in the
+   Layer 0 manifests and are not a fifth column (Decision 3). This is confirmed, and it is the position ADR 0028 Decision 2 is
+   amended to state (Section 10).
+2. **Registered records.** Answer: **yes**, store authors, affiliations and keywords. Design (Decision 3, "Registered values"):
+   `registered_records` gains `authors_json`, `affiliations_json` and `keywords_json`, JSON arrays or NULL. They are derived at load
+   time from the registration's own OpenAlex body, with source `openalex` (keywords `openalex-topic`) and level 4, which is the
+   faithful source. A body that lacks a field gives `unavailable`. A later Scopus match supersedes the registration (ADR 0029
+   Decision 6), and the Scopus record's provenance then applies. ADR 0032 gets a dated pointer note in PR3.
+3. **Conflict resolution.** Answer: **a reviewer resolves each conflict through a Layer 2 event**. Design (Decision 2): the
+   `conflict_resolution` event in `decisions/conflict_resolutions.jsonl`, with the conflict key `(record_id, field)`, `chosen_side`
+   (`scopus`, `openalex` or `manual` with a value), `reviewer`, `ts` and an optional `note`. It is reversible through a `reverse`
+   event, as registrations are (ADR 0029 Decision 7), with the reasons `wrong_side`, `wrong_value` and `other`. The fold takes the
+   latest non-reversed resolution. The effect on Layer 1 is the chosen side's value and provenance, and the conflict row gains
+   `status` `resolved`. The Scopus value stays in Layer 0. The rule "never overrides" is amended for this one path only (Decision 2,
+   rule 4). The model and fold are PR3's, and the writer, CLI and panel are PR6's. New keys: `methods.cascade_conflicts_open` and
+   `methods.cascade_conflicts_resolved` (Decision 5). The counts are recomputed in Decision 5 and in Key counts.
+4. **Sharing.** Answer: **allow if the terms permit**. This is conditional, and it is **not decided** that Scopus payloads may be
+   shared. The owner must confirm the Elsevier terms before any shared sample includes Scopus level 1, 2 or 3 data. Until
+   confirmed, shared samples and anything committed to git use no Scopus payloads, and `raw/` stays gitignored. This is a gate on
+   PR8 and on the sharing step (Step 3 of the plan), not an implementation pull request. Risk 8 and PR8 carry it.
+5. **Budget.** Answer: **always explicit**, as drafted. `--scopus-budget` has no default value and is given explicitly on every run
+   that includes levels 2 and 3, that is, every run with `--opt-in`. This is confirmed (Decision 7).
 
 ## Records touched
 
 - New: this file.
 - Edited: `mkdocs.yml`, one nav entry after the ADR 0040 entry.
-- Not touched by this record: code, tests, goldens, `CHANGELOG.md`, `.claude/PROGRESS.md`, and BUILD_PLAN.md. The implementing pull
-  requests own them, as Implementation plan assigns.
+- Not touched by this record: code, tests, goldens, `CHANGELOG.md`, `.claude/PROGRESS.md`, BUILD_PLAN.md, and ADRs 0001 to 0040.
+  The implementing pull requests own them, as Implementation plan assigns.
+- Dated pointer notes that the implementing pull requests append, and do not edit older text in:
+  - ADR 0031, Decision 9: PR3.
+  - ADR 0028: PR3. It covers the amendments of Section 10.
+  - ADR 0032, the `registered_records` table: PR3, for the three JSON columns.
 
 ## Related decisions
 
@@ -657,7 +783,8 @@ directly.
 - [ADR 0029](0029-reviewer-registration-of-a-candidate-as-a-record.md): the reversal pattern and the event envelope.
 - [ADR 0030](0030-openalex-topics-as-a-keyword-kind.md): the CHECK-constraint amendment form, and the topic kind.
 - [ADR 0031](0031-openalex-responses-are-layer0-runs.md): the OpenAlex run kind that levels 4 uses. Decision 9 is made true by PR3.
-- [ADR 0032](0032-registered-records-table-and-classification-map.md): `registered_records`, whose columns are the subject of open question 2.
+- [ADR 0032](0032-registered-records-table-and-classification-map.md): `registered_records`, which gains three JSON columns (Decision 3).
+  Its dated pointer note is a deliverable of PR3.
 - [ADR 0035](0035-gui-registration-of-candidates.md): the GUI and CLI single-writer rule, and KEY_MAP.
 - [ADR 0039](0039-taxonomy-engine-behaviour-stamp.md): the `methods.*` exemption that Decision 5 relies on.
 - [ADR 0037](0037-merge-train-and-native-stacked-prs.md): the merge train and native stacked pull requests that the PR2 to PR3 stack
