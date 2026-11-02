@@ -379,8 +379,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         AuthError: On HTTP 401 from Scopus; never retried.
         EntitlementError: On HTTP 403 for ``view=COMPLETE``; never retried,
             never silently lowered to ``STANDARD`` (BUILD_PLAN §5 risk 1).
-            Only the opt-in, recorded field-level cascade (ADR 0041) may
-            fill the refused fields.
+            No field-level fallback is implemented in this release.
         QuotaExceededError: On HTTP 429 indicating the weekly quota is
             exhausted.
         RateLimitError: On HTTP 429 exhausting the retry budget.
