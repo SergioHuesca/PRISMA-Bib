@@ -38,11 +38,19 @@ phrasing, stated for the eight figures where one function/one
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import polars as pl
 
-from prismabib.bibliometrics.base import AnalysisResult, build_provenance
+from prismabib.bibliometrics.base import (
+    AnalysisResult,
+    YearRange,
+    build_provenance,
+    normalise_years,
+    range_params,
+    restrict_to_years,
+)
 from prismabib.store.load import Corpus
 from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.coder import CodingResult, distribution
@@ -58,6 +66,8 @@ def dimension_distribution(
     schema: TaxonomySchema,
     dimension_id: str,
     counting_unit: CountingUnit,
+    *,
+    years: YearRange | None = None,
 ) -> AnalysisResult:
     """One dimension's coded distribution, as an :class:`AnalysisResult` (BUILD_PLAN figure 7).
 
@@ -73,6 +83,9 @@ def dimension_distribution(
         schema: The project's declared taxonomy dimensions.
         dimension_id: Which dimension to summarise.
         counting_unit: Forwarded to :func:`~prismabib.taxonomy.coder.distribution`.
+        years: Inclusive ``(start, end)`` publication-year bounds, ``None`` bound
+            open (ADR 0040). Only in-range records are counted, so ``uncoded``,
+            ``reviewed_none`` and the sum-to-``|C|`` guard cover the in-range subset.
 
     Returns:
         An :class:`AnalysisResult` whose ``data`` is ``category``, ``count``
@@ -87,8 +100,19 @@ def dimension_distribution(
         the unit BUILD_PLAN requires every taxonomy figure to state.
 
     Raises:
+        AnalysisError: ``years`` is malformed (checked before any read).
         ValidationError: See :func:`~prismabib.taxonomy.coder.distribution`.
     """
+    normalise_years(years)
+    stage_records = corpus.records(result.stage)
+    in_range, n_no_year = restrict_to_years(stage_records, years)
+    if in_range is not stage_records:
+        keep = frozenset(in_range.get_column("record_id").to_list())
+        result = dataclasses.replace(
+            result,
+            record_ids=tuple(r for r in result.record_ids if r in keep),
+            assignments=tuple(a for a in result.assignments if a.record_id in keep),
+        )
     dimension = schema.dimension(dimension_id)
     dist = distribution(result, schema, dimension_id, counting_unit)
 
@@ -100,14 +124,14 @@ def dimension_distribution(
     else:
         data = pl.DataFrame(schema=_EMPTY_DISTRIBUTION_SCHEMA)
 
-    records = corpus.records(result.stage)
-    provenance = build_provenance(corpus, stage=result.stage, records=records)
+    provenance = build_provenance(corpus, stage=result.stage, records=stage_records)
     params: dict[str, Any] = {
         "dimension": dimension_id,
         "counting_unit": counting_unit.value,
         "multi_label": dimension.multi_label,
         "taxonomy_engine_behaviour": TAXONOMY_ENGINE_BEHAVIOUR,
     }
+    params = range_params(params, years, in_range.height, n_no_year)
     return AnalysisResult(data=data, params=params, provenance=provenance)
 
 
