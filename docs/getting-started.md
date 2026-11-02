@@ -467,7 +467,7 @@ truncates them.
 
 | Error | What it means | What to do |
 | --- | --- | --- |
-| `EntitlementError` | HTTP 403: your key is valid, but not entitled to `view=COMPLETE` | Run from your institution's network, or get an institutional token. the search is refused rather than silently lowered to `STANDARD`; no field-level fallback is implemented yet |
+| `EntitlementError` | HTTP 403: your key is valid, but not entitled to `view=COMPLETE` | Run from your institution's network, or get an institutional token. The search is refused rather than silently lowered to `STANDARD`; no field-level fallback is implemented yet |
 | `AuthError` | HTTP 401: the key itself was rejected | Check `SCOPUS_API_KEY`; check you did not paste the key into `SCOPUS_INSTTOKEN` |
 | `QuotaExceededError` | A quota is exhausted: the weekly Scopus quota, or a server-reported reset more than an hour away (prismabib raises rather than sleeping until it) | Wait for the reset, then run the same command again. Everything already captured is in Layer 0 and resumable. A `fulltext` run stops at the error (it does not fail each remaining record) and stays unsealed; the next `prismabib fulltext` resumes it |
 | `ConfigError: … SCOPUS_API_KEY` | No `.env` and no environment variable | `cp .env.example .env` |
