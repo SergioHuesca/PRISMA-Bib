@@ -125,6 +125,7 @@ nav:
           - "ADR 0038: refresh semantics of the HTTP cache": architecture/adr/0038-refresh-semantics-of-the-http-cache.md
           - "ADR 0039: taxonomy engine behaviour is stamped": architecture/adr/0039-taxonomy-engine-behaviour-stamp.md
           - "ADR 0040: year range is an engine argument": architecture/adr/0040-year-range-in-analysis-engines.md
+          - "ADR 0041: field-level provenance and cascade completion": architecture/adr/0041-field-level-provenance-and-cascade-completion.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
