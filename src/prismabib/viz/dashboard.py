@@ -51,7 +51,7 @@ from prismabib.bibliometrics.base import (
     restrict_to_years,
     years_label,
 )
-from prismabib.errors import ConfigError
+from prismabib.errors import AnalysisError, ConfigError
 from prismabib.prisma.flow import compute_flow_counts
 from prismabib.stage import PrismaStage
 from prismabib.store.load import Corpus
@@ -63,7 +63,7 @@ from prismabib.taxonomy.schema import CountingUnit, load_dimensions
 from prismabib.viz import figures
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from prismabib.project import Project
     from prismabib.taxonomy.coder import CodingResult
@@ -104,6 +104,13 @@ class FilterState:
     year_end: int | None = None
     taxonomy_dimension: str | None = None
     citation_snapshot: datetime | None = None
+
+    @property
+    def years(self) -> tuple[int | None, int | None] | None:
+        """The range to hand an engine's ``years=``: ``None`` when neither bound is set."""
+        if self.year_start is None and self.year_end is None:
+            return None
+        return (self.year_start, self.year_end)
 
     def __post_init__(self) -> None:
         # A start after the end raises here, so no code path can hold (or assign)
@@ -271,6 +278,7 @@ class Dashboard:
                 else "Year range (no dated records at this stage)"
             )
 
+        self._status = pn.pane.Markdown("")
         self._project_selector = pn.widgets.Select(
             label="Project", options=[self._project.slug], value=self._project.slug
         )
@@ -307,25 +315,41 @@ class Dashboard:
             pn.pane.Markdown(f"## {self._project.title}"),
             self._project_selector,
             self._year_range,
+            self._status,
             self._taxonomy_dimension_selector,
             self._citation_snapshot_selector,
         )
 
     def _on_year_range_changed(self, event: param.parameterized.Event) -> None:
         start, end = event.new
-        self.apply_filters(year_start=start, year_end=end)
+        self._from_widget(lambda: self.apply_filters(year_start=start, year_end=end))
+
+    def _from_widget(self, action: Callable[[], None]) -> None:
+        """Run a widget-driven change; a rejected one shows its message and keeps the old view."""
+        try:
+            action()
+        except (AnalysisError, ConfigError) as error:
+            self._status.object = f"**Filter not applied:** {error}"
+        else:
+            self._status.object = ""
 
     # These two must be able to go *back* to "(all)"/"(latest)", i.e. to
     # `None`, which `apply_filters` reads as "keep the current value".
     def _on_taxonomy_dimension_changed(self, event: param.parameterized.Event) -> None:
         dimension = None if event.new == "(all)" else str(event.new)
-        self._set_filter_state(
-            dataclasses.replace(self._filter_state, taxonomy_dimension=dimension)
+        self._from_widget(
+            lambda: self._set_filter_state(
+                dataclasses.replace(self._filter_state, taxonomy_dimension=dimension)
+            )
         )
 
     def _on_citation_snapshot_changed(self, event: param.parameterized.Event) -> None:
         snapshot = None if event.new == "(latest)" else datetime.fromisoformat(str(event.new))
-        self._set_filter_state(dataclasses.replace(self._filter_state, citation_snapshot=snapshot))
+        self._from_widget(
+            lambda: self._set_filter_state(
+                dataclasses.replace(self._filter_state, citation_snapshot=snapshot)
+            )
+        )
 
     def apply_filters(
         self,
@@ -511,25 +535,31 @@ class Dashboard:
         self._panes["Trends"] = pane
         return pn.Column(pane, self._caption_pane(figures._caption(result)))
 
-    # Geography, Venues and Network aggregate over the whole stage: their
-    # engines take no year range and return no per-year rows, so the year
-    # filter cannot reach them and their captions say so.
+    # Geography, Venues, Network and the taxonomy distribution frames carry no
+    # `year`: the engines take the range themselves (`years=`, ADR 0040) instead of
+    # a dashboard post-filter, so numbers, params and captions come from the engine.
     def _geography_tab(self) -> pn.viewable.Viewable:
         result = geography.country_counts(
-            self._corpus_for("Geography"), stage=self._filter_state.stage
+            self._corpus_for("Geography"),
+            stage=self._filter_state.stage,
+            years=self._filter_state.years,
         )
         plotly_figure, _mpl_figure = figures.geography_figure(result)
         return pn.Column(
             pn.pane.Plotly(plotly_figure),
-            self._caption_pane(figures._caption(result), by_year=False),
+            self._caption_pane(figures._caption(result)),
         )
 
     def _venues_tab(self) -> pn.viewable.Viewable:
-        result = venues.top_venues(self._corpus_for("Venues"), stage=self._filter_state.stage)
+        result = venues.top_venues(
+            self._corpus_for("Venues"),
+            stage=self._filter_state.stage,
+            years=self._filter_state.years,
+        )
         plotly_figure, _mpl_figure = figures.venues_figure(result)
         return pn.Column(
             pn.pane.Plotly(plotly_figure),
-            self._caption_pane(figures._caption(result), by_year=False),
+            self._caption_pane(figures._caption(result)),
         )
 
     def _keywords_tab(self) -> pn.viewable.Viewable:
@@ -546,12 +576,15 @@ class Dashboard:
 
     def _network_tab(self) -> pn.viewable.Viewable:
         result = network.keyword_cooccurrence_network(
-            self._corpus_for("Network"), stage=self._filter_state.stage, min_occurrence=1
+            self._corpus_for("Network"),
+            stage=self._filter_state.stage,
+            min_occurrence=1,
+            years=self._filter_state.years,
         )
         plotly_figure, _mpl_figure = figures.network_figure(result)
         return pn.Column(
             pn.pane.Plotly(plotly_figure),
-            self._caption_pane(figures._caption(result), by_year=False),
+            self._caption_pane(figures._caption(result)),
         )
 
     def _taxonomy_tab(self) -> pn.viewable.Viewable:
@@ -570,7 +603,9 @@ class Dashboard:
         if not dimension_ids:
             raise ConfigError(f"Taxonomy dimension {wanted!r} is not declared in dimensions.yaml.")
         distribution_results: Sequence[AnalysisResult] = [
-            dimension_distribution(corpus, coding_result, schema, dim_id, units[dim_id])
+            dimension_distribution(
+                corpus, coding_result, schema, dim_id, units[dim_id], years=self._filter_state.years
+            )
             for dim_id in dimension_ids
         ]
         evolution_results: Sequence[AnalysisResult] = [
@@ -580,11 +615,17 @@ class Dashboard:
             )
             for dim_id in dimension_ids
         ]
+        scope = distribution_results[0].params.get("years")
+        dist_caption = (
+            f"Distribution over papers published in {scope}."
+            if isinstance(scope, str)
+            else "Distribution over every year."
+        )
         dist_plotly, _dist_mpl = figures.taxonomy_distribution_figure(distribution_results)
         evo_plotly, _evo_mpl = figures.taxonomy_evolution_figure(evolution_results)
         return pn.Column(
             pn.pane.Plotly(dist_plotly),
-            self._caption_pane("Distribution over every year.", by_year=False),
+            self._caption_pane(dist_caption),
             pn.pane.Plotly(evo_plotly),
             self._caption_pane("Evolution by year."),
         )

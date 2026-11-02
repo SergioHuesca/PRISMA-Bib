@@ -129,13 +129,117 @@ def test_year_range__changed__reaches_every_year_aware_tab(tmp_path: Path) -> No
 
 
 @pytest.mark.integration
-def test_year_range__views_without_per_year_rows__say_they_are_unfiltered(tmp_path: Path) -> None:
+@pytest.mark.parametrize("name", ["Geography", "Venues", "Network"])
+def test_year_range__engine_tabs__caption_states_range_from_engine(
+    tmp_path: Path, name: str
+) -> None:
     dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021]))
+    unfiltered = _texts(_tab(dashboard, name))
 
     dashboard._year_range.value = (2020, 2021)
 
+    text = _texts(_tab(dashboard, name))
+    assert "papers published in 2020-2021" in text  # the engine's own caption
+    assert "Year range 2020-2021 applied." in text
+    assert "does not apply" not in text
+    assert "papers published in" not in unfiltered
+    assert "Year range" not in unfiltered
+
+
+@pytest.mark.integration
+def test_filter_state__years__is_none_without_bounds() -> None:
+    assert FilterState().years is None
+    assert FilterState(year_start=2020).years == (2020, None)
+
+
+@pytest.mark.integration
+def test_year_range__engine_tabs__pass_the_range_to_the_engines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.bibliometrics import geography, network, venues
+
+    seen: dict[str, Any] = {}
+
+    def spy(module: Any, fn_name: str) -> None:
+        real = getattr(module, fn_name)
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            seen[fn_name] = kwargs.get("years")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(module, fn_name, wrapper)
+
+    spy(geography, "country_counts")
+    spy(venues, "top_venues")
+    spy(network, "keyword_cooccurrence_network")
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021]))
+    assert set(seen.values()) == {None}
+
+    dashboard.apply_filters(year_start=2020, year_end=2021)
+
+    assert seen == {
+        "country_counts": (2020, 2021),
+        "top_venues": (2020, 2021),
+        "keyword_cooccurrence_network": (2020, 2021),
+    }
+
+
+@pytest.mark.integration
+def test_year_range__year_keyed_tabs__still_post_filter(tmp_path: Path) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021], author_keywords=("baseball",)))
+
+    dashboard._year_range.value = (2020, 2021)
+
+    for name in ("Trends", "Keywords"):
+        text = _texts(_tab(dashboard, name))
+        assert "Year range 2020-2021 applied." in text
+        assert "papers published in" not in text  # engine got no `years`
+
+
+@pytest.mark.integration
+def test_year_range__outside_the_data__engine_tabs_render_empty(tmp_path: Path) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021], author_keywords=("baseball",)))
+
+    dashboard.apply_filters(year_start=1990, year_end=1991)
+
     for name in ("Geography", "Venues", "Network"):
-        assert "does not apply to this view" in _texts(_tab(dashboard, name))
+        assert "papers published in 1990-1991" in _texts(_tab(dashboard, name))
+
+
+@pytest.mark.integration
+def test_taxonomy_caption__range__is_derived_not_every_year(taxonomy_project: Project) -> None:
+    dashboard = Dashboard(taxonomy_project)
+    assert "Distribution over every year." in _texts(_tab(dashboard, "Taxonomy"))
+
+    dashboard.apply_filters(year_start=2020, year_end=2021)
+
+    text = _texts(_tab(dashboard, "Taxonomy"))
+    assert "Distribution over papers published in 2020-2021." in text
+    assert "every year" not in text
+
+    dashboard.apply_filters(year_start=1990, year_end=1991)  # zero-row buckets, no crash
+    assert "papers published in 1990-1991" in _texts(_tab(dashboard, "Taxonomy"))
+
+
+@pytest.mark.integration
+def test_year_range__widget_rejects_bad_range__shows_message_and_keeps_view(
+    tmp_path: Path,
+) -> None:
+    dashboard = Dashboard(_bib_project(tmp_path, [2019, 2020, 2021, 2022]))
+    dashboard._year_range.value = (2020, 2021)
+    before = dashboard.filter_state
+    venues_before = _texts(_tab(dashboard, "Venues"))
+
+    class _Event:
+        new = (2022, 2020)
+
+    dashboard._on_year_range_changed(_Event())  # type: ignore[arg-type]
+
+    assert dashboard.filter_state is before
+    assert _texts(_tab(dashboard, "Venues")) == venues_before
+    assert "Filter not applied" in dashboard._status.object
+    dashboard._year_range.value = (2019, 2021)
+    assert dashboard._status.object == ""
 
 
 @pytest.fixture
