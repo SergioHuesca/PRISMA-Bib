@@ -21,7 +21,9 @@ from prismabib.bibliometrics.base import (
     _max_datetime,
     _serialise,
     normalise_years,
+    range_params,
     restrict_to_years,
+    semi_join_records,
     years_label,
 )
 from prismabib.errors import AnalysisError
@@ -416,3 +418,27 @@ def test_years_label__matches_the_dashboards_year_range_text(
     state = dashboard.FilterState(year_start=years[0], year_end=years[1])
 
     assert years_label(years) == dashboard._year_range_text(state)
+
+
+@pytest.mark.unit
+def test_range_params__only_added_when_a_range_is_set() -> None:
+    assert range_params({"a": 1}, None, 5, 1) == {"a": 1}
+    assert range_params({"a": 1}, (None, None), 5, 1) == {"a": 1}
+    assert range_params({"a": 1}, (2020, None), 5, 1) == {
+        "a": 1,
+        "years": "2020-...",
+        "n_in_range": 5,
+        "n_no_year_dropped": 1,
+    }
+    with pytest.raises(AnalysisError):
+        range_params({}, (2021, 2020), 0, 0)
+
+
+@pytest.mark.unit
+def test_semi_join_records__keeps_matching_ids_and_passes_empty_frames_through() -> None:
+    records = pl.DataFrame({"record_id": ["a", "c"]})
+    frame = pl.DataFrame({"record_id": ["a", "b", "c", "a"], "v": [1, 2, 3, 4]})
+
+    assert semi_join_records(frame, records).get_column("v").to_list() == [1, 3, 4]
+    empty = pl.DataFrame({"record_id": [], "v": []})  # Null dtypes, as Corpus._query yields
+    assert semi_join_records(empty, records) is empty
