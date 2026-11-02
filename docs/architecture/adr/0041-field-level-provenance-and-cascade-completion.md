@@ -73,16 +73,6 @@ level 4 supplies it when the record has OpenAlex topics, with source `openalex-t
 gives them. The topics are also written as `openalex-topic` links in `record_keywords`, as ADR 0030 specifies, whether or not
 they fill the field. Keywords never conflict and take no manual entry, because no keyword kind exists for manual values.
 
-**1d. Level-1 abstract input.** The abstract is not read from the Abstract Retrieval runs. The loader sets `records.abstract` from
-the search entry's `dc:description` (`_record_from_entry` in `src/prismabib/store/load.py`), so the level-1 abstract is that
-search payload's text. Its payload reference is the record's own `payload_file` and `payload_line`, the same address as
-`source_payload_ref`. The sealed Abstract Retrieval runs under `raw/abstracts/` (`ABSTRACTS_DIRNAME`, table `abstract_runs`,
-ADR 0018) feed subject areas only, and this record does not change that. Authors, affiliations and keywords at level 1 come from
-`raw/<run_id>/` in the same way.
-
-**1e. Levels 2 and 3 never set `abstract` or `keywords`.** Their results carry no abstract and no keywords (Decision 1a), so the
-`abstract_*` and `keywords_*` columns are never written with a level 2 or 3 source.
-
 **1c. Which records each level is asked about.**
 
 - Level 2 runs over records whose affiliations are unsupplied after level 1.
@@ -91,6 +81,19 @@ ADR 0018) feed subject areas only, and this record does not change that. Authors
 - Level 4 runs over every record that has a DOI, and by title and year over records without one. It is not limited to blanks,
   because a conflict needs the OpenAlex value even where Scopus supplied the field. This is cheap: about 23 requests of 50 DOIs
   for 1,119 records.
+
+**1d. Level-1 abstract input.** The abstract is not read from the Abstract Retrieval runs. The loader sets `records.abstract` from
+the search entry's `dc:description` (`_record_from_entry` in `src/prismabib/store/load.py`), so the level-1 abstract is that
+search payload's text. Its payload reference is the record's own `payload_file` and `payload_line`, the same address as
+`source_payload_ref`. The sealed Abstract Retrieval runs under `raw/abstracts/` (`ABSTRACTS_DIRNAME`, table `abstract_runs`,
+ADR 0018) feed subject areas only, and this record does not change that. Authors, affiliations and keywords at level 1 come from
+`raw/<run_id>/` in the same way.
+
+**1e. Levels 2 and 3 never set `abstract` or `keywords`.** Their results carry no abstract and no keywords (Decision 1a), so the
+`abstract_*` and `keywords_*` columns are never written with a level 2 or 3 source. Level 2 and 3 affiliations take the payload
+reference `scopus-cascade/<run_id>/response-NNNN.jsonl#0`, built from the `CascadeRunManifest` fields `run_id` and the request's
+`file`. Each response file holds exactly one line (ADR 0031 Decision 2 form), so the line is always `0`. The reference form for
+every source is listed in Decision 3.
 
 ### 2. The merge rule, per record and per field
 
@@ -118,6 +121,16 @@ one is used. Each field is compared as follows:
 - **affiliations, when the Scopus side is level 2 or 3:** the set of ISO 3166-1 alpha-3 country codes only. Level 2 and 3
   affiliations carry city and country and no reliable institution name (ADR 0028 Consequence 4), so they are never compared by
   name. A conflict arises only when the two country sets differ.
+
+**Country canonical form: ISO 3166-1 alpha-3.** This is the form `Affiliation.country` already stores. The existing code is
+`normalise_country` in `src/prismabib/countries.py`, which looks a string up in the pinned `_COUNTRY_TABLE` (the ISO short names,
+`_ALIASES`, and an identity entry for every alpha-3 code). Scopus country names therefore reach alpha-3 through that function, as
+the model validator already does. OpenAlex supplies alpha-2 codes (`country_code`), and `normalise_country` does not map them. PR3
+adds a pinned `ALPHA2_TO_ALPHA3` table beside `_COUNTRY_TABLE`, and a test checks that every target is a value of
+`_ISO_SHORT_NAMES`. For comparison only, a value that `normalise_country` leaves unmatched, or an alpha-2 code missing from the table,
+becomes the literal `unmapped`. The stored value keeps the raw string, as today. An `unmapped` member is removed before the sets are
+compared, so it never causes a conflict. If one side is empty after removal, there is no conflict. Tests pin one unmapped name and
+one unmapped alpha-2 code to this rule.
 
 OpenAlex abstracts are rebuilt from an inverted index, so punctuation and hyphenation differences may appear. That makes conflicts
 more frequent than real disagreement. Risk 4 covers it, and PR3 measures the rate before any count is published.
@@ -150,7 +163,14 @@ It is read-only in this record. Resolving a conflict is out of scope (Open quest
 | `<field>_source` | TEXT, NOT NULL | The allowed set per field, below |
 | `<field>_level` | INTEGER, NOT NULL | 0 to 5: the supplying level, fixed by the source (see the CHECK); 0 when the field is unavailable |
 | `<field>_outcome` | TEXT, NOT NULL | `value` or `unavailable` |
-| `<field>_payload_ref` | TEXT, nullable | The payload address, relative to `raw/`: `<path>#<id>`. `<id>` is the line index for a Scopus payload, the work id for OpenAlex, or the `event_id` for manual. NULL when unavailable |
+| `<field>_payload_ref` | TEXT, nullable | The payload address, relative to `raw/`, in the forms listed below. NULL when unavailable |
+
+The payload reference forms, one per source (all relative to `raw/`):
+
+- level 1: `<run_id>/page-NNNN.jsonl#<line>`, the record's `payload_file` and `payload_line`;
+- level 2 and 3: `scopus-cascade/<run_id>/response-NNNN.jsonl#0` (Decision 1e);
+- level 4: `openalex/<run_id>/response-NNNN.jsonl#<openalex_id>` (ADR 0031 Decision 2);
+- level 5: `manual_entries.jsonl#<event_id>`.
 
 Allowed `<field>_source` values per field: `abstract`: `scopus-complete`, `openalex`, `manual`, `unavailable`.
 `authors`: `scopus-complete`, `openalex`, `manual`, `unavailable`. `affiliations`: `scopus-complete`, `scopus-standard`,
@@ -305,9 +325,9 @@ named in the pull request that makes it.
 deleted on seal, and `manifest.json` as the seal. The name is added to `layout.NON_RUN_DIRNAMES`, as ADR 0031 Decision 8 does
 for `openalex`. The run ids come from `layout.new_run_id()`, and every write goes through `guard_writable`.
 
-**Manifest.** `CascadeRunManifest`, a new model in `capture/manifest.py`, not the frozen `RunManifest`. This section is the
-contract PR3 builds against. PR3 uses fixtures of this exact shape and does not import the PR2 writer. Its top-level fields, all
-required unless marked:
+**Manifest.** `CascadeRunManifest`, a new model in `capture/manifest.py`, not the frozen `RunManifest`. PR2 owns this model and its
+writer. PR3 is stacked on PR2 and imports the model and the `NON_RUN_DIRNAMES` name from it. This section is the contract both
+satisfy. Its top-level fields, all required unless marked:
 
 - `run_id` (str), `started_at`, `finished_at` (UTC datetimes), `endpoint` (str, the base URL only), `client_version`,
   `criteria_version` (str).
@@ -494,18 +514,31 @@ where the dependency column allows it.
 |---|---|---|---|
 | 1 | PR0 (this record) | none | `docs/architecture/adr/0041-*.md`, `mkdocs.yml` |
 | 1 | PR1 (docs) | none | public docs and the docstrings listed in PR1 |
-| 2 | PR2 (Scopus levels 2 and 3, Layer 0 writer) | PR1 | `capture/cascade.py`, `capture/manifest.py`, `capture/layout.py` (`NON_RUN_DIRNAMES`) |
-| 2 | PR3 (provenance columns, conflicts, loader merge, manual fold) | PR0 (the shapes fixed here) | `store/schema.sql`, `models.py`, `store/load.py`, `store/checksums.py`, goldens for the checksum table only |
-| 2 | PR5 (candidate paste entry) | PR2 writer, existing `capture_openalex` | `capture/candidates.py` (CLI wiring in `cli.py`) |
-| 3 | PR4 (cascade and OpenAlex commands) | PR2, PR3, and PR5 (`cascade` runs the candidate step that PR5 writes) | `cli.py` (`cascade`, `openalex`), `capture/cascade.py` (orchestration only) |
-| 3 | PR6 (manual entry, writer, GUI, CLI) | PR3 (event model, log binding and fold) | `capture/manual.py`, `capture/manual_ui.py`, `cli.py` (`manual-entry`, `manual-reverse`). Does NOT touch `store/load.py` or `models.py`. |
-| 3 | PR7 (exports, methods, numbers keys, goldens, run-the-demo) | PR3, PR6 | `report/`, `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` |
+| 2 | PR2 (Scopus levels 2 and 3, Layer 0 writer) | PR1 | `capture/cascade.py` (writer), `capture/manifest.py` (`CascadeRunManifest`), `capture/layout.py` (`NON_RUN_DIRNAMES`) |
+| 2 | PR3 (provenance columns, conflicts, loader merge, manual fold), stacked on PR2 | PR2 (its branch base), PR0 | `store/schema.sql`, `models.py`, `store/load.py`, `store/checksums.py`, `countries.py` (`ALPHA2_TO_ALPHA3`), the checksum golden |
+| 2 | PR5 (Scholar-paste entry point: CLI and candidate store) | PR1 only; independent of PR2 and PR3 | `capture/candidates.py`, one registration line in `cli.py` |
+| 3 | PR4 (cascade and OpenAlex commands; runs candidates through the levels) | PR2, PR3, PR5 | `capture/cascade_commands.py` (new), one registration line in `cli.py` |
+| 3 | PR6 (manual entry, writer, GUI, CLI) | PR3 (event model, log binding and fold) | `capture/manual.py`, `capture/manual_ui.py`, `capture/manual_commands.py` (new), one registration line in `cli.py`. Does NOT touch `store/load.py` or `models.py`. |
+| 3 | PR7 (exports, methods, numbers keys, goldens, run-the-demo) | PR3 only; tests use fixture rows that carry the `manual` and `unavailable` values | `report/`, `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` |
 | 4 | PR8 (fresh real run, CHANGELOG) | all of the above | `CHANGELOG.md` |
 
-Hotspot ownership: `src/prismabib/store/schema.sql`, `src/prismabib/models.py` and `src/prismabib/store/load.py` change only in
-PR3. The goldens and `docs/how-to/run-the-demo.md` key counts change only in PR7, except the one checksum golden that PR3 regenerates
-(Risk 2). PR2 and PR3 both sit in batch 2. PR3 builds against the manifest shape fixed in Decision 6, using fixtures, so PR2 and PR3
-do not need each other to be merged. PR4 sits in batch 3, after PR5 in batch 2, because `cascade` runs the candidate step.
+**Stacking PR2 and PR3.** PR3 is stacked on PR2 under ADR 0037: its branch is created from PR2's branch. The train merges PR2 first,
+then PR3. PR2's head is frozen once PR3 starts, and PR3 may import PR2's `CascadeRunManifest` and `NON_RUN_DIRNAMES` constant.
+The squash-merge of PR2 into `main` is clean for PR3, for this reason: PR2 is frozen, so its squash commit has the same tree as
+its last head. When the train updates PR3 onto `main`, the only changed lines are the ones PR2 already carries in PR3's base, and
+the merge of identical changes is clean. Nothing in PR2 changes after PR3 starts, so the update does not reorder history.
+
+**Additive hotspot: `src/prismabib/cli.py`.** Each PR puts its commands in its own module, and adds one registration line to
+`cli.py`. No PR edits an existing command. A conflict on the registration lines is resolved by the train's update-branch step, in
+train position order. PR4 and PR6 are both in batch 3, and they are ordered PR4 then PR6, so PR6's registration line lands after
+PR4's. PR5 registers the `candidates` group, PR4 registers `cascade` and `openalex`, and PR6 registers `manual-entry` and
+`manual-reverse`.
+
+**Hotspot ownership.** `src/prismabib/store/schema.sql`, `src/prismabib/models.py` and `src/prismabib/store/load.py` change only in
+PR3. `src/prismabib/cli.py` is additive, as above. The goldens and `docs/how-to/run-the-demo.md` key counts change only in PR7,
+except the one checksum golden that PR3 regenerates (Risk 2). PR4 sits in batch 3, after PR5 in batch 2, because `cascade` runs
+the candidate enrichment that PR5 makes possible. PR7 does not depend on PR6: its fixtures carry `manual` and `unavailable` rows
+directly.
 
 **Batch 1.**
 
@@ -518,8 +551,8 @@ do not need each other to be merged. PR4 sits in batch 3, after PR5 in batch 2, 
 **Batch 2.**
 
 - **PR2 (Scopus levels 2 and 3, Layer 0 writer only).** `capture/cascade.py` (the writer), `CascadeRunManifest` in
-  `capture/manifest.py`, the `raw/scopus-cascade/` name in `NON_RUN_DIRNAMES`, and the opt-in, budget and quota handling. It writes
-  no `load.py` code, and it writes the files of Decision 6 exactly. Acceptance: a sealed run for a fake client that returns 200 (with
+  `capture/manifest.py`, the `scopus-cascade` entry in `NON_RUN_DIRNAMES` in `capture/layout.py`, and the opt-in, budget and quota
+  handling. It writes no `load.py` code, and it writes the files of Decision 6 exactly. PR2's head is frozen when PR3 starts. Acceptance: a sealed run for a fake client that returns 200 (with
   and without affiliations), 401, and 404, a budget stop, and a quota stop, each with the manifest shape of Decision 6. The live batch
   form is verified and the result is recorded in the PR. Failing tests first: refusal without opt-in writes no seal; a run with
   `fallback_opt_in` false is refused at seal; `NON_RUN_DIRNAMES` contains the name; the key is in no written file.
@@ -527,25 +560,30 @@ do not need each other to be merged. PR4 sits in batch 3, after PR5 in batch 2, 
   and `provenance_conflicts`), `models.py` (the `ManualEntry` event model of Decision 4 and its binding to `AppendOnlyLog`, with a
   stub reader), `store/load.py` (the merge of Decision 2, the conflict rows, the `_sealed_cascade_run_dirs` discovery and its
   outcome check, and the manual fold of Decision 4), the `records_all` view, `store/checksums.py`, and the two dated pointer notes
-  (ADR 0031 Decision 9 and ADR 0028). It builds against the manifest shape of Decision 6 with fixtures. Acceptance: the merge tests,
+  (ADR 0031 Decision 9 and ADR 0028). It is stacked on PR2 and imports PR2's `CascadeRunManifest` and `NON_RUN_DIRNAMES` name, and
+  its tests may use both. Acceptance: the merge tests,
   the no-blank test, the rebuild-determinism test, the manual fold tests, and the checksum golden regenerated with its cause named in
   the PR. Failing tests first: the no-blank test and the never-overrides test, both failing on the current `load.py`.
-- **PR5 (candidate paste entry).** `prismabib candidates add`, the enrichment order of Decision 9, and the registration view's
-  evidence line. Acceptance: a pasted title with no match creates no record and no `records` row. A candidate with a DOI from
-  level 4 reaches level 2. Failing tests first: a candidate title-only request goes to level 4 only, and no record is created.
+- **PR5 (Scholar-paste entry point).** Independent of PR2 and PR3. Adds `prismabib candidates add <slug> --reviewer R [--file PATH]`
+  as a registration in `cli.py`, its command module `capture/candidate_commands.py`, and the candidate store writes through the
+  existing `parse_pasted_rows` and `CandidateLog.add`. It runs no HTTP request: enrichment is PR4's. Acceptance: a pasted row writes
+  one candidate event and no `records` row, and a second identical paste is refused by `CandidateLog`. Failing tests first: a paste
+  creates no record.
 
 **Batch 3.**
 
-- **PR4 (cascade and OpenAlex commands).** Depends on PR5, because `cascade` runs the candidate step PR5 writes. Adds
-  `prismabib cascade` and `prismabib openalex`, the report tables, the exit codes, and the replacement sentence in
-  `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the dry-run test that makes no call, and the
+- **PR4 (cascade and OpenAlex commands).** Depends on PR2, PR3 and PR5. Adds `prismabib cascade` and `prismabib openalex` in
+  `capture/cascade_commands.py`, and runs candidates through the levels: the candidate step of `cascade` searches each candidate by DOI
+  at level 2, then level 3 by the `scopus_id` returned, and by title and year at level 4 to obtain a DOI. It also adds the report
+  tables, the exit codes, and the replacement sentence in `register-and-reverse-candidates.md`. Acceptance: the idempotence test, the dry-run test that makes no call, and the
   budget-required-with-opt-in test. Failing tests first: a second call makes no request.
 - **PR6 (manual entry, writer and GUI).** Depends on PR3 for the event model and the fold. Adds `capture/manual.py` (the writer,
-  the five refusals, and the reverse writer), `capture/manual_ui.py`, and the CLI commands `prismabib manual-entry` and
-  `prismabib manual-reverse`. It does not touch `store/load.py` or `models.py`; the fold and the event model are PR3's. Acceptance:
+  the five refusals, and the reverse writer), `capture/manual_ui.py`, `capture/manual_commands.py` with the CLI commands
+  `prismabib manual-entry` and `prismabib manual-reverse`, and one registration line in `cli.py`. It does not touch `store/load.py` or `models.py`; the fold and the event model are PR3's. Acceptance:
   the five refusals, the reversal, the GUI and CLI parity test, and the disabled button for a DOI-less record. Failing tests first:
   a manual value for a supplied field is refused by the writer.
-- **PR7 (exports, methods, numbers keys, goldens, run-the-demo).** The export columns, `methods.cascade_sentence`, the 29 keys,
+- **PR7 (exports, methods, numbers keys, goldens, run-the-demo).** Depends on PR3 only. Its tests use fixture rows that carry
+  `manual` and `unavailable` values in the columns PR3 adds, so it does not wait for PR6. The export columns, `methods.cascade_sentence`, the 29 keys,
   `numbers_keys.json`, `reference_numbers.json`, `docs/how-to/run-the-demo.md` (the 44 to 73 key count, the optional list, and the
   stale `33`), and the `limitations.md` label text. Acceptance: the golden tests pass with the stated changes, and `fill` on the demo
   manuscript passes. Failing tests first: the key-set golden, which fails until the keys are added.
@@ -613,4 +651,6 @@ do not need each other to be merged. PR4 sits in batch 3, after PR5 in batch 2, 
 - [ADR 0032](0032-registered-records-table-and-classification-map.md): `registered_records`, whose columns are the subject of open question 2.
 - [ADR 0035](0035-gui-registration-of-candidates.md): the GUI and CLI single-writer rule, and KEY_MAP.
 - [ADR 0039](0039-taxonomy-engine-behaviour-stamp.md): the `methods.*` exemption that Decision 5 relies on.
+- [ADR 0037](0037-merge-train-and-native-stacked-prs.md): the merge train and native stacked pull requests that the PR2 to PR3 stack
+  and the additive `cli.py` hotspot rely on.
 - [ADR 0040](0040-year-range-in-analysis-engines.md): the precedent for optional `methods.*` keys.
