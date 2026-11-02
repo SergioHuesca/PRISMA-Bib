@@ -9,6 +9,7 @@ existed before this stage.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
@@ -19,6 +20,7 @@ from prismabib.errors import AnalysisError, ValidationError
 from prismabib.taxonomy import TAXONOMY_ENGINE_BEHAVIOUR
 from prismabib.taxonomy.analysis import dimension_distribution, dimension_evolution
 from prismabib.taxonomy.coder import CountingUnit, code
+from prismabib.taxonomy.overrides import OverrideEvent
 from prismabib.taxonomy.schema import load_dimensions
 from tests.bibliometrics_helpers import include_everything, open_corpus
 from tests.taxonomy_helpers import (
@@ -204,6 +206,64 @@ def test_dimension_distribution__no_years__params_and_output_unchanged(coded_pro
         assert not {"years", "n_in_range", "n_no_year_dropped"} & set(same.params)
         assert same.data.equals(plain.data)
         assert same.caption() == plain.caption()
+
+
+@pytest.mark.unit
+def test_dimension_distribution__years__overrides_count_only_in_range(tmp_path: Path) -> None:
+    records = [
+        TaxonomyRecordSpec(number=1, title="A AlphaMarker approach", year=2020),
+        TaxonomyRecordSpec(number=2, title="An BetaMarker approach", year=2020),
+        TaxonomyRecordSpec(number=3, title="A GammaMarker approach", year=2021),
+        TaxonomyRecordSpec(number=4, title="Plain title, no marker at all", year=2021),
+    ]
+    project = build_taxonomy_project(tmp_path, records)
+    include_everything(project)
+    write_dimensions(project, TEST_DIMENSIONS_YAML)
+    write_rule_file(project, "learning_paradigm", LEARNING_PARADIGM_RULES_V1)
+    schema = load_dimensions(project)
+    (rule_file,) = load_rule_files(project, schema, "learning_paradigm")
+    corpus = open_corpus(project)
+
+    def ov(spec: TaxonomyRecordSpec, categories: tuple[str, ...]) -> OverrideEvent:
+        return OverrideEvent(
+            event_id=f"ov-{spec.record_id}",
+            ts=datetime(2026, 1, 1, tzinfo=UTC),
+            project="p",
+            record_id=spec.record_id,
+            dimension="learning_paradigm",
+            categories=categories,
+            reviewer="kp",
+        )
+
+    # r1/r2 (2020) are out of range: a 'none' verdict and a category that must not leak.
+    # r3 (2021) is moved to supervised; r4 (2021) is reviewed as 'none'.
+    overrides = [
+        ov(records[0], ()),
+        ov(records[1], ("unsupervised",)),
+        ov(records[2], ("supervised",)),
+        ov(records[3], ()),
+    ]
+    result = code(corpus, [rule_file], overrides)
+
+    ranged = dimension_distribution(
+        corpus, result, schema, "learning_paradigm", CountingUnit.PAPERS, years=(2021, None)
+    )
+
+    assert _counts(ranged) == {
+        "supervised": 1,
+        "unsupervised": 0,
+        "self_supervised": 0,
+        "uncoded": 0,
+        "reviewed_none": 1,
+    }
+    assert ranged.params["n_in_range"] == 2
+    assert sum(_counts(ranged).values()) == 2
+    # Whole corpus for contrast: the out-of-range overrides do count there.
+    whole = _counts(
+        dimension_distribution(corpus, result, schema, "learning_paradigm", CountingUnit.PAPERS)
+    )
+    assert whole["reviewed_none"] == 2
+    assert whole["unsupervised"] == 1
 
 
 @pytest.mark.unit
