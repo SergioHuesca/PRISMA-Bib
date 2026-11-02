@@ -847,3 +847,5 @@ The owner answered on 2026-11-02. Each answer is applied in the sections named.
 - [ADR 0037](0037-merge-train-and-native-stacked-prs.md): the merge train and native stacked pull requests that the PR2 to PR3 stack
   and the additive `cli.py` hotspot rely on.
 - [ADR 0040](0040-year-range-in-analysis-engines.md): the precedent for optional `methods.*` keys.
+
+> **Note added 2026-11-02 (owner-approved; this note does not change the record above).** The Decision paragraph and Risk 3 describe a single pinned Unicode database version. As implemented in PR 3 (#255), the test pins the expected `unicodedata.unidata_version` per Python minor version, because CI runs Python 3.11 (Unicode 14.0.0) and 3.12 (Unicode 15.0.0): `{(3, 11): "14.0.0", (3, 12): "15.0.0"}`. The build report still records `unicodedata.unidata_version`. A rebuild on a different Python minor can therefore normalise differently for characters added between those Unicode versions, and the report makes this visible. The pin is in `tests/integration/store/test_provenance_load.py`.
