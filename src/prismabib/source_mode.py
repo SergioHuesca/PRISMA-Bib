@@ -21,11 +21,9 @@ from typing import TYPE_CHECKING, Any, Final, Literal, cast, get_args
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 from prismabib.capture.layout import (
-    ABSTRACTS_DIRNAME,
-    CACHE_DIRNAME,
+    NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
     OPENALEX_SEARCH_DIRNAME,
-    SCOPUS_CASCADE_DIRNAME,
     atomic_write_bytes,
 )
 from prismabib.errors import ConfigError
@@ -318,15 +316,7 @@ def require_caller(project: Project, caller: str | None) -> None:
 
 # -- transitions ---------------------------------------------------------------------------------
 
-_NON_SCOPUS_SEARCH_DIRS: Final = frozenset(
-    {
-        CACHE_DIRNAME,
-        ABSTRACTS_DIRNAME,
-        OPENALEX_DIRNAME,
-        SCOPUS_CASCADE_DIRNAME,
-        OPENALEX_SEARCH_DIRNAME,
-    }
-)
+_NON_SCOPUS_SEARCH_DIRS: Final = NON_RUN_DIRNAMES  # one source of truth (layout.py)
 
 
 def _subdirs(path: Path) -> list[Path]:

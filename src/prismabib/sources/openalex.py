@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -166,9 +167,10 @@ def _body_message(response: httpx.Response) -> str:
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     try:
-        return float(response.headers["retry-after"])
+        seconds = float(response.headers["retry-after"])
     except (KeyError, ValueError):
         return None
+    return seconds if math.isfinite(seconds) else None
 
 
 def classify_429(response: httpx.Response) -> Literal["per_second", "daily"]:
@@ -550,7 +552,11 @@ class OpenAlexClient:
             sleep=self._sleep,
             reraise=True,
         )
-        response: httpx.Response = retryer(self._search_request, params)
+        try:
+            response: httpx.Response = retryer(self._search_request, params)
+        except httpx.HTTPError as exc:
+            # Class name only: a message may echo the URL.
+            raise UpstreamError(f"OpenAlex request failed ({type(exc).__name__}).") from exc
         return SearchPageResponse(response.status_code, response.content)
 
     def _search_request(self, params: Mapping[str, str]) -> httpx.Response:

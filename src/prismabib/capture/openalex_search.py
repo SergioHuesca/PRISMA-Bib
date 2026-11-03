@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, Literal
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 import httpx
 import structlog
@@ -54,7 +54,6 @@ from prismabib.capture.openalex import (
     ApiKeyInBodyError,
     _encode_line,  # pyright: ignore[reportPrivateUsage]  # one encoding rule (ADR 0031 Decision 2)
 )
-from prismabib.capture.writer import payload_sha256
 from prismabib.config import Settings, require_openalex_key
 from prismabib.errors import UpstreamError, ValidationError
 from prismabib.project import Project
@@ -170,20 +169,32 @@ def _run_dirs(search_dir: Path) -> list[Path]:
 
 
 def _sealed_for(search_dir: Path, key: str) -> OpenAlexSearchRunManifest | None:
-    """The earliest sealed run of this query, if any (runs sort by id, which sorts by time)."""
+    """The earliest sealed run of this query, if any.
+
+    Run ids minted in the same second order randomly (the suffix is random), so no logic may
+    depend on which of two same-second runs comes first. A manifest that cannot be read is
+    skipped with a log line and never treated as a seal.
+    """
     for run_dir in _run_dirs(search_dir):
         if not is_sealed(run_dir):
             continue
-        manifest = OpenAlexSearchRunManifest.model_validate_json(
-            (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
-        )
+        try:
+            manifest = OpenAlexSearchRunManifest.model_validate_json(
+                (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):  # pydantic's ValidationError is a ValueError
+            logger.warning("openalex_search.unreadable_manifest_skipped", run_dir=str(run_dir))
+            continue
         if manifest.query_key == key:
             return manifest
     return None
 
 
 def _find_resumable(search_dir: Path, plan: _Progress) -> Path | None:
-    """The latest unsealed, not-discarded run whose plan equals ``plan``."""
+    """The latest unsealed, not-discarded run whose plan equals ``plan``.
+
+    "Latest" is by run id; same-second ids order randomly, so nothing may depend on it.
+    """
     found = [
         d
         for d in _run_dirs(search_dir)
@@ -193,6 +204,18 @@ def _find_resumable(search_dir: Path, plan: _Progress) -> Path | None:
         and state.same_plan(plan)
     ]
     return found[-1] if found else None
+
+
+def _torn_page(run_dir: Path, requests: list[OpenAlexSearchRequest]) -> str | None:
+    """The first recorded page whose file is missing or does not match its recorded digest."""
+    for request in requests:
+        try:
+            data = (run_dir / request.file).read_bytes()
+        except OSError:
+            return request.file
+        if hashlib.sha256(data).hexdigest() != request.sha256:
+            return request.file
+    return None
 
 
 def _discard(run_dir: Path, progress: _Progress, reason: str) -> None:
@@ -209,6 +232,17 @@ def _is_invalid_cursor(page: SearchPageResponse, cursor: str) -> bool:
         and cursor != FIRST_CURSOR
         and INVALID_CURSOR_MESSAGE in page.body.decode("utf-8", errors="replace")
     )
+
+
+def _carries_key(body: bytes, secrets: list[bytes]) -> bool:
+    """Whether ``body`` holds the key in any stored form, raw or after JSON decoding."""
+    if any(s in body for s in secrets):
+        return True
+    try:
+        decoded = json.dumps(json.loads(body), ensure_ascii=False).encode("utf-8")
+    except ValueError:
+        return False
+    return any(s in decoded for s in secrets)
 
 
 def _parse_page(body: bytes) -> tuple[int | None, int | None, str | None, float | None]:
@@ -252,7 +286,6 @@ def _check_seal_rules(progress: _Progress) -> str | None:
 def _seal(
     run_dir: Path, progress: _Progress, *, criteria_version: str
 ) -> OpenAlexSearchRunManifest:
-    files = [r.file for r in progress.requests]
     manifest = OpenAlexSearchRunManifest(
         run_id=run_dir.name,
         started_at=progress.started_at,
@@ -270,8 +303,6 @@ def _seal(
         api_key_used=True,
         requests=progress.requests,
     )
-    # The digest is checked against the files here so a torn directory cannot seal.
-    payload_sha256(run_dir, files)
     guard_writable(run_dir)
     atomic_write_bytes(
         run_dir / RUN_MANIFEST_FILENAME, manifest.model_dump_json(indent=2).encode("utf-8") + b"\n"
@@ -355,8 +386,14 @@ def capture_openalex_search(
         logger.info("openalex_search.run_started", run_id=run_dir.name)
 
     secret = key.get_secret_value()
-    # Raw, percent-encoded and JSON-escaped: a body may echo the key in any of them.
-    forms = {secret, quote_plus(secret, safe=""), json.dumps(secret)[1:-1]}
+    # Raw, percent-encoded (both spaces as + and as %20) and JSON-escaped: a body may echo the key
+    # in any of them; _carries_key also checks the body after JSON decoding (\uXXXX escapes).
+    forms = {
+        secret,
+        quote_plus(secret, safe=""),
+        quote(secret, safe=""),
+        json.dumps(secret)[1:-1],
+    }
     secrets = [f.encode("utf-8") for f in forms if f]
     fetched = 0
     spent = 0.0
@@ -372,6 +409,11 @@ def capture_openalex_search(
         return OpenAlexSearchResult(
             status, run_dir.name, fetched, spent, manifest, message, resets_in_seconds, reason
         )
+
+    if resumed is not None and (torn := _torn_page(run_dir, progress.requests)) is not None:
+        reason = f"page file {torn} does not match its recorded digest"
+        _discard(run_dir, progress, reason)
+        return result("discarded", f"{reason}: {DISCARD_AND_RESTART}")
 
     http = httpx.Client(transport=transport, timeout=30.0)
     try:
@@ -399,7 +441,7 @@ def capture_openalex_search(
                     # Nothing stored: the run stays as it was and can be resumed.
                     raise UpstreamError(f"OpenAlex answered HTTP {page.status} to {cursor!r}.")
                 name = f"response-{index:04d}.jsonl"
-                if any(s in page.body for s in secrets):
+                if _carries_key(page.body, secrets):
                     raise ApiKeyInBodyError(
                         f"The response for {name} contains the OpenAlex API key; it was not "
                         "written and the run stays unsealed (ADR 0031 Decision 6)."
@@ -448,6 +490,8 @@ def capture_openalex_search(
     if progress.next_cursor is not None:
         return result("budget_stop", f"page budget of {budget} used; the next call resumes")
     broken = _check_seal_rules(progress)
+    if broken is None and (torn := _torn_page(run_dir, progress.requests)) is not None:
+        broken = f"page file {torn} does not match its recorded digest"
     if broken is not None:
         _discard(run_dir, progress, broken)
         return result("discarded", f"{broken}: {DISCARD_AND_RESTART}")

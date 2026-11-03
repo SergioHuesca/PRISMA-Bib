@@ -27,7 +27,7 @@ from prismabib.capture.manifest import OpenAlexSearchRunManifest
 from prismabib.capture.openalex import PROGRESS_FILENAME, ApiKeyInBodyError
 from prismabib.capture.openalex_search import capture_openalex_search
 from prismabib.config import Settings
-from prismabib.errors import AuthError, ConfigError, RateLimitError
+from prismabib.errors import AuthError, ConfigError, RateLimitError, UpstreamError
 from prismabib.project import Project
 from prismabib.sources.openalex import SEARCH_SELECT, classify_429
 from prismabib.sources.ratelimit import RateLimiter
@@ -62,19 +62,24 @@ class Fake:
         self.count = sum(len(p) for p in pages) if count is None else count
         self.requests: list[httpx.Request] = []
         self.override: Handler | None = None
+        self.count_by_cursor: dict[str, int] = {}
+        self.cost = 0.001
         self.transport = httpx.MockTransport(self._handle)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if self.override is not None:
             return self.override(request)
+        return self.default(request)
+
+    def default(self, request: httpx.Request) -> httpx.Response:
         cursor = request.url.params["cursor"]
         index = 0 if cursor == "*" else int(cursor.removeprefix("c"))
         meta: dict[str, Any] = {
-            "count": self.count,
+            "count": self.count_by_cursor.get(cursor, self.count),
             "per_page": 100,
             "next_cursor": f"c{index + 1}" if index + 1 < len(self.pages) else None,
-            "cost_usd": 0.001,
+            "cost_usd": self.cost,
         }
         return page_response({"meta": meta, "results": self.pages[index]})
 
@@ -110,13 +115,13 @@ def settings(key: str | None = _KEY) -> Settings:
 
 def run(proj: Project, fake: Fake, *, budget: int = 10, **kwargs: Any) -> Any:
     kwargs.setdefault("settings", settings())
+    kwargs.setdefault("sleep", lambda _s: None)
     return capture_openalex_search(
         proj,
         query=kwargs.pop("query", _QUERY),
         budget=budget,
         transport=fake.transport,
         rate_limiter=RateLimiter(rate=1_000_000.0),
-        sleep=lambda _s: None,
         **kwargs,
     )
 
@@ -499,3 +504,190 @@ def test_openalex_search__cost_usd_from_meta_else_list_price(tmp_path: Path) -> 
         {"meta": {"count": 1, "next_cursor": None}, "results": works(1)}
     )
     assert run(project(tmp_path), fake).spent_usd == pytest.approx(0.001)  # list price
+
+
+# --- review round: torn pages, survivors, minor findings ------------------------------------
+
+
+def test_openalex_search__torn_page_file__discarded_not_sealed(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    inner = fake.default
+
+    def tear_then_serve(request: httpx.Request) -> httpx.Response:
+        if request.url.params["cursor"] == "c2":  # power loss: an earlier page is cut short
+            (runs(proj)[0] / "response-0000.jsonl").write_bytes(b"")
+        return inner(request)
+
+    fake.override = tear_then_serve
+    result = run(proj, fake)
+
+    assert result.status == "discarded"
+    assert "does not match its recorded digest" in result.message
+    assert not (runs(proj)[0] / RUN_MANIFEST_FILENAME).exists()
+
+
+def test_openalex_search__torn_page_file_found_on_resume__discarded(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    run(proj, fake, budget=2)
+    (runs(proj)[0] / "response-0000.jsonl").write_bytes(b"")
+    fake.requests.clear()
+
+    result = run(proj, fake)
+
+    assert result.status == "discarded"
+    assert fake.requests == []  # no quota spent on a run that cannot seal
+    assert progress_of(runs(proj)[0])["discarded"] is True
+
+
+def test_openalex_search__last_page_count_changed__discarded_not_sealed(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    fake.count_by_cursor["c2"] = 6  # captured (5) still equals the stored total (5)
+    result = run(proj, fake)
+    assert result.status == "discarded"
+    assert not (runs(proj)[0] / RUN_MANIFEST_FILENAME).exists()
+
+
+def test_openalex_search__different_query__does_not_resume_other_runs_cursor(
+    tmp_path: Path,
+) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    run(proj, fake, budget=1, query="alpha")
+    fake.requests.clear()
+    run(proj, fake, budget=1, query="beta")
+    assert len(runs(proj)) == 2
+    assert fake.requests[0].url.params["cursor"] == "*"
+    assert fake.requests[0].url.params["search"] == "beta"
+
+
+def test_openalex_search__orphan_page_file__deleted_and_rerequested(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    run(proj, fake, budget=1)
+    stray = runs(proj)[0] / "response-0001.jsonl"
+    stray.write_bytes(b"stray bytes from a crash\n")
+    beyond = runs(proj)[0] / "response-0007.jsonl"  # never overwritten by a refetch
+    beyond.write_bytes(b"stray bytes from a crash\n")
+
+    result = run(proj, fake)
+
+    assert result.status == "sealed"
+    assert not beyond.exists()
+    assert b"stray" not in stray.read_bytes()
+    assert json.loads(stray.read_bytes())["results"] == works(3, 4)
+    on_disk = sorted(p.name for p in runs(proj)[0].glob("response-*.jsonl"))
+    assert on_disk == [r.file for r in result.manifest.requests]
+
+
+def test_openalex_search__spent_usd__uses_meta_cost_usd(tmp_path: Path) -> None:
+    fake = three_pages()
+    fake.cost = 0.002  # differs from the 0.001 list price, so the source of the figure shows
+    result = run(project(tmp_path), fake)
+    assert result.spent_usd == pytest.approx(0.002 * 3)
+
+
+def test_openalex_search__503_then_200__is_retried(tmp_path: Path) -> None:
+    fake = three_pages()
+    inner = fake.default
+    calls: list[int] = []
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(503, text="busy") if len(calls) == 1 else inner(request)
+
+    fake.override = flaky
+    assert run(project(tmp_path), fake).status == "sealed"
+    assert len(calls) == 4  # the 503, then three pages
+
+
+def test_openalex_search__zero_results__seals_with_zero_works(tmp_path: Path) -> None:
+    result = run(project(tmp_path), Fake([[]], count=0))
+    assert result.status == "sealed"
+    assert (result.manifest.total_count, result.manifest.works_captured) == (0, 0)
+
+
+_ODD_KEY = "ab+/ cd-key"  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    "echo",
+    [
+        _ODD_KEY,
+        "ab%2B%2F+cd-key",  # quote_plus
+        "ab%2B%2F%20cd-key",  # quote
+        "ab\\u002b/ cd-key",  # JSON unicode escape of "+"
+    ],
+)
+def test_openalex_search__percent_encoded_key_in_body__refused(tmp_path: Path, echo: str) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    body = ('{"meta":{"count":1,"next_cursor":null},"results":[],"echo":"' + echo + '"}').encode()
+    fake.override = lambda _r: httpx.Response(200, content=body)
+    with pytest.raises(ApiKeyInBodyError):
+        run(proj, fake, settings=settings(_ODD_KEY))
+    assert not list(runs(proj)[0].glob("response-*"))
+
+
+def test_openalex_search__retry_after_huge__every_wait_is_bounded(tmp_path: Path) -> None:
+    fake = three_pages()
+    fake.override = lambda _r: httpx.Response(
+        429, json=_PER_SECOND_BODY, headers={**_PER_SECOND_HEADERS, "retry-after": "999999"}
+    )
+    waits: list[float] = []
+    with pytest.raises(RateLimitError):
+        run(project(tmp_path), fake, sleep=waits.append)
+    assert len(waits) == 4
+    assert max(waits) <= 30
+
+
+def test_openalex_search__corrupt_manifest__is_skipped_not_fatal(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    first = run(proj, fake)
+    (proj.raw_dir / OPENALEX_SEARCH_DIRNAME / first.run_id / RUN_MANIFEST_FILENAME).write_text(
+        "{not json", encoding="utf-8"
+    )
+
+    again = run(proj, fake)
+
+    assert again.status == "sealed"  # a new run: the unreadable manifest is never a seal
+    assert again.run_id != first.run_id
+
+
+def test_openalex_search__network_error__is_upstream_error_and_resumable(tmp_path: Path) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    run(proj, fake, budget=1)
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    fake.override = down
+    with pytest.raises(UpstreamError, match="ConnectError") as info:
+        run(proj, fake)
+    assert _KEY not in str(info.value)
+    assert progress_of(runs(proj)[0])["discarded"] is False
+    fake.override = None
+    assert run(proj, fake).status == "sealed"
+
+
+@pytest.mark.parametrize("value", ["inf", "nan", "garbage", "-inf"])
+def test_openalex_search__daily_429_with_non_finite_retry_after__reset_is_none(
+    tmp_path: Path, value: str
+) -> None:
+    fake = three_pages()
+    fake.override = lambda _r: httpx.Response(
+        429, json=_DAILY_BODY, headers={**_DAILY_HEADERS, "retry-after": value}
+    )
+    result = run(project(tmp_path), fake)
+    assert result.status == "daily_budget"
+    assert result.resets_in_seconds is None
+
+
+def test_source_mode__non_scopus_dirs__is_the_layout_set() -> None:
+    from prismabib import source_mode
+
+    assert source_mode._NON_SCOPUS_SEARCH_DIRS == NON_RUN_DIRNAMES
