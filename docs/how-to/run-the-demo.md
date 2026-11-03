@@ -21,7 +21,7 @@ For this walkthrough, we'll use carbon capture and utilization — a domain you 
 Run `prismabib search` and let it complete. This spends weekly Scopus quota and is the reason you cannot run it live in front of an audience. Instead, you will show the sealed run as provenance.
 
 ```bash
-uv run prismabib init demo-talk --title "Carbon capture and utilization: a live demo"
+uv run prismabib init demo-talk --sources scopus --title "Carbon capture and utilization: a live demo"
 # Edit project.toml and criteria.yaml (see step 3 below)
 uv run prismabib search demo-talk
 # Wait for it to finish. Interrupt only if network fails; re-run to resume.
@@ -176,13 +176,14 @@ You should see something like `prismabib 0.12.0`. Print it so the audience sees 
 **What to do:**
 
 ```bash
-uv run prismabib init demo-talk --title "Carbon capture and utilization: a live demo"
+uv run prismabib init demo-talk --sources scopus --title "Carbon capture and utilization: a live demo"
 ```
 
 You'll see:
 
 ```
 Created project 'demo-talk' at ./projects/demo-talk
+Sources mode: scopus (recorded by <your git user.name>; change it with `prismabib sources`)
 
 `prismabib search` cannot run until you edit these two files, in this order:
 

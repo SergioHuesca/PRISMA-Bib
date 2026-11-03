@@ -121,6 +121,8 @@ _WRITE_EVENT_EXEMPT_RELATIVE_PATHS = frozenset(
         "taxonomy/overrides.py",
         # Candidate pastes are Layer 2 events, not screening decisions.
         "capture/candidates.py",
+        # Source-mode changes (ADR 0042) are Layer 2 events, not screening decisions.
+        "source_mode.py",
     }
 )
 

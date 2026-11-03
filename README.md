@@ -42,10 +42,12 @@ gh repo clone SergioHuesca/PRISMA-Bib
 cd PRISMA-Bib
 uv sync
 
-prismabib init my-review --title "My systematic review"
+prismabib init my-review --sources scopus --title "My systematic review"
 ```
 
-`init` creates `projects/my-review/` and tells you which two files to edit. It needs no
+`init` creates `projects/my-review/`, records the project's source mode (`--sources`; without it
+and with a terminal, `init` asks "Do you have access to Scopus?"), and tells you which two
+files to edit. It needs no
 Scopus key — nothing before `search` touches the network — so you can lay a project out
 while you are still waiting for access. Fill in:
 

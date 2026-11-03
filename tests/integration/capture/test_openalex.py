@@ -109,6 +109,7 @@ def _run(
 ) -> OpenAlexRunManifest | None:
     return capture_openalex(
         project,
+        caller="openalex_command",
         settings=_settings(key),
         transport=fake.transport,
         rate_limiter=RateLimiter(rate=1_000_000.0),

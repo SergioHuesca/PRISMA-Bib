@@ -119,7 +119,21 @@ def test_cli__every_subcommand__has_help_and_exits_zero(command: str) -> None:
 
 @pytest.mark.integration
 def test_cli_init__fresh_slug__creates_the_section_2_3_skeleton(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["init", "demo", "--title", "Demo review", "--root", str(tmp_path)])
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "demo",
+            "--sources",
+            "scopus",
+            "--actor",
+            "tester",
+            "--title",
+            "Demo review",
+            "--root",
+            str(tmp_path),
+        ],
+    )
 
     root = tmp_path / "demo"
     assert result.exit_code == 0
@@ -138,7 +152,9 @@ def test_cli_init__fresh_slug__creates_the_section_2_3_skeleton(tmp_path: Path) 
 
 @pytest.mark.integration
 def test_cli_init__fresh_project__names_both_files_to_edit_in_order(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["init", "demo", "--root", str(tmp_path)])
+    result = runner.invoke(
+        app, ["init", "demo", "--sources", "scopus", "--actor", "tester", "--root", str(tmp_path)]
+    )
 
     root = tmp_path / "demo"
     lines = [line for line in result.stdout.splitlines() if line.startswith("  1. ")]
@@ -150,7 +166,9 @@ def test_cli_init__fresh_project__names_both_files_to_edit_in_order(tmp_path: Pa
 
 @pytest.mark.integration
 def test_cli_init__fresh_project__names_the_next_commands(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["init", "demo", "--root", str(tmp_path)])
+    result = runner.invoke(
+        app, ["init", "demo", "--sources", "scopus", "--actor", "tester", "--root", str(tmp_path)]
+    )
 
     assert "prismabib search demo" in result.stdout
     assert "prismabib build demo" in result.stdout
@@ -161,7 +179,9 @@ def test_cli_init__fresh_project__names_the_next_commands(tmp_path: Path) -> Non
 def test_cli_init__existing_project__reports_reuse_and_leaves_edits_untouched(
     tmp_path: Path,
 ) -> None:
-    runner.invoke(app, ["init", "demo", "--root", str(tmp_path)])
+    runner.invoke(
+        app, ["init", "demo", "--sources", "scopus", "--actor", "tester", "--root", str(tmp_path)]
+    )
     edited = tmp_path / "demo" / "criteria.yaml"
     original = edited.read_text(encoding="utf-8")
     edited.write_text(original.replace("languages: []", 'languages: ["English"]'), encoding="utf-8")
@@ -706,7 +726,19 @@ def test_cli_init__no_scopus_credentials__still_creates_the_project(
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(app, ["init", "my-review", "--title", "My systematic review"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "my-review",
+            "--sources",
+            "scopus",
+            "--actor",
+            "tester",
+            "--title",
+            "My systematic review",
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "projects" / "my-review" / "criteria.yaml").is_file()

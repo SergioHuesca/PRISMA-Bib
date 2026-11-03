@@ -55,6 +55,7 @@ from prismabib.capture.writer import payload_sha256
 from prismabib.config import Settings
 from prismabib.errors import QuotaExceededError, ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import require_capability
 from prismabib.sources.openalex import normalise_doi
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import _EID_RE, ScopusClient, _as_list
@@ -276,6 +277,7 @@ def capture_scopus_cascade(
             id (no request, no directory); on duplicate ids in one response (the run stays unsealed).
         ApiKeyInBodyError: If a response body contains the key or token.
     """
+    require_capability(project, "scopus_cascade")
     if not fallback_opt_in:
         raise ValidationError("A cascade run needs fallback_opt_in (ADR 0041 Decision 6).")
     if budget_requests < 1:

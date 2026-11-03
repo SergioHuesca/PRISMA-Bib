@@ -65,6 +65,7 @@ from prismabib.capture.writer import payload_sha256
 from prismabib.config import Settings
 from prismabib.errors import ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import require_caller
 from prismabib.sources.openalex import (
     OpenAlexClient,
     OpenAlexWork,
@@ -355,6 +356,7 @@ def _seal(
 def capture_openalex(
     project: Project,
     *,
+    caller: str,
     dois: Iterable[str] = (),
     titles: Iterable[tuple[str, int]] = (),
     fallback_opt_in: bool = False,
@@ -367,6 +369,9 @@ def capture_openalex(
 
     Args:
         project: The project; everything is written under ``project.raw_dir``.
+        caller: The call site, which selects the capability the project's sources mode
+            must allow (ADR 0042 Decision 3): ``"cascade"`` or ``"openalex_command"``.
+            Required; ``None`` or an unknown name is refused.
         dois: DOIs to look up; normalised and de-duplicated, order kept.
         titles: ``(title, year)`` pairs for exact-title search.
         fallback_opt_in: The ADR 0028 opt-in. Recorded in the manifest. Only then
@@ -383,12 +388,15 @@ def capture_openalex(
         held and so no run was created and no request made.
 
     Raises:
+        ConfigError: If ``caller`` is missing or unknown, or the sources mode does not
+            allow that call site.
         AuthError: On 401 outside an opt-in run; the response is on disk and
             the run is a dead end.
         EntitlementError: On 403 outside an opt-in run; as above.
         ApiKeyInBodyError: If a response body contains the API key.
         ValidationError: On a malformed 200 body, or an unsealable run.
     """
+    require_caller(project, caller)
     openalex_dir = project.raw_dir / OPENALEX_DIRNAME
     already = set() if refresh else held(openalex_dir)
     doi_plan = [d for d in dict.fromkeys(normalise_doi(d) for d in dois) if d not in already]

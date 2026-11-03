@@ -29,6 +29,7 @@ def test_openalex_run__layout__matches_adr_0031(tmp_path: Path) -> None:
     project = Project.init("demo", title="Demo", root=tmp_path)
     manifest = capture_openalex(
         project,
+        caller="openalex_command",
         dois=["10.1/a"],
         settings=Settings(scopus_api_key="x"),
         transport=httpx.MockTransport(lambda _r: httpx.Response(200, content=_BODY)),

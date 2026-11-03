@@ -122,6 +122,7 @@ from prismabib.config import Settings
 from prismabib.errors import ValidationError
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
+from prismabib.source_mode import require_capability
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.scopus import (
     JsonDict,
@@ -366,7 +367,8 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         The sealed run's :class:`~prismabib.capture.manifest.RunManifest`.
 
     Raises:
-        ConfigError: If ``query`` is ``None`` and ``project.toml`` cannot
+        ConfigError: If the project's sources mode does not allow a Scopus search
+            (ADR 0042), or if ``query`` is ``None`` and ``project.toml`` cannot
             be read or parsed (see
             :func:`~prismabib.query.build_query_for_project`), or if
             ``project.criteria`` cannot be read.
@@ -389,6 +391,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             never occur through this function's own code paths, since
             :func:`_find_resumable_run` never selects a sealed directory.
     """
+    require_capability(project, "scopus_search")
     resolved_query = query if query is not None else build_query_for_project(project)
     view = "COMPLETE"
     endpoint = ScopusClient.SEARCH_ENDPOINT

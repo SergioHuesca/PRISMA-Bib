@@ -14,6 +14,7 @@ import duckdb
 from prismabib.errors import StoreError
 from prismabib.project import Project
 from prismabib.store.checksums import TABLE_NAMES
+from prismabib.store.stamp import check_stamp
 
 
 def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnection:
@@ -29,6 +30,10 @@ def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnecti
             When ``False``, open for read/write; :func:`prismabib.store.load.build_store`
             is the only intended caller of that mode.
 
+    A read-only connection first checks the store's stamp against the project's source mode
+    (ADR 0042). A read/write connection skips that check on purpose: ``build_store`` opens one
+    to create or replace the store, which is the fix a stamp mismatch asks for.
+
     Returns:
         An open DuckDB connection onto ``project.db_path``.
 
@@ -38,7 +43,9 @@ def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnecti
             missing file read-only; this wraps it with a message pointing at
             :func:`prismabib.store.load.build_store` rather than a bare
             DuckDB I/O exception, since a missing store is a prismabib
-            usage error, not a filesystem anomaly worth debugging). Also
+            usage error, not a filesystem anomaly worth debugging), or if the store's
+            stamp names another source mode or schema than the project's (ADR 0042;
+            the message says to run ``build --rebuild``). Also
             raised if ``project.db_path``'s parent directory cannot be
             created for a read/write connection, or if DuckDB refuses the
             file for any other reason (e.g. it exists but is not a DuckDB
@@ -51,6 +58,8 @@ def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnecti
             "prismabib.store.load.build_store(project) first -- Layer 1 is "
             "always derived from Layer 0, never hand-created (BUILD_PLAN §2.2)."
         )
+    if read_only:
+        check_stamp(project)
     if not read_only:
         db_path.parent.mkdir(parents=True, exist_ok=True)
     try:

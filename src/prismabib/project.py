@@ -40,6 +40,12 @@ from pydantic import ValidationError as PydanticValidationError
 from prismabib.asjc import KNOWN_ABBREVS
 from prismabib.config import ProjectsRootSettings
 from prismabib.errors import ConfigError
+from prismabib.source_mode import (
+    SourceMode,
+    checked_mode,
+    sources_table_text,
+    write_mode_event,
+)
 
 #: The Layer 2 logs of ADR 0041 Decisions 2 and 4, beside ``registrations.jsonl`` in ``decisions/``.
 MANUAL_ENTRIES_FILENAME = "manual_entries.jsonl"
@@ -279,7 +285,7 @@ def _default_criteria_yaml() -> str:
     return _DEFAULT_CRITERIA_YAML.format(year=datetime.now(UTC).year)
 
 
-def _default_project_toml(slug: str, title: str) -> str:
+def _default_project_toml(slug: str, title: str, source_mode: SourceMode | None = None) -> str:
     """Render the default ``project.toml`` content written by :meth:`Project.init`.
 
     The ``[query]`` table is scaffolded empty rather than omitted. BUILD_PLAN §3.1
@@ -291,13 +297,15 @@ def _default_project_toml(slug: str, title: str) -> str:
     Args:
         slug: The project slug.
         title: The human-readable project title.
+        source_mode: When given, a ``[sources]`` table is appended (ADR 0042); ``None`` leaves
+            the text byte-identical to what earlier versions wrote.
 
     Returns:
         TOML text matching the BUILD_PLAN §3.1 ``project.toml`` shape.
     """
     created = datetime.now(UTC).date().isoformat()
     escaped_title = title.replace('"', '\\"')
-    return (
+    text = (
         "[project]\n"
         f'slug = "{slug}"\n'
         f'title = "{escaped_title}"\n'
@@ -315,6 +323,7 @@ def _default_project_toml(slug: str, title: str) -> str:
         "compound_terms = []\n"
         'fields = ["TITLE-ABS-KEY"]\n'
     )
+    return text if source_mode is None else text + "\n" + sources_table_text(source_mode)
 
 
 _DEFAULT_GITIGNORE = """\
@@ -435,7 +444,15 @@ class Project:
     root: Path
 
     @classmethod
-    def init(cls, slug: str, *, title: str, root: Path | None = None) -> Project:
+    def init(
+        cls,
+        slug: str,
+        *,
+        title: str,
+        root: Path | None = None,
+        source_mode: SourceMode | None = None,
+        actor: str | None = None,
+    ) -> Project:
         """Create (or reuse) the full §2.3 project skeleton.
 
         Idempotent: calling this twice for the same ``slug``/``root`` never
@@ -452,14 +469,22 @@ class Project:
             root: The projects root directory to create ``<slug>`` under.
                 Defaults to ``PRISMABIB_PROJECTS_ROOT`` from
                 :class:`~prismabib.config.Settings` when omitted.
+            source_mode: ADR 0042. ``None`` (every caller but ``prismabib init``) writes no
+                ``[sources]`` table and no event: the project has the legacy mode. Ignored
+                when ``project.toml`` already exists, which is never rewritten.
+            actor: The named person recorded in the first source-mode event; required with
+                ``source_mode``.
 
         Returns:
             A :class:`Project` handle onto the (now-existing) skeleton.
 
         Raises:
             ConfigError: If ``root`` is ``None`` and environment
-                configuration cannot be loaded.
+                configuration cannot be loaded, or ``source_mode`` is given without an
+                ``actor``. Nothing is written in that case.
         """
+        if source_mode is not None and not (actor or "").strip():
+            raise ConfigError("a source mode needs a named actor for its first event.")
         projects_root = _resolve_projects_root(root)
         project_root = projects_root / slug
 
@@ -467,8 +492,11 @@ class Project:
             (project_root / relative).mkdir(parents=True, exist_ok=True)
 
         project_toml_path = project_root / "project.toml"
-        if not project_toml_path.exists():
-            project_toml_path.write_text(_default_project_toml(slug, title), encoding="utf-8")
+        new_project = not project_toml_path.exists()
+        if new_project:
+            project_toml_path.write_text(
+                _default_project_toml(slug, title, source_mode), encoding="utf-8"
+            )
 
         criteria_yaml_path = project_root / "criteria.yaml"
         if not criteria_yaml_path.exists():
@@ -481,7 +509,12 @@ class Project:
         if not gitignore_path.exists():
             gitignore_path.write_text(_default_gitignore(), encoding="utf-8")
 
-        return cls(slug=slug, root=project_root)
+        project = cls(slug=slug, root=project_root)
+        if new_project and source_mode is not None:
+            write_mode_event(
+                project, actor=actor or "", from_mode=None, to_mode=source_mode, note=None
+            )
+        return project
 
     @classmethod
     def open(cls, slug: str, *, root: Path | None = None) -> Project:
@@ -583,6 +616,20 @@ class Project:
             return self.slug
         title = section.get("title")
         return title if isinstance(title, str) and title.strip() else self.slug
+
+    @property
+    def source_mode(self) -> SourceMode:
+        """This project's source mode (ADR 0042), read on every access like :attr:`title`.
+
+        Returns:
+            The ``[sources] mode``, or ``"scopus+openalex"`` (the legacy default) when
+            ``project.toml`` has no ``[sources]`` table.
+
+        Raises:
+            ConfigError: If the value is invalid, or ``project.toml`` and
+                ``decisions/source_modes.jsonl`` disagree.
+        """
+        return checked_mode(self)
 
     @property
     def raw_dir(self) -> Path:
