@@ -186,6 +186,7 @@ from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable,
 from prismabib.config import Settings
 from prismabib.errors import EntitlementError, ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import require_capability
 from prismabib.sources.cache import HttpCache
 from prismabib.sources.ratelimit import RateLimiter
 from prismabib.sources.scopus import JsonDict, RecordNotFoundError, ScopusClient
@@ -714,7 +715,8 @@ def capture_abstracts(
         as unfinished and sends the caller to pay for it again.
 
     Raises:
-        ConfigError: If ``project.criteria`` cannot be read.
+        ConfigError: If the project's sources mode does not allow it (ADR 0042), or if
+            ``project.criteria`` cannot be read.
         ValidationError: If ``budget`` is not strictly positive, or if there is
             nothing to fetch -- an explicitly empty ``record_ids``, or no
             sealed search run to draw ids from. Failing loudly beats sealing an
@@ -738,6 +740,7 @@ def capture_abstracts(
             this function's own code paths, since :func:`_find_resumable_run`
             never selects a sealed directory.
     """
+    require_capability(project, "scopus_abstract")
     if budget is not None and budget < 1:
         raise ValidationError(f"budget must be a positive number of records, got {budget!r}")
 

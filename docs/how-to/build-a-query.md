@@ -466,7 +466,7 @@ Here is a complete example for a systematic review of carbon capture and utiliza
 ### Project Setup
 
 ```bash
-uv run prismabib init carbon-capture --title "Carbon capture and utilization: a systematic review"
+uv run prismabib init carbon-capture --sources scopus --title "Carbon capture and utilization: a systematic review"
 ```
 
 ### `project.toml`

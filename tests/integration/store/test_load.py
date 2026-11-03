@@ -414,7 +414,8 @@ def test_build_store__interrupted_rebuild__keeps_the_old_store(
         build_store(project, rebuild=True)
     monkeypatch.undo()
 
-    assert _store_dir_files(project) == [project.db_path.name]
+    # The store and its stamp (ADR 0042); no temp file.
+    assert _store_dir_files(project) == ["build_stamp.json", project.db_path.name]
     after = build_store(project)
     assert (after.rebuilt, after.records_loaded) == (False, before.records_loaded)
 
@@ -447,7 +448,8 @@ def test_build_store__rebuild_happy_path__replaces_the_store_and_leaves_no_temp_
 
     assert second.rebuilt is True
     assert second.records_loaded == first.records_loaded > 0
-    assert _store_dir_files(project) == [project.db_path.name]
+    # The store and its stamp (ADR 0042); no temp file.
+    assert _store_dir_files(project) == ["build_stamp.json", project.db_path.name]
 
 
 @pytest.mark.integration
@@ -486,7 +488,8 @@ def test_build_store__replace_refused__raises_store_error_and_keeps_the_old_stor
     message = str(excinfo.value)
     assert "could not be replaced" in message
     assert "has not been changed" in message
-    assert _store_dir_files(project) == [project.db_path.name]
+    # The store and its stamp (ADR 0042); no temp file.
+    assert _store_dir_files(project) == ["build_stamp.json", project.db_path.name]
     after = build_store(project)
     assert (after.rebuilt, after.records_loaded) == (False, before.records_loaded)
 

@@ -44,10 +44,12 @@ from prismabib.capture.manifest import (
     OpenAlexTitle,
 )
 from prismabib.capture.openalex import capture_openalex, held
-from prismabib.errors import StoreError, ValidationError
+from prismabib.errors import ConfigError, StoreError, ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import require_command
 from prismabib.sources.openalex import lookup_outcome, normalise_doi, parse_work
 from prismabib.store.load import build_store
+from prismabib.store.stamp import check_stamp
 from prismabib.titles import normalise_title
 
 _FIELDS = ("abstract", "authors", "affiliations", "keywords")
@@ -80,6 +82,7 @@ def _targets(project: Project) -> list[_Target]:
     found: dict[_Key, _Target] = {}
     record_titles: set[tuple[str, int]] = set()  # every record, complete or not
     if project.db_path.is_file():
+        check_stamp(project)  # these direct readers take the same check as `connect` (ADR 0042)
         try:
             con = duckdb.connect(str(project.db_path), read_only=True)
             try:
@@ -258,6 +261,7 @@ def _field_report(project: Project) -> list[str]:
     unavailable, and open and resolved conflicts. The second group is the registered records,
     whose fields come from OpenAlex (level 4) or are unavailable; they have no conflicts.
     """
+    check_stamp(project)
     try:
         con = duckdb.connect(str(project.db_path), read_only=True)
         try:
@@ -361,6 +365,12 @@ def cascade(
         if scopus_budget is not None and scopus_budget < 1:
             raise ValidationError("--scopus-budget must be at least 1.")
         project = Project.open(slug, root=root)
+        mode = require_command(project, "cascade")
+        if mode == "openalex" and (opt_in or scopus_budget is not None):
+            raise ConfigError(
+                "--opt-in and --scopus-budget ask Scopus for fields, and sources mode 'openalex' "
+                "has no Scopus records; run `prismabib cascade` without them."
+            )
         targets = _targets(project)
 
         if dry_run:
@@ -376,7 +386,9 @@ def cascade(
 
         # Decision 9: DOI-less targets go to OpenAlex first, so a DOI it finds reaches Scopus.
         _, oa_titles = _openalex_inputs(project, targets, refresh)
-        capture_openalex(project, titles=oa_titles, fallback_opt_in=opt_in, refresh=refresh)
+        capture_openalex(
+            project, caller="cascade", titles=oa_titles, fallback_opt_in=opt_in, refresh=refresh
+        )
         _write_back(project, targets)
         targets = _targets(project)
 
@@ -401,7 +413,9 @@ def cascade(
                     project, scopus_ids=ids, fallback_opt_in=True, budget_requests=left
                 )
         oa_dois, _ = _openalex_inputs(project, targets, refresh)
-        capture_openalex(project, dois=oa_dois, fallback_opt_in=opt_in, refresh=refresh)
+        capture_openalex(
+            project, caller="cascade", dois=oa_dois, fallback_opt_in=opt_in, refresh=refresh
+        )
         for line in _report(project, targets):
             _echo(line)
         build_store(project, rebuild=True)
@@ -435,13 +449,19 @@ def openalex(
 
     with _reporting_errors():
         project = Project.open(slug, root=root)
+        require_command(project, "openalex")
         targets = _targets(project)
         dois, titles = _openalex_inputs(project, targets, refresh)
         if dry_run:
             _echo(f"openalex: {len(dois)} DOIs, {len(titles)} titles planned")
             return
         manifest = capture_openalex(
-            project, dois=dois, titles=titles, fallback_opt_in=opt_in, refresh=refresh
+            project,
+            caller="openalex_command",
+            dois=dois,
+            titles=titles,
+            fallback_opt_in=opt_in,
+            refresh=refresh,
         )
         _write_back(project, targets)  # also for a title search sealed by an earlier, died run
         if manifest is None:

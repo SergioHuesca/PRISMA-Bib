@@ -441,7 +441,11 @@ def _title_run(project: Project, fakes: dict[str, Fake], doi: str, *, refresh: b
 
     fakes["openalex"]._handler = handler
     cascade_commands.capture_openalex(
-        project, titles=[("Findable", 2017)], fallback_opt_in=False, refresh=refresh
+        project,
+        caller="cascade",
+        titles=[("Findable", 2017)],
+        fallback_opt_in=False,
+        refresh=refresh,
     )
 
 
@@ -453,7 +457,7 @@ def test_openalex__nothing_to_request__still_writes_back_dois_of_an_earlier_seal
     _title_run(project, fakes, "10.1/n", refresh=False)  # sealed, but the process died here
     fakes["openalex"]._handler = _openalex
     cascade_commands.capture_openalex(
-        project, dois=["10.1/a", "10.1/b", "10.1/c"], fallback_opt_in=False
+        project, caller="cascade", dois=["10.1/a", "10.1/b", "10.1/c"], fallback_opt_in=False
     )  # every DOI is held too, so the command has nothing to request
     assert log.load_enrichments() == []
 

@@ -150,7 +150,9 @@ def main() -> int:
         print("   Nothing above was typed by hand. Every count is a query against the")
         print("   store, so refreshing the corpus updates the diagram instead of")
         print("   silently disagreeing with it.")
-        print('\nNext: `prismabib init my-review --title "..."` and edit the two files')
+        print(
+            '\nNext: `prismabib init my-review --sources scopus --title "..."` and edit the two files'
+        )
         print("it names. See docs/getting-started.md.")
     return 0
 

@@ -38,6 +38,7 @@ import json
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Final, NoReturn, cast
 
@@ -63,7 +64,13 @@ from prismabib.capture.registrations import (
 )
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
-from prismabib.errors import LogError, PrismabibError, QuotaExceededError
+from prismabib.errors import (
+    ConfigError,
+    LogError,
+    PrismabibError,
+    QuotaExceededError,
+    ValidationError,
+)
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
@@ -71,6 +78,8 @@ from prismabib.project import Project
 from prismabib.report.export import ExportResult, export_project
 from prismabib.report.fill import fill_manuscript
 from prismabib.report.methods import orphaned_decisions_text
+from prismabib.source_commands import register_source_commands
+from prismabib.source_mode import SourceMode, git_user_name, require_command
 from prismabib.store.load import StoreStats, build_store
 
 #: Exit status for a *known* failure -- any :class:`PrismabibError`. One code
@@ -104,6 +113,7 @@ app.add_typer(candidates_app)
 app.command("cascade")(_cascade_command)
 app.command("openalex")(_openalex_command)
 register_manual_commands(app)
+register_source_commands(app)
 
 _ROOT_OPTION = typer.Option(
     "--root",
@@ -222,6 +232,51 @@ def _app_callback(
 # ---------------------------------------------------------------------------
 
 
+class _Sources(StrEnum):
+    """The three values of ``--sources`` (ADR 0042); the strings are the ``[sources] mode`` values."""
+
+    openalex = "openalex"
+    scopus = "scopus"
+    both = "scopus+openalex"
+
+
+def _stdin_is_tty() -> bool:
+    """Whether ``init`` may ask questions (ADR 0042 Decision 2); a seam for tests."""
+    return sys.stdin.isatty()
+
+
+def _choose_source_mode(sources: _Sources | None) -> SourceMode:
+    """The mode for a new project: ``--sources``, else the question, else a refusal."""
+    if sources is not None:
+        return sources.value
+    if not _stdin_is_tty():
+        raise ValidationError(
+            "A new project needs --sources {openalex,scopus,scopus+openalex}: there is no "
+            "terminal to ask 'Do you have access to Scopus?', and the answer is never "
+            "defaulted. Nothing was written."
+        )
+    # default=None: the question has no default answer, and click asks again until y or n.
+    if not typer.confirm("Do you have access to Scopus?", default=None):
+        return "openalex"
+    fill = typer.confirm("Also fill missing fields of Scopus records from OpenAlex?", default=True)
+    return "scopus+openalex" if fill else "scopus"
+
+
+def _choose_actor(actor: str | None) -> str:
+    """The named person for the first event: ``--actor``, else ``git config user.name``."""
+    name = (actor or "").strip() or git_user_name()
+    if name:
+        return name
+    if _stdin_is_tty():
+        name = str(typer.prompt("Your name (recorded as the actor of this choice)")).strip()
+        if name:
+            return name
+    raise ValidationError(
+        "A new project needs a named actor for its first source-mode event: pass --actor NAME "
+        "or set `git config user.name`. Nothing was written."
+    )
+
+
 @app.command()
 def init(
     slug: Annotated[str, typer.Argument(help="Project slug; also the directory name.")],
@@ -231,12 +286,32 @@ def init(
             "--title", "-t", help="Human-readable project title, written into project.toml."
         ),
     ] = "Untitled review",
+    sources: Annotated[
+        _Sources | None,
+        typer.Option(
+            "--sources",
+            help=(
+                "Source mode of a NEW project; asked interactively when omitted, required "
+                "without a terminal. On an existing project it is only checked."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    actor: Annotated[
+        str | None,
+        typer.Option(
+            "--actor",
+            help="Who made the source-mode choice (default: git config user.name). New projects only.",
+            show_default=False,
+        ),
+    ] = None,
     root: Annotated[Path | None, _ROOT_OPTION] = None,
 ) -> None:
     """Create projects/<slug>/ and tell you which two files to edit next.
 
     Idempotent: re-running never overwrites project.toml, criteria.yaml, or
     decisions.jsonl -- those hold hand-written methodology and human labour.
+    A new project records its source mode (ADR 0042) in project.toml.
     """
     with _reporting_errors():
         # The root is resolved here and passed in explicitly, rather than letting
@@ -248,9 +323,29 @@ def init(
         # of small lie that makes a tool untrustworthy.
         projects_root = root if root is not None else ProjectsRootSettings().prismabib_projects_root
         existed = (projects_root / slug / "project.toml").is_file()
-        project = Project.init(slug, title=title, root=projects_root)
+        mode: SourceMode | None = None
+        actor_name: str | None = None
+        if existed:
+            # Never prompts and never refuses for a missing flag; only a contradiction is refused.
+            recorded = Project(slug=slug, root=projects_root / slug).source_mode
+            if sources is not None and sources.value != recorded:
+                raise ConfigError(
+                    f"Project {slug!r} is in sources mode {recorded!r}, not {sources.value!r}. "
+                    f"`init` never rewrites a project; to change the mode run "
+                    f"`prismabib sources {slug} --set {sources.value} --actor NAME`."
+                )
+        else:
+            mode = _choose_source_mode(sources)
+            actor_name = _choose_actor(actor)
+        project = Project.init(
+            slug, title=title, root=projects_root, source_mode=mode, actor=actor_name
+        )
 
         _echo(f"{'Reused' if existed else 'Created'} project {slug!r} at {project.root}")
+        if mode is not None:
+            _echo(
+                f"Sources mode: {mode} (recorded by {actor_name}; change it with `prismabib sources`)"
+            )
         _echo()
         if existed:
             _echo(
@@ -666,6 +761,7 @@ def register(
     """
     with _reporting_errors():
         project = Project.open(slug, root=root)
+        require_command(project, "register")
         candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
         event = register_candidate(
             project,

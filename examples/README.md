@@ -38,5 +38,5 @@ Two things worth noticing as you read the script:
   closes. That guard exists because the failure this project is built to prevent is not a
   crash — it is a plausible wrong number in a published paper.
 
-Then run `prismabib init my-review --title "..."` and edit the two files it names. See
+Then run `prismabib init my-review --sources scopus --title "..."` and edit the two files it names. See
 [docs/getting-started.md](../docs/getting-started.md).

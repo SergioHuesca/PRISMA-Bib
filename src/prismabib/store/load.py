@@ -220,11 +220,13 @@ from prismabib.models import (
 )
 from prismabib.openalex_map import ClassificationRefusal
 from prismabib.project import CONFLICT_RESOLUTIONS_FILENAME, MANUAL_ENTRIES_FILENAME, Project
+from prismabib.source_mode import checked_mode
 from prismabib.sources import openalex as _openalex
 from prismabib.sources.scopus import _as_list
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.db import connect
+from prismabib.store.stamp import stamp_path, write_stamp
 from prismabib.titles import normalise_title
 
 logger = structlog.get_logger(__name__)
@@ -3149,7 +3151,7 @@ def _store_has_provenance(db_path: Path) -> bool | None:
     return bool(row and row[0])
 
 
-def _install_store(built: Path, db_path: Path) -> None:
+def _install_store(built: Path, db_path: Path, source_mode: str) -> None:
     """Move a finished build over the existing store, or say why it cannot.
 
     The build is written beside the store and only swapped in once complete, so
@@ -3158,9 +3160,16 @@ def _install_store(built: Path, db_path: Path) -> None:
     caller's own still-open ``Corpus`` or a notebook kernel), and the bare
     ``PermissionError`` names no culprit.
 
+    The store and its stamp are two files, so the swap has a fixed order (ADR 0042
+    Decision 1): remove the old stamp, replace the store, write the new stamp. If the
+    replace fails, the old stamp is written back. A crash between the replace and the
+    stamp write leaves a store with no stamp, which a project in any mode but the
+    legacy one refuses; a stamp is never present without its store.
+
     Args:
         built: The finished, closed build.
         db_path: The store path to replace.
+        source_mode: The mode the new store was built under, written to its stamp.
 
     Raises:
         StoreError: If the existing store cannot be replaced, naming the cause.
@@ -3168,9 +3177,14 @@ def _install_store(built: Path, db_path: Path) -> None:
     # A leftover WAL of the old store would be replayed onto the new file.
     with suppress(OSError):
         db_path.with_name(db_path.name + ".wal").unlink(missing_ok=True)
+    old_stamp = stamp_path(db_path)
+    kept = old_stamp.read_bytes() if old_stamp.is_file() else None
+    old_stamp.unlink(missing_ok=True)
     try:
         os.replace(built, db_path)
     except OSError as exc:
+        if kept is not None:
+            old_stamp.write_bytes(kept)
         raise StoreError(
             f"cannot rebuild {db_path}: the existing store could not be replaced ({exc}). "
             "A rebuild swaps in a freshly built database, and on Windows the file cannot be "
@@ -3179,6 +3193,7 @@ def _install_store(built: Path, db_path: Path) -> None:
             "or another prismabib process -- and run the rebuild again. The existing store "
             "has not been changed."
         ) from exc
+    write_stamp(db_path, source_mode)
 
 
 def _remove_build_files(build_path: Path) -> None:
@@ -3287,6 +3302,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
 
     # Built beside the store and swapped in only when complete: any failure
     # (including KeyboardInterrupt) discards the build and leaves the old store as it was.
+    source_mode = checked_mode(project)
     had_provenance = _store_has_provenance(db_path)
     build_path = db_path.with_name(db_path.name + ".tmp")
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3362,7 +3378,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             )
         finally:
             connection.close()
-        _install_store(build_path, db_path)
+        _install_store(build_path, db_path, source_mode)
         installed = True
         # Layer 2 is touched only once the store is installed, so a failed build leaves
         # registrations.jsonl byte-identical.

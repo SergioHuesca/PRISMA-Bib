@@ -102,7 +102,7 @@ cd PRISMA-Bib
 uv sync
 cp .env.example .env                                    # then put your Scopus key in it
 
-uv run prismabib init my-review --title "My review"     # then edit the two files it names
+uv run prismabib init my-review --sources scopus --title "My review"   # then edit the two files it names
 uv run prismabib search my-review                       # spends Scopus quota; resumable
 uv run prismabib build my-review
 uv run prismabib flow my-review

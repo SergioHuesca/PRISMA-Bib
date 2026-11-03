@@ -17,6 +17,7 @@ from prismabib.capture.conflicts import resolve_conflict, reverse_conflict
 from prismabib.capture.manual import add_manual_entry, reverse_manual_entry
 from prismabib.errors import ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import require_command
 
 _SLUG = Annotated[str, typer.Argument(help="Project slug.")]
 _REVIEWER = Annotated[str, typer.Option("--reviewer", help="The named reviewer.")]
@@ -103,8 +104,10 @@ def register_manual_commands(app: typer.Typer) -> None:
         from prismabib.cli import _echo, _reporting_errors
 
         with _reporting_errors():
+            project = Project.open(slug, root=root)
+            require_command(project, "conflict-resolve")
             event = resolve_conflict(
-                Project.open(slug, root=root),
+                project,
                 record_id=record_id,
                 field=field,
                 chosen_side=chosen_side,

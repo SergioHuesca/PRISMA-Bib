@@ -48,7 +48,7 @@ templates without touching the network, and resolves its projects root through
 ### 1c. Scaffold the project
 
 ```bash
-uv run prismabib init my-review --title "My systematic review"
+uv run prismabib init my-review --sources scopus --title "My systematic review"
 ```
 
 Do **not** create the directory and files by hand. `Project.init` — which is what this

@@ -53,7 +53,7 @@ All four layers (0 to 3) are built and tested. Concretely:
 
 | You can | Command or API |
 | --- | --- |
-| Scaffold a project | `prismabib init <slug>` |
+| Scaffold a project | `prismabib init <slug> --sources <mode>` |
 | Capture Scopus into Layer 0 | `prismabib search <slug>` |
 | Build the Layer 1 store | `prismabib build <slug>` |
 | Print PRISMA 2020 flow counts | `prismabib flow <slug>` |
@@ -121,11 +121,17 @@ first step that talks to Scopus.
 ## 3. `prismabib init`
 
 ```bash
-uv run prismabib init my-review --title "My systematic review"
+uv run prismabib init my-review --sources scopus --title "My systematic review"
 ```
 
-Options: `--title/-t` (written into `project.toml`), and `--root/-r` to override
-`PRISMABIB_PROJECTS_ROOT` for this one command.
+Options: `--title/-t` (written into `project.toml`), `--root/-r` to override
+`PRISMABIB_PROJECTS_ROOT` for this one command, and the source mode of a new project:
+`--sources {openalex,scopus,scopus+openalex}`, recorded in `project.toml` under `[sources]`
+(ADR 0042). With a terminal and no `--sources`, `init` asks "Do you have access to Scopus?";
+in a script it refuses without `--sources`, and writes nothing. A new project also records who
+made the choice: `--actor NAME`, or `git config user.name` when omitted. Re-running `init` on an
+existing project never prompts and never rewrites it; `prismabib sources <slug> --set <mode>`
+changes the mode, and `prismabib doctor <slug>` shows it.
 
 This creates the project skeleton and prints the two files you must edit next:
 
