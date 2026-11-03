@@ -3178,8 +3178,15 @@ def _install_store(built: Path, db_path: Path, source_mode: str) -> None:
     with suppress(OSError):
         db_path.with_name(db_path.name + ".wal").unlink(missing_ok=True)
     old_stamp = stamp_path(db_path)
-    kept = old_stamp.read_bytes() if old_stamp.is_file() else None
-    old_stamp.unlink(missing_ok=True)
+    try:
+        kept = old_stamp.read_bytes() if old_stamp.is_file() else None
+        old_stamp.unlink(missing_ok=True)
+    except OSError as exc:
+        raise StoreError(
+            f"cannot rebuild {db_path}: its stamp {old_stamp} could not be removed ({exc}). "
+            "Close whatever holds it and run the rebuild again. The existing store has not "
+            "been changed."
+        ) from exc
     try:
         os.replace(built, db_path)
     except OSError as exc:

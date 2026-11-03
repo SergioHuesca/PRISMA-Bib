@@ -487,6 +487,7 @@ def search(
     """
     with _reporting_errors():
         project = Project.open(slug, root=root)
+        require_command(project, "search")  # before the banner: a refusal must not say "Capturing"
 
         _echo_err(f"Capturing Scopus for project {slug!r} into {project.raw_dir}")
         _echo_err(

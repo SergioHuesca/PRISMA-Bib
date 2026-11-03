@@ -306,6 +306,8 @@ def test_init__every_call_site__passes_sources() -> None:
 def test_doctor__default__makes_no_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _project(tmp_path, "openalex")
     monkeypatch.chdir(tmp_path)  # no real .env
+    for name in ("SCOPUS_INSTTOKEN", "OPENALEX_API_KEY", "UNPAYWALL_EMAIL"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SCOPUS_API_KEY", "sentinel-not-printed")  # pragma: allowlist secret
 
     def refuse(*_a: Any, **_k: Any) -> None:
@@ -446,6 +448,152 @@ def test_sources_set__openalex_to_scopus__refused_with_sealed_openalex_run(
 
     with pytest.raises(ConfigError, match=r"openalex-search"):
         _set(project, "scopus")
+
+
+def test_sources_set__scopus_plus_openalex_to_scopus__refused_with_active_registration(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from prismabib.capture.registrations import (
+        PayloadAddress,
+        RegisterEvent,
+        RegistrationRecord,
+        ReverseEvent,
+        registration_log,
+    )
+
+    project = _project(tmp_path, "scopus+openalex")
+    event_id = "01HZ7M3QK2W9T4R8N6Y1C5B0XD"
+    register = RegisterEvent(
+        event_id=event_id,
+        ts=datetime.now(UTC),
+        project="demo",
+        reviewer="r",
+        record_id=f"registered:{event_id}",
+        candidate_id="c1",
+        match_rule="doi",
+        source_level=4,
+        source_payload_ref=PayloadAddress(file="openalex/x/response-0000.jsonl", openalex_id="W1"),
+        source_payload_sha256="0" * 64,
+        doi="10.1/a",
+        subject_map_version="1",
+        subject_map_sha256="0" * 64,
+    )
+    log = registration_log(project.registrations_path)
+    log.write_event(RegistrationRecord(register))
+
+    with pytest.raises(ConfigError, match=r"active registration in .*registrations\.jsonl"):
+        _set(project, "scopus")
+
+    log.write_event(
+        RegistrationRecord(
+            ReverseEvent(
+                event_id="01HZ7M3QK2W9T4R8N6Y1C5B0XE",
+                ts=datetime.now(UTC),
+                project="demo",
+                reviewer="r",
+                reverses=event_id,
+                reason="not_eligible",
+            )
+        )
+    )
+    assert _set(project, "scopus") is not None
+
+
+def test_sources_set__commented_header__is_edited_in_place(tmp_path: Path) -> None:
+    project = _project(tmp_path, "scopus")
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace("[sources]", "[sources]  # my choice"), "utf-8"
+    )
+
+    assert _set(project, "scopus+openalex") is not None
+
+    text = toml.read_text(encoding="utf-8")
+    assert text.count("[sources]") == 1
+    assert '[sources]  # my choice\nmode = "scopus+openalex"\n' in text
+    assert project.source_mode == "scopus+openalex"
+
+
+def test_sources_set__toml_edit_that_cannot_be_validated__leaves_log_and_file_untouched(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path, "scopus")
+    toml = project.root / "project.toml"
+    # An inline table has no header to edit; appending a second [sources] is invalid TOML.
+    toml.write_text(
+        'sources = { mode = "scopus" }\n'
+        + toml.read_text(encoding="utf-8").replace('[sources]\nmode = "scopus"\n', ""),
+        encoding="utf-8",
+    )
+    log_path = sm.source_modes_path(project)
+    log_before = (log_path.read_bytes(), log_path.with_name(log_path.name + ".sha256").read_bytes())
+    toml_before = toml.read_bytes()
+
+    with pytest.raises(ConfigError, match=r"project\.toml"):
+        _set(project, "scopus+openalex")
+
+    after = (log_path.read_bytes(), log_path.with_name(log_path.name + ".sha256").read_bytes())
+    assert after == log_before
+    assert toml.read_bytes() == toml_before
+
+
+def test_tables__command_rows_agree_with_capability_rows() -> None:
+    assert sm.COMMAND_MODES["search"] == sm.CAPABILITY_MODES["scopus_search"]
+    assert sm.COMMAND_MODES["enrich"] == sm.CAPABILITY_MODES["scopus_abstract"]
+    assert sm.COMMAND_MODES["openalex"] == sm.CAPABILITY_MODES["openalex_command"]
+    assert sm.COMMAND_MODES["cascade"] == (
+        sm.CAPABILITY_MODES["scopus_cascade"] | sm.CAPABILITY_MODES["openalex_lookup"]
+    )
+
+
+def test_search__refused_in_openalex_mode__prints_no_capturing_banner(
+    tmp_path: Path, no_scopus_key: None
+) -> None:
+    _project(tmp_path, "openalex")
+
+    result = runner.invoke(app, ["search", "demo", "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Capturing" not in result.output and "quota" not in result.output
+
+
+def test_git_user_name__decodes_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    seen: dict[str, Any] = {}
+
+    def fake_run(*_a: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.update(kwargs)
+        return subprocess.CompletedProcess([], 0, stdout="Zoë\n", stderr="")
+
+    monkeypatch.setattr(sm.subprocess, "run", fake_run)
+
+    assert sm.git_user_name() == "Zoë"
+    assert seen["encoding"] == "utf-8" and seen["errors"] == "replace"
+
+
+def test_store_stamp__old_stamp_cannot_be_removed__store_error_not_os_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _openalex_mode_project_with_store(tmp_path)
+    build_store(project, rebuild=True)
+    store_before = project.db_path.read_bytes()
+    real_unlink = Path.unlink
+
+    def locked(self: Path, *args: Any, **kwargs: Any) -> None:
+        if self.name == store_stamp.STAMP_FILENAME:
+            raise PermissionError("held open")
+        real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    with pytest.raises(StoreError, match=r"stamp .* could not be removed"):
+        build_store(project, rebuild=True)
+    monkeypatch.undo()
+
+    assert project.db_path.read_bytes() == store_before
+    connect(project).close()
 
 
 def test_sources_set__scopus_plus_openalex_to_scopus__refused_with_openalex_enrichment(
@@ -836,6 +984,10 @@ def test_numbers_json__legacy_project__bytes_unchanged(legacy_reference: Project
 
 
 def test_methods__legacy_project__no_source_sentence(legacy_reference: Project) -> None:
+    """Pins behaviour only: PR1 adds no sentence, so this holds until PR 6a (the methods text).
+
+    It is not fail-first and compares no pre-change bytes; the goldens above anchor the numbers.
+    """
     from prismabib.report.export import export_project
 
     result = export_project(legacy_reference)

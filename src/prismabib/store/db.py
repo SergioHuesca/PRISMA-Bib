@@ -30,6 +30,10 @@ def connect(project: Project, read_only: bool = True) -> duckdb.DuckDBPyConnecti
             When ``False``, open for read/write; :func:`prismabib.store.load.build_store`
             is the only intended caller of that mode.
 
+    A read-only connection first checks the store's stamp against the project's source mode
+    (ADR 0042). A read/write connection skips that check on purpose: ``build_store`` opens one
+    to create or replace the store, which is the fix a stamp mismatch asks for.
+
     Returns:
         An open DuckDB connection onto ``project.db_path``.
 

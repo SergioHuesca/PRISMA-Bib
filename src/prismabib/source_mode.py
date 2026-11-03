@@ -11,6 +11,7 @@ It never imports :mod:`prismabib.project` at runtime (``project.py`` imports thi
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tomllib
 from datetime import UTC, datetime
@@ -19,6 +20,13 @@ from typing import TYPE_CHECKING, Any, Final, Literal, cast, get_args
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
+from prismabib.capture.layout import (
+    ABSTRACTS_DIRNAME,
+    CACHE_DIRNAME,
+    OPENALEX_DIRNAME,
+    SCOPUS_CASCADE_DIRNAME,
+    atomic_write_bytes,
+)
 from prismabib.errors import ConfigError
 from prismabib.ids import MonotonicUlidFactory
 from prismabib.log import AppendOnlyLog
@@ -306,8 +314,16 @@ def require_caller(project: Project, caller: str | None) -> None:
 
 # -- transitions ---------------------------------------------------------------------------------
 
+#: PR3 of ADR 0042 moves this name into ``layout.NON_RUN_DIRNAMES``; until then it is local.
+_OPENALEX_SEARCH_DIRNAME: Final = "openalex-search"
 _NON_SCOPUS_SEARCH_DIRS: Final = frozenset(
-    {"_cache", "abstracts", "openalex", "scopus-cascade", "openalex-search"}
+    {
+        CACHE_DIRNAME,
+        ABSTRACTS_DIRNAME,
+        OPENALEX_DIRNAME,
+        SCOPUS_CASCADE_DIRNAME,
+        _OPENALEX_SEARCH_DIRNAME,
+    }
 )
 
 
@@ -334,19 +350,21 @@ def check_transition(project: Project, from_mode: str, to_mode: str) -> None:
             f"decisions exist in {decisions}. To change the mode, create a new project instead."
         )
     blocking: list[Path] = []
+    what = "a run directory"
     if to_mode == "openalex":
         blocking = _scopus_search_runs(project)
     elif from_mode == "openalex":
-        blocking = _subdirs(project.raw_dir / "openalex-search")
+        blocking = _subdirs(project.raw_dir / _OPENALEX_SEARCH_DIRNAME)
     elif to_mode == "scopus":  # from scopus+openalex (Q-B)
-        blocking = _subdirs(project.raw_dir / "openalex")
+        blocking = _subdirs(project.raw_dir / OPENALEX_DIRNAME)
         if not blocking:
             blocking = _active_registration_marker(project)
+            what = "an active registration in"
     if blocking:
         raise ConfigError(
             f"cannot change the sources mode from {from_mode!r} to {to_mode!r}: "
-            f"{blocking[0]} exists (runs of any state block a change, and a discarded run is "
-            "kept as an audit trail). To change the mode, create a new project instead."
+            f"{what} {blocking[0]} blocks it (a run of any state blocks a change, and a "
+            "discarded run is kept as an audit trail). To change the mode, create a new project instead."
         )
 
 
@@ -382,6 +400,7 @@ def set_mode(
     if in_file == to_mode and events and events[-1].to_mode == to_mode:
         return None
     check_transition(project, current, to_mode)
+    new_text = _new_toml_text(project, to_mode)  # validated before anything is written
     event = write_mode_event(
         project,
         actor=actor,
@@ -389,7 +408,7 @@ def set_mode(
         to_mode=target,
         note=note,
     )
-    _replace_sources_table(project, to_mode)
+    atomic_write_bytes(_toml_path(project), new_text.encode("utf-8"))
     return event
 
 
@@ -398,15 +417,24 @@ def sources_table_text(mode: str) -> str:
     return f'[sources]\nmode = "{mode}"\n'
 
 
-def _replace_sources_table(project: Project, mode: str) -> None:
-    """Replace the ``[sources]`` table (or append it); every other byte stays."""
+_HEADER_RE: Final = re.compile(r"\s*\[\s*sources\s*\]\s*(#.*)?$")
+
+
+def _new_toml_text(project: Project, mode: str) -> str:
+    """``project.toml`` with its ``[sources]`` table set to ``mode``; every other byte stays.
+
+    Raises:
+        ConfigError: If the result is not valid TOML or does not say ``mode``; nothing is written.
+    """
     path = _toml_path(project)
     lines = path.read_bytes().decode("utf-8").splitlines(keepends=True)
-    start = next((i for i, line in enumerate(lines) if line.strip() == "[sources]"), None)
-    table = sources_table_text(mode)
+    start = next((i for i, line in enumerate(lines) if _HEADER_RE.match(line.rstrip("\r\n"))), None)
+    body = f'mode = "{mode}"\n'
     if start is None:
         tail = lines[-1] if lines else "\n"
-        new = "".join(lines) + ("" if tail.endswith("\n") else "\n") + "\n" + table
+        new = (
+            "".join(lines) + ("" if tail.endswith("\n") else "\n") + "\n" + sources_table_text(mode)
+        )
     else:
         end = start + 1
         while end < len(lines) and not lines[end].lstrip().startswith("["):
@@ -414,11 +442,17 @@ def _replace_sources_table(project: Project, mode: str) -> None:
         # Blank and comment lines right before the next table belong to that table.
         while end - 1 > start and (not lines[end - 1].strip() or lines[end - 1].lstrip()[0] == "#"):
             end -= 1
-        new = "".join(lines[:start]) + table + "".join(lines[end:])
-    parsed: dict[str, Any] = tomllib.loads(new)
+        header = lines[start] if lines[start].endswith("\n") else lines[start] + "\n"
+        new = "".join(lines[:start]) + header + body + "".join(lines[end:])
+    try:
+        parsed: dict[str, Any] = tomllib.loads(new)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(
+            f"could not edit the [sources] table of {path} ({exc}); edit it by hand."
+        ) from exc
     if parsed.get("sources", {}).get("mode") != mode:
         raise ConfigError(f"could not edit the [sources] table of {path}; edit it by hand.")
-    path.write_bytes(new.encode("utf-8"))
+    return new
 
 
 def git_user_name() -> str | None:
@@ -428,6 +462,8 @@ def git_user_name() -> str | None:
             ["git", "config", "user.name"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=10,
         )
