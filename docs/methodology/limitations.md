@@ -15,11 +15,12 @@ Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI comma
 There is no Web of Science, Crossref, PubMed or Dimensions search, and no manual-import path
 for records exported from another database. The design lets other sources fill individual
 *fields* of a Scopus record, never add records to the search, and a value would never come from a second
-source without a recorded label. That field-level cascade is **designed but not yet
-implemented in this release**
-([ADR 0028](../architecture/adr/0028-field-level-fallback-cascade.md)): there is no cascade
-command, no opt-in flag and no per-field source label today. What exists is Scopus for the
-whole corpus, and OpenAlex topics captured by an explicit call and loaded as keywords only.
+source without a recorded label. That field-level cascade is built
+([ADR 0028](../architecture/adr/0028-field-level-fallback-cascade.md),
+[ADR 0041](../architecture/adr/0041-field-level-provenance-and-cascade-completion.md)) and is
+off until you ask for it. `prismabib cascade <slug>` fills missing fields from OpenAlex, and
+from Scopus `STANDARD` and `META` only with `--opt-in` and an explicit `--scopus-budget`;
+`prismabib openalex <slug>` runs the OpenAlex step alone. Every value carries its source label.
 
 Consequences for your review:
 
@@ -33,9 +34,9 @@ Consequences for your review:
   are counted separately as `registered` ("other methods"), never added into `identified`;
   `identified` stays the Scopus total alone
   ([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md)).
-- Fields Scopus refuses stay missing. The field-level cascade that would fill them from a
-  lower level, with a source label on each value, is designed (ADR 0028) but not yet
-  implemented; the only second-source data for Scopus records today is OpenAlex topics, loaded as keywords (registered records take their classification from their OpenAlex work, below).
+- Fields Scopus refuses stay missing until you run the cascade (`prismabib cascade`, above),
+  which fills them from a lower level with a source label on each value; a field no level can
+  fill stays `unavailable`. Registered records take their classification from their OpenAlex work, below.
   Every exported record already carries a per-field source label for abstract, authors,
   affiliations and keywords (`exports/records.csv`, columns `<field>_source`, `_level`,
   `_outcome`, `_payload_ref`; a reviewer-entered value is labelled `manual`), and
@@ -321,8 +322,8 @@ built.
 - **`COMPLETE` entitlement is required.** It is granted to subscribing institutions, not to
   personal or free API keys, and the search itself never silently drops to `STANDARD` (which
   omits author keywords, the full author block, and abstracts). Without the entitlement the
-  search is refused, and no other source fills the missing fields: the field-level cascade
-  is designed (ADR 0028) but not yet implemented in this release.
+  search is refused. `prismabib cascade` fills the missing fields afterwards, from OpenAlex
+  and, with `--opt-in`, from Scopus `STANDARD` and `META`; nothing fills them silently.
 - **Index drift.** Scopus revises records retroactively. Re-running the same query months
   later can return different results. Layer 0 manifests are the mitigation: the query, the
   view, the result count and a payload hash are sealed at capture time, so a past claim
