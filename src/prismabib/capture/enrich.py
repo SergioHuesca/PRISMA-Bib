@@ -183,7 +183,7 @@ from prismabib.capture.layout import (
     new_run_id,
 )
 from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable, RunManifest
-from prismabib.config import Settings
+from prismabib.config import Settings, require_scopus_key
 from prismabib.errors import EntitlementError, ValidationError
 from prismabib.project import Project
 from prismabib.source_mode import require_capability
@@ -743,6 +743,8 @@ def capture_abstracts(
     require_capability(project, "scopus_abstract")
     if budget is not None and budget < 1:
         raise ValidationError(f"budget must be a positive number of records, got {budget!r}")
+    settings = Settings()
+    require_scopus_key(settings)  # before any run directory exists or request is made
 
     raw_dir = project.raw_dir
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -803,7 +805,6 @@ def capture_abstracts(
         )
 
     run_id = run_dir.name
-    settings = Settings()
     cache = HttpCache(run_dir / HTTP_CACHE_DIRNAME)
     attempted = 0
     #: Record ids that have returned 404 with nothing yet fetched. Reset on the

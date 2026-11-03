@@ -19,9 +19,9 @@ fabricated address forfeits that. It stays a plain ``str`` field (unlike the
 ``SecretStr`` credentials above) precisely because it is not meant to be kept
 out of logs; it is meant to be a real contact.
 
-``SCOPUS_API_KEY`` is the one required secret: without it, no source can be
-queried, so :class:`Settings` fails loudly and by name rather than letting a
-generic Pydantic error surface later at first use. All secrets are typed
+``SCOPUS_API_KEY`` is optional here (ADR 0042 Decision 8): a project in sources mode
+``openalex`` never uses it. The code paths that do use it call :func:`require_scopus_key`, which
+fails loudly and by name before any request is made. All secrets are typed
 ``SecretStr`` so they cannot leak via ``repr``, ``str``, logging, or an
 unguarded traceback -- ``SecretStr.__repr__`` always renders as
 ``SecretStr('**********')`` regardless of the underlying value.
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    scopus_api_key: SecretStr
+    scopus_api_key: SecretStr | None = None
     scopus_insttoken: SecretStr | None = None
     elsevier_sd_api_key: SecretStr | None = None
     unpaywall_email: str | None = None
@@ -126,14 +126,27 @@ class Settings(BaseSettings):
                 several unrelated types (bool, str, Path, mappings, ...).
 
         Raises:
-            ConfigError: If a required variable is missing or any value
-                fails validation. When ``SCOPUS_API_KEY`` is the missing
-                variable, the message names it explicitly.
+            ConfigError: If any value fails validation. A missing Scopus key is
+                not an error here; see :func:`require_scopus_key`.
         """
         try:
             super().__init__(**data)
         except PydanticValidationError as exc:
             raise _translate(exc) from exc
+
+
+def require_scopus_key(settings: Settings) -> SecretStr:
+    """Return the Scopus key, or fail before any request is made.
+
+    A blank value (``SCOPUS_API_KEY=`` copied from ``.env.example``) counts as missing.
+
+    Raises:
+        ConfigError: If the key is unset or blank.
+    """
+    key = settings.scopus_api_key
+    if key is None or not key.get_secret_value().strip():
+        raise ConfigError("SCOPUS_API_KEY is not set; run `prismabib credentials set scopus`.")
+    return key
 
 
 def _translate(exc: PydanticValidationError) -> ConfigError:

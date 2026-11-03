@@ -52,6 +52,7 @@ CAPABILITY_MODES: Final[dict[str, frozenset[str]]] = {
     "openalex_command": frozenset({"scopus+openalex"}),
     "openalex_lookup": frozenset({"scopus+openalex", "openalex"}),
     "openalex_search": frozenset({"openalex"}),
+    "scopus_key_test": _SCOPUS_SIDE,
 }
 _CAPABILITY_WHY: Final[dict[str, str]] = {
     "scopus_search": "it searches Scopus",
@@ -60,6 +61,7 @@ _CAPABILITY_WHY: Final[dict[str, str]] = {
     "openalex_command": "it enriches Scopus records, which this mode does not hold",
     "openalex_lookup": "it looks up Scopus-side records in OpenAlex",
     "openalex_search": "it searches OpenAlex as the primary source",
+    "scopus_key_test": "it makes a Scopus request, and this mode does not use Scopus",
 }
 #: ``caller`` of ``capture_openalex`` -> its capability (ADR 0042 Decision 3).
 CALLER_CAPABILITY: Final[dict[str, str]] = {
@@ -89,6 +91,7 @@ COMMAND_MODES: Final[dict[str, frozenset[str]]] = {
     "fulltext": _ALL,
     "sources": _ALL,
     "doctor": _ALL,
+    "credentials": _ALL,
 }
 
 
