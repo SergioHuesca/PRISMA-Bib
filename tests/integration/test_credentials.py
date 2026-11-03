@@ -554,9 +554,9 @@ def test_credentials_set_openalex__writes_only_its_key(repo: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert dotenv_values(repo / ".env") == {
-        "SCOPUS_API_KEY": "old",
+        "SCOPUS_API_KEY": "old",  # pragma: allowlist secret
         "UNPAYWALL_EMAIL": "me@example.org",
-        "OPENALEX_API_KEY": "oa-key",
+        "OPENALEX_API_KEY": "oa-key",  # pragma: allowlist secret
     }
 
 
@@ -567,8 +567,8 @@ def test_credentials_set_unpaywall__writes_only_its_key(repo: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert dotenv_values(repo / ".env") == {
-        "SCOPUS_API_KEY": "old",
-        "OPENALEX_API_KEY": "oa",
+        "SCOPUS_API_KEY": "old",  # pragma: allowlist secret
+        "OPENALEX_API_KEY": "oa",  # pragma: allowlist secret
         "UNPAYWALL_EMAIL": "me@example.org",
     }
 
