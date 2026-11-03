@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
-from collections.abc import Iterable, Mapping, Sequence
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Self
 from urllib.parse import quote, quote_plus
@@ -57,6 +59,36 @@ _SELECT: Final = (
     "id,doi,title,publication_year,abstract_inverted_index,authorships,topics,"
     "type,primary_location,primary_topic"
 )
+#: The select of a works search (ADR 0042 Decision 4): ``_SELECT`` plus ``cited_by_count``. It must
+#: not name a field OpenAlex removed on 2026-11-02 (``sustainable_development_goals_aurora`` now
+#: answers HTTP 400; also ``host_venue``, ``alternate_host_venues``, ``grants``, ``has_ngrams``).
+SEARCH_SELECT: Final = _SELECT + ",cited_by_count"
+#: Results per page of a search; 100 is the documented maximum for cursor paging.
+SEARCH_PAGE_SIZE: Final = 100
+#: The 2026 docs name the page-size parameter ``per_page``. A live probe (2026-11-03) showed both
+#: ``per_page`` and the older ``per-page`` (used by the DOI and title lookups) are accepted.
+PAGE_SIZE_PARAM: Final = "per_page"
+#: List price of one search call in USD (ADR 0042 Context); used only when a response carries no
+#: ``meta.cost_usd``.
+SEARCH_PAGE_PRICE_USD: Final = 0.001
+#: The exact body message of a rejected cursor (live probe, 2026-11-03: HTTP 400). Cursors were
+#: measured valid for at least 2 hours and are re-usable, so there is no time-based expiry logic;
+#: this rule is the safety net.
+INVALID_CURSOR_MESSAGE: Final = "Invalid cursor value"
+#: Live 2026-11-03: the per-second 429 body says "Rate limit exceeded: 30 requests per second.
+#: Please slow down." Its ``x-ratelimit-remaining`` reads 0 although the daily budget is not spent,
+#: so the remaining fields are NOT used to tell the flavours apart. The daily-budget 429 (live,
+#: same day) says "Insufficient budget. This request costs $0.001 but you only have $0 remaining.
+#: Resets at midnight UTC." with a ``retry-after`` of hours. Any other 429 is an unknown shape and is
+#: treated like the daily one: stop, leave the run resumable, no retry loop.
+_PER_SECOND_PATTERNS: Final = ("requests per second",)
+_DAILY_PATTERNS: Final = ("insufficient budget",)
+#: 10 credits per search page and 10,000 credits a day: 1,000 search pages a day at any ``per_page``.
+#: Used only in messages; the limit itself is enforced by OpenAlex.
+PAGES_PER_DAY: Final = 1000
+_REASON_MAX_CHARS: Final = 200
+#: The longest single wait between per-second retries, whatever ``retry-after`` says.
+_MAX_RETRY_WAIT: Final = 30.0
 _DOI_PREFIX: Final = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
 KEYWORD_KIND: Final = "openalex-topic"
 
@@ -97,6 +129,77 @@ def _guard_httpx_log(key: str) -> None:
 
 class _RetryableUpstreamError(UpstreamError):
     """A 5xx from OpenAlex -- retried, unlike any other unexpected status."""
+
+
+class _PerSecondLimitError(RateLimitError):
+    """A 429 for the per-second limit: free, and retried after ``retry_after`` seconds."""
+
+    def __init__(self, message: str, retry_after: float = 0.0) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class DailyBudgetExhaustedError(RateLimitError):
+    """A 429 that is not the per-second limit: not retried; the caller stops and resumes later.
+
+    Attributes:
+        resets_in_seconds: The server's ``retry-after`` (seconds until 00:00 UTC for the daily
+            budget), or ``None`` when it sent none.
+        reason: The server's message, truncated.
+    """
+
+    def __init__(
+        self, message: str, *, resets_in_seconds: float | None = None, reason: str = ""
+    ) -> None:
+        super().__init__(message)
+        self.resets_in_seconds = resets_in_seconds
+        self.reason = reason
+
+
+def _body_message(response: httpx.Response) -> str:
+    try:
+        body: Any = response.json()
+    except ValueError:
+        body = None
+    text = body.get("message") if isinstance(body, dict) else None
+    return (text if isinstance(text, str) else response.text).strip()[:_REASON_MAX_CHARS]
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    try:
+        seconds = float(response.headers["retry-after"])
+    except (KeyError, ValueError):
+        return None
+    return seconds if math.isfinite(seconds) else None
+
+
+def classify_429(response: httpx.Response) -> Literal["per_second", "daily"]:
+    """Tell a per-second 429 from the daily-budget (or any unknown) 429 by the message text.
+
+    Never by the remaining-quota fields: both flavours report 0 there (live probes, 2026-11-03).
+    ``"daily"`` also covers an unknown shape, because stopping is the safe reading. The daily
+    message is checked explicitly only so the intent is visible in :data:`_DAILY_PATTERNS`.
+    """
+    text = _body_message(response).lower()
+    if any(p in text for p in _DAILY_PATTERNS):
+        return "daily"
+    return "per_second" if any(p in text for p in _PER_SECOND_PATTERNS) else "daily"
+
+
+def _retry_wait(state: Any) -> float:
+    """Backoff, but never less than the server's ``retry-after`` (bounded)."""
+    backoff = float(wait_random_exponential(multiplier=1, max=30)(state))
+    exc = state.outcome.exception() if state.outcome is not None else None
+    asked = exc.retry_after if isinstance(exc, _PerSecondLimitError) else 0.0
+    return max(backoff, min(asked, _MAX_RETRY_WAIT))
+
+
+@dataclass(frozen=True)
+class SearchPageResponse:
+    """One answered search page: the status and the body exactly as received."""
+
+    status: int
+    body: bytes
 
 
 @dataclass(frozen=True)
@@ -286,6 +389,7 @@ class OpenAlexClient:
         rate_limiter: An injectable :class:`~prismabib.sources.ratelimit.RateLimiter`.
         cache: An injectable :class:`~prismabib.sources.cache.HttpCache`.
         timeout: The request timeout in seconds, for a self-built client.
+        sleep: How the search retry waits between attempts; replaced in tests.
     """
 
     ENDPOINT = "https://api.openalex.org/works"
@@ -300,7 +404,9 @@ class OpenAlexClient:
         rate_limiter: RateLimiter | None = None,
         cache: HttpCache | None = None,
         timeout: float = 30.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        self._sleep = sleep
         self._settings = settings if settings is not None else Settings()
         self._http = (
             http_client
@@ -413,6 +519,73 @@ class OpenAlexClient:
             return None
         return lookup_outcome(result, title=title, year=year)[0]
 
+    def fetch_search_page(
+        self, search: str, cursor: str, *, select: str = SEARCH_SELECT
+    ) -> SearchPageResponse:
+        """GET one page of a works search by cursor (``*`` for the first page).
+
+        Only the top-level ``search`` parameter is used (filter-style ``.search`` is deprecated).
+        The key travels in the header. The body is returned unparsed so the caller stores it
+        verbatim. A per-second 429 and a 5xx are retried with backoff.
+
+        Returns:
+            The status and body of the final response. 200 and any 4xx other than 401, 403 and
+            429 come back to the caller (a rejected cursor is the caller's discard path).
+
+        Raises:
+            AuthError: On HTTP 401 (a key is required for every page after the first).
+            EntitlementError: On HTTP 403.
+            DailyBudgetExhaustedError: On a 429 that means the daily budget is spent.
+            RateLimitError: On a per-second 429 that outlasts the retry budget.
+            UpstreamError: On 5xx exhausting the retry budget.
+        """
+        params = {
+            "search": search,
+            PAGE_SIZE_PARAM: str(SEARCH_PAGE_SIZE),
+            "cursor": cursor,
+            "select": select,
+        }
+        retryer = Retrying(
+            stop=stop_after_attempt(self.MAX_ATTEMPTS),
+            wait=_retry_wait,
+            retry=retry_if_exception_type((_PerSecondLimitError, _RetryableUpstreamError)),
+            sleep=self._sleep,
+            reraise=True,
+        )
+        try:
+            response: httpx.Response = retryer(self._search_request, params)
+        except httpx.HTTPError as exc:
+            # Class name only: a message may echo the URL.
+            raise UpstreamError(f"OpenAlex request failed ({type(exc).__name__}).") from exc
+        return SearchPageResponse(response.status_code, response.content)
+
+    def _search_request(self, params: Mapping[str, str]) -> httpx.Response:
+        self._rate_limiter.acquire()
+        key = self._settings.openalex_api_key
+        headers = {"Authorization": f"Bearer {key.get_secret_value()}"} if key is not None else {}
+        response = self._http.get(self.ENDPOINT, params=dict(params), headers=headers)
+        # No observe_headers here: this API's x-ratelimit-remaining reads 0 on a per-second 429.
+        status = response.status_code
+        if status == 429:
+            if classify_429(response) == "daily":
+                raise DailyBudgetExhaustedError(
+                    "OpenAlex 429 that is not per-second: stopping.",
+                    resets_in_seconds=_retry_after_seconds(response),
+                    reason=_body_message(response),
+                )
+            try:
+                asked = float(response.headers.get("retry-after", "0"))
+            except ValueError:
+                asked = 0.0
+            raise _PerSecondLimitError("OpenAlex rate-limited the request (HTTP 429).", asked)
+        if status == 401:
+            raise AuthError("OpenAlex rejected the request (HTTP 401): check OPENALEX_API_KEY.")
+        if status == 403:
+            raise EntitlementError("OpenAlex refused access (HTTP 403).")
+        if status >= 500:
+            raise _RetryableUpstreamError(f"OpenAlex returned HTTP {status}.")
+        return response
+
     def _get_works(
         self, params: Mapping[str, str], *, fallback_opt_in: bool, url: str | None = None
     ) -> list[OpenAlexWork] | Refused | None:
@@ -484,14 +657,23 @@ class OpenAlexClient:
 
 
 __all__ = [
+    "INVALID_CURSOR_MESSAGE",
+    "PAGES_PER_DAY",
+    "PAGE_SIZE_PARAM",
+    "SEARCH_PAGE_PRICE_USD",
+    "SEARCH_PAGE_SIZE",
+    "SEARCH_SELECT",
     "AuthorFields",
+    "DailyBudgetExhaustedError",
     "FieldOutcome",
     "NotFound",
     "OpenAlexClient",
     "OpenAlexWork",
     "Refused",
+    "SearchPageResponse",
     "TopicKeyword",
     "authorships_to_fields",
+    "classify_429",
     "field_outcomes",
     "lookup_outcome",
     "normalise_doi",

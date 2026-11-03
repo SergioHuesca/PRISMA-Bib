@@ -77,11 +77,20 @@ OPENALEX_DIRNAME = "openalex"
 #: The Scopus level 2 and 3 cascade runs under ``raw/scopus-cascade/<run_id>/`` (ADR 0041).
 SCOPUS_CASCADE_DIRNAME = "scopus-cascade"
 
+#: The OpenAlex works-search runs under ``raw/openalex-search/<run_id>/`` (ADR 0042 Decision 4).
+OPENALEX_SEARCH_DIRNAME = "openalex-search"
+
 #: Every immediate child of ``raw/`` that is not a search run directory. Any
 #: code iterating ``raw/`` looking for runs must skip these by name rather than
 #: relying on their contents to disqualify them.
 NON_RUN_DIRNAMES = frozenset(
-    {CACHE_DIRNAME, ABSTRACTS_DIRNAME, OPENALEX_DIRNAME, SCOPUS_CASCADE_DIRNAME}
+    {
+        CACHE_DIRNAME,
+        ABSTRACTS_DIRNAME,
+        OPENALEX_DIRNAME,
+        SCOPUS_CASCADE_DIRNAME,
+        OPENALEX_SEARCH_DIRNAME,
+    }
 )
 
 
@@ -167,6 +176,7 @@ __all__ = [
     "HTTP_CACHE_DIRNAME",
     "NON_RUN_DIRNAMES",
     "OPENALEX_DIRNAME",
+    "OPENALEX_SEARCH_DIRNAME",
     "RUN_MANIFEST_FILENAME",
     "SCOPUS_CASCADE_DIRNAME",
     "SealedRunError",

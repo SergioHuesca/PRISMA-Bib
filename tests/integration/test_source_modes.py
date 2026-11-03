@@ -703,6 +703,7 @@ def test_capability_table__every_capture_function__declares_a_capability() -> No
     assert sorted(found) == [
         "capture_abstracts",
         "capture_openalex",
+        "capture_openalex_search",
         "capture_scopus_cascade",
         "capture_search",
     ]

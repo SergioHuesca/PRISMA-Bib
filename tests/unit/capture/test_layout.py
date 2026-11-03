@@ -35,6 +35,7 @@ from prismabib.capture.layout import (
     HTTP_CACHE_DIRNAME,
     NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
+    OPENALEX_SEARCH_DIRNAME,
     RUN_MANIFEST_FILENAME,
     SCOPUS_CASCADE_DIRNAME,
     SealedRunError,
@@ -52,6 +53,7 @@ def test_layout__non_run_dirnames__names_both_non_run_directories() -> None:
         CACHE_DIRNAME,
         ABSTRACTS_DIRNAME,
         OPENALEX_DIRNAME,
+        OPENALEX_SEARCH_DIRNAME,
         SCOPUS_CASCADE_DIRNAME,
     }
 
@@ -210,6 +212,7 @@ def test_layout__module__exports_exactly_the_shared_vocabulary() -> None:
         "HTTP_CACHE_DIRNAME",
         "NON_RUN_DIRNAMES",
         "OPENALEX_DIRNAME",
+        "OPENALEX_SEARCH_DIRNAME",
         "RUN_MANIFEST_FILENAME",
         "SCOPUS_CASCADE_DIRNAME",
         "SealedRunError",
