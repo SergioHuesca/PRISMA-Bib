@@ -299,7 +299,7 @@ def test_dotenv_writer__refuses_when_tracked(tmp_path: Path) -> None:
     (repo / ".env").write_text("A=1\n", encoding="utf-8")
     _git(repo, "add", "-f", ".env")
 
-    with pytest.raises(ConfigError, match=r"tracked by git|does not ignore"):
+    with pytest.raises(ConfigError, match="is tracked by git"):
         cred.write_env(repo / ".env", {"SCOPUS_API_KEY": SENTINEL})
 
     assert (repo / ".env").read_text(encoding="utf-8") == "A=1\n"
@@ -805,3 +805,81 @@ def test_doctor__uses_credentials_status_and_points_to_set(repo: Path, tmp_path:
     assert "SCOPUS_API_KEY: not set" in result.output
     assert "prismabib credentials set scopus" in result.output
     assert "prismabib credentials status" in result.output
+
+
+# -- review round: temp name, non-ASCII paths, input handling, git failures ------------------------
+
+
+def test_dotenv_writer__bare_env_rule_only__refuses_before_writing_anything(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "r", ignore=".env\n")  # ignores .env but not tmp-<hex>.env
+
+    with pytest.raises(ConfigError, match=r"temporary file name .* is not ignored") as caught:
+        cred.write_env(repo / ".env", {"SCOPUS_API_KEY": SENTINEL})
+
+    assert not leaks(str(caught.value))
+    assert sorted(p.name for p in repo.iterdir()) == [".git", ".gitignore"]
+
+
+def test_dotenv_writer__non_ascii_directory__tracked_gitignore_works(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "r", ignore="*.log\n")
+    sub = repo / "sub é dir"
+    sub.mkdir()
+    (sub / ".gitignore").write_text(".env\n*.env\n", encoding="utf-8")
+    _git(repo, "add", "sub é dir/.gitignore")
+
+    cred.write_env(sub / ".env", {"OPENALEX_API_KEY": "abc"})
+
+    assert (sub / ".env").read_text(encoding="utf-8") == "OPENALEX_API_KEY=abc\n"
+
+
+def test_credentials_set__prompt__surrounding_whitespace_is_stripped(repo: Path) -> None:
+    result = _invoke("set", "scopus", input=f"  {SENTINEL}  \n {TOKEN} \n")
+
+    assert result.exit_code == 0, result.output
+    values = dotenv_values(repo / ".env")
+    assert values["SCOPUS_API_KEY"] == SENTINEL and values["SCOPUS_INSTTOKEN"] == TOKEN
+
+
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_credentials_set__stdin_quoted_value__one_matching_pair_is_removed(
+    repo: Path, quote: str
+) -> None:
+    result = _invoke("set", "scopus", "--stdin", input=f"SCOPUS_API_KEY={quote}abc{quote}\n")
+
+    assert result.exit_code == 0, result.output
+    assert dotenv_values(repo / ".env")["SCOPUS_API_KEY"] == "abc"
+
+
+def test_credentials_set__stdin_export_form__refused_without_echo(repo: Path) -> None:
+    result = _invoke("set", "scopus", "--stdin", input=f"export SCOPUS_API_KEY={SENTINEL}\n")
+
+    assert result.exit_code == 1 and not leaks(_all_text(result))
+    assert not (repo / ".env").exists()
+
+
+def test_credentials_test_scopus__non_ascii_key__clear_result_and_no_request(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCOPUS_API_KEY", "k\u00e9y-NONASCII-77")
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(_SEARCH).mock(return_value=httpx.Response(200))
+        result = _invoke("test", "scopus")
+
+    assert route.call_count == 0
+    assert result.exit_code == 1 and "non-ASCII" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "NONASCII-77" not in _all_text(result)
+
+
+def test_dotenv_writer__git_failure_other_than_no_repository__is_reported_as_such(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_run(*_a: Any, **_k: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 128, "", "fatal: detected dubious ownership")
+
+    monkeypatch.setattr(cred.subprocess, "run", fake_run)
+
+    with pytest.raises(ConfigError, match="git could not read the repository") as caught:
+        cred.write_env(repo / ".env", {"SCOPUS_API_KEY": SENTINEL})
+
+    assert "not inside a git repository" not in str(caught.value)

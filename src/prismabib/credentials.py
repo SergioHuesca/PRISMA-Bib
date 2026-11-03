@@ -49,6 +49,8 @@ _ACCEPTED_PATTERNS: Final = frozenset({".env", "*.env"})
 #: Git variables that would point git away from the directory it is run in.
 _GIT_REDIRECTS: Final = frozenset({"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"})
 _CHECK_IGNORE_LINE: Final = re.compile(r"^(?P<source>.*?):(?P<line>\d+):(?P<pattern>.*)$")
+#: Same shape as the writer's ``tmp-<16 hex>.env`` temp file, used only to ask git about it.
+_TEMP_PROBE_NAME: Final = "tmp-0000000000000000.env"
 _BARE_VALUE: Final = re.compile(r"[A-Za-z0-9_@.+/:=-]+")
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -75,7 +77,7 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str] | None:
     env = {k: v for k, v in os.environ.items() if k not in _GIT_REDIRECTS}
     try:
         return subprocess.run(
-            ["git", *args],
+            ["git", "-c", "core.quotepath=off", *args],
             cwd=cwd,
             env=env,
             capture_output=True,
@@ -90,7 +92,11 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str] | None:
 
 
 def _ignore_problem(path: Path) -> str | None:
-    """Why git does not confirm ``path`` as safely ignored, or ``None`` when it does."""
+    """Why git does not confirm ``path`` as safely ignored, or ``None`` when it does.
+
+    "Tracked" means in the index: a ``.gitignore`` that is staged but not yet committed passes,
+    although a fresh clone would not have its rule until it is committed.
+    """
     folder = path.parent
     if not folder.is_dir():
         return f"the directory {folder} does not exist"
@@ -98,8 +104,18 @@ def _ignore_problem(path: Path) -> str | None:
     if top is None:
         return "git is not installed or could not be run"
     if top.returncode != 0:
-        return f"{folder} is not inside a git repository"
+        if "not a git repository" in top.stderr.lower():
+            return f"{folder} is not inside a git repository"
+        return "git could not read the repository (for example a safe.directory or ownership error)"
     toplevel = Path(top.stdout.strip()).resolve()
+
+    # First, so that a tracked file gets its own message: check-ignore never reports a tracked
+    # path as ignored, so this branch would otherwise be unreachable.
+    listed = _git(["ls-files", "--", path.name], folder)
+    if listed is None or listed.returncode != 0:
+        return "git ls-files failed"
+    if listed.stdout.strip():
+        return f"{path.name} is tracked by git, so a key written to it could be committed"
 
     ignored = _git(["check-ignore", "-v", "--", path.name], folder)
     if ignored is None or ignored.returncode not in (0, 1):
@@ -123,11 +139,14 @@ def _ignore_problem(path: Path) -> str | None:
     tracked_rule_file = _git(["ls-files", "--error-unmatch", "--", relative.as_posix()], toplevel)
     if tracked_rule_file is None or tracked_rule_file.returncode != 0:
         return f"{relative.as_posix()} is not tracked, so a fresh clone would not have the rule"
-    listed = _git(["ls-files", "--", path.name], folder)
-    if listed is None or listed.returncode != 0:
-        return "git ls-files failed"
-    if listed.stdout.strip():
-        return f"{path.name} is tracked by git"
+    # The write goes through a sibling temp file; it must be ignored too, or the plaintext key
+    # would sit in an unignored file during the write (a bare `.env` rule does not cover it).
+    temp = _git(["check-ignore", "--", _TEMP_PROBE_NAME], folder)
+    if temp is None or temp.returncode != 0:
+        return (
+            f"the temporary file name {_TEMP_PROBE_NAME} is not ignored (add a `*.env` rule), "
+            "so the key would sit in an unignored file while it is written"
+        )
     return None
 
 
@@ -286,6 +305,9 @@ def probe_scopus_key(settings: Settings, *, http_client: httpx.Client | None = N
         ConfigError: If no Scopus key is set; no request is made.
     """
     key = require_scopus_key(settings).get_secret_value()
+    token_value = settings.scopus_insttoken.get_secret_value() if settings.scopus_insttoken else ""
+    if not (key.isascii() and token_value.isascii()):
+        return ProbeResult(False, "the key or token contains non-ASCII characters; no request made")
     register_secret_for_redaction(key)
     headers = {"X-ELS-APIKey": key, "Accept": "application/json"}
     if settings.scopus_insttoken is not None:
@@ -299,7 +321,7 @@ def probe_scopus_key(settings: Settings, *, http_client: httpx.Client | None = N
             params={"query": "TITLE-ABS-KEY(prisma)", "count": "1", "view": "STANDARD"},
             headers=headers,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, UnicodeError) as exc:
         return ProbeResult(False, f"network error ({type(exc).__name__})")
     finally:
         if http_client is None:
@@ -340,7 +362,10 @@ def _read_stdin_values(allowed: tuple[str, ...]) -> dict[str, str]:
         if not sep or name.strip() not in allowed:
             # Never echo the line: a mistyped file may hold the bare key.
             raise ConfigError(f"--stdin line {number}: expected NAME=VALUE with NAME in {allowed}.")
-        values[name.strip()] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]  # one matching pair of quotes, as in a .env line
+        values[name.strip()] = value
     return values
 
 
@@ -349,7 +374,7 @@ def _prompted_values(keys: tuple[str, ...]) -> dict[str, str]:
     for position, name in enumerate(keys):
         hidden = name not in _NOT_SECRET
         if position == 0:
-            values[name] = typer.prompt(name, hide_input=hidden)
+            values[name] = typer.prompt(name, hide_input=hidden).strip()
         else:
             answer = typer.prompt(
                 f"{name} (optional, Enter to skip)",
@@ -358,7 +383,7 @@ def _prompted_values(keys: tuple[str, ...]) -> dict[str, str]:
                 hide_input=hidden,
             )
             if answer.strip():
-                values[name] = answer
+                values[name] = answer.strip()
     return values
 
 
@@ -372,7 +397,11 @@ def set_credentials(
         bool, typer.Option("--from-env", help="Take the values from the process environment.")
     ] = False,
 ) -> None:
-    """Store a credential in .env. The value is prompted (hidden), piped or taken from the environment."""
+    """Store a credential in .env. The value is prompted (hidden), piped or taken from the environment.
+
+    With --stdin, give NAME=VALUE lines (no `export`); one matching pair of surrounding quotes
+    around VALUE is removed.
+    """
     from prismabib.cli import _echo, _echo_err, _reporting_errors
 
     with _reporting_errors():
