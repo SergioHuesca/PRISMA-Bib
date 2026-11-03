@@ -149,6 +149,21 @@ def require_scopus_key(settings: Settings) -> SecretStr:
     return key
 
 
+def require_openalex_key(settings: Settings) -> SecretStr:
+    """Return the OpenAlex key, or fail before any request is made.
+
+    OpenAlex search needs a free key for every run (ADR 0042 Q-D): without one, cursors past
+    page 1 answer 401. A blank value counts as missing.
+
+    Raises:
+        ConfigError: If the key is unset or blank.
+    """
+    key = settings.openalex_api_key
+    if key is None or not key.get_secret_value().strip():
+        raise ConfigError("OPENALEX_API_KEY is not set; run `prismabib credentials set openalex`.")
+    return key
+
+
 def _translate(exc: PydanticValidationError) -> ConfigError:
     """Turn a Pydantic settings validation failure into a readable :class:`ConfigError`.
 

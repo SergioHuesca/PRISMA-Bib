@@ -466,3 +466,62 @@ class CascadeRunManifest(BaseModel):
     requests: list[CascadeRequest]
     payload_files: list[str]
     payload_sha256: str
+
+
+class OpenAlexSearchRequest(BaseModel):
+    """One HTTP request of an OpenAlex search run, and the one file that holds its response.
+
+    Attributes:
+        index: Request order; also the number in ``response-NNNN.jsonl``.
+        file: The response file, relative to the run directory.
+        cursor_sent: The ``cursor`` parameter as sent (``*`` for the first page).
+        sha256: Digest of the stored file's bytes.
+        encoding: ``verbatim`` or ``compact`` (ADR 0031 Decision 2).
+        raw_sha256: Digest of the body as received; set only when compact.
+        http_status: The response status.
+        retrieved_at: The real request time (UTC).
+        result_count: Works in ``results``; ``None`` when there is no list.
+        meta_count: ``meta.count`` of the response, or ``None`` when absent.
+        next_cursor: ``meta.next_cursor`` of the response, or ``None``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int
+    file: str
+    cursor_sent: str
+    sha256: str
+    encoding: Literal["verbatim", "compact"]
+    raw_sha256: str | None = None
+    http_status: int
+    retrieved_at: datetime
+    result_count: int | None
+    meta_count: int | None
+    next_cursor: str | None
+
+
+class OpenAlexSearchRunManifest(BaseModel):
+    """The manifest for one sealed OpenAlex search run (ADR 0042 Decision 4).
+
+    Written to ``raw/openalex-search/<run_id>/manifest.json`` only when the four seal rules
+    hold (see :mod:`prismabib.capture.openalex_search`); its presence is the seal, so an
+    unsealed or discarded run never has one. ``api_key_used`` is a boolean, never the key.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    started_at: datetime
+    finished_at: datetime
+    endpoint: str
+    client_version: str
+    criteria_version: str
+    query: str
+    query_key: str
+    select: str
+    per_page: int
+    total_count: int | None
+    works_captured: int
+    complete: bool
+    api_key_used: bool
+    requests: list[OpenAlexSearchRequest]

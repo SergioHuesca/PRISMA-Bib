@@ -24,6 +24,7 @@ from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     CACHE_DIRNAME,
     OPENALEX_DIRNAME,
+    OPENALEX_SEARCH_DIRNAME,
     SCOPUS_CASCADE_DIRNAME,
     atomic_write_bytes,
 )
@@ -317,15 +318,13 @@ def require_caller(project: Project, caller: str | None) -> None:
 
 # -- transitions ---------------------------------------------------------------------------------
 
-#: PR3 of ADR 0042 moves this name into ``layout.NON_RUN_DIRNAMES``; until then it is local.
-_OPENALEX_SEARCH_DIRNAME: Final = "openalex-search"
 _NON_SCOPUS_SEARCH_DIRS: Final = frozenset(
     {
         CACHE_DIRNAME,
         ABSTRACTS_DIRNAME,
         OPENALEX_DIRNAME,
         SCOPUS_CASCADE_DIRNAME,
-        _OPENALEX_SEARCH_DIRNAME,
+        OPENALEX_SEARCH_DIRNAME,
     }
 )
 
@@ -357,7 +356,7 @@ def check_transition(project: Project, from_mode: str, to_mode: str) -> None:
     if to_mode == "openalex":
         blocking = _scopus_search_runs(project)
     elif from_mode == "openalex":
-        blocking = _subdirs(project.raw_dir / _OPENALEX_SEARCH_DIRNAME)
+        blocking = _subdirs(project.raw_dir / OPENALEX_SEARCH_DIRNAME)
     elif to_mode == "scopus":  # from scopus+openalex (Q-B)
         blocking = _subdirs(project.raw_dir / OPENALEX_DIRNAME)
         if not blocking:
