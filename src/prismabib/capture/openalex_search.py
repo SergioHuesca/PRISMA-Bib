@@ -14,7 +14,9 @@ seal rules hold:
 server rejects, gets ``"discarded": true`` in ``progress.json`` and never a ``manifest.json``. It
 stays on disk as an audit trail, is never resumed, and the next call starts a new run. A rule
 that is already broken is detected when the page arrives, so no further quota is spent on a run
-that can never seal. A budget stop (``budget`` pages) or a spent daily budget leaves the run
+that can never seal. Cursors were measured valid for at least 2 hours on
+2026-11-03 and can be re-used, so no expiry clock is kept; the rejected-cursor rule is the safety
+net. A budget stop (``budget`` pages) or a spent daily budget leaves the run
 unsealed and resumable. Nothing is estimated: a missing count means no seal.
 
 **The key** is required before any request (Q-D) and travels in the ``Authorization`` header only.
@@ -59,6 +61,7 @@ from prismabib.project import Project
 from prismabib.source_mode import require_capability
 from prismabib.sources.openalex import (
     INVALID_CURSOR_MESSAGE,
+    PAGES_PER_DAY,
     SEARCH_PAGE_PRICE_USD,
     SEARCH_PAGE_SIZE,
     SEARCH_SELECT,
@@ -90,6 +93,9 @@ class OpenAlexSearchResult:
         spent_usd: Cost of those pages: ``meta.cost_usd`` when present, else list price.
         manifest: The manifest of a sealed or reused run, else ``None``.
         message: A one-line reason; for ``discarded`` it contains "discard and restart".
+        resets_in_seconds: For ``daily_budget``, the server's ``retry-after`` (seconds until the
+            budget resets at 00:00 UTC), else ``None``.
+        reason: For ``daily_budget``, the server's message (truncated), else empty.
     """
 
     status: Status
@@ -98,6 +104,8 @@ class OpenAlexSearchResult:
     spent_usd: float
     manifest: OpenAlexSearchRunManifest | None = None
     message: str = ""
+    resets_in_seconds: float | None = None
+    reason: str = ""
 
 
 class _Progress(BaseModel):
@@ -114,6 +122,9 @@ class _Progress(BaseModel):
     spent_usd: float = 0.0
     discarded: bool = False
     discard_reason: str | None = None
+    #: Set by a daily-budget stop so the operator sees when it resets; cleared by the next page.
+    stop_reason: str | None = None
+    resets_in_seconds: float | None = None
 
     def same_plan(self, other: _Progress) -> bool:
         """Whether ``other`` asks for exactly this run (ADR 0042 Decision 4, Resume)."""
@@ -130,7 +141,11 @@ def query_key(query: str) -> str:
 
 
 def cost_bound_usd(budget: int) -> float:
-    """The most a ``budget``-page run costs at list price (for a dry run)."""
+    """The most a ``budget``-page run costs at list price (for a dry run).
+
+    OpenAlex meters 10 credits per search page against 10,000 credits a day, so a day holds
+    :data:`~prismabib.sources.openalex.PAGES_PER_DAY` (1,000) pages at $0.001, whatever ``per_page``.
+    """
     return budget * SEARCH_PAGE_PRICE_USD
 
 
@@ -347,9 +362,16 @@ def capture_openalex_search(
     spent = 0.0
 
     def result(
-        status: Status, message: str, manifest: OpenAlexSearchRunManifest | None = None
+        status: Status,
+        message: str,
+        manifest: OpenAlexSearchRunManifest | None = None,
+        *,
+        resets_in_seconds: float | None = None,
+        reason: str = "",
     ) -> OpenAlexSearchResult:
-        return OpenAlexSearchResult(status, run_dir.name, fetched, spent, manifest, message)
+        return OpenAlexSearchResult(
+            status, run_dir.name, fetched, spent, manifest, message, resets_in_seconds, reason
+        )
 
     http = httpx.Client(transport=transport, timeout=30.0)
     try:
@@ -361,10 +383,18 @@ def capture_openalex_search(
                 index = len(progress.requests)
                 try:
                     page = client.fetch_search_page(plan.query, cursor, select=progress.select)
-                except DailyBudgetExhaustedError:
+                except DailyBudgetExhaustedError as exc:
+                    progress.stop_reason = exc.reason or "HTTP 429"
+                    progress.resets_in_seconds = exc.resets_in_seconds
+                    _save(run_dir, progress)
                     return result(
-                        "daily_budget", "OpenAlex's daily budget is spent; resume after 00:00 UTC"
+                        "daily_budget",
+                        f"OpenAlex's daily budget ({PAGES_PER_DAY} search pages) is spent; "
+                        "resume after 00:00 UTC",
+                        resets_in_seconds=exc.resets_in_seconds,
+                        reason=progress.stop_reason,
                     )
+                progress.stop_reason = progress.resets_in_seconds = None
                 if page.status != 200 and not _is_invalid_cursor(page, cursor):
                     # Nothing stored: the run stays as it was and can be resumed.
                     raise UpstreamError(f"OpenAlex answered HTTP {page.status} to {cursor!r}.")

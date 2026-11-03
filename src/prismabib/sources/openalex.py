@@ -70,14 +70,22 @@ PAGE_SIZE_PARAM: Final = "per_page"
 #: List price of one search call in USD (ADR 0042 Context); used only when a response carries no
 #: ``meta.cost_usd``.
 SEARCH_PAGE_PRICE_USD: Final = 0.001
-#: The exact body message of a rejected cursor (live probe, 2026-11-03: HTTP 400).
+#: The exact body message of a rejected cursor (live probe, 2026-11-03: HTTP 400). Cursors were
+#: measured valid for at least 2 hours and are re-usable, so there is no time-based expiry logic;
+#: this rule is the safety net.
 INVALID_CURSOR_MESSAGE: Final = "Invalid cursor value"
 #: Live 2026-11-03: the per-second 429 body says "Rate limit exceeded: 30 requests per second.
 #: Please slow down." Its ``x-ratelimit-remaining`` reads 0 although the daily budget is not spent,
-#: so the remaining fields are NOT used to tell the flavours apart. Any other 429 is treated as the
-#: daily budget (or unknown): stop, leave the run resumable. The real daily-budget text is still to
-#: be captured; adjust :data:`_PER_SECOND_PATTERNS` only if a daily message ever matches it.
+#: so the remaining fields are NOT used to tell the flavours apart. The daily-budget 429 (live,
+#: same day) says "Insufficient budget. This request costs $0.001 but you only have $0 remaining.
+#: Resets at midnight UTC." with a ``retry-after`` of hours. Any other 429 is an unknown shape and is
+#: treated like the daily one: stop, leave the run resumable, no retry loop.
 _PER_SECOND_PATTERNS: Final = ("requests per second",)
+_DAILY_PATTERNS: Final = ("insufficient budget",)
+#: 10 credits per search page and 10,000 credits a day: 1,000 search pages a day at any ``per_page``.
+#: Used only in messages; the limit itself is enforced by OpenAlex.
+PAGES_PER_DAY: Final = 1000
+_REASON_MAX_CHARS: Final = 200
 #: The longest single wait between per-second retries, whatever ``retry-after`` says.
 _MAX_RETRY_WAIT: Final = 30.0
 _DOI_PREFIX: Final = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
@@ -131,12 +139,48 @@ class _PerSecondLimitError(RateLimitError):
 
 
 class DailyBudgetExhaustedError(RateLimitError):
-    """A 429 that is not the per-second limit: not retried; the caller stops and resumes later."""
+    """A 429 that is not the per-second limit: not retried; the caller stops and resumes later.
+
+    Attributes:
+        resets_in_seconds: The server's ``retry-after`` (seconds until 00:00 UTC for the daily
+            budget), or ``None`` when it sent none.
+        reason: The server's message, truncated.
+    """
+
+    def __init__(
+        self, message: str, *, resets_in_seconds: float | None = None, reason: str = ""
+    ) -> None:
+        super().__init__(message)
+        self.resets_in_seconds = resets_in_seconds
+        self.reason = reason
+
+
+def _body_message(response: httpx.Response) -> str:
+    try:
+        body: Any = response.json()
+    except ValueError:
+        body = None
+    text = body.get("message") if isinstance(body, dict) else None
+    return (text if isinstance(text, str) else response.text).strip()[:_REASON_MAX_CHARS]
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    try:
+        return float(response.headers["retry-after"])
+    except (KeyError, ValueError):
+        return None
 
 
 def classify_429(response: httpx.Response) -> Literal["per_second", "daily"]:
-    """Tell a per-second 429 from any other 429 by the message text (live probe, 2026-11-03)."""
-    text = response.text.lower()
+    """Tell a per-second 429 from the daily-budget (or any unknown) 429 by the message text.
+
+    Never by the remaining-quota fields: both flavours report 0 there (live probes, 2026-11-03).
+    ``"daily"`` also covers an unknown shape, because stopping is the safe reading. The daily
+    message is checked explicitly only so the intent is visible in :data:`_DAILY_PATTERNS`.
+    """
+    text = _body_message(response).lower()
+    if any(p in text for p in _DAILY_PATTERNS):
+        return "daily"
     return "per_second" if any(p in text for p in _PER_SECOND_PATTERNS) else "daily"
 
 
@@ -518,7 +562,11 @@ class OpenAlexClient:
         status = response.status_code
         if status == 429:
             if classify_429(response) == "daily":
-                raise DailyBudgetExhaustedError("OpenAlex 429 that is not per-second: stopping.")
+                raise DailyBudgetExhaustedError(
+                    "OpenAlex 429 that is not per-second: stopping.",
+                    resets_in_seconds=_retry_after_seconds(response),
+                    reason=_body_message(response),
+                )
             try:
                 asked = float(response.headers.get("retry-after", "0"))
             except ValueError:
@@ -604,6 +652,7 @@ class OpenAlexClient:
 
 __all__ = [
     "INVALID_CURSOR_MESSAGE",
+    "PAGES_PER_DAY",
     "PAGE_SIZE_PARAM",
     "SEARCH_PAGE_PRICE_USD",
     "SEARCH_PAGE_SIZE",

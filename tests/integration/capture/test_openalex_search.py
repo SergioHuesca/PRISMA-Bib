@@ -420,27 +420,6 @@ def test_openalex_search__per_second_429_that_never_clears__raises_rate_limit_er
     assert len(fake.requests) == 5  # the client's retry budget
 
 
-def test_openalex_search__daily_budget_429__stops_without_retry_and_resumes_next_day(
-    tmp_path: Path,
-) -> None:
-    proj = project(tmp_path)
-    fake = three_pages()
-    run(proj, fake, budget=1)
-    fake.requests.clear()
-    fake.override = lambda _r: httpx.Response(
-        429, json={"message": "Daily budget spent (placeholder shape)"}
-    )
-    stopped = run(proj, fake)
-
-    assert stopped.status == "daily_budget"
-    assert len(fake.requests) == 1  # no retry loop
-    assert progress_of(runs(proj)[0])["discarded"] is False
-    assert not is_sealed(runs(proj)[0])
-
-    fake.override = None
-    assert run(proj, fake).status == "sealed"
-
-
 _PER_SECOND_BODY = {  # live shape, 2026-11-03: remaining fields read 0 although the day is not spent
     "error": "Rate limit exceeded",
     "message": "Rate limit exceeded: 30 requests per second. Please slow down.",
@@ -455,12 +434,31 @@ _PER_SECOND_HEADERS = {
 }
 
 
+_DAILY_BODY = {  # live shape, 2026-11-03
+    "error": "Rate limit exceeded",
+    "message": "Insufficient budget. This request costs $0.001 but you only have $0 remaining. "
+    "Resets at midnight UTC. Need more? Add funds at https://openalex.org/pricing",
+    "retryAfter": 34265,
+    "costUsd": 0.001,
+    "dailyRemainingUsd": 0,
+    "creditsRequired": 10,
+    "creditsRemaining": 0,
+}
+_DAILY_HEADERS = {
+    "retry-after": "34265",
+    "x-ratelimit-reset": "34265",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-remaining-usd": "0",
+}
+
+
 @pytest.mark.parametrize(
     ("headers", "body", "expected"),
     [
         (_PER_SECOND_HEADERS, _PER_SECOND_BODY, "per_second"),
-        ({}, {"message": "Daily budget spent (placeholder shape)"}, "daily"),
-        ({"retry-after": "40000", "x-ratelimit-remaining": "0"}, {"message": "x"}, "daily"),
+        (_DAILY_HEADERS, _DAILY_BODY, "daily"),
+        # Both flavours report 0 remaining, so an unknown shape stops rather than retries.
+        ({"retry-after": "1"}, {"message": "something new"}, "daily"),
         ({}, {"message": "Anonymous search is temporarily rate-limited"}, "daily"),
     ],
 )
@@ -468,6 +466,31 @@ def test_classify_429__message_text_not_remaining_fields__per_second_or_daily(
     headers: dict[str, str], body: dict[str, Any], expected: str
 ) -> None:
     assert classify_429(httpx.Response(429, json=body, headers=headers)) == expected
+
+
+def test_openalex_search__insufficient_budget_429__stops_with_reset_recorded_and_no_retry(
+    tmp_path: Path,
+) -> None:
+    proj = project(tmp_path)
+    fake = three_pages()
+    run(proj, fake, budget=1)
+    fake.requests.clear()
+    fake.override = lambda _r: httpx.Response(429, json=_DAILY_BODY, headers=_DAILY_HEADERS)
+    stopped = run(proj, fake)
+
+    assert stopped.status == "daily_budget"
+    assert len(fake.requests) == 1  # one request, no retry loop
+    assert stopped.resets_in_seconds == 34265
+    assert stopped.reason.startswith("Insufficient budget")
+    state = progress_of(runs(proj)[0])
+    assert state["resets_in_seconds"] == 34265
+    assert state["stop_reason"].startswith("Insufficient budget")
+    assert state["discarded"] is False
+    assert not is_sealed(runs(proj)[0])
+
+    fake.override = None  # the next UTC day
+    assert run(proj, fake).status == "sealed"
+    assert is_sealed(runs(proj)[0])
 
 
 def test_openalex_search__cost_usd_from_meta_else_list_price(tmp_path: Path) -> None:
