@@ -17,6 +17,7 @@ from prismabib.errors import StoreError
 from prismabib.project import Project
 from prismabib.store.db import connect
 from prismabib.store.load import build_store
+from prismabib.store.stamp import write_stamp
 from tests.store_helpers import make_entry, write_sealed_run
 
 _RUN_ID = "20250101T000000Z-11111111"
@@ -35,6 +36,7 @@ def test_connect__read_only_and_store_missing__raises_store_error(tmp_path: Path
 def test_connect__corrupt_database_file__raises_store_error(tmp_path: Path) -> None:
     project = Project.init("corrupt-store", title="Corrupt Store", root=tmp_path)
     project.db_path.write_bytes(b"not a real duckdb file")
+    write_stamp(project.db_path, "scopus+openalex")  # a store with no stamp is refused first
 
     with pytest.raises(StoreError, match="Could not open the Layer 1 store"):
         connect(project, read_only=True)

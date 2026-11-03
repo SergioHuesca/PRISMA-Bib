@@ -32,6 +32,7 @@ from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES, table_checksums
 from prismabib.store.db import connect
 from prismabib.store.load import Corpus, build_store
+from prismabib.store.stamp import write_stamp
 from tests.store_helpers import (
     SCHEMA_SQL_PATH,
     copy_reference_project,
@@ -211,6 +212,46 @@ _EXPECTED_COLUMNS: dict[str, tuple[tuple[str, str, bool], ...]] = {
         ("authors_json", "VARCHAR", False),  # ADR 0041 Decision 3
         ("affiliations_json", "VARCHAR", False),
         ("keywords_json", "VARCHAR", False),
+    ),
+    # Not from the BUILD_PLAN schema: added by ADR 0042 Decision 5.
+    "openalex_records": (
+        ("record_id", "VARCHAR", True),
+        ("openalex_id", "VARCHAR", False),
+        ("doi", "VARCHAR", False),
+        ("title", "VARCHAR", False),
+        ("abstract", "VARCHAR", False),
+        ("year", "INTEGER", False),
+        ("doc_type", "VARCHAR", False),
+        ("language", "VARCHAR", False),
+        ("venue_type", "VARCHAR", False),
+        ("venue_name", "VARCHAR", False),
+        ("payload_file", "VARCHAR", False),
+        ("payload_line", "INTEGER", False),
+        ("query_run_id", "VARCHAR", False),
+        ("abstract_source", "VARCHAR", False),
+        ("abstract_level", "INTEGER", False),
+        ("abstract_outcome", "VARCHAR", False),
+        ("abstract_payload_ref", "VARCHAR", False),
+        ("authors_source", "VARCHAR", False),
+        ("authors_level", "INTEGER", False),
+        ("authors_outcome", "VARCHAR", False),
+        ("authors_payload_ref", "VARCHAR", False),
+        ("affiliations_source", "VARCHAR", False),
+        ("affiliations_level", "INTEGER", False),
+        ("affiliations_outcome", "VARCHAR", False),
+        ("affiliations_payload_ref", "VARCHAR", False),
+        ("keywords_source", "VARCHAR", False),
+        ("keywords_level", "INTEGER", False),
+        ("keywords_outcome", "VARCHAR", False),
+        ("keywords_payload_ref", "VARCHAR", False),
+        ("retrieved_at", "TIMESTAMP", False),
+    ),
+    "openalex_search_runs": (
+        ("run_id", "VARCHAR", True),
+        ("query_key", "VARCHAR", False),
+        ("query", "VARCHAR", False),
+        ("total_count", "INTEGER", False),
+        ("works_captured", "INTEGER", False),
     ),
     # Not from the BUILD_PLAN schema: added by ADR 0041 Decision 2.
     "provenance_conflicts": (
@@ -921,6 +962,7 @@ def test_build_store__reused_store_with_wrong_schema__raises_store_error(tmp_pat
     connection = duckdb.connect(str(project.db_path))
     connection.execute("CREATE TABLE not_a_layer1_table (x INTEGER)")
     connection.close()
+    write_stamp(project.db_path, "scopus+openalex")  # a store with no stamp is refused first
 
     with pytest.raises(StoreError, match="does not look like a Layer 1 store"):
         build_store(project, rebuild=False)
