@@ -306,10 +306,16 @@ class InstitutionDetail:
 
 @dataclass(frozen=True)
 class AuthorshipDetails:
-    """Authors in authorship order, and institutions in first-seen order, with their ids."""
+    """Authors in authorship order, and institutions in first-seen order, with their ids.
+
+    ``countries`` are the upper-case codes an authorship's own ``countries[]`` names that none of
+    that authorship's institutions already carries, in first-seen order (the fallback of ADR 0042
+    Decision 5, owner decision 2026-11-04). They are not validated here.
+    """
 
     authors: tuple[AuthorDetail, ...]
     institutions: tuple[InstitutionDetail, ...]
+    countries: tuple[str, ...] = ()
 
 
 def _text(value: object) -> str | None:
@@ -325,19 +331,30 @@ def authorship_details(work: OpenAlexWork) -> AuthorshipDetails:
     """
     authors: list[AuthorDetail] = []
     institutions: dict[str, InstitutionDetail] = {}
+    countries: dict[str, None] = {}
     for authorship in work.authorships:
         author = authorship.get("author")
         if isinstance(author, Mapping) and (name := _text(author.get("display_name"))):
             authors.append(AuthorDetail(name, _text(author.get("id"))))
+        covered: set[str] = set()
         for inst in authorship.get("institutions") or ():
+            if isinstance(inst, Mapping) and (code := _text(inst.get("country_code"))):
+                covered.add(code.upper())
             if isinstance(inst, Mapping) and (inst_name := _text(inst.get("display_name"))):
-                institutions.setdefault(
-                    inst_name,
-                    InstitutionDetail(
-                        inst_name, _text(inst.get("id")), _text(inst.get("country_code"))
-                    ),
+                seen = InstitutionDetail(
+                    inst_name, _text(inst.get("id")), _text(inst.get("country_code"))
                 )
-    return AuthorshipDetails(tuple(authors), tuple(institutions.values()))
+                kept = institutions.setdefault(inst_name, seen)
+                if kept.country_code is None and seen.country_code is not None:
+                    # Keep the first non-null country (and id) rather than the first sighting's blank.
+                    institutions[inst_name] = InstitutionDetail(
+                        inst_name, kept.inst_id or seen.inst_id, seen.country_code
+                    )
+        named = authorship.get("countries")
+        for item in named if isinstance(named, list | tuple) else ():
+            if (code := _text(item)) and code.strip().upper() not in covered:
+                countries.setdefault(code.strip().upper(), None)
+    return AuthorshipDetails(tuple(authors), tuple(institutions.values()), tuple(countries))
 
 
 def topics_to_keywords(work: OpenAlexWork) -> tuple[TopicKeyword, ...]:

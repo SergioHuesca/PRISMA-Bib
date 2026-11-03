@@ -6,6 +6,7 @@ Real DuckDB and real files under ``tmp_path``; the runs are synthetic and hand-w
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from datetime import datetime
@@ -14,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from prismabib.capture.layout import OPENALEX_SEARCH_DIRNAME
+from prismabib.capture.layout import OPENALEX_SEARCH_DIRNAME, RUN_MANIFEST_FILENAME
 from prismabib.errors import StoreError
 from prismabib.project import Project
 from prismabib.store import stamp as store_stamp
@@ -139,8 +140,11 @@ def test_build__mode_openalex__scopus_runs_reported_unused_not_loaded(tmp_path: 
     assert rows(project, "SELECT COUNT(*) FROM openalex_records") == [(1,)]
 
 
-def test_build__scopus_modes__openalex_search_runs_are_not_loaded(tmp_path: Path) -> None:
-    project = openalex_project(tmp_path, "scopus")
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_build__scopus_modes__openalex_search_runs_are_not_loaded(
+    tmp_path: Path, mode: str
+) -> None:
+    project = openalex_project(tmp_path, mode)
     write_search_run(project, _RUN_A, "q", [[work(1)]])
     build_store(project, rebuild=True)
 
@@ -406,13 +410,6 @@ def test_malformed__two_bad_works_in_one_page__both_counted(tmp_path: Path) -> N
     assert rows(project, "SELECT payload_line FROM malformed_entries ORDER BY 1") == [(0,), (1,)]
 
 
-def test_malformed__a_search_work_does_not_trip_the_scopus_skip_guard(tmp_path: Path) -> None:
-    """Every work malformed: the Scopus 'nothing loaded' guard must not fire for this kind."""
-    project = one_run(tmp_path, work(1, title=None))
-
-    assert rows(project, "SELECT COUNT(*) FROM malformed_entries") == [(1,)]
-
-
 def test_loader__sealed_run_with_a_missing_response_file__raises_store_error(
     tmp_path: Path,
 ) -> None:
@@ -570,9 +567,9 @@ def test_store__no_stamp__after_pr4a__refuses_needs_rebuild(tmp_path: Path, mode
     build_store(project, rebuild=True)
     store_stamp.stamp_path(project.db_path).unlink()
 
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(project)
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         build_store(project)
     build_store(project, rebuild=True)  # the fix the message names
     connect(project).close()
@@ -602,3 +599,217 @@ def test_store__legacy_store_without_the_new_tables__is_refused_never_read_as_ze
 
     with pytest.raises(StoreError, match=r"missing 2 table.*openalex_records"):
         connect(project)
+
+
+# -- review round: the loader does not trust page files beyond "exists and parses" -------------------
+
+
+def _edit_manifest(run_dir: Path, edit: Any) -> None:
+    path = run_dir / RUN_MANIFEST_FILENAME
+    data = json.loads(path.read_text(encoding="utf-8"))
+    edit(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _sealed(tmp_path: Path, *numbers: int) -> tuple[Project, Path]:
+    project = openalex_project(tmp_path)
+    run_dir = write_search_run(project, _RUN_A, "q", [[work(n) for n in numbers]])
+    return project, run_dir
+
+
+def _set_digest(run_dir: Path, data: bytes) -> None:
+    digest = hashlib.sha256(data).hexdigest()
+    _edit_manifest(run_dir, lambda m: m["requests"][0].update(sha256=digest))
+
+
+def test_loader__truncated_results_with_a_matching_digest__raises_store_error(
+    tmp_path: Path,
+) -> None:
+    project, run_dir = _sealed(tmp_path, 1, 2, 3)
+    page = run_dir / "response-0000.jsonl"
+    body = json.loads(page.read_text(encoding="utf-8"))
+    body["results"] = [work(1)]
+    data = json.dumps(body, separators=(",", ":")).encode("utf-8") + b"\n"
+    page.write_bytes(data)
+    _set_digest(run_dir, data)  # the digest follows; result_count still says 3
+
+    with pytest.raises(StoreError, match=r"response-0000.*result count.*re-capture"):
+        build_store(project, rebuild=True)
+
+
+def test_loader__one_changed_byte__raises_store_error_naming_the_file(tmp_path: Path) -> None:
+    project, run_dir = _sealed(tmp_path, 1, 2)
+    page = run_dir / "response-0000.jsonl"
+    page.write_bytes(page.read_bytes().replace(b"Synthetic title 1", b"Synthetic title X"))
+
+    with pytest.raises(StoreError, match=r"response-0000.*digest.*re-capture"):
+        build_store(project, rebuild=True)
+
+
+def test_loader__invalid_json_page__raises_store_error(tmp_path: Path) -> None:
+    project, run_dir = _sealed(tmp_path, 1)
+    data = b"{not json\n"
+    (run_dir / "response-0000.jsonl").write_bytes(data)
+    _set_digest(run_dir, data)
+
+    with pytest.raises(StoreError, match="response-0000"):
+        build_store(project, rebuild=True)
+
+
+def test_loader__sealed_without_total_count__raises_store_error(tmp_path: Path) -> None:
+    project, run_dir = _sealed(tmp_path, 1)
+    _edit_manifest(run_dir, lambda m: m.update(total_count=None))
+
+    with pytest.raises(StoreError, match="total_count"):
+        build_store(project, rebuild=True)
+
+
+# -- review round: one odd work becomes a malformed entry, never a traceback ---------------------
+
+
+@pytest.mark.parametrize(
+    "odd",
+    [
+        {"authorships": ["x"]},
+        {"authorships": {"a": 1}},
+        {"topics": ["x"]},
+        {"abstract_inverted_index": {"a": [None, 1]}},
+    ],
+    ids=["authorships-strings", "authorships-dict", "topics-strings", "inverted-index-null"],
+)
+def test_loader__odd_work_shape__is_malformed_entry_and_the_rest_load(
+    tmp_path: Path, odd: dict[str, Any]
+) -> None:
+    project = one_run(tmp_path, work(1), work(2, **odd), work(3, **odd), work(4))
+
+    assert rows(project, "SELECT openalex_id FROM openalex_records ORDER BY 1") == [
+        ("https://openalex.org/W1",),
+        ("https://openalex.org/W4",),
+    ]
+    assert rows(
+        project, "SELECT payload_line, record_id, reason FROM malformed_entries ORDER BY 1"
+    ) == [
+        (1, "openalex:https://openalex.org/W2", "malformed_openalex_search_work"),
+        (2, "openalex:https://openalex.org/W3", "malformed_openalex_search_work"),
+    ]
+
+
+# -- review round: the reuse path is mode-aware -------------------------------------------------------
+
+
+def test_build__reuse_in_mode_openalex__scopus_runs_do_not_trip_the_empty_store_check(
+    tmp_path: Path,
+) -> None:
+    project = openalex_project(tmp_path)
+    for source in (REFERENCE_PROJECT_DIR / "raw").iterdir():
+        shutil.copytree(source, project.raw_dir / source.name)
+    write_search_run(project, _RUN_A, "q", [[work(1)]])
+    build_store(project, rebuild=True)
+
+    stats = build_store(project)  # the reuse path
+
+    assert stats.rebuilt is False
+    assert stats.openalex_records_loaded == 1
+
+
+def test_build__reuse_in_mode_openalex__empty_store_over_a_populated_search_run_is_refused(
+    tmp_path: Path,
+) -> None:
+    project = openalex_project(tmp_path)
+    build_store(project, rebuild=True)  # an empty store, stamped
+    write_search_run(project, _RUN_A, "q", [[work(1), work(2)]])
+
+    with pytest.raises(StoreError, match=r"holds no records.*2.*rebuild=True"):
+        build_store(project)
+
+
+def test_build__reuse_in_a_scopus_mode__still_refuses_an_empty_store_over_a_scopus_run(
+    tmp_path: Path,
+) -> None:
+    project = openalex_project(tmp_path, "scopus")
+    build_store(project, rebuild=True)
+    for source in (REFERENCE_PROJECT_DIR / "raw").iterdir():
+        shutil.copytree(source, project.raw_dir / source.name)
+
+    with pytest.raises(StoreError, match="holds no records"):
+        build_store(project)
+
+
+# -- review round: details of the derivation ------------------------------------------------------------
+
+
+def test_loader__same_author_twice_in_one_work__one_record_authors_row(tmp_path: Path) -> None:
+    twice = work(
+        1,
+        authorships=[
+            {"author": {"id": "https://openalex.org/A1", "display_name": "Ada One"}},
+            {"author": {"id": "https://openalex.org/A2", "display_name": "Bo Two"}},
+            {"author": {"id": "https://openalex.org/A1", "display_name": "Ada One"}},
+        ],
+    )
+    project = one_run(tmp_path, twice)
+
+    assert rows(project, "SELECT author_id, position FROM record_authors ORDER BY position") == [
+        ("openalex-author:https://openalex.org/A1", 1),
+        ("openalex-author:https://openalex.org/A2", 2),
+    ]
+
+
+def test_finalise__shared_author_id_with_different_spellings__name_independent_of_insertion_order(
+    tmp_path: Path,
+) -> None:
+    def by(name: str) -> list[dict[str, Any]]:
+        return [{"author": {"id": "https://openalex.org/A9", "display_name": name}}]
+
+    # Page order W2 then W1; the sorted-first record (W1) supplies the spelling.
+    project = one_run(
+        tmp_path, work(2, authorships=by("Zed Spelling")), work(1, authorships=by("Ann Original"))
+    )
+
+    assert rows(project, "SELECT surname, given_name FROM authors") == [("Original", "Ann")]
+
+
+def test_loader__non_utc_offset_in_the_manifest__is_stored_as_naive_utc(tmp_path: Path) -> None:
+    """Fails on a UTC runner too: the page time carries +05:30, so the snapshot must read 10:00."""
+    project, run_dir = _sealed(tmp_path, 1)
+    _edit_manifest(
+        run_dir, lambda m: m["requests"][0].update(retrieved_at="2026-11-03T15:30:00+05:30")
+    )
+    build_store(project, rebuild=True)
+
+    assert rows(project, "SELECT retrieved_at FROM citation_snapshots") == [(_AT_10,)]
+    assert rows(project, "SELECT retrieved_at FROM openalex_records") == [(_AT_10,)]
+
+
+def test_store__no_stamp_message__is_mode_neutral(tmp_path: Path) -> None:
+    project = one_run(tmp_path, work(1))
+    store_stamp.stamp_path(project.db_path).unlink()
+
+    with pytest.raises(StoreError) as caught:
+        connect(project)
+
+    text = str(caught.value)
+    assert "no build stamp" in text and "--rebuild" in text
+    assert "scopus+openalex" not in text.split("this project")[0]  # the store's "mode" is unknown
+    assert "schema 0" not in text
+
+
+def test_loader__country_only_authorship__affiliation_row_with_a_country_and_value_outcome(
+    tmp_path: Path,
+) -> None:
+    only_country = work(
+        1,
+        authorships=[{"author": {"display_name": "A B"}, "institutions": [], "countries": ["ES"]}],
+    )
+    nothing = work(2, authorships=[{"author": {"display_name": "C D"}, "countries": ["ZZ", ""]}])
+    project = one_run(tmp_path, only_country, nothing)
+
+    assert rows(project, "SELECT afid, name, country_iso3 FROM affiliations") == [
+        ("openalex-country:ES", "ES", "ESP")
+    ]
+    assert rows(project, "SELECT record_id, afid FROM record_affiliations") == [
+        ("openalex:https://openalex.org/W1", "openalex-country:ES")
+    ]
+    assert rows(
+        project, "SELECT openalex_id, affiliations_outcome FROM openalex_records ORDER BY 1"
+    ) == [("https://openalex.org/W1", "value"), ("https://openalex.org/W2", "unavailable")]

@@ -1023,9 +1023,9 @@ def test_legacy_store__without_a_stamp__is_refused_from_pr4a_on(legacy_reference
     """
     store_stamp.stamp_path(legacy_reference.db_path).unlink()
 
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(legacy_reference)
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         build_store(legacy_reference)
     assert build_store(legacy_reference, rebuild=True).records_loaded > 0
     connect(legacy_reference).close()
@@ -1081,7 +1081,7 @@ def test_store__unstamped_legacy_store__refused_by_a_project_in_another_mode(
     store_stamp.stamp_path(project.db_path).unlink()
     sm.set_mode(project, "scopus", actor="t")
 
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(project)
 
 
@@ -1131,7 +1131,7 @@ def test_store_stamp__failure_between_replace_and_stamp__leaves_refused_state(
 
     assert project.db_path.is_file()
     assert not store_stamp.stamp_path(project.db_path).exists()
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(project)
     monkeypatch.undo()
     build_store(project, rebuild=True)  # the fix named in the message works

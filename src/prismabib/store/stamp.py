@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final
 
 from prismabib.capture.layout import atomic_write_bytes
 from prismabib.errors import StoreError
-from prismabib.source_mode import LEGACY_MODE, checked_mode
+from prismabib.source_mode import checked_mode
 
 if TYPE_CHECKING:
     from prismabib.project import Project
@@ -68,10 +68,17 @@ def check_stamp(project: Project) -> None:
     """
     mode = checked_mode(project)
     stamp = _read_stamp(project.db_path)
-    stored_mode, stored_schema = stamp if stamp is not None else (LEGACY_MODE, 0)
-    if stamp is not None and stored_mode == mode and stored_schema == STORE_SCHEMA:
+    if stamp is None:
+        raise StoreError(
+            f"The Layer 1 store at {project.db_path} has no build stamp: it predates schema "
+            f"{STORE_SCHEMA} or was not completed by this version. This project is in mode "
+            f"{mode!r}. Run `prismabib build <slug> --rebuild` (nothing is re-fetched; the store "
+            "is rebuilt from Layer 0)."
+        )
+    stored_mode, stored_schema = stamp
+    if stored_mode == mode and stored_schema == STORE_SCHEMA:
         return
-    built = "has no stamp (built before source modes existed)" if stamp is None else "was built"
+    built = "was built"
     raise StoreError(
         f"The Layer 1 store at {project.db_path} {built} under sources mode {stored_mode!r}, "
         f"schema {stored_schema}; this project is in mode {mode!r}, schema {STORE_SCHEMA}. "

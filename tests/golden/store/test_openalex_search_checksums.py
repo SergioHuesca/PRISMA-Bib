@@ -39,6 +39,10 @@ _TABLES = (
     "record_keywords",
 )
 
+#: A country-only authorship: no institution, an authorship-level `countries` (owner decision
+#: 2026-11-04). Added on purpose, so the golden pins the `openalex-country:` affiliation row.
+_COUNTRY_ONLY = [{"author": {"display_name": "Ana Sola"}, "institutions": [], "countries": ["ES"]}]
+
 
 def _checksums(base: Path) -> dict[str, dict[str, str]]:
     project = openalex_project(base)
@@ -46,7 +50,10 @@ def _checksums(base: Path) -> dict[str, dict[str, str]]:
         project,
         "20261103T100000Z-aaaaaaaa",
         "query a",
-        [[work(1), work(2), work(3, primary_topic=None)], [work(4, title=None)]],
+        [
+            [work(1), work(2), work(3, primary_topic=None, authorships=_COUNTRY_ONLY)],
+            [work(4, title=None)],
+        ],
     )
     write_search_run(
         project,

@@ -188,6 +188,7 @@ from prismabib.capture.manifest import (
     OpenAlexOutcome,
     OpenAlexRequest,
     OpenAlexRunManifest,
+    OpenAlexSearchRequest,
     OpenAlexSearchRunManifest,
     OpenAlexTitle,
     RunManifest,
@@ -2048,20 +2049,36 @@ def _sealed_openalex_search_run_dirs(raw_dir: Path) -> list[Path]:
     )
 
 
-def _search_results(path: Path, name: str) -> list[Any]:
-    """The ``results`` array of one stored search response.
+def _search_results(path: Path, name: str, request: OpenAlexSearchRequest) -> list[Any]:
+    """The ``results`` array of one stored search response, checked against its manifest entry.
 
     Raises:
-        StoreError: If the file is missing, or is not a body with a ``results`` list. A sealed run
-            was a 200 with a list on every page, so either is a defect in Layer 0.
+        StoreError: If the file is missing, its bytes do not match the manifest digest, it is not a
+            body with a ``results`` list, or the list is not ``request.result_count`` long. A sealed
+            run was a 200 with a list on every page and every digest recorded, so each is a defect
+            in Layer 0 (a cut or edited page must not rebuild silently).
     """
     try:
-        body = json.loads(path.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError, RecursionError) as exc:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise StoreError(f"OpenAlex search response {name} cannot be read: {exc}") from exc
+    if sha256(data).hexdigest() != request.sha256:
+        raise StoreError(
+            f"OpenAlex search response {name} does not match its manifest digest; re-capture "
+            "the run (Layer 0 is never edited)."
+        )
+    try:
+        body = json.loads(data.decode("utf-8").strip())
+    except (ValueError, RecursionError) as exc:
         raise StoreError(f"OpenAlex search response {name} cannot be read: {exc}") from exc
     results = body.get("results") if isinstance(body, dict) else None
     if not isinstance(results, list):
         raise StoreError(f"OpenAlex search response {name} has no 'results' list.")
+    if len(results) != request.result_count:
+        raise StoreError(
+            f"OpenAlex search response {name} holds {len(results)} works but its manifest "
+            f"result count is {request.result_count}; re-capture the run."
+        )
     return results
 
 
@@ -2111,11 +2128,14 @@ def _load_openalex_search_run(acc: _Accumulator, run_dir: Path) -> None:
     for request in sorted(manifest.requests, key=lambda r: r.index):
         relative_file = f"{OPENALEX_SEARCH_DIRNAME}/{run_id}/{request.file}"
         retrieved_at = _as_naive_utc(request.retrieved_at)
-        for index, raw in enumerate(_search_results(run_dir / request.file, relative_file)):
+        page = _search_results(run_dir / request.file, relative_file, request)
+        for index, raw in enumerate(page):
             entry = raw if isinstance(raw, dict) else {}
             try:
                 work = parse_search_work(entry)
-            except ValidationError as exc:
+            # A hostile or odd shape is one malformed work, not a failed build: a string where
+            # an object belongs raises AttributeError, a null where a position belongs TypeError.
+            except (ValidationError, AttributeError, TypeError) as exc:
                 if earliest:
                     openalex_id = work_id(entry)
                     acc.malformed_entries.append(
@@ -2680,17 +2700,11 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
         StoreError: If the skipped share trips either rule.
     """
     # OpenAlex rows are enrichment audit, not Scopus search entries (`entries_seen` counts
-    # those only), so they never trip this guard; a malformed OpenAlex search work is reported
-    # in `malformed_entries` and counted by the flow (ADR 0042 Decision 5).
+    # those only), so they never trip this guard.
     malformed = [
         r
         for r in acc.malformed_entries
-        if r[4]
-        not in (
-            _REASON_MALFORMED_OPENALEX_BODY,
-            _REASON_MALFORMED_CASCADE_BODY,
-            REASON_MALFORMED_SEARCH_WORK,
-        )
+        if r[4] not in (_REASON_MALFORMED_OPENALEX_BODY, _REASON_MALFORMED_CASCADE_BODY)
     ]
     skipped = len(malformed)
     seen = acc.entries_seen
@@ -3454,6 +3468,21 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
     Raises:
         StoreError: If ``stats`` has no records and a sealed run reports results.
     """
+    if checked_mode(project) == "openalex":
+        # One identification source: Scopus runs are present but unused (ADR 0042 Decision 3).
+        if stats.openalex_records_loaded:
+            return
+        for search_dir in _sealed_openalex_search_run_dirs(project.raw_dir):
+            search = OpenAlexSearchRunManifest.model_validate_json(
+                (search_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+            )
+            if (search.total_count or 0) > 0:
+                raise StoreError(
+                    f"{project.db_path} holds no records but {search_dir.name} in "
+                    f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works, so it "
+                    "is not a complete build. Call build_store(project, rebuild=True)."
+                )
+        return
     if stats.records_loaded:
         return
     for run_dir in _sealed_run_dirs(project.raw_dir):

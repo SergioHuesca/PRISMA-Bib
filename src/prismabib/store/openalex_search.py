@@ -124,6 +124,7 @@ def parse_search_work(raw: Mapping[str, Any]) -> SearchWork:
     details = authorship_details(parsed)
 
     authors: list[_Author] = []
+    seen_authors: set[str] = set()
     for author in details.authors:
         if not author.name.strip():
             continue
@@ -133,6 +134,9 @@ def parse_search_work(raw: Mapping[str, Any]) -> SearchWork:
             if author.author_id
             else f"openalex-name:{_fold(author.name)}"
         )
+        if author_id in seen_authors:
+            continue  # the same author listed twice keeps the first position
+        seen_authors.add(author_id)
         authors.append((author_id, surname, given))
 
     affiliations: dict[str, _Affiliation] = {}
@@ -142,6 +146,13 @@ def parse_search_work(raw: Mapping[str, Any]) -> SearchWork:
         )
         country = ALPHA2_TO_ALPHA3.get(inst.country_code.upper()) if inst.country_code else None
         affiliations.setdefault(afid, (afid, inst.name, country))
+    # Owner decision 2026-11-04 (ADR 0042 D-2): a country an authorship names that none of its
+    # institutions carries still reaches the geography analyses, as a synthetic affiliation.
+    # A code outside ALPHA2_TO_ALPHA3 is skipped, not guessed.
+    for code in details.countries:
+        if (iso3 := ALPHA2_TO_ALPHA3.get(code)) is not None:
+            afid = f"openalex-country:{code}"
+            affiliations.setdefault(afid, (afid, code, iso3))
 
     return SearchWork(
         openalex_id=openalex_id,

@@ -79,3 +79,93 @@ def test_parse_search_work__single_token_name__surname_only() -> None:
     raw = work(1, authorships=[{"author": {"display_name": "Plato"}}])
 
     assert parse_search_work(raw).authors == (("openalex-name:plato", "Plato", None),)
+
+
+def test_authorship_details__first_non_null_country_code_wins() -> None:
+    raw = work(
+        1,
+        authorships=[
+            {"author": {"display_name": "A"}, "institutions": [{"display_name": "Inst"}]},
+            {
+                "author": {"display_name": "B"},
+                "institutions": [{"display_name": "Inst", "id": "I1", "country_code": "ES"}],
+            },
+            {
+                "author": {"display_name": "C"},
+                "institutions": [{"display_name": "Inst", "country_code": "FR"}],
+            },
+        ],
+    )
+
+    (inst,) = authorship_details(parse_work(raw)).institutions
+
+    assert (inst.name, inst.country_code, inst.inst_id) == ("Inst", "ES", "I1")
+
+
+def test_parse_search_work__repeated_author_id__kept_once_at_its_first_position() -> None:
+    a = {"author": {"id": "https://openalex.org/A1", "display_name": "Ada One"}}
+    b = {"author": {"display_name": "Bo Two"}}
+
+    parsed = parse_search_work(work(1, authorships=[a, b, a, b]))
+
+    assert [x[0] for x in parsed.authors] == [
+        "openalex-author:https://openalex.org/A1",
+        "openalex-name:bo two",
+    ]
+
+
+# -- the country fallback (owner decision 2026-11-04, review MINOR 4) -----------------------------
+
+
+def _countries(*authorships: dict[str, object]) -> tuple[tuple[str, str, str | None], ...]:
+    return parse_search_work(work(1, authorships=list(authorships))).affiliations
+
+
+def test_parse_search_work__country_without_institution__is_a_country_affiliation() -> None:
+    assert _countries(
+        {"author": {"display_name": "A B"}, "institutions": [], "countries": ["es"]}
+    ) == (("openalex-country:ES", "ES", "ESP"),)
+
+
+def test_parse_search_work__institution_with_the_same_country__is_one_country_only() -> None:
+    got = _countries(
+        {
+            "author": {"display_name": "A B"},
+            "institutions": [
+                {"id": "https://openalex.org/I1", "display_name": "I", "country_code": "ES"}
+            ],
+            "countries": ["ES"],
+        }
+    )
+
+    assert got == (("openalex-inst:https://openalex.org/I1", "I", "ESP"),)
+
+
+def test_parse_search_work__institution_without_a_country__gets_the_fallback_row_too() -> None:
+    got = _countries(
+        {
+            "author": {"display_name": "A B"},
+            "institutions": [{"display_name": "NoCountry"}],
+            "countries": ["FR", "FR", "ES"],
+        }
+    )
+
+    assert [a[0] for a in got] == [
+        "openalex-name:nocountry",
+        "openalex-country:FR",
+        "openalex-country:ES",
+    ]
+
+
+@pytest.mark.parametrize("countries", [["", "  ", 5, None, "ZZ", "??"], "ES", {"ES": 1}, None, []])
+def test_parse_search_work__unknown_blank_or_odd_countries__are_skipped(countries: object) -> None:
+    assert _countries({"author": {"display_name": "A B"}, "countries": countries}) == ()
+
+
+def test_parse_search_work__same_country_in_two_authorships__is_one_affiliation() -> None:
+    got = _countries(
+        {"author": {"display_name": "A B"}, "countries": ["ES"]},
+        {"author": {"display_name": "C D"}, "countries": ["ES"]},
+    )
+
+    assert got == (("openalex-country:ES", "ES", "ESP"),)
