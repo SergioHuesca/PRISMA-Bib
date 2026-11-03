@@ -6,13 +6,12 @@ mode and which keys are set, and makes no network request.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated
 
 import typer
-from dotenv import dotenv_values
 
+from prismabib.credentials import ENV_FILENAME, status_lines
 from prismabib.errors import ConfigError
 from prismabib.project import Project
 from prismabib.source_mode import (
@@ -24,15 +23,6 @@ from prismabib.source_mode import (
     set_mode,
     table_mode,
 )
-
-_KEYS: Final = ("SCOPUS_API_KEY", "SCOPUS_INSTTOKEN", "OPENALEX_API_KEY", "UNPAYWALL_EMAIL")
-
-
-def _key_status(name: str, file_values: dict[str, str | None]) -> str:
-    """``"set (environment)"``, ``"set (.env)"`` or ``"not set"``; never the value."""
-    if os.environ.get(name):
-        return "set (environment)"
-    return "set (.env)" if file_values.get(name) else "not set"
 
 
 def register_source_commands(app: typer.Typer) -> None:
@@ -100,9 +90,12 @@ def register_source_commands(app: typer.Typer) -> None:
                     f"  record your choice: prismabib sources {slug} --set {LEGACY_MODE} "
                     "--actor NAME  (or another mode)"
                 )
-            file_values = dotenv_values(".env")
-            for key in _KEYS:
-                _echo(f"{key}: {_key_status(key, file_values)}")
+            lines = status_lines(Path(ENV_FILENAME))
+            for line in lines:
+                _echo(line)
+            if mode != "openalex" and lines[0].endswith("not set"):
+                _echo("  store the Scopus key: prismabib credentials set scopus")
+            _echo("  details and file safety: prismabib credentials status")
             if mode == "openalex":
                 _echo("next: this mode has no capture command in this release; see ADR 0042")
             else:

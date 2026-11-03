@@ -118,7 +118,7 @@ from prismabib.capture.layout import (
     new_run_id,
 )
 from prismabib.capture.manifest import RunManifest
-from prismabib.config import Settings
+from prismabib.config import Settings, require_scopus_key
 from prismabib.errors import ValidationError
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
@@ -392,6 +392,8 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             :func:`_find_resumable_run` never selects a sealed directory.
     """
     require_capability(project, "scopus_search")
+    settings = Settings()
+    require_scopus_key(settings)  # before any run directory exists or request is made
     resolved_query = query if query is not None else build_query_for_project(project)
     view = "COMPLETE"
     endpoint = ScopusClient.SEARCH_ENDPOINT
@@ -434,7 +436,6 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         logger.info("capture.run_started", run_id=run_id, endpoint=endpoint, query=resolved_query)
 
     resume_from = len(payload_files)
-    settings = Settings()
     cache = HttpCache(run_dir / HTTP_CACHE_DIRNAME)
     total_results: int | None = None
 

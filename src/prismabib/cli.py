@@ -64,6 +64,7 @@ from prismabib.capture.registrations import (
 )
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
+from prismabib.credentials import credentials_app
 from prismabib.errors import (
     ConfigError,
     LogError,
@@ -114,6 +115,7 @@ app.command("cascade")(_cascade_command)
 app.command("openalex")(_openalex_command)
 register_manual_commands(app)
 register_source_commands(app)
+app.add_typer(credentials_app)
 
 _ROOT_OPTION = typer.Option(
     "--root",

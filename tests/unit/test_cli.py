@@ -49,7 +49,7 @@ _IMPLEMENTED_COMMANDS |= {
     "openalex",
 }
 _IMPLEMENTED_COMMANDS |= {"manual-entry", "manual-reverse", "conflict-resolve", "conflict-reverse"}
-_IMPLEMENTED_COMMANDS |= {"sources", "doctor"}
+_IMPLEMENTED_COMMANDS |= {"sources", "doctor", "credentials"}
 
 
 def _counts(**overrides: object) -> FlowCounts:

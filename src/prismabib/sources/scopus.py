@@ -35,7 +35,7 @@ import httpx
 import structlog
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
-from prismabib.config import Settings
+from prismabib.config import Settings, require_scopus_key
 from prismabib.errors import (
     AuthError,
     EntitlementError,
@@ -528,7 +528,7 @@ class ScopusClient:
         #: can meter quota spent rather than calls made.
         self.network_requests = 0
 
-        register_secret_for_redaction(self._settings.scopus_api_key.get_secret_value())
+        register_secret_for_redaction(require_scopus_key(self._settings).get_secret_value())
         if self._settings.scopus_insttoken is not None:
             register_secret_for_redaction(self._settings.scopus_insttoken.get_secret_value())
 
@@ -1008,7 +1008,7 @@ class ScopusClient:
     def _headers(self) -> dict[str, str]:
         """Build the Elsevier authentication headers for every request."""
         headers = {
-            "X-ELS-APIKey": self._settings.scopus_api_key.get_secret_value(),
+            "X-ELS-APIKey": require_scopus_key(self._settings).get_secret_value(),
             "Accept": "application/json",
         }
         if self._settings.scopus_insttoken is not None:

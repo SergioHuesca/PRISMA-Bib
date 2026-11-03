@@ -12,18 +12,21 @@ from __future__ import annotations
 
 import pytest
 
-from prismabib.config import Settings
+from prismabib.config import Settings, require_scopus_key
 from prismabib.errors import ConfigError
 
 
 @pytest.mark.unit
-def test_config__missing_api_key__raises_config_error_naming_the_var(
+def test_config__missing_api_key__builds_and_require_scopus_key_names_the_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
 
+    settings = Settings(_env_file=None)
+
+    assert settings.scopus_api_key is None
     with pytest.raises(ConfigError, match="SCOPUS_API_KEY"):
-        Settings(_env_file=None)
+        require_scopus_key(settings)
 
 
 @pytest.mark.unit

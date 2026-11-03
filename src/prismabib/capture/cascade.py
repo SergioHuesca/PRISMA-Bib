@@ -52,7 +52,7 @@ from prismabib.capture.manifest import (
 )
 from prismabib.capture.openalex import ApiKeyInBodyError, _encode_line
 from prismabib.capture.writer import payload_sha256
-from prismabib.config import Settings
+from prismabib.config import Settings, require_scopus_key
 from prismabib.errors import QuotaExceededError, ValidationError
 from prismabib.project import Project
 from prismabib.source_mode import require_capability
@@ -298,7 +298,7 @@ def capture_scopus_cascade(
         return None
 
     resolved = settings if settings is not None else Settings()
-    tokens = [resolved.scopus_api_key, resolved.scopus_insttoken]
+    tokens = [require_scopus_key(resolved), resolved.scopus_insttoken]
     values = [t.get_secret_value() for t in tokens if t is not None]
     forms = {f for v in values for f in (v, quote_plus(v, safe=""), json.dumps(v)[1:-1])}
     secrets = [s.encode("utf-8") for s in forms if s]
