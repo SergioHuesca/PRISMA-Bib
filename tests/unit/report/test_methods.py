@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from prismabib.report.methods import venue_unnamed_sentence
+import duckdb
+import pytest
+
+from prismabib.report.methods import source_sentence, venue_unnamed_sentence
 
 
 def test_venue_unnamed_sentence__some_unnamed__states_count_and_handling() -> None:
@@ -61,4 +64,73 @@ def test_cascade_sentence__all_zero__is_still_a_sentence() -> None:
 
     assert cascade_sentence(_cascade_numbers()).endswith(
         "0 conflicts remain open and 0 were resolved by a reviewer."
+    )
+
+
+def _store_with_runs(*statements: str) -> duckdb.DuckDBPyConnection:
+    """A hand-built in-memory store holding only the two run tables the sentences read."""
+    connection = duckdb.connect(":memory:")
+    connection.execute(
+        "CREATE TABLE runs (run_id TEXT, started_at TIMESTAMP, query TEXT, view TEXT, "
+        "total_results INTEGER, payload_sha256 TEXT, criteria_version TEXT)"
+    )
+    connection.execute(
+        "CREATE TABLE openalex_search_runs (run_id TEXT, query_key TEXT, query TEXT, "
+        "total_count INTEGER, works_captured INTEGER)"
+    )
+    for statement in statements:
+        connection.execute(statement)
+    return connection
+
+
+@pytest.mark.unit
+def test_methods__openalex_mode__sentence_names_queries_and_run_dates() -> None:
+    """ADR 0042 Verification 67: the openalex sentence quotes the stored queries and run dates."""
+    connection = _store_with_runs(
+        "INSERT INTO openalex_search_runs VALUES "
+        "('20261103T100000Z-aaaaaaaa', 'ka', 'carbon capture', 3, 3), "
+        "('20261104T100000Z-bbbbbbbb', 'kb', 'direct air capture', 3, 3), "
+        "('20261105T100000Z-cccccccc', 'ka', 'carbon capture', 4, 4)"
+    )
+
+    sentence = source_sentence(connection, "openalex", identified=6, duplicates=2, registered=1)
+
+    assert sentence == (
+        "Records were identified by searching OpenAlex; no Scopus search was run. "
+        "The search was `carbon capture`, `direct air capture`, "
+        "run on 2026-11-03, 2026-11-04. "
+        "OpenAlex reported 6 works across 2 distinct queries, of which 2 were found by more "
+        "than one query and counted once. 1 records were registered by a reviewer from manual "
+        "Google Scholar searches (ADR 0029). Metadata, including abstracts rebuilt from "
+        "OpenAlex's inverted index and subject areas taken from OpenAlex's primary topic, is "
+        "OpenAlex's own (see Limitations)."
+    )
+
+
+@pytest.mark.unit
+def test_methods__scopus_mode__sentence_from_hand_built_store() -> None:
+    """ADR 0042 Verification 68: names the Scopus search and nothing about OpenAlex."""
+    connection = _store_with_runs(
+        "INSERT INTO runs VALUES ('20261103T100000Z-aaaaaaaa', '2026-11-03 10:00:00', "
+        "'TITLE-ABS-KEY(\"x\")', 'COMPLETE', 40, 'h', '1.0.0')"
+    )
+
+    sentence = source_sentence(connection, "scopus", identified=40, duplicates=0, registered=0)
+
+    assert sentence == (
+        "Records were identified by searching Scopus. The search was "
+        '`TITLE-ABS-KEY("x")`, run on 2026-11-03. Scopus reported 40 records across 1 distinct '
+        "queries."
+    )
+    assert "OpenAlex" not in sentence
+
+
+@pytest.mark.unit
+def test_methods__scopus_plus_openalex_mode__adds_no_sentence() -> None:
+    """OQ-14: a legacy or combined project's methods bytes do not change."""
+    connection = _store_with_runs()
+
+    assert (
+        source_sentence(connection, "scopus+openalex", identified=1, duplicates=0, registered=0)
+        == ""
     )

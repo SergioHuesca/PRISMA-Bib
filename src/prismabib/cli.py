@@ -753,9 +753,9 @@ def flow(
     with _reporting_errors():
         project = Project.open(slug, root=root)
         counts = compute_flow_counts(project)
-        _print_flow(counts, slug=slug)
+        _print_flow(counts, slug=slug, mode=project.source_mode)
         _print_orphans(project)
-        _warn_if_inconsistent(counts)
+        _warn_if_inconsistent(counts, mode=project.source_mode)
 
 
 @app.command()
@@ -1154,12 +1154,14 @@ _AUTOMATED_REASON_LABELS: Final[Mapping[str, str]] = {
 }
 
 
-def _print_flow(counts: FlowCounts, *, slug: str) -> None:
+def _print_flow(counts: FlowCounts, *, slug: str, mode: SourceMode = "scopus+openalex") -> None:
     """Render :class:`FlowCounts` as a readable PRISMA 2020 summary.
 
     Args:
         counts: The counts to render.
         slug: The project slug, for the heading.
+        mode: The project's source mode; ``openalex`` names OpenAlex's ``meta.count`` as the
+            identified count (ADR 0042), the Scopus modes keep ``total_results``.
     """
 
     def row(label: str, value: str) -> None:
@@ -1172,7 +1174,8 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     _echo(f"PRISMA 2020 flow -- project {slug!r}")
     _echo()
     _echo("Identification")
-    row("records identified (Scopus total_results)", f"{counts.identified:,}")
+    source = "OpenAlex meta.count" if mode == "openalex" else "Scopus total_results"
+    row(f"records identified ({source})", f"{counts.identified:,}")
     if counts.registered:  # a separate line, never added into `identified` (ADR 0033)
         row("registered by a reviewer (other methods)", f"{counts.registered:,}")
     _echo()
@@ -1224,7 +1227,7 @@ def _print_flow(counts: FlowCounts, *, slug: str) -> None:
     row("studies in the final corpus", f"{counts.included:,}")
 
 
-def _warn_if_inconsistent(counts: FlowCounts) -> None:
+def _warn_if_inconsistent(counts: FlowCounts, *, mode: SourceMode = "scopus+openalex") -> None:
     """Warn on stderr if the diagram's arithmetic does not close.
 
     :func:`~prismabib.prisma.flow.compute_flow_counts` deliberately does not
@@ -1246,17 +1249,19 @@ def _warn_if_inconsistent(counts: FlowCounts) -> None:
 
     Args:
         counts: The counts just printed.
+        mode: The project's source mode; it names the search command to re-run (ADR 0042).
     """
     try:
         counts.assert_consistent()
     except PrismabibError as exc:
+        command = "prismabib openalex-search" if mode == "openalex" else "prismabib search"
         _echo_err()
         _echo_err("WARNING: these counts do not close into a consistent diagram.")
         _echo_err(str(exc))
         _echo_err(
             "Do not publish this diagram until the discrepancy is explained. The usual "
             "cause is a Layer 0 capture that is incomplete, or a store built before the "
-            "last `prismabib search` finished -- re-run `prismabib build <slug> --rebuild`."
+            f"last `{command}` finished -- re-run `prismabib build <slug> --rebuild`."
         )
 
 

@@ -526,3 +526,18 @@ def test_flow_counts__randomised_openalex_projects__equation_one_always_closes(
 ) -> None:
     """Fixed seeds: refreshes, DOI twins, malformed works, empty and unsealed runs, run order."""
     _flow(_random_project(tmp_path, seed))
+
+
+def test_numbers_map__openalex_mode__carries_the_source_sentence(tmp_path: Path) -> None:
+    """ADR 0042 methods text: the exported numbers name OpenAlex and the stored query."""
+    from prismabib.report.numbers import numbers_map
+
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "carbon capture", [[work(1), work(2)]])
+    build_store(project, rebuild=True)
+
+    sentence = numbers_map(project)["methods.source_sentence"]
+
+    assert sentence.startswith("Records were identified by searching OpenAlex;")
+    assert "`carbon capture`, run on 2026-11-03" in sentence
+    assert "OpenAlex reported 2 works across 1 distinct queries" in sentence

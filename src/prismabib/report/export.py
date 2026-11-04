@@ -373,7 +373,9 @@ def export_project(project: Project) -> ExportResult:
 
     # Everything that can raise is computed before the first deletion, so a failed
     # export leaves the previous exports/ intact.
-    svg = flow_diagram_svg(counts, title=project.title, orphaned_decisions=len(orphans))
+    svg = flow_diagram_svg(
+        counts, title=project.title, orphaned_decisions=len(orphans), mode=project.source_mode
+    )
     flow_csv = to_csv(_flow_source_rows(counts))
     rendered = [
         (table.slug, to_csv(table), to_markdown(table), to_latex(table))

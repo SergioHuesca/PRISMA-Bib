@@ -293,3 +293,22 @@ def test_flow_diagram__every_text_line__is_drawn_inside_its_own_box() -> None:
             f"box {box_id!r} spans y={top}..{top + height} but has text baselines at "
             f"{outside} -- that text is drawn outside its box, over the arrows"
         )
+
+
+@pytest.mark.integration
+def test_flow_diagram__openalex_mode__label_names_openalex() -> None:
+    """ADR 0042 Verification 65: the identification box names OpenAlex, and no Scopus label stays."""
+    svg = flow_diagram_svg(DISTINCT_COUNTS, title="T", mode="openalex")
+
+    assert f"Records identified from OpenAlex (n = {DISTINCT_COUNTS.identified})" in svg
+    assert "from Scopus" not in svg
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_flow_diagram__scopus_modes__label_bytes_unchanged(mode: str) -> None:
+    """ADR 0042 Verification 65: both Scopus modes render the bytes the renderer gave before."""
+    default = flow_diagram_svg(DISTINCT_COUNTS, title="T")
+
+    assert flow_diagram_svg(DISTINCT_COUNTS, title="T", mode=mode) == default  # type: ignore[arg-type]
+    assert f"Records identified from Scopus (n = {DISTINCT_COUNTS.identified})" in default
