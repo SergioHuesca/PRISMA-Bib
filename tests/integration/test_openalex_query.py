@@ -64,7 +64,9 @@ def test_project__missing_table__names_the_file_and_shows_an_example(tmp_path: P
 def test_project__table_is_not_a_table__refused(tmp_path: Path) -> None:
     project = project_with(tmp_path, "")
     path = project.root / "project.toml"
-    path.write_text("openalex_query = 'solar'\n" + path.read_text(encoding="utf-8"))
+    path.write_text(
+        "openalex_query = 'solar'\n" + path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     with pytest.raises(ConfigError, match=r"no \[openalex_query\] table"):
         build_openalex_query_for_project(project)
