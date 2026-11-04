@@ -2186,13 +2186,23 @@ def _settle_malformed_search_works(acc: _Accumulator) -> None:
     (counted in ``run_duplicates`` for its run), not a loss, so ADR 0033's equation 1 closes. Any
     other malformed work is a ``malformed_entries`` row. Settling after all runs makes the result
     independent of which query or page came first; a work with neither id nor DOI never matches.
+
+    ``_unloadable_count`` counts a lost id once, whatever the number of rows, while ``identified``
+    counts every occurrence. So the first malformed occurrence of an id that no member holds is the
+    loss (``lost``), and each further occurrence of it is a duplicate. A work with no id is counted
+    per row by the NULL-id clause, so it needs no such bookkeeping.
     """
+    lost: set[str] = set()
     for run_id, relative_file, index, openalex_id, doi in acc.openalex_malformed:
-        if (openalex_id is not None and f"openalex:{openalex_id}" in acc.openalex_works) or (
-            doi is not None and doi in acc.openalex_dois
+        if (
+            (openalex_id is not None and f"openalex:{openalex_id}" in acc.openalex_works)
+            or (openalex_id is not None and openalex_id in lost)
+            or (doi is not None and doi in acc.openalex_dois)
         ):
             acc.cross_run_duplicates[run_id] = acc.cross_run_duplicates.get(run_id, 0) + 1
             continue
+        if openalex_id is not None:
+            lost.add(openalex_id)
         acc.malformed_entries.append(
             (
                 run_id,

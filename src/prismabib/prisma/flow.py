@@ -397,8 +397,10 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
         # is two rows -- subtracting both would double-count it. And an entry
         # another run loaded successfully cost no record at all: it must not be
         # subtracted, which is why the DISTINCT set is filtered against
-        # `records_all` (ADR 0012 predicts exactly this: "a row here does not imply
-        # a lost record").
+        # `records_all` (ADR 0042 Verification 51; ADR 0012 predicts exactly this: "a row here
+        # does not imply a lost record"). That is defensive: the OpenAlex loader settles a
+        # malformed copy of a loaded id as a duplicate, so no such row is ever written, and a
+        # registered id can never equal a Scopus id. No test can tell it from `records`.
         #
         # An OpenAlex row (`reason = 'malformed_openalex_body'`, ADR 0031) is
         # audit only: OpenAlex enriches, it identifies no record, so it never

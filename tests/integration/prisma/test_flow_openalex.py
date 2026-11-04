@@ -324,12 +324,11 @@ def test_unloadable__malformed_everywhere__counted_once_per_occurrence_of_a_lost
     project = openalex_project(tmp_path)
     write_search_run(project, _RUN_A, "query a", [[work(1), work(2, title=None)]])
     write_search_run(project, _RUN_B, "query b", [[work(3), work(2, title=None)]])
-    build_store(project, rebuild=True)
 
-    counts = compute_flow_counts(project)
+    counts = _flow(project)
 
     assert counts.removed_other_reasons == 1
-    assert counts.duplicates_across_searches == 0
+    assert counts.duplicates_across_searches == 1
 
 
 def test_unloadable__malformed_copy_in_a_refresh_run__is_not_counted(tmp_path: Path) -> None:
@@ -358,9 +357,10 @@ def test_unloadable__same_bad_work_in_two_queries__counted_once(tmp_path: Path) 
     project = openalex_project(tmp_path)
     write_search_run(project, _RUN_A, "query a", [[work(1), work(2, title=None)]])
     write_search_run(project, _RUN_B, "query b", [[work(3), work(2, title=None)]])
-    build_store(project, rebuild=True)
 
-    assert compute_flow_counts(project).removed_other_reasons == 1
+    counts = _flow(project)
+
+    assert (counts.removed_other_reasons, counts.duplicates_across_searches) == (1, 1)
 
 
 def test_malformed__two_bad_works_in_one_page__both_count_in_removed_other_reasons(
@@ -455,3 +455,74 @@ def test_stats__duplicate_doi_statistic__counts_openalex_records_too(tmp_path: P
         connection.close()
 
     assert (stats.duplicate_doi_groups, stats.duplicate_records) == (1, 2)
+
+
+def test_unloadable__same_unknown_bad_work_twice_in_one_run__closes(tmp_path: Path) -> None:
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "q", [[work(1), work(2, title=None), work(2, title=None)]])
+
+    counts = _flow(project)
+
+    assert (counts.identified, counts.removed_other_reasons) == (3, 1)
+    assert counts.duplicates_across_searches == 1
+
+
+def test_unloadable__same_unknown_bad_work_on_two_pages_of_one_query__closes(
+    tmp_path: Path,
+) -> None:
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "q", [[work(2, title=None), work(1)], [work(2, title=None)]])
+
+    counts = _flow(project)
+
+    assert (counts.identified, counts.removed_other_reasons) == (3, 1)
+    assert counts.duplicates_across_searches == 1
+
+
+def _random_project(tmp_path: Path, seed: int) -> Project:
+    """A project from ``seed``: runs of random overlapping, twinned and malformed works."""
+    import random
+
+    rng = random.Random(seed)
+    project = openalex_project(tmp_path)
+    run_ids = [f"20261103T{h:02d}0000Z-{h:08x}" for h in range(10, 10 + rng.randint(1, 6))]
+    rng.shuffle(run_ids)
+    queries = [f"query {n}" for n in range(rng.randint(1, 4))]
+    for position, run_id in enumerate(run_ids):
+        query = rng.choice(queries)
+        works = []
+        for _ in range(rng.randint(0, 6)):
+            n = rng.randint(1, 8)
+            kind = rng.choice(["ok", "ok", "twin", "no_title", "no_title_no_doi", "no_id", "bare"])
+            if kind == "twin":  # another id, the DOI of work n
+                works.append(work(n + 20, doi=f"https://doi.org/10.1/Item-{n}"))
+            elif kind == "no_title":
+                works.append(work(n, title=None))
+            elif kind == "no_title_no_doi":
+                works.append(work(n, title=None, doi=None))
+            elif kind == "no_id":
+                works.append(work(n, id=None))
+            elif kind == "bare":
+                works.append(work(n, doi=None))
+            else:
+                works.append(work(n))
+        pages = [works[i : i + 3] for i in range(0, len(works), 3)] or [[]]
+        sealed = rng.random() < 0.8
+        write_search_run(
+            project,
+            run_id,
+            query,
+            pages,
+            sealed=sealed,
+            discarded=not sealed and rng.random() < 0.5,
+            offset_minutes=position,
+        )
+    return project
+
+
+@pytest.mark.parametrize("seed", range(60))
+def test_flow_counts__randomised_openalex_projects__equation_one_always_closes(
+    tmp_path: Path, seed: int
+) -> None:
+    """Fixed seeds: refreshes, DOI twins, malformed works, empty and unsealed runs, run order."""
+    _flow(_random_project(tmp_path, seed))
