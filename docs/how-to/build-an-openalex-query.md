@@ -19,7 +19,8 @@ source you used and the exact query.
 2. **A free OpenAlex key.** Create a free account at openalex.org, copy the key, then run
    `prismabib credentials set openalex` and paste it at the hidden prompt. The key is kept in
    your `.env` file, which git ignores. It is never printed and never stored in the captured data.
-   Without a key the command refuses to start.
+   Without a key a real run refuses to start, before any request. A `--dry-run` still works and
+   says the key is not set.
 
 A free key allows about 1,000 pages (100,000 works) per day. Each page is one request of up to
 100 works and costs at most $0.001 at list price. OpenAlex resets the daily allowance at midnight
@@ -54,7 +55,18 @@ What is refused, with a message that says why and how to fix it:
 - Scopus syntax such as `TITLE-ABS-KEY(...)`. Write the phrase itself.
 - An empty query, a query that starts with `NOT`, or an operator with nothing after it.
 - A query longer than 2,000 characters.
+- Curly quotes (like “ ”), full-width punctuation and invisible characters, which Word and
+  web pages often paste in. OpenAlex would read them as ordinary letters and silently change the
+  search, so prismabib refuses them and names the character. Retype the quotes as straight `"`.
 - Any other key in the `[openalex_query]` table (`filter`, `sort`, `select`, and so on).
+
+A TOML string in single quotes (`'...'`) cannot contain an apostrophe. For a query such as
+`women's health` use a double-quoted string and put a backslash before each inner double quote:
+
+```toml
+[openalex_query]
+search = "women's health AND \"primary care\""
+```
 
 Lower-case `and`, `or` and `not` are ordinary words to OpenAlex, not operators, and prismabib
 never rewrites them. Write them in capitals when you mean the operator.
@@ -71,6 +83,7 @@ prismabib openalex-search my-review --budget 30 --dry-run
 ```text
 dry run: no request made, nothing written
 query: "carbon capture" AND policy
+query key: "carbon capture" AND policy
 select: id,doi,title,publication_year,abstract_inverted_index,authorships,topics,type,primary_location,primary_topic,cited_by_count
 page budget: 30 pages of 100 works
 cost bound: at most $0.030

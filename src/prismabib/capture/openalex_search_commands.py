@@ -9,15 +9,20 @@ loads a sealed run.
 from __future__ import annotations
 
 import math
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 
 from prismabib.capture.openalex_search import (
     OpenAlexSearchResult,
     capture_openalex_search,
     cost_bound_usd,
+    query_key,
 )
 from prismabib.config import Settings
 from prismabib.project import Project
@@ -32,6 +37,17 @@ from prismabib.sources.openalex import (
 
 #: Exit status when the run was discarded: nothing usable was sealed, so a script must notice.
 EXIT_DISCARDED = 1
+
+
+@contextmanager
+def _logs_to_stderr() -> Iterator[None]:
+    """Send structlog output to stderr for the block, so stdout holds only the summary."""
+    previous = structlog.get_config()["logger_factory"]
+    structlog.configure(logger_factory=structlog.PrintLoggerFactory(sys.stderr))
+    try:
+        yield
+    finally:
+        structlog.configure(logger_factory=previous)
 
 
 def _duration(seconds: float | None) -> str:
@@ -133,14 +149,16 @@ def openalex_search(
             has_key = key is not None and bool(key.get_secret_value().strip())
             _echo("dry run: no request made, nothing written")
             _echo(f"query: {query}")
+            _echo(f"query key: {query_key(query)}")
             _echo(f"select: {SEARCH_SELECT}")
             _echo(f"page budget: {budget} pages of {SEARCH_PAGE_SIZE} works")
             _echo(f"cost bound: at most ${cost_bound_usd(budget):.3f}")
             _echo(f"OpenAlex key: {'set' if has_key else 'NOT SET (a real run is refused)'}")
             return
-        result = capture_openalex_search(
-            project, query=query, budget=budget, refresh=refresh, settings=settings
-        )
+        with _logs_to_stderr():
+            result = capture_openalex_search(
+                project, query=query, budget=budget, refresh=refresh, settings=settings
+            )
         key = settings.openalex_api_key
         secret = key.get_secret_value() if key is not None else ""
         for line in _summary(slug, result, budget, secret):

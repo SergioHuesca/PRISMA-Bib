@@ -65,7 +65,7 @@ from prismabib.capture.registrations import (
 )
 from prismabib.capture.writer import capture_search
 from prismabib.config import ProjectsRootSettings
-from prismabib.credentials import credentials_app
+from prismabib.credentials import credentials_app, openalex_key_missing
 from prismabib.errors import (
     ConfigError,
     LogError,
@@ -351,6 +351,7 @@ def init(
                 f"Sources mode: {mode} (recorded by {actor_name}; change it with `prismabib sources`)"
             )
         _echo()
+        openalex = project.source_mode == "openalex"
         if existed:
             _echo(
                 "project.toml and criteria.yaml were already there and were left exactly "
@@ -359,14 +360,24 @@ def init(
             _echo()
             _echo("The two files that define this review are, in the order they are used:")
         else:
-            _echo("`prismabib search` cannot run until you edit these two files, in this order:")
+            command = "openalex-search" if openalex else "search"
+            _echo(
+                f"`prismabib {command}` cannot run until you edit these two files, in this order:"
+            )
         _echo()
         _echo(f"  1. {project.root / 'project.toml'}")
-        _echo(
-            "     Fill in [query] terms / compound_terms -- the Boolean search itself. They "
-            "are scaffolded empty, and an empty query is refused rather than silently run "
-            "against all of Scopus."
-        )
+        if openalex:
+            _echo(
+                "     Fill in `search` under [openalex_query] -- the OpenAlex search itself "
+                '(words, "quoted phrases", uppercase AND / OR / NOT). It is scaffolded empty, '
+                "and an empty query is refused rather than sent."
+            )
+        else:
+            _echo(
+                "     Fill in [query] terms / compound_terms -- the Boolean search itself. They "
+                "are scaffolded empty, and an empty query is refused rather than silently run "
+                "against all of Scopus."
+            )
         _echo(f"  2. {project.root / 'criteria.yaml'}")
         _echo(
             "     Set temporal.year_start / year_end, and whichever of doc_types.include and "
@@ -378,8 +389,15 @@ def init(
         )
         _echo()
         _echo("Then, in order:")
-        _echo(f"  prismabib search {slug}   # spends Scopus quota; resumable")
-        _echo(f"  prismabib build {slug}")
+        if openalex:
+            if openalex_key_missing():
+                _echo("  prismabib credentials set openalex   # a free OpenAlex key is required")
+            _echo(f"  prismabib openalex-search {slug} --budget 30 --dry-run   # cost; no request")
+            _echo(f"  prismabib openalex-search {slug} --budget 30   # resumable")
+            _echo(f"  prismabib build {slug} --rebuild")
+        else:
+            _echo(f"  prismabib search {slug}   # spends Scopus quota; resumable")
+            _echo(f"  prismabib build {slug}")
         _echo(f"  prismabib flow {slug}")
 
 

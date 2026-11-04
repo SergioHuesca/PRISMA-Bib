@@ -54,6 +54,7 @@ from __future__ import annotations
 import difflib
 import re
 import tomllib
+import unicodedata
 from collections.abc import Mapping, Sequence
 from urllib.parse import quote_plus
 
@@ -500,6 +501,33 @@ _OPENALEX_MAX_ENCODED_CHARS = 3000
 _OPENALEX_OPERATORS = frozenset({"AND", "OR", "NOT"})
 _SCOPUS_FIELD_CODE = re.compile(r"\b[A-Z][A-Z-]{2,}\(")
 _REPHRASE = "rephrase without it, even inside a quoted phrase"
+#: Look-alikes of syntax characters, and invisible characters that split or glue words, would
+#: change the query silently (a curly quote is an ordinary letter to OpenAlex; a zero-width space
+#: makes ``AND`` a non-operator). Straight ASCII only; NBSP stays whitespace, as in ``query_key``.
+_LOOKALIKES = frozenset(
+    chr(code)
+    for code in (
+        0x201C,
+        0x201D,
+        0x201E,
+        0x00AB,
+        0x00BB,
+        0x2018,
+        0x2019,  # curly and angle quotes
+        0xFF08,
+        0xFF09,
+        0xFF0A,
+        0xFF1F,
+        0xFF5E,
+        0xFF02,  # full-width ( ) * ? ~ "
+        0x200B,
+        0x200C,
+        0x200D,
+        0x2060,
+        0xFEFF,
+        0x00AD,  # zero-width, joiner, BOM, soft hyphen
+    )
+)
 _PARENS = f"parentheses are not supported in v1; {_REPHRASE} and write the query without grouping"
 _WILDCARD = f"wildcards are not supported in v1; {_REPHRASE}"
 _REFUSED_CHARS = {
@@ -580,6 +608,12 @@ def validate_openalex_search(text: str) -> str:
             f"(more than {_OPENALEX_MAX_ENCODED_CHARS} characters; non-English letters take up to "
             "nine each); shorten it"
         )
+    for char in text:
+        if char in _LOOKALIKES:
+            raise ValidationError(
+                'the OpenAlex query must use straight double quotes (") and plain ASCII '
+                f"punctuation; found U+{ord(char):04X} ({unicodedata.name(char, 'format character')})"
+            )
     if match := _SCOPUS_FIELD_CODE.search(text):
         raise ValidationError(
             f"the OpenAlex query contains Scopus syntax ({match.group().strip()!r}); OpenAlex "
@@ -591,6 +625,11 @@ def validate_openalex_search(text: str) -> str:
             raise ValidationError(f"the OpenAlex query contains {char!r}: {why}")
     tokens = _openalex_tokens(text)
     for kind, value in tokens:
+        if kind == "word" and value.startswith("-") and not value.lstrip("-"):
+            raise ValidationError(
+                "the OpenAlex query has a bare '-' (hyphen): a bare '-' is not an operator; "
+                "remove it or join the words"
+            )
         if kind == "word" and value.startswith("-"):
             raise ValidationError(
                 f"the OpenAlex query has {value!r}: a leading minus does not exclude in OpenAlex; "

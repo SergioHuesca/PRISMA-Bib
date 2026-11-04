@@ -20,6 +20,7 @@ from prismabib.capture import openalex_search_commands
 from prismabib.capture.layout import OPENALEX_SEARCH_DIRNAME, is_sealed
 from prismabib.cli import app
 from prismabib.project import Project
+from prismabib.sources import scopus
 from prismabib.sources.ratelimit import RateLimiter
 from tests.integration.capture.test_openalex_search import (
     _DAILY_BODY,
@@ -33,6 +34,17 @@ pytestmark = pytest.mark.integration
 _KEY = "oa-sentinel-key-not-real"  # pragma: allowlist secret
 _SEARCH = "[openalex_query]\nsearch = '\"carbon capture\" AND policy'\n"
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _clean_redaction_registry() -> Iterator[None]:
+    """Older tests register one-character secrets (e.g. "x") that are process-global and never
+    removed; they would redact the letter "x" in the log text asserted on here."""
+    saved = set(scopus._REDACTED_SECRETS)  # pyright: ignore[reportPrivateUsage]
+    scopus._REDACTED_SECRETS.clear()  # pyright: ignore[reportPrivateUsage]
+    yield
+    scopus._REDACTED_SECRETS.clear()  # pyright: ignore[reportPrivateUsage]
+    scopus._REDACTED_SECRETS.update(saved)  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.fixture
@@ -288,19 +300,21 @@ def test_command__dry_run__prints_plan_and_cost_bound_and_does_nothing(
     tmp_path: Path, fake: Fake
 ) -> None:
     project = make_project(tmp_path)
-    before = sorted(p for p in project.root.rglob("*") if p.is_file())
+    before = sorted(project.root.rglob("*"))  # directories too
 
     code, out = invoke(tmp_path, "--budget", "100", "--dry-run")
 
     assert code == 0, out
     assert 'query: "carbon capture" AND policy' in out
+    assert 'query key: "carbon capture" AND policy' in out
     assert "page budget: 100 pages of 100 works" in out
     assert "cost bound: at most $0.100" in out
     assert "select: " in out
     assert "OpenAlex key: set" in out
     assert fake.requests == []
     assert run_dirs(project) == []
-    assert sorted(p for p in project.root.rglob("*") if p.is_file()) == before
+    assert sorted(project.root.rglob("*")) == before
+    assert not (project.raw_dir / OPENALEX_SEARCH_DIRNAME).exists()
 
 
 def test_command__dry_run_without_key__says_so_and_still_makes_no_request(
@@ -337,3 +351,38 @@ def test_command__the_key_never_appears_in_output_or_on_disk(tmp_path: Path, fak
     for path in project.root.rglob("*"):
         if path.is_file():
             assert _KEY.encode() not in path.read_bytes(), path
+
+
+@pytest.mark.parametrize(
+    "toml", [None, "[openalex_query]\nsearch = '(a)'\n"], ids=["no-table", "bad-search"]
+)
+@pytest.mark.parametrize("flags", [[], ["--dry-run"]])
+def test_command__other_mode_with_missing_or_bad_query_table__mode_refusal_wins(
+    tmp_path: Path, fake: Fake, toml: str | None, flags: list[str]
+) -> None:
+    project = make_project(tmp_path, "scopus", query=False)
+    if toml:
+        with (project.root / "project.toml").open("a", encoding="utf-8") as handle:
+            handle.write("\n" + toml)
+
+    code, out = invoke(tmp_path, "--budget", "5", *flags)
+
+    assert code == 1
+    assert "not available in sources mode" in out
+    assert "[openalex_query]" not in out
+    assert fake.requests == []
+
+
+def test_command__logs_go_to_stderr_and_stdout_holds_only_the_summary(
+    tmp_path: Path, fake: Fake
+) -> None:
+    make_project(tmp_path)
+
+    result = runner.invoke(
+        app, ["openalex-search", "demo", "--root", str(tmp_path), "--budget", "10"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "openalex_search." in result.stderr  # the capture's log lines
+    assert "openalex_search." not in result.stdout
+    assert [ln.split(" ")[0] for ln in result.stdout.splitlines()] == ["run", "Next:"]

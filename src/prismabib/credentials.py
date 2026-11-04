@@ -286,6 +286,12 @@ def status_lines(env_file: Path) -> list[str]:
     return [f"{name}: {key_status(name, values)}" for name in MANAGED_KEYS]
 
 
+def openalex_key_missing() -> bool:
+    """Whether ``OPENALEX_API_KEY`` is unset in the environment and in ``.env`` (no value read out)."""
+    line = next(ln for ln in status_lines(Path(ENV_FILENAME)) if ln.startswith("OPENALEX_API_KEY:"))
+    return line.endswith("not set")
+
+
 @dataclass(frozen=True)
 class ProbeResult:
     """Outcome of :func:`probe_scopus_key`: whether it worked, and a label with no response data."""
