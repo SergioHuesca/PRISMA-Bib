@@ -83,6 +83,12 @@ def _store_with_runs(*statements: str) -> duckdb.DuckDBPyConnection:
     return connection
 
 
+_OA_TAIL = (
+    "Metadata, including abstracts rebuilt from OpenAlex's inverted index and subject areas "
+    "taken from OpenAlex's primary topic, is OpenAlex's own (see Limitations)."
+)
+
+
 @pytest.mark.unit
 def test_methods__openalex_mode__sentence_names_queries_and_run_dates() -> None:
     """ADR 0042 Verification 67: the openalex sentence quotes the stored queries and run dates."""
@@ -93,18 +99,54 @@ def test_methods__openalex_mode__sentence_names_queries_and_run_dates() -> None:
         "('20261105T100000Z-cccccccc', 'ka', 'carbon capture', 4, 4)"
     )
 
-    sentence = source_sentence(connection, "openalex", identified=6, duplicates=2, registered=1)
+    sentence = source_sentence(connection, "openalex", identified=6, duplicates=2, registered=3)
 
     assert sentence == (
         "Records were identified by searching OpenAlex; no Scopus search was run. "
-        "The search was `carbon capture`, `direct air capture`, "
+        "The searches were `carbon capture`; `direct air capture`, "
         "run on 2026-11-03, 2026-11-04. "
-        "OpenAlex reported 6 works across 2 distinct queries, of which 2 were found by more "
-        "than one query and counted once. 1 records were registered by a reviewer from manual "
-        "Google Scholar searches (ADR 0029). Metadata, including abstracts rebuilt from "
-        "OpenAlex's inverted index and subject areas taken from OpenAlex's primary topic, is "
-        "OpenAlex's own (see Limitations)."
+        "OpenAlex reported 6 works across 2 distinct queries, of which 2 duplicate works "
+        "(same DOI or repeated across queries) were counted once. "
+        "3 records were registered by a reviewer from manual Google Scholar searches "
+        f"(ADR 0029). {_OA_TAIL}"
     )
+
+
+@pytest.mark.unit
+def test_methods__openalex_mode__singular_counts_and_no_registered_clause() -> None:
+    connection = _store_with_runs(
+        "INSERT INTO openalex_search_runs VALUES ('20261103T100000Z-aaaaaaaa', 'ka', 'q', 1, 1)"
+    )
+
+    sentence = source_sentence(connection, "openalex", identified=1, duplicates=1, registered=0)
+
+    assert sentence == (
+        "Records were identified by searching OpenAlex; no Scopus search was run. "
+        "The search was `q`, run on 2026-11-03. "
+        "OpenAlex reported 1 work across 1 distinct query, of which 1 duplicate work "
+        f"(same DOI or repeated across queries) was counted once. {_OA_TAIL}"
+    )
+    assert "registered" not in sentence
+
+
+@pytest.mark.unit
+def test_methods__query_with_backticks_and_newlines__is_fenced_and_collapsed() -> None:
+    connection = _store_with_runs(
+        "INSERT INTO openalex_search_runs VALUES "
+        "('20261103T100000Z-aaaaaaaa', 'ka', 'a ``b``' || chr(10) || '  c', 1, 1)"
+    )
+
+    sentence = source_sentence(connection, "openalex", identified=1, duplicates=0, registered=0)
+
+    assert "The search was ```a ``b`` c```, run on" in sentence
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mode", ["openalex", "scopus"])
+def test_methods__no_sealed_runs__sentence_is_empty(mode: str) -> None:
+    connection = _store_with_runs()
+
+    assert source_sentence(connection, mode, identified=0, duplicates=0, registered=0) == ""  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
@@ -119,10 +161,24 @@ def test_methods__scopus_mode__sentence_from_hand_built_store() -> None:
 
     assert sentence == (
         "Records were identified by searching Scopus. The search was "
-        '`TITLE-ABS-KEY("x")`, run on 2026-11-03. Scopus reported 40 records across 1 distinct '
-        "queries."
+        '`TITLE-ABS-KEY("x")`, run on 2026-11-03. Scopus reported 40 records across 1 '
+        "distinct query."
     )
     assert "OpenAlex" not in sentence
+
+
+@pytest.mark.unit
+def test_methods__scopus_mode__two_runs_of_one_query__earliest_run_date_wins() -> None:
+    connection = _store_with_runs(
+        "INSERT INTO runs VALUES "
+        "('20261103T100000Z-aaaaaaaa', '2026-11-03 10:00:00', 'q', 'COMPLETE', 40, 'h', '1'), "
+        "('20261105T100000Z-bbbbbbbb', '2026-11-05 10:00:00', 'q', 'COMPLETE', 41, 'h', '1')"
+    )
+
+    sentence = source_sentence(connection, "scopus", identified=40, duplicates=0, registered=0)
+
+    assert "run on 2026-11-03." in sentence
+    assert "2026-11-05" not in sentence
 
 
 @pytest.mark.unit
@@ -130,7 +186,8 @@ def test_methods__scopus_plus_openalex_mode__adds_no_sentence() -> None:
     """OQ-14: a legacy or combined project's methods bytes do not change."""
     connection = _store_with_runs()
 
-    assert (
-        source_sentence(connection, "scopus+openalex", identified=1, duplicates=0, registered=0)
-        == ""
+    sentence = source_sentence(
+        connection, "scopus+openalex", identified=1, duplicates=0, registered=0
     )
+
+    assert sentence == ""

@@ -12,6 +12,7 @@ There is no methods generator beyond these two snippets: manuscripts are user te
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -146,6 +147,19 @@ def cascade_sentence(numbers: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _count(n: int, one: str, many: str) -> str:
+    """``"1 record"`` or ``"2 records"``; for ``record was``/``records were`` pass both phrases."""
+    return f"{n} {one if n == 1 else many}"
+
+
+def _code_span(text: str) -> str:
+    """``text`` as a Markdown code span: whitespace collapsed, fence longer than any backtick run."""
+    flat = " ".join(text.split())
+    fence = "`" * (max((len(run) for run in re.findall(r"`+", flat)), default=0) + 1)
+    pad = " " if flat.startswith("`") or flat.endswith("`") else ""
+    return f"{fence}{pad}{flat}{pad}{fence}"
+
+
 def source_sentence(
     connection: duckdb.DuckDBPyConnection,
     mode: SourceMode,
@@ -186,20 +200,32 @@ def source_sentence(
             "SELECT query, CAST(started_at AS DATE) FROM runs WHERE (query, run_id) IN "
             "(SELECT query, MIN(run_id) FROM runs GROUP BY query) ORDER BY run_id"
         ).fetchall()
-    queries = ", ".join(f"`{query}`" for query, _ in rows)
+    if not rows:
+        return ""
+    queries = "; ".join(_code_span(query) for query, _ in rows)
+    which = "search was" if len(rows) == 1 else "searches were"
     dates = ", ".join(sorted({day.isoformat() for _, day in rows}))
+    distinct = _count(len(rows), "distinct query", "distinct queries")
     if mode == "scopus":
         return (
-            f"Records were identified by searching Scopus. The search was {queries}, run on "
-            f"{dates}. Scopus reported {identified} records across {len(rows)} distinct queries."
+            f"Records were identified by searching Scopus. The {which} {queries}, run on "
+            f"{dates}. Scopus reported {_count(identified, 'record', 'records')} across "
+            f"{distinct}."
         )
+    dupes = _count(duplicates, "duplicate work", "duplicate works")
+    registered_clause = (
+        f"{_count(registered, 'record was', 'records were')} registered by a reviewer from "
+        "manual Google Scholar searches (ADR 0029). "
+        if registered
+        else ""
+    )
     return (
         "Records were identified by searching OpenAlex; no Scopus search was run. "
-        f"The search was {queries}, run on {dates}. "
-        f"OpenAlex reported {identified} works across {len(rows)} distinct queries, of which "
-        f"{duplicates} were found by more than one query and counted once. "
-        f"{registered} records were registered by a reviewer from manual Google Scholar "
-        "searches (ADR 0029). Metadata, including abstracts rebuilt from OpenAlex's inverted "
+        f"The {which} {queries}, run on {dates}. "
+        f"OpenAlex reported {_count(identified, 'work', 'works')} across {distinct}, of which "
+        f"{dupes} (same DOI or repeated across queries) {'was' if duplicates == 1 else 'were'} "
+        f"counted once. {registered_clause}"
+        "Metadata, including abstracts rebuilt from OpenAlex's inverted "
         "index and subject areas taken from OpenAlex's primary topic, is OpenAlex's own "
         "(see Limitations)."
     )
