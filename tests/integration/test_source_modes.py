@@ -1015,12 +1015,20 @@ def test_legacy_store__is_stamped_with_the_legacy_mode_and_stays_readable(
     build_store(legacy_reference)  # the reuse path
 
 
-def test_legacy_store__without_a_stamp__is_still_read_as_legacy(legacy_reference: Project) -> None:
-    """A store built before ADR 0042 has no stamp; a legacy project reads it unchanged."""
+def test_legacy_store__without_a_stamp__is_refused_from_pr4a_on(legacy_reference: Project) -> None:
+    """From PR 4a a store with no stamp is "needs rebuild" in every mode, the legacy one included.
+
+    PR 1 read it as the legacy mode; that ended when the OpenAlex tables joined ``TABLE_NAMES``
+    (ADR 0042 Decision 1), because such a store lacks them. The rebuild is what the message asks for.
+    """
     store_stamp.stamp_path(legacy_reference.db_path).unlink()
 
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
+        connect(legacy_reference)
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
+        build_store(legacy_reference)
+    assert build_store(legacy_reference, rebuild=True).records_loaded > 0
     connect(legacy_reference).close()
-    assert build_store(legacy_reference).records_loaded > 0
 
 
 # -- 27, 29, 29a: the store stamp ------------------------------------------------------------------
@@ -1073,7 +1081,7 @@ def test_store__unstamped_legacy_store__refused_by_a_project_in_another_mode(
     store_stamp.stamp_path(project.db_path).unlink()
     sm.set_mode(project, "scopus", actor="t")
 
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(project)
 
 
@@ -1123,7 +1131,7 @@ def test_store_stamp__failure_between_replace_and_stamp__leaves_refused_state(
 
     assert project.db_path.is_file()
     assert not store_stamp.stamp_path(project.db_path).exists()
-    with pytest.raises(StoreError, match=r"no stamp.*--rebuild"):
+    with pytest.raises(StoreError, match=r"no build stamp.*--rebuild"):
         connect(project)
     monkeypatch.undo()
     build_store(project, rebuild=True)  # the fix named in the message works

@@ -60,6 +60,7 @@ from prismabib.prisma.flow import compute_flow_counts
 from prismabib.prisma.log import DecisionLog, FoldKey
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
+from prismabib.store.stamp import stamp_path
 from tests.prisma_helpers import (
     CorpusSpec,
     CriteriaSpec,
@@ -406,6 +407,7 @@ def clone_project(prototype: Project) -> Project:
     root = Path(tempfile.mkdtemp(dir=prototype.root.parent))
     clone = Project.init(prototype.slug, title="DecisionLogMachine", root=root)
     shutil.copy(prototype.db_path, clone.db_path)
+    shutil.copy(stamp_path(prototype.db_path), stamp_path(clone.db_path))  # no stamp: refused
     shutil.copy(prototype.root / "criteria.yaml", clone.root / "criteria.yaml")
     rewrite_sidecar(clone)
     return clone

@@ -176,6 +176,7 @@ from prismabib.capture.layout import (
     ABSTRACTS_DIRNAME,
     NON_RUN_DIRNAMES,
     OPENALEX_DIRNAME,
+    OPENALEX_SEARCH_DIRNAME,
     RUN_MANIFEST_FILENAME,
     SCOPUS_CASCADE_DIRNAME,
     is_sealed,
@@ -187,6 +188,8 @@ from prismabib.capture.manifest import (
     OpenAlexOutcome,
     OpenAlexRequest,
     OpenAlexRunManifest,
+    OpenAlexSearchRequest,
+    OpenAlexSearchRunManifest,
     OpenAlexTitle,
     RunManifest,
 )
@@ -226,6 +229,12 @@ from prismabib.sources.scopus import _as_list
 from prismabib.stage import PrismaStage
 from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.db import connect
+from prismabib.store.openalex_search import (
+    REASON_MALFORMED_SEARCH_WORK,
+    SearchWork,
+    parse_search_work,
+    work_id,
+)
 from prismabib.store.stamp import stamp_path, write_stamp
 from prismabib.titles import normalise_title
 
@@ -479,12 +488,37 @@ class StoreStats(BaseModel):
     Not a Layer 1 table, so empty on the ``rebuild=False`` reuse path; excluded from
     ``model_dump`` so the frozen ``row_counts`` golden does not move."""
 
+    openalex_records_loaded: int = Field(default=0, exclude=True)
+    """Rows in ``openalex_records`` (ADR 0042): the OpenAlex search works of a project in mode
+    ``openalex``; ``0`` in every other mode. Excluded from ``model_dump`` so the frozen
+    ``row_counts`` golden does not move."""
+
+    openalex_search_runs_loaded: int = Field(default=0, exclude=True)
+    """Rows in ``openalex_search_runs`` (ADR 0042): the sealed search runs folded in."""
+
     unmatched_fulltext_record_ids: tuple[str, ...]
     """Sorted, deduplicated record ids that at least one loaded full-text run
     described but that are not in ``records``. The same ADR 0018-style
     "skipped, never silently dropped" treatment as
     ``unmatched_abstract_record_ids``, and the same reuse-path caveat: always
     ``()`` unless this call actually rebuilt."""
+
+
+@dataclass
+class _SearchMember:
+    """One OpenAlex search work admitted to ``openalex_records``, and where each field came from.
+
+    ``work`` and the payload position are those of the earliest sealed run that holds it;
+    ``latest`` maps a field to the newest ``(work, payload ref)`` that had a value for it (ADR 0031
+    Decision 7: a newer run without the field never replaces an older value).
+    """
+
+    work: SearchWork
+    run_id: str
+    payload_file: str
+    payload_line: int
+    retrieved_at: datetime
+    latest: dict[str, tuple[SearchWork, str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -628,6 +662,17 @@ class _Accumulator:
     openalex_fields: dict[str, dict[str, _Cand]] = field(default_factory=dict)
     #: ``provenance_conflicts`` rows, in ``schema.sql`` column order, from :func:`_apply_provenance`.
     conflicts: list[tuple[Any, ...]] = field(default_factory=list)
+    #: ``openalex_search_runs`` rows, one per sealed search run (ADR 0042 Decision 5).
+    openalex_search_runs: list[tuple[Any, ...]] = field(default_factory=list)
+    #: ``query_key`` of every search run folded so far; a run whose key is already here is a
+    #: refresh: it updates values and adds no member (ADR 0042 Decision 4, "Resume, budget and reuse").
+    openalex_query_keys: set[str] = field(default_factory=set)
+    #: ``record_id`` -> the search work that is a member, and the latest value per field.
+    openalex_works: dict[str, _SearchMember] = field(default_factory=dict)
+    #: Normalised DOIs of the members, for the DOI-first deduplication key (OQ-16, Q-C).
+    openalex_dois: set[str] = field(default_factory=set)
+    #: ``openalex_records`` rows, in ``schema.sql`` column order, from :func:`_finalise_openalex_search`.
+    openalex_rows: list[tuple[Any, ...]] = field(default_factory=list)
 
 
 def _optional_str(value: object) -> str | None:
@@ -1989,6 +2034,214 @@ def _finalise_openalex_topics(acc: _Accumulator) -> None:
             _accumulate_keyword(acc, record_id=record_id, raw_term=raw, kind=_openalex.KEYWORD_KIND)
 
 
+def _sealed_openalex_search_run_dirs(raw_dir: Path) -> list[Path]:
+    """List every sealed run under ``raw/openalex-search/``, oldest first (ADR 0042 Decision 4).
+
+    ``manifest.json`` is the seal. A directory without one is unsealed, and a ``progress.json``
+    with ``discarded: true`` never has one, so neither is read. Sorted by run id.
+    """
+    search_dir = raw_dir / OPENALEX_SEARCH_DIRNAME
+    if not search_dir.is_dir():
+        return []
+    return sorted(
+        (entry for entry in search_dir.iterdir() if entry.is_dir() and is_sealed(entry)),
+        key=lambda path: path.name,
+    )
+
+
+def _search_results(path: Path, name: str, request: OpenAlexSearchRequest) -> list[Any]:
+    """The ``results`` array of one stored search response, checked against its manifest entry.
+
+    Raises:
+        StoreError: If the file is missing, its bytes do not match the manifest digest, it is not a
+            body with a ``results`` list, or the list is not ``request.result_count`` long. A sealed
+            run was a 200 with a list on every page and every digest recorded, so each is a defect
+            in Layer 0 (a cut or edited page must not rebuild silently).
+    """
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise StoreError(f"OpenAlex search response {name} cannot be read: {exc}") from exc
+    if sha256(data).hexdigest() != request.sha256:
+        raise StoreError(
+            f"OpenAlex search response {name} does not match its manifest digest; re-capture "
+            "the run (Layer 0 is never edited). If the project's raw/ is under git, check "
+            "line-ending conversion such as core.autocrlf, which rewrites the bytes the digest "
+            "covers."
+        )
+    try:
+        body = json.loads(data.decode("utf-8").strip())
+    except (ValueError, RecursionError) as exc:
+        raise StoreError(f"OpenAlex search response {name} cannot be read: {exc}") from exc
+    results = body.get("results") if isinstance(body, dict) else None
+    if not isinstance(results, list):
+        raise StoreError(f"OpenAlex search response {name} has no 'results' list.")
+    if len(results) != request.result_count:
+        raise StoreError(
+            f"OpenAlex search response {name} holds {len(results)} works but its manifest "
+            f"result count is {request.result_count}; re-capture the run."
+        )
+    return results
+
+
+def _note_search_values(member: _SearchMember, work: SearchWork, ref: str) -> None:
+    """Record ``work`` as the newest source of every field it holds a value for."""
+    holds = {
+        "abstract": work.abstract is not None,
+        "authors": bool(work.authors),
+        "affiliations": bool(work.affiliations),
+        "keywords": any(_normalise_keyword_term(t) for t in work.topics),
+    }
+    member.latest.update({name: (work, ref) for name, has in holds.items() if has})
+
+
+def _load_openalex_search_run(acc: _Accumulator, run_dir: Path) -> None:
+    """Fold one sealed OpenAlex search run into ``acc`` (ADR 0042 Decision 5).
+
+    Only the earliest sealed run of a ``query_key`` admits members and counts duplicates. A later
+    run of the same key (a refresh) updates the field values and adds a citation snapshot for the
+    works that are already members, and nothing else. Within the earliest run each occurrence of a
+    work is exactly one of: loaded, a duplicate (its OpenAlex id, or its DOI, is already held:
+    DOI first, OQ-16) or malformed (no id, no title), so that the manifests' ``total_count`` less
+    the measured duplicates and the unloadable works is the number of rows loaded.
+
+    Raises:
+        StoreError: On an unreadable manifest, one sealed without ``total_count``, or a response
+            file that is missing or is not a search body.
+    """
+    try:
+        manifest = OpenAlexSearchRunManifest.model_validate_json(
+            (run_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+    except ValueError as exc:
+        raise StoreError(
+            f"OpenAlex search run {run_dir.name} has an unreadable manifest: {exc}"
+        ) from exc
+    if manifest.total_count is None:
+        raise StoreError(f"OpenAlex search run {run_dir.name} was sealed without a total_count.")
+    run_id = manifest.run_id
+    acc.openalex_search_runs.append(
+        (run_id, manifest.query_key, manifest.query, manifest.total_count, manifest.works_captured)
+    )
+    earliest = manifest.query_key not in acc.openalex_query_keys
+    acc.openalex_query_keys.add(manifest.query_key)
+
+    duplicates = 0
+    for request in sorted(manifest.requests, key=lambda r: r.index):
+        relative_file = f"{OPENALEX_SEARCH_DIRNAME}/{run_id}/{request.file}"
+        retrieved_at = _as_naive_utc(request.retrieved_at)
+        page = _search_results(run_dir / request.file, relative_file, request)
+        for index, raw in enumerate(page):
+            entry = raw if isinstance(raw, dict) else {}
+            try:
+                work = parse_search_work(entry)
+            # A hostile or odd shape is one malformed work, not a failed build: a string where
+            # an object belongs raises AttributeError, a null where a position belongs TypeError.
+            except (ValidationError, AttributeError, TypeError) as exc:
+                if earliest:
+                    openalex_id = work_id(entry)
+                    acc.malformed_entries.append(
+                        (
+                            run_id,
+                            relative_file,
+                            index,
+                            f"openalex:{openalex_id}" if openalex_id else None,
+                            REASON_MALFORMED_SEARCH_WORK,
+                        )
+                    )
+                    logger.warning(
+                        "store.load.openalex_search_work_malformed",
+                        run_id=run_id,
+                        file=request.file,
+                        index=index,
+                        detail=str(exc),
+                    )
+                continue
+            ref = f"{relative_file}#{work.openalex_id}"
+            member = acc.openalex_works.get(work.record_id)
+            if not earliest:
+                if member is not None:
+                    _note_search_values(member, work, ref)
+                    if work.cited_by_count is not None:
+                        acc.citation_snapshots[(work.record_id, retrieved_at)] = work.cited_by_count
+                continue
+            if member is not None or (work.doi is not None and work.doi in acc.openalex_dois):
+                duplicates += 1
+                continue
+            member = _SearchMember(work, run_id, relative_file, index, retrieved_at)
+            _note_search_values(member, work, ref)
+            acc.openalex_works[work.record_id] = member
+            if work.doi is not None:
+                acc.openalex_dois.add(work.doi)
+            if work.cited_by_count is not None:
+                acc.citation_snapshots[(work.record_id, retrieved_at)] = work.cited_by_count
+    if duplicates:
+        acc.cross_run_duplicates[run_id] = duplicates
+
+
+def _finalise_openalex_search(acc: _Accumulator) -> None:
+    """Turn the admitted search works into rows of ``openalex_records`` and the tables beside it.
+
+    Members are visited in ``record_id`` order, so a first-seen name in ``authors`` or
+    ``affiliations`` does not depend on the order of the runs. The keyword rows are written by
+    :func:`_finalise_openalex_topics`, from ``acc.openalex_topics``. A work with no mapped subfield
+    has no ``subject_areas`` row and the coverage status ``none_assigned`` (OQ-7); a mapped work is
+    ``assigned``. The coverage row's ``run_id`` is ``query_run_id``.
+    """
+    unmapped: dict[str, int] = {}
+    for record_id in sorted(acc.openalex_works):
+        member = acc.openalex_works[record_id]
+        work = member.work
+        for code in set(work.unmapped_countries):
+            unmapped[code] = unmapped.get(code, 0) + 1
+        cells: list[Any] = []
+        for field_name in _FIELDS:
+            latest = member.latest.get(field_name)
+            if latest is None:
+                cells += ["unavailable", 0, "unavailable", None]
+                continue
+            source = _openalex.KEYWORD_KIND if field_name == "keywords" else "openalex"
+            cells += [source, _LEVELS[source], "value", latest[1]]
+        abstract = member.latest.get("abstract")
+        acc.openalex_rows.append(
+            (
+                record_id,
+                work.openalex_id,
+                work.doi,
+                work.title,
+                abstract[0].abstract if abstract else None,
+                work.year,
+                work.doc_type,
+                None,  # language is never derived (ADR 0032 Decision 2)
+                work.venue_type,
+                work.venue_name,
+                member.payload_file,
+                member.payload_line,
+                member.run_id,
+                *cells,
+                member.retrieved_at,
+            )
+        )
+        if (authors := member.latest.get("authors")) is not None:
+            for position, (author_id, surname, given) in enumerate(authors[0].authors, start=1):
+                acc.authors.setdefault(author_id, (author_id, surname, given))
+                acc.record_authors.append((record_id, author_id, position))
+        if (affiliations := member.latest.get("affiliations")) is not None:
+            for afid, name, country in affiliations[0].affiliations:
+                acc.affiliations.setdefault(afid, (afid, name, None, country))
+                acc.record_affiliations.append((record_id, afid))
+        if (keywords := member.latest.get("keywords")) is not None:
+            acc.openalex_topics[record_id] = keywords[0].topics
+        if work.subject_code is not None:
+            acc.subject_areas.add((record_id, work.subject_code))
+        acc.record_subject_area_coverage.append(
+            (record_id, member.run_id, "none_assigned" if work.subject_code is None else "assigned")
+        )
+    # Once per code per build, never per work: a code outside ISO 3166-1 (`UK`, `EU`) is skipped.
+    for code in sorted(unmapped):
+        logger.warning("openalex_search.unmapped_country_code", code=code, works=unmapped[code])
+
+
 def _sealed_cascade_run_dirs(raw_dir: Path) -> list[Path]:
     """List every sealed Scopus cascade run under ``raw/scopus-cascade/``, oldest first (ADR 0041).
 
@@ -2454,8 +2707,8 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
     Raises:
         StoreError: If the skipped share trips either rule.
     """
-    # OpenAlex rows are enrichment audit, not search entries (`entries_seen` counts
-    # search entries only), so they never trip this guard.
+    # OpenAlex rows are enrichment audit, not Scopus search entries (`entries_seen` counts
+    # those only), so they never trip this guard.
     malformed = [
         r
         for r in acc.malformed_entries
@@ -3000,6 +3253,8 @@ def _write_accumulator(connection: duckdb.DuckDBPyConnection, acc: _Accumulator)
     # insertion order here has no bearing on S03-AC1's byte-stable checksums.
     _insert_rows(connection, "fulltext_assets", list(acc.fulltext_assets.values()))
     _insert_rows(connection, "fulltext_sections", acc.fulltext_sections)
+    _insert_rows(connection, "openalex_search_runs", sorted(acc.openalex_search_runs))
+    _insert_rows(connection, "openalex_records", acc.openalex_rows)  # sorted by record_id
 
 
 def _reset_schema(connection: duckdb.DuckDBPyConnection) -> None:
@@ -3121,6 +3376,8 @@ def _stats_from_connection(
         fulltext_runs_loaded=fulltext_runs_loaded,
         fulltext_assets_loaded=_count(connection, "fulltext_assets"),
         fulltext_sections_loaded=_count(connection, "fulltext_sections"),
+        openalex_records_loaded=_count(connection, "openalex_records"),
+        openalex_search_runs_loaded=_count(connection, "openalex_search_runs"),
         unmatched_fulltext_record_ids=unmatched_fulltext_record_ids,
         provenance_report=provenance_report or {},
     )
@@ -3219,6 +3476,24 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
     Raises:
         StoreError: If ``stats`` has no records and a sealed run reports results.
     """
+    if checked_mode(project) == "openalex":
+        # One identification source: Scopus runs are present but unused (ADR 0042 Decision 3).
+        if stats.openalex_records_loaded:
+            return
+        for search_dir in _sealed_openalex_search_run_dirs(project.raw_dir):
+            search = OpenAlexSearchRunManifest.model_validate_json(
+                (search_dir / RUN_MANIFEST_FILENAME).read_text(encoding="utf-8")
+            )
+            if (search.total_count or 0) > 0:
+                raise StoreError(
+                    f"{project.db_path} holds no records but {search_dir.name} in "
+                    f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works. Either "
+                    "the build died early or none of those works is loadable (see the "
+                    "malformed_entries table); a rebuild reproduces this store in the second "
+                    "case, so run `prismabib build <slug> --rebuild` and read malformed_entries "
+                    "before re-capturing."
+                )
+        return
     if stats.records_loaded:
         return
     for run_dir in _sealed_run_dirs(project.raw_dir):
@@ -3323,8 +3598,26 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         try:
             _reset_schema(connection)
             accumulator = _Accumulator()
-            for run_dir in _sealed_run_dirs(project.raw_dir):
-                _load_run(accumulator, project.raw_dir, run_dir)
+            # One identification source per project (ADR 0042 Decision 3, `build`): the other
+            # kind of search run is reported as present and not loaded.
+            scopus_runs = _sealed_run_dirs(project.raw_dir)
+            search_runs = _sealed_openalex_search_run_dirs(project.raw_dir)
+            if source_mode == "openalex":
+                unused, unused_kind = scopus_runs, "scopus_search"
+                for search_run_dir in search_runs:
+                    _load_openalex_search_run(accumulator, search_run_dir)
+                _finalise_openalex_search(accumulator)
+            else:
+                unused, unused_kind = search_runs, "openalex_search"
+                for run_dir in scopus_runs:
+                    _load_run(accumulator, project.raw_dir, run_dir)
+            if unused:
+                logger.warning(
+                    "store.load.search_runs_present_but_unused",
+                    kind=unused_kind,
+                    source_mode=source_mode,
+                    run_ids=[d.name for d in unused],
+                )
             _resolve_pending_snapshots(accumulator)
             _guard_against_unloadable_capture(accumulator)
             # Abstract runs are folded in only after every search run: their

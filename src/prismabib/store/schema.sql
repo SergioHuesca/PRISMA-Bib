@@ -226,7 +226,62 @@ CREATE TABLE provenance_conflicts (
     OR (status = 'resolved' AND resolved_side IS NOT NULL AND resolution_event_id IS NOT NULL))
 );
 
--- The one reader of S_raw (ADR 0032 Decision 1): Scopus rows plus registrations.
+-- Added by ADR 0042 Decision 5, not part of the frozen BUILD_PLAN schema. One row per OpenAlex work
+-- that a sealed `raw/openalex-search` run identified (mode `openalex` only); empty in every other
+-- project. The same 16 provenance columns as `records`, with the openalex source sets (`openalex`
+-- at level 4 and `manual` at level 5 for abstract, authors and affiliations; `openalex-topic` at
+-- level 4 for keywords). `payload_line` is the work's zero-based index in the response's
+-- `results[]`, not a line: the file holds one line (ADR 0031 Decision 2, amended by ADR 0042 l),
+-- and the payload reference of a work is `payload_file#<openalex_id>`. `query_run_id` is the
+-- earliest sealed run that holds the work. `language` is always NULL (ADR 0032 Decision 2).
+CREATE TABLE openalex_records (
+  record_id TEXT PRIMARY KEY, openalex_id TEXT NOT NULL, doi TEXT, title TEXT NOT NULL,
+  abstract TEXT, year INTEGER, doc_type TEXT, language TEXT, venue_type TEXT, venue_name TEXT,
+  payload_file TEXT NOT NULL, payload_line INTEGER NOT NULL, query_run_id TEXT NOT NULL,
+  abstract_source TEXT NOT NULL DEFAULT 'unavailable', abstract_level INTEGER NOT NULL DEFAULT 0,
+  abstract_outcome TEXT NOT NULL DEFAULT 'unavailable', abstract_payload_ref TEXT,
+  authors_source TEXT NOT NULL DEFAULT 'unavailable', authors_level INTEGER NOT NULL DEFAULT 0,
+  authors_outcome TEXT NOT NULL DEFAULT 'unavailable', authors_payload_ref TEXT,
+  affiliations_source TEXT NOT NULL DEFAULT 'unavailable', affiliations_level INTEGER NOT NULL DEFAULT 0,
+  affiliations_outcome TEXT NOT NULL DEFAULT 'unavailable', affiliations_payload_ref TEXT,
+  keywords_source TEXT NOT NULL DEFAULT 'unavailable', keywords_level INTEGER NOT NULL DEFAULT 0,
+  keywords_outcome TEXT NOT NULL DEFAULT 'unavailable', keywords_payload_ref TEXT,
+  retrieved_at TIMESTAMP NOT NULL,
+  CHECK ((abstract_source, abstract_level) IN (('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((abstract_outcome = 'unavailable' AND abstract_source = 'unavailable'
+           AND abstract_payload_ref IS NULL)
+      OR (abstract_outcome = 'value' AND abstract_payload_ref IS NOT NULL
+          AND abstract_source <> 'unavailable'))),
+  CHECK ((authors_source, authors_level) IN (('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((authors_outcome = 'unavailable' AND authors_source = 'unavailable'
+           AND authors_payload_ref IS NULL)
+      OR (authors_outcome = 'value' AND authors_payload_ref IS NOT NULL
+          AND authors_source <> 'unavailable'))),
+  CHECK ((affiliations_source, affiliations_level) IN (('openalex', 4), ('manual', 5), ('unavailable', 0))
+    AND ((affiliations_outcome = 'unavailable' AND affiliations_source = 'unavailable'
+           AND affiliations_payload_ref IS NULL)
+      OR (affiliations_outcome = 'value' AND affiliations_payload_ref IS NOT NULL
+          AND affiliations_source <> 'unavailable'))),
+  CHECK ((keywords_source, keywords_level) IN (('openalex-topic', 4), ('unavailable', 0))
+    AND ((keywords_outcome = 'unavailable' AND keywords_source = 'unavailable'
+           AND keywords_payload_ref IS NULL)
+      OR (keywords_outcome = 'value' AND keywords_payload_ref IS NOT NULL
+          AND keywords_source <> 'unavailable')))
+);
+
+-- Added by ADR 0042 Decision 5, not part of the frozen BUILD_PLAN schema. One row per sealed
+-- OpenAlex search run: the source of `identified` in mode `openalex` (the sum of `total_count`
+-- over the distinct `query_key`s, each from its earliest run; ADR 0013's rule with OpenAlex's
+-- count). A table and not a column of `runs`, because `runs` is frozen (ADR 0012). Duplicates are
+-- not stored here; they go into `run_duplicates`.
+CREATE TABLE openalex_search_runs (
+  run_id TEXT PRIMARY KEY, query_key TEXT NOT NULL, query TEXT NOT NULL,
+  total_count INTEGER NOT NULL, works_captured INTEGER NOT NULL
+);
+
+-- The one reader of S_raw (ADR 0032 Decision 1): Scopus rows, registrations and, in mode
+-- `openalex`, OpenAlex search works (ADR 0042 Decision 5; the third branch selects its columns,
+-- with `run_id` set to `query_run_id`).
 -- Deliberately no COALESCE on the Scopus half, so a record with no venue keeps NULL
 -- `venue_type`/`venue_name` exactly as screening/ui.py read them from the LEFT JOIN.
 -- A view is not checksummed.
@@ -262,4 +317,13 @@ CREATE VIEW records_all AS
          CASE WHEN keywords_json IS NOT NULL THEN 4 ELSE 0 END,
          CASE WHEN keywords_json IS NOT NULL THEN 'value' ELSE 'unavailable' END,
          CASE WHEN keywords_json IS NOT NULL THEN payload_file || '#' || openalex_id END
-    FROM registered_records;
+    FROM registered_records
+  UNION ALL
+  SELECT record_id, 'openalex', query_run_id, doi, title, abstract, year,
+         NULL, doc_type, language, NULL, NULL,
+         payload_file, payload_line, venue_type, venue_name,
+         abstract_source, abstract_level, abstract_outcome, abstract_payload_ref,
+         authors_source, authors_level, authors_outcome, authors_payload_ref,
+         affiliations_source, affiliations_level, affiliations_outcome, affiliations_payload_ref,
+         keywords_source, keywords_level, keywords_outcome, keywords_payload_ref
+    FROM openalex_records;

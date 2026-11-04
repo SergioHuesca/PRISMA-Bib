@@ -67,6 +67,8 @@ _TABLE_SORT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "fulltext_sections": ("record_id", "position"),
     "registered_records": ("record_id",),  # ADR 0032
     "provenance_conflicts": ("record_id", "field"),  # ADR 0041
+    "openalex_records": ("record_id",),  # ADR 0042
+    "openalex_search_runs": ("run_id",),  # ADR 0042
 }
 
 #: The full set of Layer 1 table names, in the order they appear in

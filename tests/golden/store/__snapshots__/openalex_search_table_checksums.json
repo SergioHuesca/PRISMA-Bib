@@ -1,0 +1,17 @@
+{
+  "table_checksums": {
+    "affiliations": "b223410b7725d7cf78566948652c3201b7c404daccedd8642d7213b5cc62a177",
+    "authors": "fcdff0919580b196aef00f5301e3ba00e8de3fab2ea5cea75e560f1e421bf337",
+    "citation_snapshots": "9cd465f83447cd4512ad3a3b8a4fa0f7f2a87da86f7c5af7a4e18132eae38a73",
+    "keywords": "2c6fe8bbf3f24e5a41c2cdebd60f27e8ec28855839373e17b4eacd6f7c50031b",
+    "malformed_entries": "6b20975231691cdd31ba73e6d859de89b06d1e51715144871a7eb00938aef844",
+    "openalex_records": "f2495b380b1fd63bc9178d325d0d387755630e6c47b84f563d9c1d4da2cef45a",
+    "openalex_search_runs": "934cc4f04419afe0389bb468fe70afbb5197099d36fc482860f766c4f3742fab",
+    "record_affiliations": "ed543020ed9de5423237e8862651a1db70c7c4649d9985acddfc26f5d82c97b7",
+    "record_authors": "882e499011505a8f30813837bcdb986a5197338dc202a1ae746acbbb7cca83c8",
+    "record_keywords": "70a91bd8616f2553bbd09595e8d63124e87d56384671551fe50cfff0b0415aeb",
+    "record_subject_area_coverage": "a1cf0cfe74d754c71b0e002283630cd47f28739961062785ae222c8bc63a64d6",
+    "run_duplicates": "600043164385e039920391e8450b0c3d4cf63c5ac7736f9bfeea326e44c62abf",
+    "subject_areas": "0392ba6c8f1774234a0348815ca7becd91548e374e8656f75e0a72a0e6a3d9a6"
+  }
+}

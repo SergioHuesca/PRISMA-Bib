@@ -25,6 +25,7 @@ from prismabib.cli import app
 from prismabib.config import Settings
 from prismabib.project import Project
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.store.stamp import write_stamp
 
 runner = CliRunner()
 _AFF = [{"affilname": "Uni", "affiliation-city": "Lima", "affiliation-country": "Peru"}]
@@ -124,6 +125,7 @@ def project(tmp_path: Path) -> Project:
     con.execute("CREATE VIEW records_all AS SELECT *, 'scopus' AS origin FROM records")
     con.execute("CREATE TABLE provenance_conflicts (record_id TEXT, field TEXT, status TEXT)")
     con.close()
+    write_stamp(p.db_path, "scopus+openalex")  # the cascade's direct readers check the stamp
     CandidateLog(p.root / "decisions" / "candidates.jsonl").add(
         CandidateEvent.from_row(
             CandidateRow("Cand", 2018, "10.1/c"), reviewer="sh", pasted_at=datetime.now(UTC)
