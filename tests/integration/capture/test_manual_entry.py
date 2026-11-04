@@ -99,8 +99,8 @@ def test_manual_entry__cli_round_trip_with_reversal(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("record_id", "field", "value", "reviewer", "message"),
     [
-        ("scopus:nope", "abstract", "x", "kp", "no scopus record"),
-        ("registered:E1", "abstract", "x", "kp", "no scopus record"),
+        ("scopus:nope", "abstract", "x", "kp", "no scopus or openalex record"),
+        ("registered:E1", "abstract", "x", "kp", "no scopus or openalex record"),
         (R2, "keywords", "x", "kp", "field"),
         (R2, "abstract", "  ", "kp", "blank"),
         (R1, "abstract", "x", "kp", "not unavailable"),

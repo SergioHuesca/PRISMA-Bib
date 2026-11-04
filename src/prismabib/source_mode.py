@@ -253,6 +253,15 @@ def checked_mode(project: Project) -> SourceMode:
     return in_file
 
 
+def keyword_kind(project: Project) -> str:
+    """The keyword kind the analyses read by default (ADR 0042 Decision 6).
+
+    ``openalex-topic`` in mode ``openalex``, where no Scopus keyword exists; ``author`` otherwise,
+    which is what every reader used before the mode existed.
+    """
+    return "openalex-topic" if checked_mode(project) == "openalex" else "author"
+
+
 # -- capability checks ---------------------------------------------------------------------------
 
 

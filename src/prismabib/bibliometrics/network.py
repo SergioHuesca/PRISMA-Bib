@@ -416,7 +416,7 @@ def keyword_cooccurrence_network(
     corpus: Corpus,
     *,
     stage: PrismaStage = PrismaStage.INCLUDED,
-    kind: str = "author",
+    kind: str | None = None,
     min_occurrence: int = 2,
     top_n: int = 50,
     resolution: float = 1.0,
@@ -429,7 +429,9 @@ def keyword_cooccurrence_network(
     Args:
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to build the graph over.
-        kind: ``"author"`` or ``"index"``.
+        kind: ``"author"``, ``"index"`` or ``"openalex-topic"``; ``None`` reads
+            :attr:`~prismabib.store.load.Corpus.keyword_kind`: ``"author"``, or
+            ``"openalex-topic"`` in a project whose source mode is ``openalex`` (ADR 0042).
         min_occurrence: A term must appear on at least this many records to
             be eligible to form an edge.
         top_n: How many edges to return, by weight.
@@ -457,6 +459,7 @@ def keyword_cooccurrence_network(
         AnalysisError: ``years`` is invalid.
     """
     normalise_years(years)
+    kind = kind or corpus.keyword_kind
     stage_records = corpus.records(stage)
     records, n_no_year = restrict_to_years(stage_records, years)
     keywords = corpus.keywords(kind, stage)

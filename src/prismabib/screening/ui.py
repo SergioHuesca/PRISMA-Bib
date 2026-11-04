@@ -59,6 +59,7 @@ from panel.reactive import ReactiveHTML
 
 from prismabib.errors import PrismabibError, ValidationError
 from prismabib.screening.queue import screening_queue
+from prismabib.source_mode import keyword_kind
 from prismabib.stage import PrismaStage
 from prismabib.store.db import connect
 
@@ -229,9 +230,9 @@ def load_records(project: Project, record_ids: Iterable[str]) -> dict[str, Scree
         keyword_rows = connection.execute(
             "SELECT rk.record_id, k.term_raw FROM record_keywords rk "
             "JOIN keywords k ON k.keyword_id = rk.keyword_id "
-            "WHERE rk.kind = 'author' AND rk.record_id = ANY(?) "
+            "WHERE rk.kind = ? AND rk.record_id = ANY(?) "
             "ORDER BY rk.record_id, k.term_norm",
-            [wanted],
+            [keyword_kind(project), wanted],
         ).fetchall()
         author_rows = connection.execute(
             "SELECT ra.record_id, a.surname, a.given_name FROM record_authors ra "

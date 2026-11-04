@@ -25,6 +25,7 @@ from prismabib.cli import app
 from prismabib.config import Settings
 from prismabib.project import Project
 from prismabib.sources.ratelimit import RateLimiter
+from prismabib.store.checksums import TABLE_NAMES
 from prismabib.store.stamp import write_stamp
 
 runner = CliRunner()
@@ -124,6 +125,10 @@ def project(tmp_path: Path) -> Project:
         )
     con.execute("CREATE VIEW records_all AS SELECT *, 'scopus' AS origin FROM records")
     con.execute("CREATE TABLE provenance_conflicts (record_id TEXT, field TEXT, status TEXT)")
+    con.execute("CREATE TABLE openalex_records (record_id TEXT, title TEXT, year INTEGER)")
+    # `connect` (which the cascade readers now use) refuses a store missing any table.
+    for table in set(TABLE_NAMES) - {"records", "provenance_conflicts", "openalex_records"}:
+        con.execute(f"CREATE TABLE {table} (placeholder INTEGER)")
     con.close()
     write_stamp(p.db_path, "scopus+openalex")  # the cascade's direct readers check the stamp
     CandidateLog(p.root / "decisions" / "candidates.jsonl").add(
