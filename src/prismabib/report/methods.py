@@ -212,7 +212,15 @@ def source_sentence(
             f"{dates}. Scopus reported {_count(identified, 'record', 'records')} across "
             f"{distinct}."
         )
-    dupes = _count(duplicates, "duplicate work", "duplicate works")
+    if duplicates == 1:
+        dupes = ", of which 1 duplicate work (a work whose DOI or id was seen more than once) was counted once"
+    elif duplicates:
+        dupes = (
+            f", of which {duplicates} duplicate works (works whose DOI or id was seen more than "
+            "once) were counted once"
+        )
+    else:
+        dupes = ""
     registered_clause = (
         f"{_count(registered, 'record was', 'records were')} registered by a reviewer from "
         "manual Google Scholar searches (ADR 0029). "
@@ -222,9 +230,8 @@ def source_sentence(
     return (
         "Records were identified by searching OpenAlex; no Scopus search was run. "
         f"The {which} {queries}, run on {dates}. "
-        f"OpenAlex reported {_count(identified, 'work', 'works')} across {distinct}, of which "
-        f"{dupes} (same DOI or repeated across queries) {'was' if duplicates == 1 else 'were'} "
-        f"counted once. {registered_clause}"
+        f"OpenAlex reported {_count(identified, 'work', 'works')} across {distinct}"
+        f"{dupes}. {registered_clause}"
         "Metadata, including abstracts rebuilt from OpenAlex's inverted "
         "index and subject areas taken from OpenAlex's primary topic, is OpenAlex's own "
         "(see Limitations)."

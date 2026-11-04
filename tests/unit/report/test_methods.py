@@ -106,7 +106,7 @@ def test_methods__openalex_mode__sentence_names_queries_and_run_dates() -> None:
         "The searches were `carbon capture`; `direct air capture`, "
         "run on 2026-11-03, 2026-11-04. "
         "OpenAlex reported 6 works across 2 distinct queries, of which 2 duplicate works "
-        "(same DOI or repeated across queries) were counted once. "
+        "(works whose DOI or id was seen more than once) were counted once. "
         "3 records were registered by a reviewer from manual Google Scholar searches "
         f"(ADR 0029). {_OA_TAIL}"
     )
@@ -124,9 +124,21 @@ def test_methods__openalex_mode__singular_counts_and_no_registered_clause() -> N
         "Records were identified by searching OpenAlex; no Scopus search was run. "
         "The search was `q`, run on 2026-11-03. "
         "OpenAlex reported 1 work across 1 distinct query, of which 1 duplicate work "
-        f"(same DOI or repeated across queries) was counted once. {_OA_TAIL}"
+        f"(a work whose DOI or id was seen more than once) was counted once. {_OA_TAIL}"
     )
     assert "registered" not in sentence
+
+
+@pytest.mark.unit
+def test_methods__openalex_mode__no_duplicates__no_duplicates_clause() -> None:
+    connection = _store_with_runs(
+        "INSERT INTO openalex_search_runs VALUES ('20261103T100000Z-aaaaaaaa', 'ka', 'q', 2, 2)"
+    )
+
+    sentence = source_sentence(connection, "openalex", identified=2, duplicates=0, registered=0)
+
+    assert "OpenAlex reported 2 works across 1 distinct query. Metadata" in sentence
+    assert "duplicate" not in sentence
 
 
 @pytest.mark.unit
