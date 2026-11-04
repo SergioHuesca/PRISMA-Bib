@@ -54,6 +54,7 @@ from prismabib.capture.cascade_commands import openalex as _openalex_command
 from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.manual_commands import register_manual_commands
+from prismabib.capture.openalex_search_commands import openalex_search as _openalex_search_command
 from prismabib.capture.registrations import (
     REVERSAL_REASONS,
     MatchRule,
@@ -113,6 +114,7 @@ app = typer.Typer(
 app.add_typer(candidates_app)
 app.command("cascade")(_cascade_command)
 app.command("openalex")(_openalex_command)
+app.command("openalex-search")(_openalex_search_command)
 register_manual_commands(app)
 register_source_commands(app)
 app.add_typer(credentials_app)

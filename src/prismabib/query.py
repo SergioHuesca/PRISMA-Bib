@@ -52,8 +52,10 @@ documentation-engineer's to write, not this module's.
 from __future__ import annotations
 
 import difflib
+import re
 import tomllib
 from collections.abc import Mapping, Sequence
+from urllib.parse import quote_plus
 
 from pydantic import BaseModel, ConfigDict
 from pydantic import ValidationError as PydanticValidationError
@@ -486,3 +488,179 @@ def build_query_for_project(project: Project) -> str:
         compound_terms=[group.all for group in spec.compound_terms],
         fields=spec.fields,
     )
+
+
+# -- OpenAlex (ADR 0042 Decision 7) --------------------------------------------------------------
+
+#: The most characters of a ``search`` string (the whole URL is limited to about 4 KB).
+OPENALEX_MAX_QUERY_CHARS = 2000
+#: The same limit after percent-encoding, which is what the URL actually carries: non-ASCII text
+#: grows up to nine-fold, so 2,000 characters alone do not keep a Cyrillic query under 4 KB.
+_OPENALEX_MAX_ENCODED_CHARS = 3000
+_OPENALEX_OPERATORS = frozenset({"AND", "OR", "NOT"})
+_SCOPUS_FIELD_CODE = re.compile(r"\b[A-Z][A-Z-]{2,}\(")
+_REPHRASE = "rephrase without it, even inside a quoted phrase"
+_PARENS = f"parentheses are not supported in v1; {_REPHRASE} and write the query without grouping"
+_WILDCARD = f"wildcards are not supported in v1; {_REPHRASE}"
+_REFUSED_CHARS = {
+    "(": _PARENS,
+    ")": _PARENS,
+    "*": _WILDCARD,
+    "?": _WILDCARD,
+    "~": f"fuzzy and proximity searches (~) are not supported in v1; {_REPHRASE}",
+}
+
+
+class _OpenAlexQuerySpec(BaseModel):
+    """The ``[openalex_query]`` table: one key, ``search``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    search: str
+
+
+def _openalex_tokens(text: str) -> list[tuple[str, str]]:
+    """Split ``text`` into ``("phrase" | "word", value)`` tokens; refuse a stray quote."""
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    while i < len(text):
+        if text[i].isspace():
+            i += 1
+            continue
+        if text[i] == '"':
+            end = text.find('"', i + 1)
+            if end == -1:
+                raise ValidationError("the OpenAlex query has a double quote that is never closed")
+            phrase = text[i : end + 1]
+            if not phrase[1:-1].strip():
+                raise ValidationError("the OpenAlex query has an empty quoted phrase")
+            tokens.append(("phrase", phrase))
+            i = end + 1
+        else:
+            end = i
+            while end < len(text) and not text[end].isspace() and text[end] != '"':
+                end += 1
+            tokens.append(("word", text[i:end]))
+            i = end
+        if i < len(text) and not text[i].isspace():
+            raise ValidationError(
+                "the OpenAlex query has text stuck to a quoted phrase; separate them with a space"
+            )
+    return tokens
+
+
+def validate_openalex_search(text: str) -> str:
+    """Check ``text`` against the v1 OpenAlex ``search`` forms (ADR 0042 Decision 7).
+
+    Accepted: words (an implicit AND), uppercase ``AND`` / ``OR`` / ``NOT`` and double-quoted
+    phrases. Lower-case ``and`` / ``or`` / ``not`` are ordinary words and are never rewritten.
+    Refused: parentheses, ``*`` and ``?``, ``~``, a word that starts with ``-``, Scopus field
+    codes, an empty query, one that starts with ``NOT`` (nothing to exclude from) or has an
+    operator without an operand, and one longer than 2,000 characters.
+
+    Args:
+        text: The ``search`` value as written.
+
+    Returns:
+        ``text`` unchanged.
+
+    Raises:
+        ValidationError: Naming the first problem and, where there is one, the fix.
+    """
+    if not text.strip():
+        raise ValidationError("the OpenAlex query is empty: there is nothing to search for")
+    if len(text) > OPENALEX_MAX_QUERY_CHARS:
+        raise ValidationError(
+            f"the OpenAlex query has {len(text)} characters; the limit is "
+            f"{OPENALEX_MAX_QUERY_CHARS} (the request URL may be about 4 KB in all)"
+        )
+    if len(quote_plus(text)) > _OPENALEX_MAX_ENCODED_CHARS:
+        raise ValidationError(
+            "the OpenAlex query is too long once encoded for the request URL "
+            f"(more than {_OPENALEX_MAX_ENCODED_CHARS} characters; non-English letters take up to "
+            "nine each); shorten it"
+        )
+    if match := _SCOPUS_FIELD_CODE.search(text):
+        raise ValidationError(
+            f"the OpenAlex query contains Scopus syntax ({match.group().strip()!r}); OpenAlex "
+            "searches title, abstract, full text and keywords at once, so write the phrase "
+            'itself, e.g. "carbon capture"'
+        )
+    for char, why in _REFUSED_CHARS.items():
+        if char in text:
+            raise ValidationError(f"the OpenAlex query contains {char!r}: {why}")
+    tokens = _openalex_tokens(text)
+    for kind, value in tokens:
+        if kind == "word" and value.startswith("-"):
+            raise ValidationError(
+                f"the OpenAlex query has {value!r}: a leading minus does not exclude in OpenAlex; "
+                f"write NOT {value.lstrip('-')} instead"
+            )
+    need_operand = True  # at the start, and after AND, OR or NOT
+    previous = ""
+    for kind, value in tokens:
+        is_operator = kind == "word" and value in _OPENALEX_OPERATORS
+        if is_operator and value == "NOT":
+            if previous in ("", "NOT"):
+                raise ValidationError(
+                    "the OpenAlex query must start with a term, and NOT needs a term before it "
+                    "or AND/OR (write: policy NOT carbon)"
+                )
+            need_operand = True
+        elif is_operator:
+            if need_operand:
+                raise ValidationError(f"the OpenAlex query has {value} with no term before it")
+            need_operand = True
+        else:
+            need_operand = False
+        previous = value if is_operator else "term"
+    if need_operand:
+        raise ValidationError(f"the OpenAlex query ends with {tokens[-1][1]}; add a term after it")
+    return text
+
+
+def build_openalex_query_for_project(project: Project) -> str:
+    """Read ``[openalex_query]`` from ``project.toml`` and return the validated ``search`` string.
+
+    The string is returned as written and sent to OpenAlex unchanged. ``build_query`` and the
+    ``[query]`` table are not involved: the two languages never share a table.
+
+    Raises:
+        ConfigError: If ``project.toml`` is missing, is not valid TOML, has no
+            ``[openalex_query]`` table, or the table is not ``{search = "..."}``; an unknown
+            key is named.
+        ValidationError: If the ``search`` string breaks a v1 rule; see
+            :func:`validate_openalex_search`.
+    """
+    path = project.root / "project.toml"
+    if not path.is_file():
+        raise ConfigError(f"project.toml not found at {path}")
+    try:
+        with path.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
+
+    table = raw.get("openalex_query")
+    example = "[openalex_query]\nsearch = '\"carbon capture\" AND policy'"
+    if not isinstance(table, Mapping):
+        raise ConfigError(f"{path} has no [openalex_query] table; add one such as:\n{example}")
+    unknown = sorted(str(k) for k in table if k != "search")
+    if unknown:
+        raise ConfigError(
+            f"[openalex_query] in {path} has key(s) prismabib does not understand: "
+            f"{', '.join(map(repr, unknown))}. Only 'search' is allowed; year and document type "
+            "are applied later by criteria.yaml, not in the query."
+        )
+    try:
+        spec = _OpenAlexQuerySpec.model_validate(table)
+    except PydanticValidationError as exc:
+        raise ConfigError(
+            f"[openalex_query] in {path} needs search = '...' (a string); e.g.\n{example}"
+        ) from exc
+    if not spec.search.strip():
+        raise ValidationError(
+            "the OpenAlex query is empty: edit the search placeholder under [openalex_query] "
+            f"in {path}, e.g. search = '\"carbon capture\" AND policy'"
+        )
+    return validate_openalex_search(spec.search)

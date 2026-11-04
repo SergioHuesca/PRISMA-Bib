@@ -4,6 +4,8 @@ This guide walks you through constructing a defensible Boolean query for your sy
 
 The worked example covers **carbon capture and utilization**, a different domain from your own review. Use it to understand the mechanics, then apply them to your topic.
 
+If your project has no Scopus access (sources mode `openalex`), see [Build an OpenAlex Query](build-an-openalex-query.md) instead.
+
 ## The Core Distinction: Query vs. Criteria
 
 This is the most important idea, and the place researchers most often get wrong.
