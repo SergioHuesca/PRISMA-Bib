@@ -386,3 +386,18 @@ def test_command__logs_go_to_stderr_and_stdout_holds_only_the_summary(
     assert "openalex_search." in result.stderr  # the capture's log lines
     assert "openalex_search." not in result.stdout
     assert [ln.split(" ")[0] for ln in result.stdout.splitlines()] == ["run", "Next:"]
+
+
+def test_logs_to_stderr__restores_logging_state_even_when_the_block_raises() -> None:
+    import structlog
+
+    before = structlog.get_config()
+    factory, processors = before["logger_factory"], list(before["processors"])
+
+    with pytest.raises(RuntimeError), openalex_search_commands._logs_to_stderr():
+        assert structlog.get_config()["logger_factory"] is not factory  # really switched
+        raise RuntimeError("boom")
+
+    after = structlog.get_config()
+    assert after["logger_factory"] is factory
+    assert list(after["processors"]) == processors

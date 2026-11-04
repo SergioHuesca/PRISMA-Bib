@@ -55,9 +55,12 @@ What is refused, with a message that says why and how to fix it:
 - Scopus syntax such as `TITLE-ABS-KEY(...)`. Write the phrase itself.
 - An empty query, a query that starts with `NOT`, or an operator with nothing after it.
 - A query longer than 2,000 characters.
-- Curly quotes (like “ ”), full-width punctuation and invisible characters, which Word and
-  web pages often paste in. OpenAlex would read them as ordinary letters and silently change the
-  search, so prismabib refuses them and names the character. Retype the quotes as straight `"`.
+- Curly quotes, full-width punctuation (including full-width letters and half-width katakana),
+  invisible and direction-control characters, typographic spaces such as the ideographic space,
+  and minus look-alikes, which Word and web pages often paste in. OpenAlex would read them as
+  ordinary letters and silently change the search, so prismabib refuses them and names the
+  character by its code. Retype the quotes as straight `"` and apostrophes as straight `'`
+  (as in O'Brien). An ordinary non-breaking space is accepted as a space.
 - Any other key in the `[openalex_query]` table (`filter`, `sort`, `select`, and so on).
 
 A TOML string in single quotes (`'...'`) cannot contain an apostrophe. For a query such as

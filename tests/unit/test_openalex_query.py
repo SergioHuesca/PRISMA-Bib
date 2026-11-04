@@ -163,3 +163,77 @@ def test_how_to_page__every_openalex_query_example__is_valid() -> None:
     assert len(searches) >= 2
     for search in searches:
         assert validate_openalex_search(search) == search
+
+
+# Characters the first denylist missed (ADR 0042 PR 5 review). Built with chr() so no invisible
+# character sits in this file.
+_NEWLY_REFUSED = [
+    *(0x200E, 0x200F),  # LRM, RLM
+    *range(0x202A, 0x202F),  # bidi embeddings and overrides
+    *range(0x2066, 0x206A),  # bidi isolates
+    *(0x201A, 0x201B, 0x2039, 0x203A),  # more quotes and angle quotes
+    *(0xE0001, 0xE0041, 0xE007F),  # the tag block
+    *(0xFE00, 0xFE0F, 0xE0100),  # variation selectors
+    *(0x2028, 0x2029, 0x0085, 0x3000),  # line and paragraph separators, ideographic space
+    *(0xFF0D, 0x2212),  # minus look-alikes
+    *(0x0000, 0x0007, 0x001B, 0x007F),  # control characters
+    *(0xFF21, 0xFF10, 0xFF65),  # other full-width / specials-block characters
+]
+
+
+@pytest.mark.parametrize("code", _NEWLY_REFUSED, ids=lambda c: f"U+{c:04X}")
+def test_validate__category_rule__refuses_each_newly_covered_character(code: int) -> None:
+    char = chr(code)
+    with pytest.raises(ValidationError) as caught:
+        validate_openalex_search(f"a{char}AND b")
+    assert f"U+{code:04X}" in str(caught.value)
+    assert "plain ASCII" in str(caught.value)
+
+
+@pytest.mark.parametrize("code", [0x2018, 0x2019, 0x201B])
+def test_validate__typographic_apostrophe_in_a_name__message_says_use_straight_apostrophe(
+    code: int,
+) -> None:
+    with pytest.raises(ValidationError) as caught:
+        validate_openalex_search(f"O{chr(code)}Brien")
+    assert "use the straight apostrophe ' (as in O'Brien)" in str(caught.value)
+    assert f"U+{code:04X}" in str(caught.value)
+
+
+def test_validate__curly_double_quote__keeps_the_straight_double_quote_hint() -> None:
+    with pytest.raises(ValidationError, match=r"straight double quotes \(\"\)"):
+        validate_openalex_search(f"{chr(0x201C)}carbon capture{chr(0x201D)}")
+
+
+def test_validate__nbsp_and_ordinary_whitespace__never_refused_by_the_category_rule() -> None:
+    assert validate_openalex_search("a" + chr(0xA0) + "b\tc\r\nd")
+
+
+def test_validate__every_code_point__refused_with_its_code_or_accepted_cleanly() -> None:
+    """Property-style: no code point is refused without naming itself, and plain text passes."""
+    import unicodedata
+
+    refused = 0
+    sample = [*range(0x10000), *range(0x10000, 0x110000, 97), 0xE0001, 0xE0100]
+    for code in sample:
+        char = chr(code)
+        if 0xD800 <= code <= 0xDFFF:  # surrogates cannot occur in TOML text
+            continue
+        try:
+            validate_openalex_search(f"a{char}b")
+        except ValidationError as exc:
+            message = str(exc)
+            if f"U+{code:04X}" in message:
+                refused += 1
+                continue
+            assert char in "()*?~-\"'", (code, message)  # a syntax rule, not the character rule
+            continue
+        category = unicodedata.category(char)
+        assert category not in ("Cf", "Zl", "Zp", "Pi", "Pf"), (code, category)
+        assert not 0xFF00 <= code <= 0xFFEF, code
+    assert refused > 150
+
+    for char in "abcXYZ0189 '":
+        assert validate_openalex_search(f"a{char}b")
+    assert validate_openalex_search("state-of-the-art")
+    assert validate_openalex_search('"a b"')

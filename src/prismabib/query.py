@@ -528,6 +528,11 @@ _LOOKALIKES = frozenset(
         0x00AD,  # zero-width, joiner, BOM, soft hyphen
     )
 )
+#: Beyond the list above, a category rule (see :func:`_refused_char`) covers the rest of the
+#: format, separator, control and quote characters, so a new look-alike needs no list entry.
+_EXTRA_REFUSED = frozenset(chr(code) for code in (0x3000, 0x2212, 0x0085, 0x201A))
+_APOSTROPHE_LIKE = frozenset(chr(code) for code in (0x2018, 0x2019, 0x201B))
+_REFUSED_CATEGORIES = frozenset({"Cf", "Zl", "Zp", "Pi", "Pf"})
 _PARENS = f"parentheses are not supported in v1; {_REPHRASE} and write the query without grouping"
 _WILDCARD = f"wildcards are not supported in v1; {_REPHRASE}"
 _REFUSED_CHARS = {
@@ -545,6 +550,27 @@ class _OpenAlexQuerySpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     search: str
+
+
+def _refused_char(char: str) -> bool:
+    """Whether ``char`` could change the query silently if it were passed through.
+
+    True for the explicit look-alikes, any format (Cf), line or paragraph separator, initial or
+    final quote, and control character other than tab, newline and carriage return, the
+    full-width block U+FF00-U+FFEF, and variation selectors. U+00A0 stays accepted: it is
+    whitespace, as in ``query_key``.
+    """
+    code = ord(char)
+    category = unicodedata.category(char)
+    return (
+        char in _LOOKALIKES
+        or char in _EXTRA_REFUSED
+        or category in _REFUSED_CATEGORIES
+        or (category == "Cc" and char not in "\t\n\r")
+        or 0xFF00 <= code <= 0xFFEF
+        or 0xFE00 <= code <= 0xFE0F
+        or 0xE0100 <= code <= 0xE01EF
+    )
 
 
 def _openalex_tokens(text: str) -> list[tuple[str, str]]:
@@ -609,10 +635,15 @@ def validate_openalex_search(text: str) -> str:
             "nine each); shorten it"
         )
     for char in text:
-        if char in _LOOKALIKES:
+        if _refused_char(char):
+            hint = (
+                "use the straight apostrophe ' (as in O'Brien) and plain ASCII punctuation"
+                if char in _APOSTROPHE_LIKE
+                else 'use straight double quotes (") and plain ASCII punctuation'
+            )
             raise ValidationError(
-                'the OpenAlex query must use straight double quotes (") and plain ASCII '
-                f"punctuation; found U+{ord(char):04X} ({unicodedata.name(char, 'format character')})"
+                f"the OpenAlex query must {hint}; found U+{ord(char):04X} "
+                f"({unicodedata.name(char, 'invisible or special character')})"
             )
     if match := _SCOPUS_FIELD_CODE.search(text):
         raise ValidationError(
