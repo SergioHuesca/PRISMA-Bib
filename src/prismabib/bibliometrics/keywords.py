@@ -79,7 +79,7 @@ def keyword_frequency(
     corpus: Corpus,
     *,
     stage: PrismaStage = PrismaStage.INCLUDED,
-    kind: str = "author",
+    kind: str | None = None,
     min_occurrence: int = 1,
     stopwords_path: Path | None = None,
 ) -> AnalysisResult:
@@ -88,8 +88,10 @@ def keyword_frequency(
     Args:
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to count over.
-        kind: ``"author"`` or ``"index"``, forwarded to
-            :meth:`~prismabib.store.load.Corpus.keywords`.
+        kind: ``"author"``, ``"index"`` or ``"openalex-topic"``, forwarded to
+            :meth:`~prismabib.store.load.Corpus.keywords`. ``None`` (the default) reads
+            :attr:`~prismabib.store.load.Corpus.keyword_kind`: ``"author"``, or
+            ``"openalex-topic"`` in a project whose source mode is ``openalex`` (ADR 0042).
         min_occurrence: Drop a term appearing on fewer than this many
             records. Recorded in ``params`` and therefore the caption
             (S07-AC4): changing it changes both.
@@ -100,6 +102,7 @@ def keyword_frequency(
         ``data`` is ``term``, ``count``, sorted by ``count`` descending then
         ``term`` ascending, restricted to ``count >= min_occurrence``.
     """
+    kind = kind or corpus.keyword_kind
     records = corpus.records(stage)
     keywords = corpus.keywords(kind, stage)
     stopwords = _load_stopwords(stopwords_path)
@@ -128,7 +131,7 @@ def keyword_evolution(
     corpus: Corpus,
     *,
     stage: PrismaStage = PrismaStage.INCLUDED,
-    kind: str = "author",
+    kind: str | None = None,
     min_occurrence: int = 1,
     stopwords_path: Path | None = None,
 ) -> AnalysisResult:
@@ -137,7 +140,8 @@ def keyword_evolution(
     Args:
         corpus: The corpus to read.
         stage: Which PRISMA-flow set to count over.
-        kind: ``"author"`` or ``"index"``.
+        kind: ``"author"``, ``"index"`` or ``"openalex-topic"``; ``None`` reads
+            :attr:`~prismabib.store.load.Corpus.keyword_kind` (see :func:`keyword_frequency`).
         min_occurrence: A term must appear on at least this many records
             *overall* (summed across every year) to appear in the result --
             the same threshold :func:`keyword_frequency` applies, so the two
@@ -156,6 +160,7 @@ def keyword_evolution(
         :func:`~prismabib.bibliometrics.trends.annual_counts`'s docstring
         for the same judgement made there).
     """
+    kind = kind or corpus.keyword_kind
     records = corpus.records(stage)
     keywords = corpus.keywords(kind, stage)
     stopwords = _load_stopwords(stopwords_path)

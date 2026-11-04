@@ -37,7 +37,9 @@ def register_manual_commands(app: typer.Typer) -> None:
     @app.command("manual-entry")
     def manual_entry(
         slug: _SLUG,
-        record_id: Annotated[str, typer.Argument(help="An existing scopus: record id.")],
+        record_id: Annotated[
+            str, typer.Argument(help="An existing scopus: or openalex: record id.")
+        ],
         field: Annotated[str, typer.Argument(help="abstract, authors or affiliations.")],
         reviewer: _REVIEWER,
         value: _VALUE = None,

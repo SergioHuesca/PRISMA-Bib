@@ -129,7 +129,7 @@ class _RecordAttributes:
     (BUILD_PLAN line 950).
     """
 
-    year: int
+    year: int | None
     doc_type: str
     language: str | None
     venue_type: str
@@ -398,6 +398,8 @@ def _passes_temporal(attrs: _RecordAttributes, criteria: Criteria) -> bool:
         ``True`` if ``criteria.temporal.year_start <= attrs.year <=
         criteria.temporal.year_end``.
     """
+    if attrs.year is None:  # an OpenAlex work may have no year: it fails the year test (ADR 0042)
+        return False
     return criteria.temporal.year_start <= attrs.year <= criteria.temporal.year_end
 
 

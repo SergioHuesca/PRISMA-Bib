@@ -48,8 +48,8 @@ from prismabib.errors import ConfigError, StoreError, ValidationError
 from prismabib.project import Project
 from prismabib.source_mode import require_command
 from prismabib.sources.openalex import lookup_outcome, normalise_doi, parse_work
+from prismabib.store.db import connect
 from prismabib.store.load import build_store
-from prismabib.store.stamp import check_stamp
 from prismabib.titles import normalise_title
 
 _FIELDS = ("abstract", "authors", "affiliations", "keywords")
@@ -82,18 +82,20 @@ def _targets(project: Project) -> list[_Target]:
     found: dict[_Key, _Target] = {}
     record_titles: set[tuple[str, int]] = set()  # every record, complete or not
     if project.db_path.is_file():
-        check_stamp(project)  # these direct readers take the same check as `connect` (ADR 0042)
+        con = connect(project, read_only=True)  # the stamp and schema checks (ADR 0042)
         try:
-            con = duckdb.connect(str(project.db_path), read_only=True)
-            try:
-                cols = ", ".join(f"{f}_outcome" for f in _FIELDS)
-                rows = con.execute(
-                    f"SELECT record_id, doi, title, year, {cols} FROM records"
-                ).fetchall()
-            finally:
-                con.close()
+            cols = ", ".join(f"{f}_outcome" for f in _FIELDS)
+            rows = con.execute(
+                f"SELECT record_id, doi, title, year, {cols} FROM records"
+            ).fetchall()
+            # OpenAlex-primary works are records already (a candidate with the same title is not
+            # a target), but they are never targets themselves: OpenAlex is their source.
+            oa_rows = con.execute("SELECT title, year FROM openalex_records").fetchall()
         except duckdb.Error as exc:
             raise StoreError(f"cannot read the store {project.db_path}: {exc}") from exc
+        finally:
+            con.close()
+        record_titles.update(_title_key(title or "", year or 0) for title, year in oa_rows)
         for record_id, doi, title, year, *outcomes in rows:
             record_titles.add(_title_key(title or "", year or 0))
             if all(o == "value" for o in outcomes):
@@ -259,16 +261,21 @@ def _field_report(project: Project) -> list[str]:
 
     The first group is the Decision 5 numbers: Scopus records, levels 1 to 4, manual (level 5),
     unavailable, and open and resolved conflicts. The second group is the registered records,
-    whose fields come from OpenAlex (level 4) or are unavailable; they have no conflicts.
+    whose fields come from OpenAlex (level 4) or are unavailable; they have no conflicts. The
+    third is the OpenAlex-primary records (ADR 0042): level 4, manual (level 5) or unavailable.
     """
-    check_stamp(project)
+    con = connect(project, read_only=True)  # the stamp and schema checks (ADR 0042)
     try:
-        con = duckdb.connect(str(project.db_path), read_only=True)
         try:
             lines = ["per field, Scopus records (from the store):"]
             registered = ["per field, registered OpenAlex records (from the store):"]
+            primary = ["per field, OpenAlex-primary records (from the store):"]
             for f in _FIELDS:
-                counts: dict[str, Counter[int]] = {"scopus": Counter(), "registered": Counter()}
+                counts: dict[str, Counter[int]] = {
+                    "scopus": Counter(),
+                    "registered": Counter(),
+                    "openalex": Counter(),
+                }
                 for origin, level, n in con.execute(
                     f"SELECT origin, {f}_level, count(*) FROM records_all GROUP BY 1, 2"
                 ).fetchall():
@@ -289,11 +296,13 @@ def _field_report(project: Project) -> list[str]:
                 )
                 r = counts["registered"]
                 registered.append(f"{f}: level 4 {r[4]}, unavailable {r[0]}")
-        finally:
-            con.close()
-    except duckdb.Error as exc:
-        raise StoreError(f"cannot read the store {project.db_path}: {exc}") from exc
-    return lines + registered
+                o = counts["openalex"]
+                primary.append(f"{f}: level 4 {o[4]}, manual {o[5]}, unavailable {o[0]}")
+        except duckdb.Error as exc:
+            raise StoreError(f"cannot read the store {project.db_path}: {exc}") from exc
+    finally:
+        con.close()
+    return lines + registered + primary
 
 
 def _line(label: str, final: dict[str, str], *names: str) -> str:

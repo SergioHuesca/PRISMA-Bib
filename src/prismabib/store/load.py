@@ -224,6 +224,7 @@ from prismabib.models import (
 from prismabib.openalex_map import ClassificationRefusal
 from prismabib.project import CONFLICT_RESOLUTIONS_FILENAME, MANUAL_ENTRIES_FILENAME, Project
 from prismabib.source_mode import checked_mode
+from prismabib.source_mode import keyword_kind as _project_keyword_kind
 from prismabib.sources import openalex as _openalex
 from prismabib.sources.scopus import _as_list
 from prismabib.stage import PrismaStage
@@ -678,6 +679,10 @@ class _Accumulator:
     )
     #: ``openalex_records`` rows, in ``schema.sql`` column order, from :func:`_finalise_openalex_search`.
     openalex_rows: list[tuple[Any, ...]] = field(default_factory=list)
+    #: ``(register event_id, openalex record_id, rule)`` for each active registration that an
+    #: ``openalex_records`` row also holds by DOI or title and year (ADR 0042 Decision 9). Reported,
+    #: not resolved: the ``supersede`` writer is a later pull request.
+    registration_overlaps: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def _optional_str(value: object) -> str | None:
@@ -2229,6 +2234,9 @@ def _finalise_openalex_search(acc: _Accumulator) -> None:
         work = member.work
         for code in set(work.unmapped_countries):
             unmapped[code] = unmapped.get(code, 0) + 1
+        # Known to the full-text fold (and its publisher attribution), as a Scopus record is.
+        acc.seen_record_ids.add(record_id)
+        acc.doi_by_record_id[record_id] = work.doi
         cells: list[Any] = []
         for field_name in _FIELDS:
             latest = member.latest.get(field_name)
@@ -2982,16 +2990,67 @@ def _single_active(
     return list(active.values())
 
 
+#: Column of each field's ``<field>_source`` in an ``openalex_records`` row (``schema.sql`` order):
+#: the 13 identity columns come first, then four provenance columns per field.
+_OPENALEX_FIELD_COLUMN: Final = {name: 13 + 4 * i for i, name in enumerate(_FIELDS)}
+_OPENALEX_ABSTRACT_COLUMN: Final = 4
+
+
+def _fold_manual_openalex(
+    acc: _Accumulator, entry: ManualEntry, report: dict[str, int | str], index: dict[str, int]
+) -> None:
+    """Apply one active manual entry to an ``openalex_records`` row (ADR 0042 Decision 9).
+
+    Same rules as for a Scopus record: a field the row already supplies makes the entry
+    ``manual_superseded``; otherwise the value, its provenance cells and the ``authors`` /
+    ``affiliations`` rows (``manual:<event_id>:<n>`` ids) are written.
+    """
+    at = index[entry.record_id]
+    source_column = _OPENALEX_FIELD_COLUMN[entry.field]
+    cells = list(acc.openalex_rows[at])
+    if cells[source_column + 2] == "value":
+        report["manual_superseded"] = int(report["manual_superseded"]) + 1
+        return
+    ref = f"decisions/{MANUAL_ENTRIES_FILENAME}#{entry.event_id}"
+    cand = _typed_candidate(
+        entry.field,
+        entry.value,
+        event_id=entry.event_id,
+        ref=ref,
+        id_prefix=f"manual:{entry.event_id}",
+        keep_given_name=True,
+    )
+    cells[source_column : source_column + 4] = ["manual", _LEVELS["manual"], "value", ref]
+    if entry.field == "abstract":
+        cells[_OPENALEX_ABSTRACT_COLUMN] = cand.value
+    elif entry.field == "authors":
+        for position, (surname, given) in enumerate(cand.people, start=1):
+            author_id = f"{cand.id_prefix}:{position}"
+            acc.authors.setdefault(author_id, (author_id, surname, given))
+            acc.record_authors.append((entry.record_id, author_id, position))
+    else:
+        # `_typed_candidate` gives a typed institution no afid, so each id is `manual:<event>:<n>`
+        # with a distinct n: no id repeats, and no de-duplication is needed.
+        for position, (name, city, country, _afid) in enumerate(cand.institutions, start=1):
+            afid = f"{cand.id_prefix}:{position}"
+            acc.affiliations.setdefault(afid, (afid, name, city, country))
+            acc.record_affiliations.append((entry.record_id, afid))
+    acc.openalex_rows[at] = tuple(cells)
+
+
 def _fold_manual(
     project: Project, acc: _Accumulator, chosen: _Chosen, report: dict[str, int | str]
 ) -> None:
     """Apply the active manual entries to the fields levels 1 to 4 left unavailable (Decision 4)."""
     events = load_manual_events(project.manual_entries_path)
+    openalex_index = {row[0]: at for at, row in enumerate(acc.openalex_rows)}
     for entry in _single_active(
         events, ManualEntry, ManualReverse, "manual entry", lambda e: (e.record_id, e.field)
     ):
         key = (entry.record_id, entry.field)
-        if entry.record_id not in acc.seen_record_ids:
+        if entry.record_id in openalex_index:
+            _fold_manual_openalex(acc, entry, report, openalex_index)
+        elif entry.record_id not in acc.seen_record_ids:
             report["manual_orphaned"] = int(report["manual_orphaned"]) + 1
         elif key in chosen:
             report["manual_superseded"] = int(report["manual_superseded"]) + 1
@@ -3120,6 +3179,14 @@ def _fold_registrations(
             by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
         if title and year is not None:
             by_title.setdefault((normalise_title(title), year), []).append(record_id)
+    oa_by_doi: dict[str, list[str]] = {}
+    oa_by_title: dict[tuple[str, int], list[str]] = {}
+    for oa_row in acc.openalex_rows:
+        record_id, doi, title, year = oa_row[0], oa_row[2], oa_row[3], oa_row[5]
+        if doi:
+            oa_by_doi.setdefault(_openalex.normalise_doi(doi), []).append(record_id)
+        if title and year is not None:
+            oa_by_title.setdefault((normalise_title(title), year), []).append(record_id)
     pending: list[tuple[str, str, Literal["doi", "title_year"]]] = []
     for event in active_registrations(events):
         try:
@@ -3135,6 +3202,12 @@ def _fold_registrations(
         if hit:
             pending.append((event.event_id, min(hit), "doi" if by_doi_hit else "title_year"))
             continue
+        oa_doi_hit = oa_by_doi.get(derived.doi)
+        oa_hit = oa_doi_hit or oa_by_title.get((normalise_title(derived.title), derived.year))
+        if oa_hit:  # held in both tables: loaded as registered, and named in the build report
+            acc.registration_overlaps.append(
+                (event.event_id, min(oa_hit), "doi" if oa_doi_hit else "title_year")
+            )
         acc.registered_rows.append(
             (
                 event.record_id,
@@ -3699,6 +3772,9 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # registration a Scopus record now holds is superseded rather than loaded.
             pending_supersedes = _fold_registrations(project, accumulator)
             provenance_report = _apply_provenance(project, accumulator)
+            provenance_report["registered_openalex_overlap"] = len(
+                accumulator.registration_overlaps
+            )
             if had_provenance is not None:
                 provenance_report["previous_store_had_provenance"] = int(had_provenance)
             _write_accumulator(connection, accumulator)
@@ -3737,6 +3813,17 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 db_path.unlink(missing_ok=True)
         raise
 
+    if stats.provenance_report.get("registered_openalex_overlap"):
+        overlaps = accumulator.registration_overlaps
+        logger.warning(
+            "store.load.registered_and_openalex_record_overlap",
+            count=len(overlaps),
+            pairs=[
+                {"register_event_id": e, "openalex_record_id": r, "match_rule": rule}
+                for e, r, rule in overlaps[:_MAX_LOGGED_MALFORMED_ENTRIES]
+            ],
+            truncated=len(overlaps) > _MAX_LOGGED_MALFORMED_ENTRIES,
+        )
     unapplied = {
         key: int(stats.provenance_report.get(key, 0))
         for key in (
@@ -3855,6 +3942,15 @@ class Corpus:
         instance = cls(connect(project, read_only=read_only))
         instance._project = project
         return instance
+
+    @property
+    def keyword_kind(self) -> str:
+        """The keyword kind the analyses read when the caller names none (ADR 0042 Decision 6).
+
+        ``openalex-topic`` for a project in mode ``openalex``; ``author`` otherwise, and for a
+        :class:`Corpus` built from a bare connection, which has no project to ask.
+        """
+        return "author" if self._project is None else _project_keyword_kind(self._project)
 
     def _prisma_stage_record_ids(self, stage: PrismaStage) -> frozenset[str]:
         """Delegate a non-``RAW`` :class:`~prismabib.stage.PrismaStage` to the Stage 4 engine.
@@ -4118,7 +4214,7 @@ class Corpus:
 
         Returns:
             One row per record with a matching ``venues`` row, plus one per
-            registered record (ADR 0032, owner decision A: its ``venue_id``,
+            registered or OpenAlex-origin record (ADR 0032, owner decision A: its ``venue_id``,
             ``issn``, ``eissn`` and ``abbreviation`` are NULL; ``name`` and
             ``venue_type`` are its own) --
             ``record_id``, ``venue_id``, ``name``, ``issn``, ``eissn``,
@@ -4134,13 +4230,16 @@ class Corpus:
             LogError: See :meth:`_prisma_stage_record_ids`.
         """
         select = (
-            "SELECT r.record_id, r.venue_id, r.venue_name AS name, v.issn, v.eissn, "
+            # COALESCE: an OpenAlex search work may have no source (NULL), which the venue
+            # statistics count as unnamed rather than crash on.
+            "SELECT r.record_id, r.venue_id, COALESCE(r.venue_name, '') AS name, v.issn, v.eissn, "
             "r.venue_type, v.abbreviation FROM records_all r "
             "LEFT JOIN venues v ON r.venue_id = v.venue_id"
         )
         # A Scopus row with no matching venues row stays absent (the old inner join);
-        # a registration never has one and is kept (ADR 0032 Decision 1).
-        keep = "(r.origin = 'registered' OR v.venue_id IS NOT NULL)"
+        # a registration or an OpenAlex search work never has one and is kept (ADR 0032
+        # Decision 1, ADR 0042 Decision 6).
+        keep = "(r.origin IN ('registered', 'openalex') OR v.venue_id IS NOT NULL)"
         if stage is PrismaStage.RAW:
             return self._query(f"{select} WHERE {keep} ORDER BY r.record_id")
         record_ids = self._prisma_stage_record_ids(stage)

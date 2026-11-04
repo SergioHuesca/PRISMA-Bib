@@ -486,14 +486,17 @@ def matching_works(
 
 
 def _scopus_duplicate(project: Project, derived: DerivedRegistration) -> str | None:
-    """A ``records`` row (Layer 1 as last built) holding the same DOI or title and year."""
+    """A ``records`` or ``openalex_records`` row (Layer 1 as last built) with the same DOI or title+year."""
     if not project.db_path.is_file():
         return None
     from prismabib.store.db import connect
 
     connection = connect(project, read_only=True)
     try:
-        rows = connection.execute("SELECT record_id, doi, title, year FROM records").fetchall()
+        rows = connection.execute(
+            "SELECT record_id, doi, title, year FROM records "
+            "UNION ALL SELECT record_id, doi, title, year FROM openalex_records"
+        ).fetchall()
     finally:
         connection.close()
     key = normalise_title(derived.title)
@@ -576,7 +579,8 @@ def register_candidate(
     duplicate = _scopus_duplicate(project, derived)
     if duplicate is not None:
         raise RegistrationRefusal(
-            f"the paper is already a Scopus record ({duplicate}); a registration would duplicate it"
+            f"the paper is already {'an OpenAlex' if duplicate.startswith('openalex:') else 'a Scopus'}"
+            f" record ({duplicate}); a registration would duplicate it"
         )
 
     event_id = new_id()

@@ -17,7 +17,6 @@ import socket
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
 import respx
 import typer
@@ -918,15 +917,7 @@ def test_cascade__openalex_mode__candidates_only_and_no_record_targets(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SCOPUS_API_KEY", "x")  # pragma: allowlist secret  (Settings, until PR 2)
     project = _project(tmp_path, "openalex")
-    project.db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(project.db_path))
-    con.execute(
-        "CREATE TABLE records (record_id TEXT, doi TEXT, title TEXT, year INTEGER, "
-        "abstract_outcome TEXT, authors_outcome TEXT, affiliations_outcome TEXT, "
-        "keywords_outcome TEXT)"
-    )
-    con.close()
-    store_stamp.write_stamp(project.db_path, "openalex")
+    build_store(project, rebuild=True)  # a real store: the cascade readers go through `connect`
     from datetime import UTC, datetime
 
     CandidateLog(project.root / "decisions" / "candidates.jsonl").add(

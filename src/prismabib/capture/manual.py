@@ -29,6 +29,9 @@ from prismabib.store.db import connect
 FIELDS: Final[tuple[str, ...]] = get_args(ManualField)
 MANUAL_REVERSE_REASONS: Final[tuple[str, ...]] = get_args(ManualReverseReason)
 SCOPUS_PREFIX: Final = "scopus:"
+OPENALEX_PREFIX: Final = "openalex:"
+#: Record-id prefix -> the Layer 1 table that holds those records (ADR 0042 Decision 9).
+_TABLE_BY_PREFIX: Final = {SCOPUS_PREFIX: "records", OPENALEX_PREFIX: "openalex_records"}
 
 _default_ids: IdFactory = MonotonicUlidFactory()
 
@@ -73,7 +76,7 @@ def active_events(events: Sequence[Any], kind: type[Any], reverse: type[Any]) ->
 
 @dataclass(frozen=True)
 class ManualTarget:
-    """What the store says about one Scopus record: its DOI and the fields still unavailable."""
+    """What the store says about one Scopus or OpenAlex record: its DOI and the unavailable fields."""
 
     record_id: str
     doi: str | None
@@ -84,14 +87,16 @@ def manual_target(project: Project, record_id: str) -> ManualTarget:
     """Read ``record_id`` from the Layer 1 store.
 
     Raises:
-        ManualEntryRefusal: If it is not an existing ``scopus:`` record.
+        ManualEntryRefusal: If it is not an existing ``scopus:`` or ``openalex:`` record.
     """
-    if record_id.startswith(SCOPUS_PREFIX):
+    for prefix, table in _TABLE_BY_PREFIX.items():
+        if not record_id.startswith(prefix):
+            continue
         connection = connect(project, read_only=True)
         try:
             row = connection.execute(
                 "SELECT doi, abstract_outcome, authors_outcome, affiliations_outcome "
-                "FROM records WHERE record_id = ?",
+                f"FROM {table} WHERE record_id = ?",
                 [record_id],
             ).fetchone()
         finally:
@@ -101,7 +106,7 @@ def manual_target(project: Project, record_id: str) -> ManualTarget:
                 f for f, outcome in zip(FIELDS, row[1:], strict=True) if outcome != "value"
             )
             return ManualTarget(record_id, row[0], unavailable)
-    raise ManualEntryRefusal(f"{record_id!r} is no scopus record in the store")
+    raise ManualEntryRefusal(f"{record_id!r} is no scopus or openalex record in the store")
 
 
 def add_manual_entry(
@@ -120,8 +125,8 @@ def add_manual_entry(
     Raises:
         ValidationError: For a blank reviewer or value, an unknown field, or a malformed
             affiliation line.
-        ManualEntryRefusal: For a record that is not a ``scopus:`` record, a field that is not
-            ``unavailable`` in the store, or an active entry for the key.
+        ManualEntryRefusal: For a record that is not a ``scopus:`` or ``openalex:`` record, a
+            field that is not ``unavailable`` in the store, or an active entry for the key.
     """
     require_reviewer(reviewer)
     check_field_and_value(field, value)

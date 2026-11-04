@@ -122,9 +122,10 @@ _CASCADE_FIELDS = ("abstract", "authors", "affiliations", "keywords")
 
 
 def _cascade_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
-    """``methods.cascade*`` count keys, from the ``records`` provenance columns (ADR 0041 D5).
+    """``methods.cascade*`` count keys, from the provenance columns (ADR 0041 D5, ADR 0042 D6).
 
-    Scopus records only (``records``, not ``records_all``). Every key is always present, with
+    Scopus and OpenAlex-primary records (``records`` and ``openalex_records``), never
+    registrations. Every key is always present, with
     0 where nothing happened, so the key set does not depend on which levels ran. Counts are
     ``GROUP BY`` results looked up by name, so row order, locale and timezone play no part.
 
@@ -140,7 +141,8 @@ def _cascade_numbers(connection: duckdb.DuckDBPyConnection) -> dict[str, Any]:
         counts = {
             (int(level), str(outcome)): int(n)
             for level, outcome, n in connection.execute(
-                f"SELECT {field}_level, {field}_outcome, count(*) FROM records GROUP BY 1, 2"
+                f"SELECT {field}_level, {field}_outcome, count(*) FROM records_all "
+                "WHERE origin IN ('scopus', 'openalex') GROUP BY 1, 2"
             ).fetchall()
         }
         prefix = f"methods.cascade.{field}."

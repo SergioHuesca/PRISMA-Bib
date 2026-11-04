@@ -374,8 +374,12 @@ def code(
         The coded, overridden result.
     """
     records = corpus.records(stage)
-    author_keywords = corpus.keywords("author", stage)
-    index_keywords = corpus.keywords("index", stage)
+    if corpus.keyword_kind == "openalex-topic":
+        # Mode `openalex` has no Scopus keyword: the topics stand in for both fields (ADR 0042).
+        author_keywords = index_keywords = corpus.keywords("openalex-topic", stage)
+    else:
+        author_keywords = corpus.keywords("author", stage)
+        index_keywords = corpus.keywords("index", stage)
     texts = _field_texts(records, author_keywords, index_keywords)
     record_ids = tuple(sorted(texts))
 
