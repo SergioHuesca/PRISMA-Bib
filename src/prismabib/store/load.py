@@ -671,6 +671,11 @@ class _Accumulator:
     openalex_works: dict[str, _SearchMember] = field(default_factory=dict)
     #: Normalised DOIs of the members, for the DOI-first deduplication key (OQ-16, Q-C).
     openalex_dois: set[str] = field(default_factory=set)
+    #: Malformed works of the earliest runs, ``(run_id, file, index, openalex_id, doi)``,
+    #: settled by :func:`_settle_malformed_search_works` once every member is known.
+    openalex_malformed: list[tuple[str, str, int, str | None, str | None]] = field(
+        default_factory=list
+    )
     #: ``openalex_records`` rows, in ``schema.sql`` column order, from :func:`_finalise_openalex_search`.
     openalex_rows: list[tuple[Any, ...]] = field(default_factory=list)
 
@@ -2139,15 +2144,10 @@ def _load_openalex_search_run(acc: _Accumulator, run_dir: Path) -> None:
             # an object belongs raises AttributeError, a null where a position belongs TypeError.
             except (ValidationError, AttributeError, TypeError) as exc:
                 if earliest:
-                    openalex_id = work_id(entry)
-                    acc.malformed_entries.append(
-                        (
-                            run_id,
-                            relative_file,
-                            index,
-                            f"openalex:{openalex_id}" if openalex_id else None,
-                            REASON_MALFORMED_SEARCH_WORK,
-                        )
+                    raw_doi = entry.get("doi")
+                    doi = _openalex.normalise_doi(raw_doi) if isinstance(raw_doi, str) else None
+                    acc.openalex_malformed.append(
+                        (run_id, relative_file, index, work_id(entry), doi or None)
                     )
                     logger.warning(
                         "store.load.openalex_search_work_malformed",
@@ -2177,6 +2177,41 @@ def _load_openalex_search_run(acc: _Accumulator, run_dir: Path) -> None:
                 acc.citation_snapshots[(work.record_id, retrieved_at)] = work.cited_by_count
     if duplicates:
         acc.cross_run_duplicates[run_id] = duplicates
+
+
+def _settle_malformed_search_works(acc: _Accumulator) -> None:
+    """Classify each malformed search work once every member of every query is known.
+
+    A malformed copy of a work whose OpenAlex id, or DOI, is already a member is a duplicate of it
+    (counted in ``run_duplicates`` for its run), not a loss, so ADR 0033's equation 1 closes. Any
+    other malformed work is a ``malformed_entries`` row. Settling after all runs makes the result
+    independent of which query or page came first; a work with neither id nor DOI never matches.
+
+    ``_unloadable_count`` counts a lost id once, whatever the number of rows, while ``identified``
+    counts every occurrence. So the first malformed occurrence of an id that no member holds is the
+    loss (``lost``), and each further occurrence of it is a duplicate. A work with no id is counted
+    per row by the NULL-id clause, so it needs no such bookkeeping.
+    """
+    lost: set[str] = set()
+    for run_id, relative_file, index, openalex_id, doi in acc.openalex_malformed:
+        if (
+            (openalex_id is not None and f"openalex:{openalex_id}" in acc.openalex_works)
+            or (openalex_id is not None and openalex_id in lost)
+            or (doi is not None and doi in acc.openalex_dois)
+        ):
+            acc.cross_run_duplicates[run_id] = acc.cross_run_duplicates.get(run_id, 0) + 1
+            continue
+        if openalex_id is not None:
+            lost.add(openalex_id)
+        acc.malformed_entries.append(
+            (
+                run_id,
+                relative_file,
+                index,
+                f"openalex:{openalex_id}" if openalex_id else None,
+                REASON_MALFORMED_SEARCH_WORK,
+            )
+        )
 
 
 def _finalise_openalex_search(acc: _Accumulator) -> None:
@@ -3328,7 +3363,9 @@ def _stats_from_connection(
     """
     duplicate_row = connection.execute(
         "SELECT COUNT(*), COALESCE(SUM(n), 0) FROM ("
-        "  SELECT COUNT(*) AS n FROM records WHERE doi IS NOT NULL GROUP BY doi HAVING COUNT(*) > 1"
+        "  SELECT COUNT(*) AS n FROM ("
+        "    SELECT doi FROM records UNION ALL SELECT doi FROM openalex_records"
+        "  ) WHERE doi IS NOT NULL GROUP BY doi HAVING COUNT(*) > 1"
         ") AS duplicate_dois"
     ).fetchone()
     duplicate_doi_groups = int(duplicate_row[0]) if duplicate_row is not None else 0
@@ -3606,6 +3643,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 unused, unused_kind = scopus_runs, "scopus_search"
                 for search_run_dir in search_runs:
                     _load_openalex_search_run(accumulator, search_run_dir)
+                _settle_malformed_search_works(accumulator)
                 _finalise_openalex_search(accumulator)
             else:
                 unused, unused_kind = search_runs, "openalex_search"

@@ -39,6 +39,7 @@ from prismabib.prisma.engine import (
 from prismabib.prisma.log import DecisionLog
 from prismabib.prisma.orphans import OrphanedDecision, orphaned_decisions
 from prismabib.project import Project
+from prismabib.source_mode import SourceMode
 from prismabib.store.db import connect
 
 #: Bucket key for an aggregated ``"exclude"`` at ``fulltext`` whose
@@ -294,8 +295,14 @@ def _assert_flow_counts_consistent(flow: FlowCounts) -> None:
             # pragma: no mutate end
 
 
-def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
+def _identified_count(connection: duckdb.DuckDBPyConnection, mode: SourceMode) -> int:
     """The PRISMA "records identified" count -- ``RunManifest.total_results``, never a row count.
+
+    In mode ``openalex`` (ADR 0042 Decision 5) the same rule reads ``openalex_search_runs``: the
+    sum, over each distinct ``query_key``, of its earliest sealed run's ``total_count`` (the
+    server-reported ``meta.count`` of the manifest, never the works captured). A refresh of a
+    query therefore adds nothing. The two Scopus modes read ``runs`` as before, so a legacy
+    project's number is unchanged.
 
     Args:
         connection: An open Layer 1 connection whose ``runs`` table to read
@@ -305,6 +312,7 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
             written or records parsed). Never closed here: it is the same
             connection every other Layer 1 read in this module goes through,
             and :func:`compute_flow_counts` owns its lifetime.
+        mode: The project's source mode; only ``openalex`` reads the search-run table.
 
     Returns:
         The sum, over each **distinct query string** in ``runs``, of that
@@ -330,16 +338,24 @@ def _identified_count(connection: duckdb.DuckDBPyConnection) -> int:
         of the original search date rather than letting it drift with the
         index between refreshes.
     """
-    row = connection.execute(
+    if mode == "openalex":
+        sql = """
+        SELECT COALESCE(SUM(total_count), 0)
+        FROM openalex_search_runs
+        WHERE (query_key, run_id) IN (
+          SELECT query_key, MIN(run_id) FROM openalex_search_runs GROUP BY query_key
+        )
+        """
+    else:
         # GROUP BY the query, then MIN(run_id) picks that search's first run;
         # `run_id` sorts chronologically by construction (`%Y%m%dT%H%M%SZ-...`),
         # so MIN is "earliest" without parsing a timestamp.
-        """
+        sql = """
         SELECT COALESCE(SUM(total_results), 0)
         FROM runs
         WHERE (query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)
         """
-    ).fetchone()
+    row = connection.execute(sql).fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -381,8 +397,10 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
         # is two rows -- subtracting both would double-count it. And an entry
         # another run loaded successfully cost no record at all: it must not be
         # subtracted, which is why the DISTINCT set is filtered against
-        # `records` (ADR 0012 predicts exactly this: "a row here does not imply
-        # a lost record").
+        # `records_all` (ADR 0042 Verification 51; ADR 0012 predicts exactly this: "a row here
+        # does not imply a lost record"). That is defensive: the OpenAlex loader settles a
+        # malformed copy of a loaded id as a duplicate, so no such row is ever written, and a
+        # registered id can never equal a Scopus id. No test can tell it from `records`.
         #
         # An OpenAlex row (`reason = 'malformed_openalex_body'`, ADR 0031) is
         # audit only: OpenAlex enriches, it identifies no record, so it never
@@ -397,7 +415,7 @@ def _unloadable_count(connection: duckdb.DuckDBPyConnection) -> int:
               SELECT DISTINCT m.record_id
               FROM malformed_entries m
               WHERE m.record_id IS NOT NULL
-                AND m.record_id NOT IN (SELECT record_id FROM records)
+                AND m.record_id NOT IN (SELECT record_id FROM records_all)
             )
           )
           + (
@@ -551,7 +569,7 @@ def compute_flow_counts_with_orphans(
     """
     connection = connect(project, read_only=True)
     try:
-        identified = _identified_count(connection)
+        identified = _identified_count(connection, project.source_mode)
         registered = _registered_count(connection)
         removed_other_reasons = _unloadable_count(connection)
         duplicates_across_searches = _cross_run_duplicate_count(connection)
