@@ -323,7 +323,22 @@ def _default_project_toml(slug: str, title: str, source_mode: SourceMode | None 
         "compound_terms = []\n"
         'fields = ["TITLE-ABS-KEY"]\n'
     )
-    return text if source_mode is None else text + "\n" + sources_table_text(source_mode)
+    if source_mode is None:
+        return text
+    text += "\n" + sources_table_text(source_mode)
+    return text + "\n" + _OPENALEX_QUERY_SCAFFOLD if source_mode == "openalex" else text
+
+
+#: Written only for a new project in mode ``openalex``. ``search`` is empty on purpose: an
+#: unedited placeholder is refused before any request, so it can never be sent to OpenAlex.
+_OPENALEX_QUERY_SCAFFOLD = """\
+# The OpenAlex search for `prismabib openalex-search` (docs/how-to/build-an-openalex-query.md).
+# Words, "quoted phrases" and uppercase AND / OR / NOT. No parentheses, * ? ~ or leading minus.
+# Fill in `search` before running; an empty value is refused. Example:
+#   search = '"carbon capture" AND policy'
+[openalex_query]
+search = ""
+"""
 
 
 _DEFAULT_GITIGNORE = """\

@@ -11,7 +11,7 @@ from typing import Annotated
 
 import typer
 
-from prismabib.credentials import ENV_FILENAME, status_lines
+from prismabib.credentials import ENV_FILENAME, openalex_key_missing, status_lines
 from prismabib.errors import ConfigError
 from prismabib.project import Project
 from prismabib.source_mode import (
@@ -68,6 +68,11 @@ def register_source_commands(app: typer.Typer) -> None:
                 _echo(f"mode is already {set_to}; nothing recorded")
             else:
                 _echo(f"mode: {event.from_mode} -> {event.to_mode} (event {event.event_id})")
+                if event.to_mode == "openalex":
+                    _echo(
+                        "next: add an [openalex_query] section with search = '...' to "
+                        f"project.toml, then prismabib openalex-search {slug} --budget 30 --dry-run"
+                    )
 
     @app.command("doctor")
     def doctor(
@@ -97,6 +102,11 @@ def register_source_commands(app: typer.Typer) -> None:
                 _echo("  store the Scopus key: prismabib credentials set scopus")
             _echo("  details and file safety: prismabib credentials status")
             if mode == "openalex":
-                _echo("next: this mode has no capture command in this release; see ADR 0042")
+                if openalex_key_missing():
+                    _echo("  store the OpenAlex key: prismabib credentials set openalex")
+                _echo(
+                    "next: edit [openalex_query] search in project.toml, then "
+                    f"prismabib openalex-search {slug} --budget 30 --dry-run"
+                )
             else:
                 _echo(f"next: prismabib search {slug}")

@@ -127,7 +127,8 @@ uv run prismabib init my-review --sources scopus --title "My systematic review"
 Options: `--title/-t` (written into `project.toml`), `--root/-r` to override
 `PRISMABIB_PROJECTS_ROOT` for this one command, and the source mode of a new project:
 `--sources {openalex,scopus,scopus+openalex}`, recorded in `project.toml` under `[sources]`
-(ADR 0042). With a terminal and no `--sources`, `init` asks "Do you have access to Scopus?";
+(ADR 0042); with `--sources openalex` the file also gets an empty `[openalex_query]` section to fill in
+([Build an OpenAlex Query](how-to/build-an-openalex-query.md)). With a terminal and no `--sources`, `init` asks "Do you have access to Scopus?";
 in a script it refuses without `--sources`, and writes nothing. A new project also records who
 made the choice: `--actor NAME`, or `git config user.name` when omitted. Re-running `init` on an
 existing project never prompts and never rewrites it; `prismabib sources <slug> --set <mode>`

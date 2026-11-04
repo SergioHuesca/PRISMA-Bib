@@ -75,6 +75,7 @@ COMMAND_MODES: Final[dict[str, frozenset[str]]] = {
     "enrich": _SCOPUS_SIDE,
     "cascade": frozenset({"scopus+openalex", "openalex"}),
     "openalex": frozenset({"scopus+openalex"}),
+    "openalex-search": frozenset({"openalex"}),
     "register": frozenset({"scopus+openalex", "openalex"}),
     "registrations": _ALL,
     "reverse": _ALL,

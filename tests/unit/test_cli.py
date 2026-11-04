@@ -47,6 +47,7 @@ _IMPLEMENTED_COMMANDS |= {
     "candidates",
     "cascade",
     "openalex",
+    "openalex-search",
 }
 _IMPLEMENTED_COMMANDS |= {"manual-entry", "manual-reverse", "conflict-resolve", "conflict-reverse"}
 _IMPLEMENTED_COMMANDS |= {"sources", "doctor", "credentials"}
