@@ -3029,12 +3029,10 @@ def _fold_manual_openalex(
             acc.authors.setdefault(author_id, (author_id, surname, given))
             acc.record_authors.append((entry.record_id, author_id, position))
     else:
-        written: set[str] = set()
-        for position, (name, city, country, afid) in enumerate(cand.institutions, start=1):
-            afid = afid or f"{cand.id_prefix}:{position}"
-            if afid in written:
-                continue
-            written.add(afid)
+        # `_typed_candidate` gives a typed institution no afid, so each id is `manual:<event>:<n>`
+        # with a distinct n: no id repeats, and no de-duplication is needed.
+        for position, (name, city, country, _afid) in enumerate(cand.institutions, start=1):
+            afid = f"{cand.id_prefix}:{position}"
             acc.affiliations.setdefault(afid, (afid, name, city, country))
             acc.record_affiliations.append((entry.record_id, afid))
     acc.openalex_rows[at] = tuple(cells)
@@ -3816,12 +3814,15 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         raise
 
     if stats.provenance_report.get("registered_openalex_overlap"):
+        overlaps = accumulator.registration_overlaps
         logger.warning(
             "store.load.registered_and_openalex_record_overlap",
+            count=len(overlaps),
             pairs=[
                 {"register_event_id": e, "openalex_record_id": r, "match_rule": rule}
-                for e, r, rule in accumulator.registration_overlaps
+                for e, r, rule in overlaps[:_MAX_LOGGED_MALFORMED_ENTRIES]
             ],
+            truncated=len(overlaps) > _MAX_LOGGED_MALFORMED_ENTRIES,
         )
     unapplied = {
         key: int(stats.provenance_report.get(key, 0))

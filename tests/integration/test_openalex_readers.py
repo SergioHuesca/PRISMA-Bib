@@ -688,3 +688,157 @@ def test_fulltext__openalex_rebuild__is_deterministic(tmp_path: Path) -> None:
             con.close()
 
     assert sums() == sums()
+
+
+# -- review round: overlap rules, registrations never in cascade counts, truncation --------------
+
+
+def _overlap_case(tmp_path: Path, search_work: dict[str, Any]) -> tuple[Any, Any, list[Any]]:
+    from tests.integration.capture.test_registrations import DOI_ONE, TITLE_ONE
+
+    env = _registration_env(tmp_path)
+    env.write_run()
+    env.build()
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    write_search_run(env.project, RUN_A, "q", [[search_work]])
+    with capture_logs() as logs:
+        stats = build_store(env.project, rebuild=True)
+    return event, stats, logs
+
+
+def _overlap_rules(logs: list[Any]) -> list[str]:
+    (entry,) = [
+        e for e in logs if e["event"] == "store.load.registered_and_openalex_record_overlap"
+    ]
+    return [p["match_rule"] for p in entry["pairs"]]
+
+
+def test_build__registration_and_openalex_record_same_title_year_only__reported(
+    tmp_path: Path,
+) -> None:
+    from tests.integration.capture.test_registrations import TITLE_ONE
+
+    other_doi = work(1, title=TITLE_ONE, publication_year=2021)  # a different DOI
+    _, stats, logs = _overlap_case(tmp_path, other_doi)
+
+    assert stats.provenance_report["registered_openalex_overlap"] == 1
+    assert _overlap_rules(logs) == ["title_year"]
+
+
+def test_build__registration_and_openalex_record_same_doi_only__reported(tmp_path: Path) -> None:
+    from tests.integration.capture.test_registrations import DOI_ONE
+
+    same_doi = work(1, doi=f"https://doi.org/{DOI_ONE}", title="Another", publication_year=1999)
+    _, stats, logs = _overlap_case(tmp_path, same_doi)
+
+    assert stats.provenance_report["registered_openalex_overlap"] == 1
+    assert _overlap_rules(logs) == ["doi"]
+
+
+def test_numbers__openalex_mode__cascade_counts_never_include_registrations(
+    tmp_path: Path,
+) -> None:
+    from tests.integration.capture.test_registrations import DOI_ONE, TITLE_ONE
+
+    env = _registration_env(tmp_path)
+    env.write_run()
+    env.build()
+    env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    write_search_run(env.project, RUN_A, "q", [[work(2)]])  # unrelated to the registration
+    build_store(env.project, rebuild=True)
+
+    con = connect(env.project, read_only=True)
+    try:
+        got = numbers._cascade_numbers(con)
+    finally:
+        con.close()
+
+    assert _sql(env.project, "SELECT COUNT(*) FROM registered_records") == [(1,)]
+    assert got["methods.cascade.abstract.level4"] == 1  # the search work only
+
+
+def test_build__overlap_warning__is_truncated_like_the_malformed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.store import load as load_module
+    from tests.integration.capture.test_registrations import DOI_ONE, TITLE_ONE
+
+    env = _registration_env(tmp_path)
+    env.write_run()
+    env.build()
+    env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    write_search_run(env.project, RUN_A, "q", [[_search_work_of_the_fixture()]])
+    other = "A Synthetic Conference Paper"  # second fixture work, registered too
+    env.register(env.candidate(other, 2020, "10.9999/synthetic.reg.two"))
+    write_search_run(
+        env.project,
+        RUN_B,
+        "q2",
+        [
+            [
+                work(
+                    2,
+                    doi="https://doi.org/10.9999/synthetic.reg.two",
+                    title=other,
+                    publication_year=2020,
+                )
+            ]
+        ],
+    )
+    monkeypatch.setattr(load_module, "_MAX_LOGGED_MALFORMED_ENTRIES", 1)
+
+    with capture_logs() as logs:
+        build_store(env.project, rebuild=True)
+
+    (entry,) = [
+        e for e in logs if e["event"] == "store.load.registered_and_openalex_record_overlap"
+    ]
+    assert entry["count"] == 2
+    assert len(entry["pairs"]) == 1
+    assert entry["truncated"] is True
+
+
+# -- null publication year (owner decision 2026-11-04) -------------------------------------------
+
+
+def _null_year(tmp_path: Path) -> Project:
+    return _built(tmp_path, work(1), work(3, publication_year=None))
+
+
+def test_flow__openalex_work_without_a_year__fails_the_year_test_and_the_equation_closes(
+    tmp_path: Path,
+) -> None:
+    from prismabib.prisma.flow import compute_flow_counts
+
+    counts = compute_flow_counts(_null_year(tmp_path))
+
+    counts.assert_consistent()
+    assert counts.excluded_automated_by_reason["year"] == 1
+    assert (
+        counts.after_automated == 1
+    )  # W1 stays; W3 is in the corpus but excluded at the year step
+
+
+def test_numbers__openalex_work_without_a_year__builds(tmp_path: Path) -> None:
+    got = numbers.numbers_map(_null_year(tmp_path))
+
+    assert got["corpus.size"] == 2
+    assert got["flow.excluded_automated"] == 1
+
+
+def test_analyses__openalex_work_without_a_year__none_crashes(tmp_path: Path) -> None:
+    corpus = Corpus.open(_null_year(tmp_path))
+    span = (2000, 2030)
+
+    assert trends.annual_counts(corpus, stage=RAW).data["count"].sum() == 1  # dated records only
+    keywords.keyword_evolution(corpus, stage=RAW)
+    network.keyword_cooccurrence_network(corpus, stage=RAW, min_occurrence=1, years=span)
+    network.coauthorship_network(corpus, stage=RAW, years=span)
+    geography.country_counts(corpus, stage=RAW, years=span)
+    geography.citation_impact_by_country(corpus, stage=RAW, years=span)
+    venues.top_venues(corpus, stage=RAW, years=span)
+    venues.venue_type_split(corpus, stage=RAW, years=span)
+    citations.citations_by_year(corpus, stage=RAW)
+    assert citations.citation_statistics(corpus, stage=RAW).data["total"].to_list() == [10 + 30]
+    # and the default INCLUDED stage, which runs the automated filter
+    assert Corpus.open(_null_year(tmp_path / "again")).records().height == 0
