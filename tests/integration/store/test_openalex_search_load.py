@@ -719,7 +719,7 @@ def test_build__reuse_in_mode_openalex__empty_store_over_a_populated_search_run_
     build_store(project, rebuild=True)  # an empty store, stamped
     write_search_run(project, _RUN_A, "q", [[work(1), work(2)]])
 
-    with pytest.raises(StoreError, match=r"holds no records.*2.*rebuild=True"):
+    with pytest.raises(StoreError, match=r"holds no records.*2 works.*--rebuild"):
         build_store(project)
 
 
@@ -813,3 +813,62 @@ def test_loader__country_only_authorship__affiliation_row_with_a_country_and_val
     assert rows(
         project, "SELECT openalex_id, affiliations_outcome FROM openalex_records ORDER BY 1"
     ) == [("https://openalex.org/W1", "value"), ("https://openalex.org/W2", "unavailable")]
+
+
+# -- review follow-ups: messages and the unmapped country log -----------------------------------------
+
+
+def test_loader__digest_mismatch_message__names_the_file_and_the_line_ending_cause(
+    tmp_path: Path,
+) -> None:
+    project, run_dir = _sealed(tmp_path, 1)
+    page = run_dir / "response-0000.jsonl"
+    page.write_bytes(page.read_bytes().replace(b"\n", b"\r\n"))  # what core.autocrlf does
+
+    with pytest.raises(StoreError) as caught:
+        build_store(project, rebuild=True)
+
+    text = str(caught.value)
+    assert "response-0000" in text and "line-ending" in text and "core.autocrlf" in text
+
+
+def test_build__reuse_in_mode_openalex__all_malformed_run__message_says_a_rebuild_reproduces_it(
+    tmp_path: Path,
+) -> None:
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "q", [[work(1, title=None), work(2, title=None)]])
+    build_store(project, rebuild=True)  # 0 rows loaded, 2 malformed: a complete, faithful build
+
+    with pytest.raises(StoreError) as caught:
+        build_store(project)
+
+    text = str(caught.value)
+    assert "malformed_entries" in text and "reproduces" in text and "--rebuild" in text
+    assert "Call build_store(project, rebuild=True)" not in text
+
+
+def test_loader__unmapped_authorship_country_codes__logged_once_per_code_per_build(
+    tmp_path: Path,
+) -> None:
+    from structlog.testing import capture_logs
+
+    def by(*codes: str) -> list[dict[str, Any]]:
+        return [{"author": {"display_name": "A B"}, "countries": list(codes)}]
+
+    project = openalex_project(tmp_path)
+    write_search_run(
+        project,
+        _RUN_A,
+        "q",
+        [[work(1, authorships=by("UK", "ES")), work(2, authorships=by("UK", "EU")), work(3)]],
+    )
+
+    with capture_logs() as logs:
+        build_store(project, rebuild=True)
+
+    events = [
+        (e["code"], e["works"])
+        for e in logs
+        if e["event"] == "openalex_search.unmapped_country_code"
+    ]
+    assert sorted(events) == [("EU", 1), ("UK", 2)]  # one event per code; ES is mapped

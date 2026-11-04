@@ -57,6 +57,8 @@ class SearchWork:
     topics: tuple[str, ...]
     cited_by_count: int | None
     subject_code: str | None
+    #: Authorship-level country codes with no alpha-3 mapping; skipped, and logged by the loader.
+    unmapped_countries: tuple[str, ...] = ()
 
     @property
     def record_id(self) -> str:
@@ -149,10 +151,13 @@ def parse_search_work(raw: Mapping[str, Any]) -> SearchWork:
     # Owner decision 2026-11-04 (ADR 0042 D-2): a country an authorship names that none of its
     # institutions carries still reaches the geography analyses, as a synthetic affiliation.
     # A code outside ALPHA2_TO_ALPHA3 is skipped, not guessed.
+    unmapped: list[str] = []
     for code in details.countries:
         if (iso3 := ALPHA2_TO_ALPHA3.get(code)) is not None:
             afid = f"openalex-country:{code}"
             affiliations.setdefault(afid, (afid, code, iso3))
+        elif code:
+            unmapped.append(code)
 
     return SearchWork(
         openalex_id=openalex_id,
@@ -170,4 +175,5 @@ def parse_search_work(raw: Mapping[str, Any]) -> SearchWork:
         topics=tuple(t.name for t in topics_to_keywords(parsed)),
         cited_by_count=_count(raw.get("cited_by_count")),
         subject_code=_subject_code(raw),
+        unmapped_countries=tuple(unmapped),
     )

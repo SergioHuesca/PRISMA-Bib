@@ -2065,7 +2065,9 @@ def _search_results(path: Path, name: str, request: OpenAlexSearchRequest) -> li
     if sha256(data).hexdigest() != request.sha256:
         raise StoreError(
             f"OpenAlex search response {name} does not match its manifest digest; re-capture "
-            "the run (Layer 0 is never edited)."
+            "the run (Layer 0 is never edited). If the project's raw/ is under git, check "
+            "line-ending conversion such as core.autocrlf, which rewrites the bytes the digest "
+            "covers."
         )
     try:
         body = json.loads(data.decode("utf-8").strip())
@@ -2186,9 +2188,12 @@ def _finalise_openalex_search(acc: _Accumulator) -> None:
     has no ``subject_areas`` row and the coverage status ``none_assigned`` (OQ-7); a mapped work is
     ``assigned``. The coverage row's ``run_id`` is ``query_run_id``.
     """
+    unmapped: dict[str, int] = {}
     for record_id in sorted(acc.openalex_works):
         member = acc.openalex_works[record_id]
         work = member.work
+        for code in set(work.unmapped_countries):
+            unmapped[code] = unmapped.get(code, 0) + 1
         cells: list[Any] = []
         for field_name in _FIELDS:
             latest = member.latest.get(field_name)
@@ -2232,6 +2237,9 @@ def _finalise_openalex_search(acc: _Accumulator) -> None:
         acc.record_subject_area_coverage.append(
             (record_id, member.run_id, "none_assigned" if work.subject_code is None else "assigned")
         )
+    # Once per code per build, never per work: a code outside ISO 3166-1 (`UK`, `EU`) is skipped.
+    for code in sorted(unmapped):
+        logger.warning("openalex_search.unmapped_country_code", code=code, works=unmapped[code])
 
 
 def _sealed_cascade_run_dirs(raw_dir: Path) -> list[Path]:
@@ -3479,8 +3487,11 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
             if (search.total_count or 0) > 0:
                 raise StoreError(
                     f"{project.db_path} holds no records but {search_dir.name} in "
-                    f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works, so it "
-                    "is not a complete build. Call build_store(project, rebuild=True)."
+                    f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works. Either "
+                    "the build died early or none of those works is loadable (see the "
+                    "malformed_entries table); a rebuild reproduces this store in the second "
+                    "case, so run `prismabib build <slug> --rebuild` and read malformed_entries "
+                    "before re-capturing."
                 )
         return
     if stats.records_loaded:
