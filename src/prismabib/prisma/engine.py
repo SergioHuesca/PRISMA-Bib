@@ -130,7 +130,7 @@ class _RecordAttributes:
     """
 
     year: int | None
-    doc_type: str
+    doc_type: str | None
     language: str | None
     venue_type: str
     venue_name: str
@@ -278,7 +278,7 @@ _DOC_TYPE_CODE_TO_DESCRIPTION: Final[dict[str, str]] = {
 }
 
 
-def _doc_type_matches(doc_type: str, include_codes: Sequence[str]) -> bool:
+def _doc_type_matches(doc_type: str | None, include_codes: Sequence[str]) -> bool:
     """Whether one record's ``doc_type`` satisfies ``criteria.yaml``'s ``doc_types.include``.
 
     Args:
@@ -296,6 +296,8 @@ def _doc_type_matches(doc_type: str, include_codes: Sequence[str]) -> bool:
     """
     if not include_codes:
         return True
+    if doc_type is None:  # an OpenAlex work with no `type`: cannot match a restriction
+        return False
     folded = doc_type.strip().casefold()
     for code in include_codes:
         code_folded = code.strip().casefold()

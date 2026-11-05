@@ -379,9 +379,11 @@ def init(
                 "against all of Scopus."
             )
         _echo(f"  2. {project.root / 'criteria.yaml'}")
+        # An OpenAlex work never carries a language, so that rule cannot exclude anything.
+        restricted = "doc_types.include" if openalex else "doc_types.include and languages"
         _echo(
-            "     Set temporal.year_start / year_end, and whichever of doc_types.include and "
-            "languages your protocol restricts; every list left empty means no restriction on "
+            f"     Set temporal.year_start / year_end, and whichever of {restricted} "
+            "your protocol restricts; every list left empty means no restriction on "
             "that dimension, which is a real eligibility choice rather than a placeholder. "
             "Replace the starter exclusion reason codes with the ones your review actually "
             "distinguishes, and bump `version` whenever you change any of it. The file's own "
@@ -636,9 +638,11 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
     )
     if stats.openalex_records_loaded:
         # Mode openalex: the works are in openalex_records and add no `venues` rows.
+        # `runs loaded` counts only Scopus runs, so show the sealed OpenAlex search runs instead.
         rows = (
+            ("search runs loaded", stats.openalex_search_runs_loaded),
             ("records (OpenAlex works)", stats.openalex_records_loaded),
-            *(row for row in rows if row[0] not in ("records", "venues")),
+            *(row for row in rows if row[0] not in ("runs loaded", "records", "venues")),
         )
     topic_links = stats.record_keyword_links_by_kind.get("openalex-topic", 0)
     if topic_links:  # ADR 0030 Decision 4: shown only for topic-bearing stores

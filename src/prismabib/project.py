@@ -300,7 +300,7 @@ _CRITERIA_NOTES_OPENALEX = {
   # (article), re (review), ed (editorial), le (letter), er (erratum), bk (book),
   # ch (book chapter), cp (conference paper). Any other OpenAlex type is kept as
   # OpenAlex's own word (preprint, dataset, report, ...): list that word to
-  # include it. Empty = accept every type.
+  # include it. A work with no type fails a non-empty list. Empty = accept every type.
 """,
     "language_note": """\
 # OpenAlex records never carry a language (it is not derived, ADR 0032), so this
