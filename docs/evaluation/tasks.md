@@ -207,8 +207,9 @@ aloud. The `access-check` folder is not used again, and the participant may dele
 2. `--version` prints a line that starts with `prismabib`.
 3. `doctor` exits with code 0. In PowerShell, `$LASTEXITCODE` is 0 right after the command. No line starts with `FAIL`.
    A `warn` line is recorded, not counted as a failure.
-4. The tool asks "Do you have access to Scopus?" when `init` runs with no `--sources` flag.
-5. `sources access-check` prints a mode, and the participant has answered the question the tool asked.
+4. The tool asks "Do you have access to Scopus? [y/n/not sure]" when `init` runs with no `--sources` flag.
+5. `sources access-check` prints a mode, and the participant has answered the question the tool asked. An answer of
+   "not sure" gives mode `openalex`, as "no" does.
 
 **Cap.** Hard cap 20 minutes. The install hard cap of 15 minutes comes first. If the install is capped, T0 stops, the
 failure is a blocker, and the session goes to the questionnaires.
@@ -269,7 +270,7 @@ uv run prismabib credentials test scopus
 The Scopus prompt has two lines. The second, `SCOPUS_INSTTOKEN`, is optional, and the participant presses Enter to
 skip it if the library issued no token. The test makes one request and prints one result line.
 
-The Connect Scopus panel is a Python class, and no notebook in the repository shows it. It is not used in this round.
+The Connect Scopus panel is shown by `notebooks/00_connect_credentials.ipynb`. It is not used in this round.
 
 **Success criteria (observable).**
 

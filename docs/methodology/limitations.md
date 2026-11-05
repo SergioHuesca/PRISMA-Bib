@@ -85,11 +85,14 @@ run. The second copy is not loaded, and it is counted under `duplicates_across_s
 removed before screening. In the Scopus modes two records with one DOI are both kept and both
 screened.
 
-**The ratio guard does not catch a capture of unloadable works in this mode.** A search work with
-no id or no title is recorded in `malformed_entries` and counted under `removed_other_reasons`.
-The build refuses a capture whose entries are mostly unloadable, but the guard counts Scopus
-entries only. In this mode, a capture in which every work is malformed builds a store with zero
-records and no refusal. Check the counts before you cite them.
+**A capture of unloadable works is refused at build.** A search work with no id or no title is
+recorded in `malformed_entries`. The build refuses to write a store when no OpenAlex work could be
+loaded from the sealed search runs, or when at least 10 works were skipped and more than 5% of the
+works examined were skipped. These are the same thresholds as the Scopus guard. A malformed copy of
+a work that is already loaded is a duplicate, not a skip, and a refresh of a query is not counted
+again. The refusal says that no store was written and that the capture should be repeated. Below
+those thresholds the unreadable works are removed before screening and counted under
+`other reasons (unreadable capture entries)` in the flow. Check that line before you cite a count.
 
 **A registration of a paper that an OpenAlex search also finds is superseded at build.** A
 registration is refused when its paper is already an OpenAlex record, but that check reads the

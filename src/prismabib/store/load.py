@@ -587,6 +587,10 @@ class _Accumulator:
     #: and Scopus's empty-result-set placeholder, neither of which is an
     #: entry anyone claimed was a record.
     entries_seen: int = 0
+    #: Works examined in the earliest sealed run of each OpenAlex search query (a refresh
+    #: admits nothing, so it is not counted) -- the denominator of
+    #: :func:`_guard_against_unloadable_openalex_capture`.
+    openalex_works_seen: int = 0
     #: ``abstract_runs`` rows, in ``schema.sql`` column order, one per sealed
     #: ``raw/abstracts/<run_id>/`` directory (ADR 0018). Never a ``runs`` row --
     #: see :func:`_load_abstract_run`.
@@ -2143,6 +2147,8 @@ def _load_openalex_search_run(acc: _Accumulator, run_dir: Path) -> None:
         page = _search_results(run_dir / request.file, relative_file, request)
         for index, raw in enumerate(page):
             entry = raw if isinstance(raw, dict) else {}
+            if earliest:
+                acc.openalex_works_seen += 1
             try:
                 work = parse_search_work(entry)
             # A hostile or odd shape is one malformed work, not a failed build: a string where
@@ -2781,6 +2787,44 @@ def _guard_against_unloadable_capture(acc: _Accumulator) -> None:
         f"(The threshold is every entry skipped, or more than "
         f"{_MAX_SKIPPED_ENTRY_RATIO:.0%} of them with at least "
         f"{_MIN_SKIPS_FOR_RATIO_GUARD} skips.)"
+    )
+
+
+def _guard_against_unloadable_openalex_capture(acc: _Accumulator) -> None:
+    """The OpenAlex-search counterpart of :func:`_guard_against_unloadable_capture`.
+
+    Same two rules and thresholds. The skips are the ``malformed_openalex_search_work`` rows, which
+    :func:`_settle_malformed_search_works` has already narrowed to works that are not a duplicate
+    of a loaded one; the denominator is the works examined in the earliest run of each query.
+    "Nothing loaded" is judged on the members, not on ``skipped == seen``: a lost work seen in
+    several queries is one skip and several examinations.
+
+    Raises:
+        StoreError: If the skipped share trips either rule.
+    """
+    malformed = [r for r in acc.malformed_entries if r[4] == REASON_MALFORMED_SEARCH_WORK]
+    skipped = len(malformed)
+    seen = acc.openalex_works_seen
+    if skipped == 0 or seen == 0:
+        return
+    nothing_loaded = not acc.openalex_works
+    systematic = skipped >= _MIN_SKIPS_FOR_RATIO_GUARD and skipped > _MAX_SKIPPED_ENTRY_RATIO * seen
+    if not (nothing_loaded or systematic):
+        return
+    named = [f"{payload_file}:{line}" for _, payload_file, line, _, _ in malformed]
+    shown = ", ".join(named[:_MAX_LOGGED_MALFORMED_ENTRIES])
+    if len(named) > _MAX_LOGGED_MALFORMED_ENTRIES:
+        shown += f", ... and {len(named) - _MAX_LOGGED_MALFORMED_ENTRIES:,} more"
+    raise StoreError(
+        f"refusing to build a store from this capture: {skipped:,} of the {seen:,} OpenAlex works "
+        "could not be turned into a record, leaving "
+        f"{len(acc.openalex_works):,} loaded. That is a broken capture, not a few bad works, so "
+        "no store has been written -- a corpus this much smaller than its capture would look "
+        f"complete to every later stage. First works: {shown}. Layer 0 is untouched: inspect "
+        "those lines (they are listed in `malformed_entries`), and if the works really are what "
+        "OpenAlex sent, capture again. "
+        f"(The threshold is no work loaded, or more than {_MAX_SKIPPED_ENTRY_RATIO:.0%} of them "
+        f"skipped with at least {_MIN_SKIPS_FOR_RATIO_GUARD} skips.)"
     )
 
 
@@ -3600,9 +3644,10 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
                     f"{project.db_path} holds no records but {search_dir.name} in "
                     f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works. Either "
                     "the build died early or none of those works is loadable (see the "
-                    "malformed_entries table); a rebuild reproduces this store in the second "
-                    "case, so run `prismabib build <slug> --rebuild` and read malformed_entries "
-                    "before re-capturing."
+                    "malformed_entries table). Run `prismabib build <slug> --rebuild`: it "
+                    "rebuilds the store in the first case, and in the second it refuses "
+                    "(naming the unloadable works), because a capture with nothing loadable is "
+                    "broken: capture again."
                 )
         return
     if stats.records_loaded:
@@ -3718,6 +3763,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
                 for search_run_dir in search_runs:
                     _load_openalex_search_run(accumulator, search_run_dir)
                 _settle_malformed_search_works(accumulator)
+                _guard_against_unloadable_openalex_capture(accumulator)
                 _finalise_openalex_search(accumulator)
             else:
                 unused, unused_kind = search_runs, "openalex_search"

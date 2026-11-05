@@ -97,7 +97,7 @@ applicable" is coded separately, and is not a zero.
 
 | ID | Item | Scale | Open question |
 | --- | --- | --- | --- |
-| C1 | The question "Do you have access to Scopus?" was clear. | 1 to 5 agree | None. The debrief covers it. |
+| C1 | The question "Do you have access to Scopus?", with the answers yes, no and not sure, was clear. | 1 to 5 agree | None. The debrief covers it. |
 | C2 | I could tell where each value in the results came from. | 1 to 5 agree | Describe how you would find out where a value came from. |
 | R1 | I could not tell where the numbers came from. (Reversed) | 1 to 5 agree | None. |
 | C3 | I am confident I could reproduce these numbers from the same files. | 1 to 5 agree | Describe how you would reproduce them, or what would stop you. |

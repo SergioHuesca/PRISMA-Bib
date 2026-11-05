@@ -134,15 +134,36 @@ uv run prismabib credentials clear openalex
 `clear` removes the keys of that service from `.env`. `clear scopus` removes both Scopus names. A key
 that is set in your environment is not removed, and the command tells you so.
 
-## The Connect Scopus panel, from Python
+## The Connect Scopus panel
 
 `prismabib.credentials_ui.ConnectScopusPanel` is a password field over the same `.env` writer that
 `credentials set scopus` uses. It shows only whether the Scopus key is set and which file it checked.
 It never shows the value. After every attempt, successful or refused, it clears the field, so the
 value is not kept in the widget state that a notebook can save.
 
-The panel is not wired into any notebook or dashboard in this release. You create it yourself in a
-notebook cell:
+### In the notebook
+
+`notebooks/00_connect_credentials.ipynb` shows the panel. Launch it the same way as the screening
+notebook, from the repository root:
+
+```bash
+uv run panel serve notebooks/00_connect_credentials.ipynb --show
+```
+
+Set `PRISMABIB_NOTEBOOK_SLUG` to a project slug if you want the panel to know the project's mode.
+It is optional. Without it, or when the project cannot be opened, the panel is project-less and
+always writable. In PowerShell, set the variable with `$env:PRISMABIB_NOTEBOOK_SLUG = "<slug>"`
+before the command.
+
+The notebook writes the key to the `.env` of the repository root. It finds that folder by walking
+up from its working directory to the first folder that holds `.git`, so a notebook started in
+`notebooks/` writes to the same `.env` as `prismabib` reads. The panel's status line shows the
+path it checks. It writes only when git ignores that file, and a save that is refused writes
+nothing.
+
+### From Python
+
+You can also create the panel yourself in a notebook cell:
 
 ```python
 from pathlib import Path

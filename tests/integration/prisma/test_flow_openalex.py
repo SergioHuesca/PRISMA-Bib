@@ -16,6 +16,7 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from prismabib.cli import app
+from prismabib.errors import StoreError
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
 from prismabib.store.db import connect
@@ -146,14 +147,23 @@ def test_flow_counts__doi_twin_found_by_another_query__counted_as_a_duplicate(
     assert (counts.identified, counts.duplicates_across_searches) == (2, 1)
 
 
-def test_flow_counts__all_works_malformed__every_one_is_removed(tmp_path: Path) -> None:
+def test_flow_counts__all_works_malformed__build_is_refused(tmp_path: Path) -> None:
+    """The loader's guard refuses a capture with nothing loadable, so there is no flow to count."""
     project = openalex_project(tmp_path)
     write_search_run(project, _RUN_A, "q", [[work(1, title=None), work(2, title=None)]])
 
+    with pytest.raises(StoreError, match="OpenAlex works"):
+        build_store(project, rebuild=True)
+
+
+def test_flow_counts__malformed_works_beside_one_good_work__are_removed(tmp_path: Path) -> None:
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "q", [[work(1, title=None), work(2, title=None), work(3)]])
+
     counts = _flow(project)
 
-    assert (counts.identified, counts.removed_other_reasons) == (2, 2)
-    assert counts.after_automated == 0
+    assert (counts.identified, counts.removed_other_reasons) == (3, 2)
+    assert counts.after_automated == 1
 
 
 def test_flow_counts__mixed_malformed_and_loaded__both_terms_close(tmp_path: Path) -> None:
@@ -491,12 +501,20 @@ def _random_project(tmp_path: Path, seed: int) -> Project:
     run_ids = [f"20261103T{h:02d}0000Z-{h:08x}" for h in range(10, 10 + rng.randint(1, 6))]
     rng.shuffle(run_ids)
     queries = [f"query {n}" for n in range(rng.randint(1, 4))]
+    malformed = 0
+    malformed_kinds = {"no_title", "no_title_no_doi", "no_id"}
     for position, run_id in enumerate(run_ids):
         query = rng.choice(queries)
         works = []
         for _ in range(rng.randint(0, 6)):
             n = rng.randint(1, 8)
             kind = rng.choice(["ok", "ok", "twin", "no_title", "no_title_no_doi", "no_id", "bare"])
+            # The loader refuses a capture with nothing loaded or 10+ skips above 5%: stay in a
+            # reachable state (malformed occurrences bound the skips from above; see the anchor).
+            if kind in malformed_kinds:
+                malformed += 1
+                if malformed > 9:
+                    kind = "ok"
             if kind == "twin":  # another id, the DOI of work n
                 works.append(work(n + 20, doi=f"https://doi.org/10.1/Item-{n}"))
             elif kind == "no_title":
@@ -520,6 +538,10 @@ def _random_project(tmp_path: Path, seed: int) -> Project:
             discarded=not sealed and rng.random() < 0.5,
             offset_minutes=position,
         )
+    # The anchor: one good work in a sealed run of its own, so something is always loaded.
+    write_search_run(
+        project, "20261103T200000Z-000000ff", "anchor", [[work(99)]], offset_minutes=99
+    )
     return project
 
 

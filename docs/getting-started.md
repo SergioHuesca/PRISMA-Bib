@@ -17,13 +17,23 @@ Do you have Scopus access (an API key with the COMPLETE view, usually through an
 | Your answer | Source mode | What you need | Where it is covered |
 | --- | --- | --- | --- |
 | No | `openalex` | A free OpenAlex key. No Scopus key is read. | [Install](#install) and [The OpenAlex-only walkthrough](#the-openalex-only-walkthrough), in full |
+| Not sure | `openalex` | The same as No, for now. The tool cannot check your access. | The same as No, and the paragraph below for checking later |
 | Yes | `scopus` | A Scopus key entitled to the COMPLETE view, and an institutional token if you are off campus. | [The Scopus path](#the-scopus-path) |
 | Yes, and you want OpenAlex to fill gaps | `scopus+openalex` | The Scopus key, and an OpenAlex key (the OpenAlex steps use it when it is set). | [The combined path](#the-combined-path) |
 
 Your answer is recorded per project when you run `init`, with `--sources openalex`,
 `--sources scopus` or `--sources scopus+openalex`. In a terminal, `init` asks the question if
-you leave the flag out. When there is no terminal to ask on (stdin is not a terminal), it refuses
-without the flag and writes nothing.
+you leave the flag out. The prompt reads `Do you have access to Scopus? [y/n/not sure]`. Answer
+`y`, `n` or `s`; `yes`, `no` and `not sure` also work. Any other answer makes it ask again. When there
+is no terminal to ask on (stdin is not a terminal), it refuses without the flag and writes nothing.
+
+`not sure` records mode `openalex`, as `no` does. The tool then prints how to check a key later and
+how to switch. To check a Scopus key later, run `prismabib credentials set scopus` and then
+`prismabib credentials test scopus`. The test makes one request and needs no project. Only
+`credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` need a project in a
+Scopus mode. To switch, run `prismabib sources <slug> --set scopus --actor "<your name>"` (or
+`--set scopus+openalex`). The switch is refused once any run directory exists under
+`raw/openalex-search/`, in any state, or once screening decisions exist. Then create a new project.
 
 If you answer no, the project is in mode `openalex`, and the Scopus commands refuse to run.
 For example, `search` prints this and exits:
@@ -783,7 +793,7 @@ uv run prismabib init my-review --sources scopus --title "My systematic review"
 Options: `--title/-t` (written into `project.toml`), `--root/-r` to override
 `PRISMABIB_PROJECTS_ROOT` for this one command, and the source mode of a new project:
 `--sources {openalex,scopus,scopus+openalex}`, recorded in `project.toml` under `[sources]`
-(ADR 0042). With a terminal and no `--sources`, `init` asks "Do you have access to Scopus?";
+(ADR 0042). With a terminal and no `--sources`, `init` asks "Do you have access to Scopus? [y/n/not sure]";
 in a script it refuses without `--sources`, and writes nothing. A new project also records who
 made the choice: `--actor NAME`, or `git config user.name` when omitted. Re-running `init` on an
 existing project never prompts and never rewrites it; `prismabib sources <slug> --set <mode>`
@@ -1175,6 +1185,7 @@ These are the differences:
 | `prismabib: UpstreamError`, then `OpenAlex request failed (<error type>).` | A network failure in the middle of a run. | Run the same command again. It resumes from the last page saved, and no saved page is requested again. |
 | `a sealed run of this query already exists (run <run id>); no request was made.` followed by `Use --refresh to capture it again as a new run.` | The query was captured before. Nothing was requested. | Nothing, if the sealed run is what you want. To capture it again, run the command with `--refresh`. That adds a new run and spends the quota again. |
 | `stopped: the page budget of <n> is used`, then `OpenAlex reports <N> works for this query; <K> more page(s) of 100 needed.` | `--budget` ran out before the search finished. The second line is the count, and it is printed once the count is known. | Run the same command again. It resumes. A larger `--budget` finishes in one call. |
+| `refusing to build a store from this capture: <N> of the <M> OpenAlex works could not be turned into a record, leaving <K> loaded.` (no store is written) | The search returned works that cannot be loaded (no id or no title). Either none loaded, or at least 10 were skipped and more than 5% of the works examined. The line after it names the first works, which are also listed in the `malformed_entries` table. | Look at those lines. If the works are what OpenAlex sent, capture again with `openalex-search --refresh`. This starts a new run and spends the quota again. |
 | `SCOPUS_API_KEY: not set (not used in mode openalex)` in `doctor` or `credentials status` | Expected in mode `openalex`. The Scopus keys are not read. | Nothing to do. |
 | `run <run id> discarded: <reason>: discard and restart.` | The run can never seal. Examples: the count changed while the run was paged, or OpenAlex rejected the saved cursor. The command exits with status 1. | Run the same command again. It starts a new run and spends the quota again. The discarded run stays on disk and is never used. |
 | `` `search` is not available in sources mode 'openalex' (...). `` | A Scopus command in an OpenAlex project. | Use `openalex-search`, or create a new project with `--sources scopus`. |
