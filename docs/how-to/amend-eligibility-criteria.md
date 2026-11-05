@@ -233,9 +233,9 @@ log as history. `newly_requires_screening` is usually empty for a narrowing amen
 from — `doc_types.include`. Remember that an *empty* `include` list means "no document-type
 restriction at all", so narrowing by emptying the list does the opposite of what you want.
 
-**"Our subject area is broader than I thought."** This page cannot widen it by editing the
-list alone. Run `prismabib enrich` first: the filter works once enrichment has covered every
-record. Enrichment needs a different Scopus entitlement from Search, and a key entitled for
+**"Our subject area is broader than I thought."** Run `prismabib enrich` first, then add the
+codes to `subject_areas`: the filter works once enrichment has covered every record.
+Enrichment needs a different Scopus entitlement from Search, and a key entitled for
 one is often not entitled for the other. [Limitations](../methodology/limitations.md#subject-areas)
 explains the completeness rule. A non-empty `subject_areas` on a set of records captured by
 Search alone is refused: Scopus `view=COMPLETE` responses carry no subject-area codes, so the
@@ -259,7 +259,7 @@ its `automated`/`language` sizes against the current ones.
 | "does not satisfy the criteria.yaml schema" | The edited YAML is invalid (e.g. a non-semantic `version`) | Fix the file; the message names the failing field |
 | "contains N key(s) prismabib does not understand" | A misspelled or unsupported key | The message names each one, the block it is in, and the closest valid key. If prismabib cannot express the criterion, apply it at screening as a logged decision |
 | "temporal.year_end … precedes temporal.year_start" | The window is inverted | Check whether the two values are transposed |
-| "restricts subject_areas to … but not one of the N records … carries subject-area data" | `subject_areas` is non-empty on a Scopus Search API corpus | Run `prismabib enrich` first, so the filter works once it has covered every record; or set `subject_areas: []` and screen by hand. See [Limitations](../methodology/limitations.md#subject-areas) |
+| "restricts subject_areas to … but not one of the N records … carries subject-area data" | `subject_areas` is non-empty on a set of records captured by the Scopus Search API | Run `prismabib enrich` first, so the filter works once it has covered every record; or set `subject_areas: []` and screen by hand. See [Limitations](../methodology/limitations.md#subject-areas) |
 
 A `StoreError` instead means Layer 1 has not been built yet for this project — replay reads
 the store to recompute `A` and `L`. A `LogError` means `decisions.jsonl` failed its checksum
