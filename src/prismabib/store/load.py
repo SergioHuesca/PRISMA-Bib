@@ -681,7 +681,7 @@ class _Accumulator:
     openalex_rows: list[tuple[Any, ...]] = field(default_factory=list)
     #: ``(register event_id, openalex record_id, rule)`` for each active registration that an
     #: ``openalex_records`` row also holds by DOI or title and year (ADR 0042 Decision 9). Reported,
-    #: not resolved: the ``supersede`` writer is a later pull request.
+    #: and superseded by :func:`_append_supersedes` (the registration is not loaded).
     registration_overlaps: list[tuple[str, str, str]] = field(default_factory=list)
 
 
@@ -3204,10 +3204,11 @@ def _fold_registrations(
             continue
         oa_doi_hit = oa_by_doi.get(derived.doi)
         oa_hit = oa_doi_hit or oa_by_title.get((normalise_title(derived.title), derived.year))
-        if oa_hit:  # held in both tables: loaded as registered, and named in the build report
-            acc.registration_overlaps.append(
-                (event.event_id, min(oa_hit), "doi" if oa_doi_hit else "title_year")
-            )
+        if oa_hit:  # held in both tables: named in the build report and superseded (Decision 9)
+            rule: Literal["doi", "title_year"] = "doi" if oa_doi_hit else "title_year"
+            acc.registration_overlaps.append((event.event_id, min(oa_hit), rule))
+            pending.append((event.event_id, min(oa_hit), rule))
+            continue
         acc.registered_rows.append(
             (
                 event.record_id,

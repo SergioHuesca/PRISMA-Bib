@@ -315,6 +315,15 @@ def require_command(project: Project, command: str) -> str:
     return mode
 
 
+def command_refusal(project: Project, command: str) -> str | None:
+    """The refusal :func:`require_command` would raise, or ``None``; the GUI's disabled reason."""
+    try:
+        require_command(project, command)
+    except ConfigError as exc:
+        return str(exc)
+    return None
+
+
 def require_caller(project: Project, caller: str | None) -> None:
     """The check ``capture_openalex`` runs: ``caller`` must name a known call site."""
     if not caller or caller not in CALLER_CAPABILITY:

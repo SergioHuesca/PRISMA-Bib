@@ -204,8 +204,9 @@ class SupersedeEvent(_Base):
     @field_validator("scopus_record_id")
     @classmethod
     def _scopus_prefix(cls, value: str) -> str:
-        if not value.startswith("scopus:"):
-            raise ValueError("scopus_record_id must begin 'scopus:'")
+        # The field name is ADR 0029's; mode openalex also supersedes by an openalex_records id.
+        if not value.startswith(("scopus:", "openalex:")):
+            raise ValueError("scopus_record_id must begin 'scopus:' or 'openalex:'")
         return value
 
 

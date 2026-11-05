@@ -566,9 +566,39 @@ def test_build__registration_and_openalex_record_same_doi__reported(tmp_path: Pa
     assert entry["pairs"] == [
         {"register_event_id": event.event_id, "openalex_record_id": W1, "match_rule": "doi"}
     ]
-    # reported, not hidden: both rows exist until the supersession writer (a later PR) runs
-    assert env.registered_ids() == [event.record_id]
+    # reported, and superseded in the same build: the paper is held once
+    assert env.registered_ids() == []
     assert _sql(env.project, "SELECT COUNT(*) FROM openalex_records") == [(1,)]
+
+
+def test_supersede__openalex_search_finds_active_registration_doi__writes_one_event(
+    tmp_path: Path,
+) -> None:
+    from prismabib.capture.registrations import SupersedeEvent, load_registration_events
+    from tests.integration.capture.test_registrations import DOI_ONE, TITLE_ONE
+
+    env = _registration_env(tmp_path)
+    env.write_run()
+    env.build()
+    event = env.register(env.candidate(TITLE_ONE, 2021, DOI_ONE))
+    write_search_run(env.project, RUN_A, "q", [[_search_work_of_the_fixture()]])
+
+    with capture_logs() as logs:
+        build_store(env.project, rebuild=True)
+    build_store(env.project, rebuild=True)  # idempotent: the registration is no longer active
+
+    (superseded,) = [
+        e
+        for e in load_registration_events(env.project.registrations_path)
+        if isinstance(e, SupersedeEvent)
+    ]
+    assert (superseded.reverses, superseded.scopus_record_id, superseded.match_rule) == (
+        event.event_id,
+        W1,
+        "doi",
+    )
+    (report,) = [e for e in logs if e["event"] == "store.load.registrations_superseded"]
+    assert report["event_ids"] == [superseded.event_id]
 
 
 def test_build__no_overlap__reports_zero(tmp_path: Path) -> None:
