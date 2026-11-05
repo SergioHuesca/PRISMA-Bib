@@ -249,7 +249,25 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-def _choose_source_mode(sources: _Sources | None) -> SourceMode:
+_ACCESS_ANSWERS: Final = {
+    "y": "yes",
+    "yes": "yes",
+    "n": "no",
+    "no": "no",
+    "s": "not sure",
+    "not sure": "not sure",
+}
+
+
+def _parse_access_answer(text: str) -> str:
+    """Normalise an answer to the access question; anything else makes click ask again."""
+    answer = _ACCESS_ANSWERS.get(" ".join(text.lower().split()))
+    if answer is None:
+        raise typer.BadParameter("please answer y, n or not sure")
+    return answer
+
+
+def _choose_source_mode(sources: _Sources | None, slug: str = "<slug>") -> SourceMode:
     """The mode for a new project: ``--sources``, else the question, else a refusal."""
     if sources is not None:
         return sources.value
@@ -259,8 +277,24 @@ def _choose_source_mode(sources: _Sources | None) -> SourceMode:
             "terminal to ask 'Do you have access to Scopus?', and the answer is never "
             "defaulted. Nothing was written."
         )
-    # default=None: the question has no default answer, and click asks again until y or n.
-    if not typer.confirm("Do you have access to Scopus?", default=None):
+    # No default: the question has no default answer, and click asks again until y, n or s.
+    access = typer.prompt(
+        "Do you have access to Scopus? [y/n/not sure]", value_proc=_parse_access_answer
+    )
+    if access == "not sure":
+        _echo("Mode openalex was recorded: this tool cannot assume you have Scopus access.")
+        _echo(
+            "To check a Scopus key later, run `prismabib credentials set scopus` and then "
+            "`prismabib credentials test scopus` (one request). The test only works in a "
+            "Scopus mode, so you would need a new project or the switch below."
+        )
+        _echo(
+            f"To switch: `prismabib sources {slug} --set scopus` (or `--set scopus+openalex`). "
+            "It is refused once any OpenAlex search run exists under raw/openalex-search/ "
+            "(whatever its state) or screening decisions exist; then create a new project."
+        )
+        return "openalex"
+    if access == "no":
         return "openalex"
     fill = typer.confirm("Also fill missing fields of Scopus records from OpenAlex?", default=True)
     return "scopus+openalex" if fill else "scopus"
@@ -339,7 +373,7 @@ def init(
                     f"`prismabib sources {slug} --set {sources.value} --actor NAME`."
                 )
         else:
-            mode = _choose_source_mode(sources)
+            mode = _choose_source_mode(sources, slug)
             actor_name = _choose_actor(actor)
         project = Project.init(
             slug, title=title, root=projects_root, source_mode=mode, actor=actor_name

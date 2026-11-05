@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 import respx
 import typer
+from click.testing import Result
 from typer.testing import CliRunner
 
 from prismabib import source_mode as sm
@@ -1169,3 +1170,56 @@ def test_store_stamp__stamp_bytes_are_stable() -> None:
     assert store_stamp.stamp_bytes("scopus") == store_stamp.stamp_bytes("scopus")
     assert store_stamp.stamp_bytes("scopus").endswith(b"}\n")
     assert b"\r" not in store_stamp.stamp_bytes("scopus")
+
+
+# -- the third answer to the access question -------------------------------------------------------
+
+
+def _ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: str) -> Result:
+    monkeypatch.setattr("prismabib.cli._stdin_is_tty", lambda: True)
+    return runner.invoke(
+        app, ["init", "demo", "--actor", "Ada", "--root", str(tmp_path)], input=answers
+    )
+
+
+@pytest.mark.parametrize(
+    ("answers", "expected"),
+    [
+        ("s\n", "openalex"),
+        ("not sure\n", "openalex"),
+        ("Not  Sure\n", "openalex"),
+        ("no\n", "openalex"),
+        ("yes\nn\n", "scopus"),
+        ("maybe\n\nx\ns\n", "openalex"),
+    ],
+)
+def test_init__interactive__third_answer_and_re_asking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: str, expected: str
+) -> None:
+    result = _ask(tmp_path, monkeypatch, answers)
+
+    assert result.exit_code == 0, result.output
+    assert Project.open("demo", root=tmp_path).source_mode == expected
+    assert "Do you have access to Scopus? [y/n/not sure]" in result.output
+
+
+def test_init__not_sure__prints_how_to_check_and_how_to_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _ask(tmp_path, monkeypatch, "s\n")
+
+    assert "Mode openalex was recorded" in result.output
+    assert "prismabib credentials set scopus" in result.output
+    assert "prismabib credentials test scopus" in result.output
+    assert "prismabib sources demo --set scopus" in result.output
+    assert "raw/openalex-search/" in result.output
+
+
+@pytest.mark.parametrize("answers", ["n\n", "y\ny\n"])
+def test_init__no_and_yes__do_not_print_the_not_sure_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: str
+) -> None:
+    result = _ask(tmp_path, monkeypatch, answers)
+
+    assert "was recorded" not in result.output
+    assert "credentials test" not in result.output

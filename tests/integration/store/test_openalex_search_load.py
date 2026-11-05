@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pytest
 
 from prismabib.capture.layout import OPENALEX_SEARCH_DIRNAME, RUN_MANIFEST_FILENAME
@@ -405,7 +406,7 @@ def test_openalex_records__work_without_title__counted_as_removed_other_reasons(
 
 
 def test_malformed__two_bad_works_in_one_page__both_counted(tmp_path: Path) -> None:
-    project = one_run(tmp_path, work(1, title=None), work(2, title=None))
+    project = one_run(tmp_path, work(1, title=None), work(2, title=None), work(3))
 
     assert rows(project, "SELECT payload_line FROM malformed_entries ORDER BY 1") == [(0,), (1,)]
 
@@ -832,12 +833,19 @@ def test_loader__digest_mismatch_message__names_the_file_and_the_line_ending_cau
     assert "response-0000" in text and "line-ending" in text and "core.autocrlf" in text
 
 
-def test_build__reuse_in_mode_openalex__all_malformed_run__message_says_a_rebuild_reproduces_it(
+def test_build__reuse_in_mode_openalex__malformed_run__message_says_a_rebuild_reproduces_it(
     tmp_path: Path,
 ) -> None:
+    # A capture with nothing loadable is now refused at build time, so the only way to meet an
+    # empty store over populated raw/ is a store emptied after the build: simulate that residue.
     project = openalex_project(tmp_path)
-    write_search_run(project, _RUN_A, "q", [[work(1, title=None), work(2, title=None)]])
-    build_store(project, rebuild=True)  # 0 rows loaded, 2 malformed: a complete, faithful build
+    write_search_run(project, _RUN_A, "q", [[work(1, title=None), work(2, title=None), work(3)]])
+    build_store(project, rebuild=True)
+    connection = duckdb.connect(str(project.db_path))
+    try:
+        connection.execute("DELETE FROM openalex_records")
+    finally:
+        connection.close()
 
     with pytest.raises(StoreError) as caught:
         build_store(project)
