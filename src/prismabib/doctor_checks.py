@@ -71,10 +71,14 @@ def projects_root_check(root: Path | None) -> Check:
     probe = probe_dir / f".doctor-{os.getpid()}"
     try:  # one attempt: tempfile retries a PermissionError for minutes on Windows
         os.close(os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-    except OSError as exc:
+    except OSError as exc:  # nothing was created, so there is nothing to unlink
         return Check("FAIL", f"projects root: {path} is not writable ({type(exc).__name__})")
-    finally:
+    try:
         probe.unlink(missing_ok=True)
+    except OSError as exc:
+        return Check(
+            "FAIL", f"projects root: {path} could not be cleaned up ({type(exc).__name__})"
+        )
     note = "" if path.exists() else " (does not exist yet; it is created on first use)"
     return Check("ok", f"projects root: {path}, writable{note}")
 

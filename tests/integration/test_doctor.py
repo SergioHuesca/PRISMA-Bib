@@ -123,6 +123,28 @@ def test_doctor__projects_root_not_writable__fails_after_one_attempt(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_doctor__projects_root_under_a_file__fails_cleanly_even_if_unlink_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POSIX: open and unlink both raise NotADirectoryError when an ancestor is a file."""
+    real_open = os.open
+
+    def not_a_dir(path: Any, *args: Any, **kwargs: Any) -> int:
+        if Path(path).name.startswith(".doctor-"):
+            raise NotADirectoryError("not a directory")
+        return real_open(path, *args, **kwargs)
+
+    def unlink_fails(self: Path, missing_ok: bool = False) -> None:
+        raise NotADirectoryError("not a directory")
+
+    monkeypatch.setattr(doctor_checks.os, "open", not_a_dir)
+    monkeypatch.setattr(Path, "unlink", unlink_fails)
+
+    check = doctor_checks.projects_root_check(tmp_path)
+
+    assert check.level == "FAIL" and "NotADirectoryError" in check.text
+
+
 def test_doctor__projects_root_writable__leaves_no_debris(tmp_path: Path) -> None:
     check = doctor_checks.projects_root_check(tmp_path / "not" / "yet")
 
