@@ -49,6 +49,10 @@ from the reviewer who registered; to reverse under another name, open the view w
 
 ## Register a candidate
 
+In a project whose sources mode is `scopus`, registration is not available: the **Register**
+button is disabled, and the alert in the view gives the reason. It is available in modes
+`scopus+openalex` and `openalex`. Reversal is available in every mode.
+
 1. **Read the candidates table.** It shows title, year, DOI, who pasted the candidate and
    when, and a state: `unregistered`, or `registered (<record id>)`. Only unregistered
    candidates appear in the **Candidate** select, so a candidate with an active

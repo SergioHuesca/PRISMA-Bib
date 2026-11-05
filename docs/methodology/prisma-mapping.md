@@ -324,10 +324,10 @@ not an automation exclusion and must not be presented as one.
 
 ### When a registration is reversed or superseded
 
-Reversing a registration, or a Scopus record superseding it, removes that record from `S_raw`.
-In mode `openalex` there is no Scopus record to supersede a registration, so only a reversal
-does this. A registration that an OpenAlex work also holds is not superseded (see the last
-paragraph of this section).
+Reversing a registration, or a record superseding it, removes that registration from `S_raw`.
+The superseding record is a Scopus record (`supersede` with a `scopus:` id) in the Scopus modes,
+or an OpenAlex work (`supersede` with an `openalex:` id) in mode `openalex`. Both are written at
+build, not when a search runs (see the last paragraph of this section).
 Its current decisions stay in `decisions.jsonl` but are **orphaned**: they are not folded into
 any count. The diagram footnote shows only their count; the methods text
 (`methods.orphaned_decisions_text`) lists each one with `event_id`, `record_id`, stage and
@@ -339,7 +339,7 @@ What the counts then do, as the code behaves:
 - `registered` falls by one, and so does every count the record contributed to, at whichever
   stage its decisions had taken it. `included` falls only if the paper had reached `included`;
   a paper excluded at title and abstract lowers `excluded_title_abstract` instead.
-- After a **supersession** (Scopus modes) the Scopus record enters `S_raw` with no decisions. It counts in
+- After a **supersession** the superseding record enters `S_raw` with no decisions. It counts in
   `unsure_title_abstract` (it is not excluded, and not included) until a reviewer decides it
   again; decisions are never transferred. `included` therefore stays lower by one until then.
 - Equation 1 still closes: `identified` and the search side of `S_raw` move together (the
@@ -348,12 +348,15 @@ What the counts then do, as the code behaves:
 The published `included` can thus fall after a draft quoted it. Compare the orphan listing
 in the methods text with the draft.
 
-In mode `openalex` a registration whose paper an OpenAlex search also finds is not superseded
-on this branch. The build reports the pair (`registered_openalex_overlap`) and still loads the
-registration, so the paper is counted in `registered` and in `openalex_records`, and both rows
-are screened. Equation 1 still closes, because both rows are members of `S_raw`, so this
-double count does not show in the equation. Supersession by an OpenAlex match is the writer of
-ADR 0042 PR 6b, which is not built yet.
+In mode `openalex`, a registration whose paper an OpenAlex work also holds (by DOI, or by
+normalised title and year) is superseded by that work. The fold does
+not load the registration, so the OpenAlex work is the only copy in `S_raw` and it is screened
+once. The build names the pair (`registered_openalex_overlap`) and writes the `supersede` event
+after the store is installed. The event is written once: a later build finds the registration no
+longer active, so it writes nothing more for it. Decisions logged on the registration become
+orphans with outcome `supersession`, which the methods text lists (ADR 0033, section 3). Equation 1
+stays closed, because `identified` counts the OpenAlex work and `registered` no longer counts the
+registration.
 
 ### When equation 1 does not close
 
@@ -363,10 +366,13 @@ cause observed so far is here:
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| `identified` far exceeds `|S_raw|`, by roughly a page multiple | **The capture is incomplete.** Paging stopped early, or the API's result cap was hit, so Layer 0 holds fewer entries than the server said existed | Compare `manifest.pages_fetched` and the run's entry count against `total_results`. Re-running `prismabib search` resumes an unsealed run; a *sealed* short run is a fact about the capture and must be reported as one |
+| *Scopus modes:* `identified` far exceeds `|S_raw|`, by roughly a page multiple | **The capture is incomplete.** Paging stopped early, or the API's result cap was hit, so Layer 0 holds fewer entries than the server said existed | Compare `manifest.pages_fetched` and the run's entry count against `total_results`. Re-running `prismabib search` resumes an unsealed run; a *sealed* short run is a fact about the capture and must be reported as one |
 | `identified` exceeds `|S_raw|` by a small amount, and the store was built a while ago | **The store predates the last search.** `prismabib build` without `--rebuild` reuses the existing store and loads no run captured since | `uv run prismabib build <slug> --rebuild` |
 | A stubborn residual on a project with more than one search string | **A search string that is not distinct.** `identified` sums one term per distinct `runs.query`, verbatim; two runs whose queries differ only in whitespace are two searches to this rule and one search to a reader | `SELECT run_id, query, total_results FROM runs ORDER BY run_id` and read the query strings side by side. Do not normalise them in the code — see the Constraints in [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md) |
 | `identified` exceeds `|S_raw|` by exactly the number of entries the build reported skipping | **Entries the loader could not read**, not reflected in the counts | Check `removed_other_reasons` against `SELECT COUNT(*) FROM malformed_entries`; if they disagree, the store was not rebuilt after the entries were skipped |
+| *Mode `openalex`:* `identified` exceeds `|S_raw|` by a small amount, and the store was built before the last `openalex-search` | **The store predates the last search.** The build without `--rebuild` reuses the store, and a sealed OpenAlex run captured since is not loaded | `uv run prismabib build <slug> --rebuild` |
+| *Mode `openalex`:* `identified` exceeds `|S_raw|` by the number of unloadable OpenAlex works | **Search works the loader could not load** (no id, or no title). They are counted under `removed_other_reasons` and are not records | `SELECT run_id, payload_file, payload_line, reason FROM malformed_entries WHERE reason = 'malformed_openalex_search_work'`, then compare the count with `removed_other_reasons`. The `payload_line` is the work's index in its response's `results` array |
+| *Mode `openalex`:* `identified` differs from the sealed run totals | **The identification total is read from `openalex_search_runs`**, one `total_count` per distinct `query_key`, from its earliest sealed run. A discarded or unsealed run contributes nothing | `SELECT run_id, query_key, total_count, works_captured FROM openalex_search_runs WHERE (query_key, run_id) IN (SELECT query_key, MIN(run_id) FROM openalex_search_runs GROUP BY query_key) ORDER BY run_id` (a refresh adds no term, so the earliest run per query is the one that counts) |
 | A multi-search project whose `duplicates_across_searches` is `0` | **The store predates this accounting.** `run_duplicates` is written *during* the load, so a store built by an earlier version — or reused without `--rebuild` — has no rows in it, and the overlap between the searches goes unsubtracted | `uv run prismabib build <slug> --rebuild`. The count cannot be recovered any other way: `records.run_id` keeps only the first run that loaded a record |
 
 Two causes are **no longer** on this list, and a diagram from before this change may still

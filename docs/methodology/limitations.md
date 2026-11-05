@@ -91,14 +91,16 @@ The build refuses a capture whose entries are mostly unloadable, but the guard c
 entries only. In this mode, a capture in which every work is malformed builds a store with zero
 records and no refusal. Check the counts before you cite them.
 
-**A registration can duplicate an OpenAlex work.** A registration is refused when its paper is
-already an OpenAlex record. That check reads the store as it was last built, so a registration
-made before the next build is not refused, even when the search already holds the paper. The
-build reports the pair (`registered_openalex_overlap`) and still loads the registration. The
-paper is then counted in `registered` and in the OpenAlex records, and it is screened twice.
-Equation 1 does not detect this. It stays a known limitation until the supersession writer of
-[ADR 0042](../architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md) PR 6b is
-built.
+**A registration of a paper that an OpenAlex search also finds is superseded at build.** A
+registration is refused when its paper is already an OpenAlex record, but that check reads the
+store as it was last built, so a registration made before the next build is not refused. At
+build, a registration whose DOI, or normalised title and year, an OpenAlex work holds is not
+loaded. The OpenAlex work is screened in its place, and the build names the pair
+(`registered_openalex_overlap`) and writes a `supersede` event to the registration log after the
+store is installed. The event is written once: the superseded registration is no longer active,
+so a later build writes nothing for it. Decisions logged on the registration are orphaned, as for
+a Scopus supersession, and the OpenAlex work starts with no decisions
+([ADR 0042](../architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md), Decision 9).
 
 **Query syntax.** The OpenAlex query refuses characters that could change the search without an
 error, such as curly quotes, full-width and half-width characters (including half-width katakana),
@@ -149,9 +151,9 @@ These records differ from Scopus records, and a review that registers any must s
 - **No Scopus citation counts.** A registered record has no citation snapshot. Its citation
   count is reported as unavailable (`citations.registered_unavailable`), never imputed, and it
   is absent from every citation statistic.
-- **No authors, affiliations or keywords.** Registrations carry none in this version, so
-  they contribute no country, keyword or network node, and the screening view shows title,
-  abstract and venue only.
+- **Authors, affiliations and keywords.** A registration stores the authors, affiliations and
+  keywords of its OpenAlex work, read from the sealed body, and the record view labels them as
+  OpenAlex values. Each analysis reads its own tables, so check the output you cite.
 - **Language filter.** A registration's `language` is NULL and passes the language filter.
   In the two stores ADR 0032 measured, every stored Scopus record also has `language` NULL, so
   the filter excluded nothing there; that is true of those stores only. A Scopus record with a

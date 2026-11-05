@@ -111,6 +111,45 @@ uv run prismabib credentials clear openalex
 `clear` removes the keys of that service from `.env`. `clear scopus` removes both Scopus names. A key
 that is set in your environment is not removed, and the command tells you so.
 
+## The Connect Scopus panel, from Python
+
+`prismabib.credentials_ui.ConnectScopusPanel` is a password field over the same `.env` writer that
+`credentials set scopus` uses. It shows only whether the Scopus key is set and which file it checked.
+It never shows the value. After every attempt, successful or refused, it clears the field, so the
+value is not kept in the widget state that a notebook can save.
+
+The panel is not wired into any notebook or dashboard in this release. You create it yourself in a
+notebook cell:
+
+```python
+from pathlib import Path
+
+from prismabib.credentials_ui import ConnectScopusPanel
+from prismabib.project import Project
+
+repo = Path("/path/to/repository")  # the repository root, which holds .gitignore
+project = Project.open("my-review")
+panel = ConnectScopusPanel(project, env_file=repo / ".env")
+panel.view()  # in a notebook, this displays the panel
+```
+
+The panel's title says "(unused in this mode)" when the project's sources mode is `openalex`. The
+panel is enabled in every mode, so you can store a Scopus key before you change a project's mode.
+
+Its arguments:
+
+- `project` (optional) names the project whose mode sets that title.
+- `env_file` (optional) is the `.env` to read and write. It defaults to `.env` in the working
+  directory of the Python process.
+
+Set `env_file` explicitly when you use the panel from a notebook. A notebook runs from the folder
+that holds the notebook, so with the default `.env`, a Jupyter server started in `notebooks/` would
+write a second `.env` there, which `prismabib` does not read when you run it from the repository
+root. Either pass `env_file` as above, or start Jupyter from the repository root.
+
+The panel uses the same checks as `credentials set`. If the file is not git-ignored by a tracked
+rule, the panel's alert says `Refused:` with the reason, and it writes nothing.
+
 ## Where keys live, and what the commands refuse
 
 - A key is written only to a file that git confirms is ignored by a rule in the repository's tracked
