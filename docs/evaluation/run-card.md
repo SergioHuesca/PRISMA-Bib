@@ -51,8 +51,8 @@ After T0, ask once: "What did you expect that question to mean?"
 
 **T1.** Store your OpenAlex key with the guide's credentials step. Before you copy the key, I will ask you to pause the
 share. Copy the key on a screen that is not shared, and close the account page. Then resume the share, paste the key at
-the prompt, and press Enter. Nothing appears while you paste, and that is expected. Then clear the clipboard: press Win+V
-and clear all. Then check the stored status.
+the prompt, and press Enter. Nothing appears while you paste, and that is expected. Then copy a harmless word from the terminal, for example the word
+ok. Then check the stored status.
 
 **T2.** Create a project for this search: "baseball" AND "pose estimation" AND "pitcher". Put the search in the project
 file. Set the year window in criteria.yaml as the guide says. Then check how many works the search finds before you
@@ -108,11 +108,13 @@ only reply to a complaint during a task.
 ## Key handover (T1)
 
 Pause the share. Copy the key on a screen that is not shared. Close the account page. Resume the share. Paste into the
-hidden prompt and press Enter. Clear the clipboard (Win+V, clear all). The facilitator never looks at the key page.
+hidden prompt and press Enter. Copy a harmless word (for example ok). Do not open Win+V while sharing. If clipboard history
+could not be turned off, clear it while the share is paused. Never paste the key anywhere except the hidden prompt. The
+facilitator never looks at the key page.
 
 ## Screenshots
 
-Tool output only (errors, flow output). The participant sends it by call chat or email. Check it for keys and user names
+Tool output is captured by screenshot, not written live. Tool output only (errors, flow output). The participant sends it by call chat or email. Check it for keys and user names
 before keeping it. Crop it to the output. Never the account page or `.env`.
 
 ## Stop rules

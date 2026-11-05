@@ -12,7 +12,7 @@ Use one method per session, and do not mix them.
 
 - **Form link.** The facilitator sends a form link with no name field. The form holds the SUS items and the custom items.
   The participant fills it in during the questionnaire block. The response is stored with the session code the facilitator
-  writes on it. The form provider, `<form provider>`, holds the answers while they are on the form. This is stated in the
+  writes on it. [If a form is used; otherwise delete this paragraph.] The form provider, `<form provider>`, holds the answers while they are on the form. This is stated in the
   consent text.
 - **Read aloud.** The facilitator reads each item in order and writes the answer.
 

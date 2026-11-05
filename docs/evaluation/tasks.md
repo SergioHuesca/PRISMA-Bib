@@ -55,13 +55,14 @@ file.
    Keep it in your account. Do not send it.
 5. Choose the working folder. It must be a plain local path, such as `C:\Users\<you>\work`. Do not use OneDrive,
    Desktop, or a folder a sync client watches. Create the folder now.
-6. Confirm you can share a window and a sound on the call. Set up a Windows virtual desktop with Win+Ctrl+D. Your
+6. Confirm you can share your screen, with sound, on the call. Set up a Windows virtual desktop with Win+Ctrl+D. Your
    working desktop holds the terminal, Notepad, one browser window, and a CSV viewer. You will share **the working
    desktop**. Keep the account page on another desktop.
 7. Check that your laptop is not blocked by IT policy from installing software in your user profile. If it is, tell
    the facilitator now.
-8. Check clipboard history. Press Win+V. Clear the list, and turn clipboard history off in Windows settings if you
-   prefer. Copied keys must not stay in it.
+8. **Turn clipboard history off. This is mandatory.** Open Windows settings, find clipboard history, and switch it
+   off. Then confirm it is off by pressing Win+V on your own screen, before the call starts, and check that the list is
+   empty or disabled. Never open Win+V while you are sharing. A copied key must not stay in the history.
 9. Check that you can paste into Windows Terminal with Ctrl+V or a right-click, as your terminal is set up. Paste
    something harmless, then clear the line.
 10. Set the Windows Terminal font size to 16 or larger.
@@ -141,7 +142,13 @@ under test changes. It takes about 30 minutes, most of it the install.
    appears. Stop it with Ctrl+C.
 9. Build the staged fallback. Copy the `kit-check` project to a folder named `baseball-pitch-staged`. In its
    `project.toml`, set the recorded actor to `kit-staged`. Check the whole folder for keys, and remove any file that
-   holds one. Test that the facilitator can send the folder, and that a participant can place it under `projects`.
+   holds one. Also check `raw\` and every `manifest.json` for the facilitator's Windows user name and for absolute paths
+   that contain it, and remove or edit any that do. Test that the facilitator can send the folder, and that a participant
+   can place it under `projects`.
+   **Verify (not yet confirmed):** that the tool accepts a project folder whose name differs from the `[project] slug`
+   recorded in its `project.toml`. Reading `src\prismabib\project.py`, `Project.open` resolves the folder from the slug
+   argument, and the code shown does not compare that argument with the `slug` value in `project.toml`. Run one command
+   against the renamed folder and record the result in gate G6.
 10. Prepare the note sheet copy, the run card, and the consent email. Check the placeholders and the gate in
     [protocol](protocol.md), section 7.
 
@@ -211,7 +218,8 @@ failure is a blocker, and the session goes to the questionnaires.
 **Records checklist.**
 
 - The clone and `uv sync` durations, and any error text verbatim.
-- Every `doctor` line that is not `ok`, verbatim, and the exit code.
+- Every `doctor` line that is not `ok`, and the exit code.
+- Tool output is captured by screenshot, not written live. Note the screenshot in the sheet.
 - The number of times the tool asked the access question.
 - The mode `sources` printed.
 - Verbatim: the answer to "What did you expect that question to mean?"
@@ -222,8 +230,8 @@ failure is a blocker, and the session goes to the questionnaires.
 
 > Store your OpenAlex key with the guide's credentials step. Before you copy the key, I will ask you to pause the
 > share. Copy the key on a screen that is not shared, and close the account page. Then resume the share, paste the
-> key at the prompt, and press Enter. Nothing appears while you paste, and that is expected. Then clear the clipboard:
-> press Win+V and clear all. Then check the stored status.
+> key at the prompt, and press Enter. Nothing appears while you paste, and that is expected. Then copy a harmless word
+> from the terminal, for example the word ok. Then check the stored status.
 
 **Starting state.** T0 is done and doctor passed. The OpenAlex key was created before the session.
 
@@ -234,7 +242,11 @@ failure is a blocker, and the session goes to the questionnaires.
 3. The participant closes the account page after copying.
 4. The participant resumes the share on the working desktop.
 5. The participant pastes the key into the hidden prompt and presses Enter. Nothing appears.
-6. The participant clears the clipboard: Win+V, then clear all.
+6. The participant copies a harmless word from the terminal, for example select the word ok and copy it. Win+V is not
+   opened while sharing. If clipboard history could not be turned off in the self-check, the participant clears it
+   while the share is paused, before step 4.
+
+The key is pasted into the hidden prompt and nowhere else. It is not pasted into Notepad to check it.
 
 The rehearsal (gate G10) records what the share shows during a desktop switch on the chosen call platform. That
 behaviour is unverified in this kit. If the share shows the account page at any point, the incident rule applies. See
@@ -264,7 +276,8 @@ The Connect Scopus panel is a Python class, and no notebook in the repository sh
 1. `credentials set openalex` prints `stored OPENALEX_API_KEY in <path>\.env`.
 2. `credentials status` prints `OPENALEX_API_KEY: set (.env)` and `git-ignored by a tracked rule: yes`.
 3. The key does not appear on the shared desktop, and does not appear in any output.
-4. The clipboard is cleared, as step 6 says.
+4. The participant copied a harmless word after the paste, as step 6 says. Win+V was not opened while the share was on.
+   Clipboard history was off, as the self-check required, or was cleared while the share was paused.
 5. For a Scopus holder, the test line is recorded verbatim. A result other than `scopus: ok` is not the participant's
    failure.
 
@@ -279,6 +292,8 @@ The Connect Scopus panel is a Python class, and no notebook in the repository sh
 - The Scopus test line, verbatim, for Scopus holders.
 - Whether the share was paused and resumed as the sequence says, yes or no.
 - Whether any key-like text appeared on the shared desktop. Yes or no only.
+- Whether the key was pasted anywhere other than the hidden prompt. Yes or no only.
+- Tool output is captured by screenshot, not written live. Note the screenshot in the sheet.
 
 ## T2. Create the project and write the search
 
@@ -339,7 +354,8 @@ before it reports `total_results`. The owner agrees a narrow search and a time c
 
 **Records checklist.**
 
-- The `init` output lines, and any TOML or YAML error, verbatim.
+- The `init` output lines, and any TOML or YAML error.
+- Tool output is captured by screenshot, not written live. Note the screenshot in the sheet.
 - The count the participant read, and the source they read it from.
 - The decision and reason, in the participant's words, if off-script.
 - Whether the size check sealed the run.
@@ -379,7 +395,8 @@ uv run prismabib flow baseball-pitch
 
 **Records checklist.**
 
-- The last output line of each command, verbatim.
+- The last output line of each command.
+- Tool output is captured by screenshot, not written live. Note the screenshot in the sheet.
 - Whether the run sealed on this call, or was already sealed.
 - The number on the `records identified` line, and M.
 - Verbatim: the participant's meaning of the number.
@@ -482,7 +499,8 @@ Do not push anything. If the guide asks the participant to commit a file in thei
 
 **Records checklist.**
 
-- The export lines, verbatim, including any warning.
+- The export lines, including any warning.
+- Tool output is captured by screenshot, not written live. Note the screenshot in the sheet.
 - The record id only, not the title.
 - Verbatim: the participant's answer to the question.
 - The source the participant named, and whether it came from the file or from the follow-up question.
@@ -551,7 +569,7 @@ lines only, as printed by each run. Nothing else is copied.
 **Stop-first sequence.** The screening view from T4 may still be running. The guide does not tell the participant to
 stop it. Whether a running server blocks the delete is settled by the lock test in the pre-session check (gate G10). If
 the delete fails while the server runs, the facilitator tells the participant to stop the server with Ctrl+C, then
-retries. The guide gap is logged as a docs finding. The screening view opens the store read-only
+retries. This instruction is logged as a docs finding and is not counted as a hint. The screening view opens the store read-only
 (`screening/ui.py:223`, closed at `ui.py:251`).
 
 `flow` prints no timestamps (`cli.py`, `_print_flow`), so the output can match line by line.

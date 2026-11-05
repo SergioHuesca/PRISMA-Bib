@@ -124,6 +124,7 @@ actor, `kit-staged`, and no real name. Section 7 gate G6 covers the check.
 - [ ] The tag or commit under test is recorded, and the guide the participant opens matches it.
 - [ ] The staged fallback folder is ready, checked for keys, and carries the generic actor.
 - [ ] The virtual desktops are set up as in section 5, and notifications are off.
+- [ ] Clipboard history confirmed off, on the participant's self-check reply.
 - [ ] A timer is running, and the run card is open.
 - [ ] The facilitator's expectations for each task are written down, dated, before the session. These are the
       expectations that section 6 and questionnaires section 5.6 compare findings against.
@@ -146,7 +147,8 @@ actor, `kit-staged`, and no real name. Section 7 gate G6 covers the check.
 
 ## 5. Screen share, the key handover, screenshots, and the incident rule
 
-**What the share shows.** The share follows the desktop. A desktop switch changes what is shared. Window
+**What the share shows.** The share may follow the desktop. This is unverified in this kit. A desktop switch may change
+what is shared. Window
 thumbnails in Win+Tab and Alt+Tab can show a window on another desktop. Because of this, during a share the
 participant does not use Win+Tab or Alt+Tab, and nothing that is not meant for the call is open on the shared
 desktop.
@@ -161,6 +163,7 @@ recorded in gate G10. If the share shows the other desktop, use the sequence bel
   Terminal, Notepad, one browser window, and a CSV viewer. Any app that shows a CSV as text is acceptable.
 - The participant shares the working desktop, not the whole screen.
 - Notifications are off, on both sides.
+- Clipboard history is off, confirmed before the session. This is mandatory. Never open Win+V while sharing.
 - Windows Terminal font size is 16 or larger.
 - **Do not open `.env`.** Nothing edits `.env` by hand. `credentials status` is safe to show. It prints names and
   `set` or `not set`, and never a value.
@@ -173,7 +176,12 @@ recorded in gate G10. If the share shows the other desktop, use the sequence bel
 3. The participant **closes the account page** after copying.
 4. The participant **resumes the share** on the working desktop.
 5. The participant pastes the key into the hidden prompt and presses Enter. Nothing appears, so nothing shows.
-6. The participant **clears the clipboard**: Win+V, then clear all.
+6. The participant **copies a harmless word** from the terminal, for example selects the word ok and copies it. Win+V is
+   not opened while sharing. If clipboard history could not be turned off, the participant clears it while the share is
+   paused, before step 4.
+
+The key is pasted into the hidden prompt and nowhere else. It is never pasted into Notepad, a chat, or any other window to
+check it.
 
 If a key appears on the shared desktop at any point, the incident rule applies.
 
@@ -303,7 +311,7 @@ still in it.
 >
 > **Screenshots.** You may send the facilitator a screenshot of tool output, such as an error or the flow output, by call chat or email. The facilitator checks it for keys and user names, and keeps it only if it passes, cropped to the output. Please never send a screenshot of your account page or a `.env` file.
 >
-> **What is collected.** Notes of what you did and said about the tool, how long each task took, the problems you met, your answers to the background and questionnaire items, facts about your computer (Windows build, Python minor version, prismabib version and commit), any screenshot that passes the check, the email address your consent reply was sent from, and, if a form is used for the questionnaire, the answers you give in it, which are held by `<form provider>`.
+> **What is collected.** Notes of what you did and said about the tool, how long each task took, the problems you met, your answers to the background and questionnaire items, facts about your computer (Windows build, Python minor version, prismabib version and commit), any screenshot that passes the check, the email address your consent reply was sent from, and [if a form is used; otherwise delete this clause: the answers you give in it, which are held by `<form provider>`].
 >
 > **What is not collected.** Your API keys, the contents of your `.env` file, the files in your projects folder, your name in the notes.
 >
@@ -340,6 +348,10 @@ and their list entry and emailed reply destroyed at the same time.
 questionnaires, emails, and screenshots are never placed in the repository, a commit, or an issue.
 
 **Retention.** Notes and questionnaires are kept until `<retention period>`, then deleted.
+
+**Consent record after destruction.** Destroying the emailed reply on the withdrawal date also destroys the only written
+record of consent. The trade-off is accepted, and the facilitator keeps a code-only line in the notes instead:
+`consent: yes, <date>`, with no email address and no name. This line stays with the notes under the retention period.
 
 **No second coder.** No second coder is possible under option C. The session is not recorded and no second person
 attends.

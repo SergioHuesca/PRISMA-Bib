@@ -124,7 +124,7 @@ wording of its task, so the participant reads it as an instruction.
 | --- | --- | --- |
 | Create a throwaway project with no `--sources` flag, so the tool asks the access question. | T0 | The guide's commands always pass `--sources`, so the question is otherwise never shown. |
 | Run `sources` on the throwaway project. | T0 | To see the mode the answer gave. |
-| Pause the share, copy the key on an unshared screen, close the account page, resume the share, paste, and clear the clipboard. | T1 | The share follows the desktop, and the key must not be on screen. |
+| Pause the share, copy the key on an unshared screen, close the account page, resume the share, paste into the hidden prompt, and copy a harmless word. | T1 | The share may follow the desktop (unverified), and the key must not be on screen. |
 | Export the bundle. | T5 | The guide has this step later. T5 needs `records.csv`. |
 | Open `records.csv`. | T5 | Provenance is read from the export. |
 | Open `numbers.json` and find the methods key. The facilitator pastes the Mode openalex paragraph into the call chat. | T6 | The participant sees only these two items. |

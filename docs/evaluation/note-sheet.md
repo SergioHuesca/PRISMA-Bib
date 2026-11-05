@@ -46,7 +46,8 @@ It does not detect bias. See section 6 of [protocol](protocol.md).
 | Date | |
 | Facilitator (initials) | |
 | Recording | Option C. Not recorded. Facilitator written notes only. No note-taker. |
-| Consent confirmed by email reply, and at block 1 (time) | |
+| Consent, code only: `consent: yes, <date>` (no email address, no name) | |
+| Consent confirmed at block 1 (time) | |
 | BQ1 role | |
 | BQ2 review experience | |
 | BQ3 terminal experience | |
