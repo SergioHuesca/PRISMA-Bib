@@ -8,10 +8,10 @@ only when the caller asks for it (``doctor --online``). A separate module so tha
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Final, Literal, NamedTuple
 
@@ -20,6 +20,8 @@ import httpx
 from prismabib import __version__
 from prismabib.credentials import ENV_FILENAME, _ignore_problem
 from prismabib.project import _resolve_projects_root
+from prismabib.sources.openalex import _guard_httpx_log
+from prismabib.sources.scopus import register_secret_for_redaction
 
 MIN_PYTHON: Final = (3, 11)
 OPENALEX_ROOT: Final = "https://api.openalex.org/"
@@ -66,11 +68,13 @@ def projects_root_check(root: Path | None) -> Check:
     probe_dir = path
     while not probe_dir.exists() and probe_dir != probe_dir.parent:
         probe_dir = probe_dir.parent
-    try:
-        with tempfile.TemporaryFile(dir=probe_dir):
-            pass
+    probe = probe_dir / f".doctor-{os.getpid()}"
+    try:  # one attempt: tempfile retries a PermissionError for minutes on Windows
+        os.close(os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
     except OSError as exc:
         return Check("FAIL", f"projects root: {path} is not writable ({type(exc).__name__})")
+    finally:
+        probe.unlink(missing_ok=True)
     note = "" if path.exists() else " (does not exist yet; it is created on first use)"
     return Check("ok", f"projects root: {path}, writable{note}")
 
@@ -78,11 +82,12 @@ def projects_root_check(root: Path | None) -> Check:
 def env_file_check(env_file: Path | None = None) -> Check:
     """Whether ``.env`` is present and git-ignored by a tracked rule; never reads a value."""
     path = (env_file or Path(ENV_FILENAME)).resolve()
-    present = "present" if path.is_file() else "not present"
+    if not path.is_file():
+        return Check("ok", ".env: not present (created by `prismabib credentials set`)")
     problem = _ignore_problem(path)
     if problem is None:
-        return Check("ok", f".env: {present}, git-ignored by a tracked rule")
-    return Check("warn", f".env: {present}, not safely git-ignored ({problem})")
+        return Check("ok", ".env: present, git-ignored by a tracked rule")
+    return Check("warn", f".env: present, not safely git-ignored ({problem})")
 
 
 def environment_report(root: Path | None, *, system: str | None = None) -> tuple[list[str], bool]:
@@ -101,6 +106,9 @@ def environment_report(root: Path | None, *, system: str | None = None) -> tuple
 def openalex_reachable(key: str | None, *, http_client: httpx.Client | None = None) -> Check:
     """One free request to the OpenAlex root; reports reachable, the HTTP status or the error class."""
     headers = {"Authorization": f"Bearer {key}"} if key else {}
+    if key:
+        register_secret_for_redaction(key)
+        _guard_httpx_log(key)
     client = http_client if http_client is not None else httpx.Client(timeout=15.0)
     try:
         response = client.get(OPENALEX_ROOT, headers=headers)

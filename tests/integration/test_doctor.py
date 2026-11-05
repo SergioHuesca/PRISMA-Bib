@@ -6,7 +6,7 @@ through respx, and the Scopus probe is replaced.
 
 from __future__ import annotations
 
-import tempfile
+import os
 from pathlib import Path
 from typing import Any
 
@@ -102,16 +102,42 @@ def test_doctor__git_missing__exit_1(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "FAIL git: not found on PATH" in result.output
 
 
+def test_doctor__projects_root_not_writable__fails_after_one_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_open = os.open
+    attempts: list[Any] = []
+
+    def deny(path: Any, *args: Any, **kwargs: Any) -> int:
+        if Path(path).name.startswith(".doctor-"):
+            attempts.append(path)  # the old tempfile probe retried this thousands of times
+            raise PermissionError("denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(doctor_checks.os, "open", deny)
+
+    check = doctor_checks.projects_root_check(tmp_path)
+
+    assert check.level == "FAIL" and "not writable" in check.text
+    assert len(attempts) == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_doctor__projects_root_writable__leaves_no_debris(tmp_path: Path) -> None:
+    check = doctor_checks.projects_root_check(tmp_path / "not" / "yet")
+
+    assert check.level == "ok" and "does not exist yet" in check.text
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_doctor__projects_root_not_writable__exit_1(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(*_a: Any, **_k: Any) -> None:
-        raise PermissionError("denied")
+    monkeypatch.setattr(
+        doctor_checks,
+        "projects_root_check",
+        lambda _r: doctor_checks.Check("FAIL", "projects root"),
+    )
 
-    monkeypatch.setattr(tempfile, "TemporaryFile", refuse)
-
-    result = _doctor()
-
-    assert result.exit_code == 1
-    assert "FAIL projects root:" in result.output
+    assert _doctor().exit_code == 1
 
 
 def test_doctor__windows_hint_only_on_windows() -> None:
@@ -120,6 +146,13 @@ def test_doctor__windows_hint_only_on_windows() -> None:
 
     assert any("python.org" in ln for ln in windows)
     assert not any("python.org" in ln for ln in linux)
+
+
+def test_doctor__env_file_absent__is_ok_not_a_warning() -> None:
+    out = _doctor().output
+
+    assert "ok   .env: not present (created by `prismabib credentials set`)" in out
+    assert "not safely git-ignored" not in out
 
 
 def test_doctor__env_file_not_git_ignored__warns_without_value(tmp_path: Path) -> None:
@@ -164,13 +197,33 @@ def test_doctor__online_with_key__sends_it_and_never_prints_it(
     ("effect", "expected"),
     [(httpx.ConnectError("x"), "network error ConnectError"), (httpx.Response(503), "HTTP 503")],
 )
-def test_doctor__online_failure__warns_exit_0(effect: Any, expected: str) -> None:
+def test_doctor__online_failure__warns_exit_0(
+    effect: Any, expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENALEX_API_KEY", DUMMY_KEY)
     with respx.mock() as router:
         router.get("https://api.openalex.org/").mock(side_effect=[effect])
         result = _doctor("--online")
 
     assert result.exit_code == 0
     assert "warn openalex:" in result.output and expected in result.output
+    assert DUMMY_KEY not in result.output and DUMMY_KEY[:4] not in result.output
+
+
+def test_doctor__online_with_key__registers_it_for_redaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        doctor_checks, "register_secret_for_redaction", lambda k: seen.append(("r", k))
+    )
+    monkeypatch.setattr(doctor_checks, "_guard_httpx_log", lambda k: seen.append(("g", k)))
+    monkeypatch.setenv("OPENALEX_API_KEY", DUMMY_KEY)
+    with respx.mock() as router:
+        router.get("https://api.openalex.org/").respond(200, json={})
+        _doctor("--online")
+
+    assert ("r", DUMMY_KEY) in seen and ("g", DUMMY_KEY) in seen
 
 
 def test_doctor__check_scopus_without_slug__refused() -> None:
@@ -208,3 +261,17 @@ def test_doctor__check_scopus__reuses_the_probe(
     result = _doctor("demo", "--check-scopus", "--root", str(tmp_path))
 
     assert result.exit_code == code and "scopus: label-x" in result.output
+
+
+def test_doctor__check_scopus_rejected_key__never_printed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(tmp_path, "scopus")
+    scopus_key = "dummyscopuskey123"  # pragma: allowlist secret
+    monkeypatch.setenv("SCOPUS_API_KEY", scopus_key)
+    with respx.mock() as router:
+        router.get(url__startswith="https://api.elsevier.com/").respond(401)
+        result = _doctor("demo", "--check-scopus", "--root", str(tmp_path))
+
+    assert result.exit_code == 1 and "scopus: 401" in result.output
+    assert scopus_key not in result.output and scopus_key[:4] not in result.output
