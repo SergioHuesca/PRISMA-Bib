@@ -49,7 +49,7 @@ As in PRISMA 2020: an investigation that may be described in several reports. Th
 A record a reviewer adds because the search missed it. It is counted on its own line in the flow and never added to the identified count.
 
 **Enrichment**:
-Fetching only the subject-area codes of every record from Scopus Abstract Retrieval, which the search does not return, so that a subject-area restriction can be applied. It must be complete before screening, because a half-enriched corpus cannot be filtered by subject area.
+Fetching only the subject-area codes of every record from Scopus Abstract Retrieval, which the search does not return, so that a subject-area restriction can be applied. It must be complete before screening, because a half-enriched set of records cannot be filtered by subject area.
 _Avoid_: OpenAlex enrichment (that is the cascade)
 
 **Cascade**:

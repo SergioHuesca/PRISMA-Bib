@@ -240,9 +240,9 @@ appearing in your diagram as a restriction. It is therefore **refused**: the eng
 `ConfigError` naming the codes and the corpus. Keep `subject_areas: []` and apply the
 restriction at title/abstract screening, where it becomes a logged decision with a reason
 code. See [Limitations](../methodology/limitations.md#subject-areas). Running `prismabib enrich`
-first makes the filter work. It needs a different Scopus entitlement from Search (a key
-entitled for one is often not entitled for the other), and the same section explains the
-completeness rule.
+first makes the filter work once it has covered every record; it needs a different Scopus
+entitlement from Search (a key entitled for one is often not entitled for the other), and
+the same section explains the completeness rule.
 
 **"I want to see what the corpus looked like under 1.0.0."** Replay against the old version:
 `engine.replay(project, criteria_version="1.0.0")`. Nothing is mutated, and you can compare
