@@ -33,6 +33,7 @@ from prismabib.capture.registrations import (
 from prismabib.errors import ConfigError, LogError, PrismabibError, StoreError, ValidationError
 from prismabib.prisma.impact import ReversalImpact, reversal_impact
 from prismabib.project import Project
+from prismabib.source_mode import command_refusal
 from prismabib.sources.openalex import parse_work
 
 # A plain build reuses an existing store and loads nothing (cli.py), so only --rebuild folds in
@@ -299,6 +300,7 @@ class RegistrationForm:
             raise ValidationError("reviewer must not be blank")
         self.project, self.reviewer = project, reviewer
         self.candidates = CandidateLog(project.root / "decisions" / "candidates.jsonl")
+        self.mode_refusal = command_refusal(project, "register")  # ADR 0042 Decision 3 matrix
         self.near = NearConfirmation()
         self._attempts = 0
         self.views: dict[str, CandidateView] = {}
@@ -324,6 +326,8 @@ class RegistrationForm:
         self.register_button.on_click(self._on_register)
         self.on_change: Callable[[], None] | None = None  # the sibling section's reload
         self.reload()
+        if self.mode_refusal:
+            self.alert.object = _alert_html(self.mode_refusal, 0)
 
     def widgets(self) -> list[Any]:
         """Every input and output control, for the labelled-widget test."""
@@ -438,7 +442,7 @@ class RegistrationForm:
         self.near_checkbox.visible = self.near.offered
         self.near_checkbox.value = self.near.checked
         ready = self._selection() is not None and (not self.near.offered or self.near.checked)
-        self.register_button.disabled = not ready
+        self.register_button.disabled = not ready or self.mode_refusal is not None
 
     # -- the one write ---------------------------------------------------------------------------
 
@@ -449,6 +453,8 @@ class RegistrationForm:
         """Call the writer and nothing else; show its message verbatim on a refusal."""
         selection = self._selection()
         try:
+            if self.mode_refusal:
+                raise ValidationError(self.mode_refusal)
             if selection is None:
                 raise ValidationError("choose a candidate and a captured response first")
             cid, payload, rule = selection

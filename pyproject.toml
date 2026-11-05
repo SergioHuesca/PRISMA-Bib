@@ -264,6 +264,7 @@ module = [
   "prismabib.viz.dashboard",
   "prismabib.capture.registration_ui",
   "prismabib.capture.manual_ui",
+  "prismabib.credentials_ui",
 ]
 disallow_untyped_calls = false
 

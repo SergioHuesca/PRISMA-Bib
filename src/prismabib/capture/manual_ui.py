@@ -23,7 +23,13 @@ from prismabib.capture.conflicts import SIDES, OpenConflict, open_conflicts, res
 from prismabib.capture.manual import FIELDS, add_manual_entry, manual_target
 from prismabib.errors import PrismabibError, ValidationError
 from prismabib.project import Project
+from prismabib.source_mode import command_refusal, effective_mode
 
+_ID_EXAMPLE: Final = {
+    "scopus": "scopus:2-s2.0-...",
+    "scopus+openalex": "scopus:2-s2.0-...",
+    "openalex": "openalex:W...",
+}
 REBUILD_COMMAND: Final = "`prismabib build <slug> --rebuild`"
 NO_DOI_TEXT: Final = "This record has no DOI, so there is no publisher page to open."
 
@@ -70,7 +76,9 @@ class ManualEntryForm:
         if not reviewer.strip():
             raise ValidationError("reviewer must not be blank")
         self.project, self.reviewer = project, reviewer
-        self.record_input = pn.widgets.TextInput(label="Record id", placeholder="scopus:2-s2.0-...")
+        self.record_input = pn.widgets.TextInput(
+            label="Record id", placeholder=_ID_EXAMPLE[effective_mode(project)]
+        )
         self.load_button = pn.widgets.Button(label="Load record")
         self.doi_button = pn.widgets.Button(label="Open publisher page", disabled=True)
         self.doi_note = pn.pane.Markdown(name="Publisher page")
@@ -164,6 +172,7 @@ class ConflictPanel:
         if not reviewer.strip():
             raise ValidationError("reviewer must not be blank")
         self.project, self.reviewer = project, reviewer
+        self.mode_refusal = command_refusal(project, "conflict-resolve")  # reverse is never blocked
         self.conflicts: dict[str, OpenConflict] = {}
         self.select = pn.widgets.Select(label="Open conflict")
         self.values = pn.pane.HTML(name="Values")
@@ -179,6 +188,8 @@ class ConflictPanel:
         for side, button in self.buttons.items():
             button.on_click(_click(partial(self.resolve, side)))
         self.reload()
+        if self.mode_refusal:
+            self.alert.object = _alert(self.mode_refusal)
 
     def widgets(self) -> list[Any]:
         """Every control, for the labelled-widget test."""
@@ -200,12 +211,14 @@ class ConflictPanel:
         chosen = self.conflicts.get(self.select.value or "")
         self.values.object = conflict_html(chosen) if chosen else "<p>No open conflicts.</p>"
         for button in self.buttons.values():
-            button.disabled = chosen is None
+            button.disabled = chosen is None or self.mode_refusal is not None
 
     def resolve(self, side: str) -> str:
         """Write the resolution through the writer; show a refusal verbatim."""
         chosen = self.conflicts.get(self.select.value or "")
         try:
+            if self.mode_refusal:
+                raise ValidationError(self.mode_refusal)
             if chosen is None:
                 raise ValidationError("choose an open conflict first")
             event = resolve_conflict(
