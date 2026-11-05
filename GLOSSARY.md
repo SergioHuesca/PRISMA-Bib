@@ -48,6 +48,13 @@ As in PRISMA 2020: an investigation that may be described in several reports. Th
 **Registered record**:
 A record a reviewer adds because the search missed it. It is counted on its own line in the flow and never added to the identified count.
 
+**Enrichment**:
+Fetching only the subject-area codes of every record from Scopus Abstract Retrieval, which the search does not return, so that a subject-area restriction can be applied. It must be complete before screening, because a half-enriched set of records cannot be filtered by subject area.
+_Avoid_: OpenAlex enrichment (that is the cascade)
+
+**Cascade**:
+Filling a record's missing abstract, authors, affiliations and keywords (not subject-area codes) from further sources in a fixed order: Scopus STANDARD, then Scopus META, then OpenAlex. The two Scopus steps run only when you opt in and set a Scopus budget; otherwise only OpenAlex runs. Records with no DOI are first looked up in OpenAlex by title, to find a DOI for the Scopus steps.
+
 ### Eligibility
 
 **Criteria**:

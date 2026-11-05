@@ -181,7 +181,10 @@ manual_fulltext:
 - **`subject_areas` cannot be enforced** on a corpus captured from the Scopus Search API,
   because `view=COMPLETE` does not return subject-area codes. A non-empty list raises
   `ConfigError`. See
-  [Limitations](../methodology/limitations.md#subject_areas-is-declared-but-not-enforceable).
+  [Limitations](../methodology/limitations.md#subject-areas). Running `prismabib enrich` first
+  makes the filter work once it has covered every record; it needs a different Scopus
+  entitlement from Search (a key entitled for one is often not entitled for the other), and
+  the same section explains the completeness rule.
 
 The `exclude_reason_codes` lists are a closed vocabulary: an exclusion citing an
 undeclared code is refused. Edit the starters to the reasons your review distinguishes.

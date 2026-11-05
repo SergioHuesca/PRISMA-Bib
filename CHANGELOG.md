@@ -10,10 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`GLOSSARY.md`**, the project's domain vocabulary, at the repository root. Its terms for records, reports, studies and included studies follow PRISMA 2020 (the statement paper and the Explanation & Elaboration glossary, which do not use the word "corpus"). It separates a build stage from a screening stage, and unsure from unscreened.
+- **Glossary: Enrichment and Cascade.** "Enrichment" is fetching only the subject-area codes of every record from Scopus Abstract Retrieval, so a subject-area restriction can be applied; "Cascade" is filling a record's missing abstract, authors, affiliations and keywords (not subject-area codes) from Scopus STANDARD, then Scopus META, then OpenAlex, with DOI-less records first looked up in OpenAlex by title. "OpenAlex enrichment" names the cascade, not enrichment. (#284, #286)
 
 ### Changed
 
 - **Architecture overview, Layer 1.** Authors and affiliations are no longer described as "resolved and deduplicated": the loader keeps one row per source author id and performs no disambiguation. Citations are no longer described as coming from the ScienceDirect API: each snapshot comes from the citation count in the search response. Documentation only; no code or number changes.
+- **The strict docs build now fails on a link to a section that does not exist.** `mkdocs.yml` sets `validation: anchors: warn`; strict mode turns the warning into a failure, so the required `docs` check and the Pages deploy both stop on a broken in-page anchor. Before, mkdocs printed it at INFO level and the build passed. Four headings that links point at now carry fixed ids instead of ids generated from their text: "What is built today" (`#what-is-built-today`), "Subject Areas" and "Terms and Compound Terms" in the query tutorial, and the `subject_areas` section of Limitations (`#subject-areas`). Visible heading text is unchanged. If your own link to the old generated ids stops working, point it at the fixed ids. The docs extra now requires mkdocs 1.6 or later, the first release that has `validation`. (#284, #285)
+
+### Fixed
+
+- **Eight links, reported by mkdocs as seven warnings, jumped nowhere.** Five pointed at the Limitations section on `subject_areas`, which had been renamed when abstract runs were loaded into Layer 1 (v0.15.0); the links were in Getting Started, Run a New Review, PRISMA Mapping, and twice in Amend Eligibility Criteria. One on the home page pointed at "what is built today" under its v1.0.0 id; the 1.1.0 release had changed the heading. Two in the query tutorial pointed at section names that did not exist as ids. All now resolve. The four passages on the `subject_areas` restriction (Getting Started, Run a New Review, Amend Eligibility Criteria, PRISMA Mapping) also gain one clause each: run `prismabib enrich` first and the filter works once it has covered every record, it needs a different Scopus entitlement from Search, and Limitations explains the completeness rule. The clauses are about the Scopus modes only. (#284, #285, #287)
 
 ## [1.1.0] — 2026-11-05
 

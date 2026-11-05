@@ -157,3 +157,8 @@ nav:
   - API Reference: reference/index.md
 
 strict: true
+
+# A link to a section that does not exist is a build failure (strict mode turns this warning into
+# one). Without this, mkdocs reports a missing anchor at INFO level and the build passes.
+validation:
+  anchors: warn

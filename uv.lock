@@ -3196,7 +3196,7 @@ requires-dist = [
     { name = "jupyter", marker = "extra == 'notebook'", specifier = ">=1.0.0" },
     { name = "jupytext", marker = "extra == 'notebook'", specifier = ">=1.14.0" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.7.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0,<2.0" },
+    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0,<2.0" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.4.0" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "mutmut", marker = "extra == 'dev'", specifier = ">=2.4.0" },

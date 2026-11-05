@@ -209,7 +209,7 @@ A richer `(normalised_title, first_author_surname, year)` key exists as
 `prismabib.models.dedup_key` and is unit-tested, but the loader does not apply it; only the
 DOI collision is reported.
 
-## `subject_areas` requires enrichment, and enrichment must be complete
+## `subject_areas` requires enrichment, and enrichment must be complete {#subject-areas}
 
 This section describes the Scopus modes. In mode `openalex` the subject areas come from each
 work's primary topic, as described under Coverage.

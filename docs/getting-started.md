@@ -917,8 +917,11 @@ Five rules that change published counts, all enforced in code:
 
     Leave it `[]` and record the restriction in your protocol, applying it during
     title/abstract screening where it becomes a logged decision with a reason code. See
-    [Limitations](methodology/limitations.md#subject_areas-is-declared-but-not-enforceable)
-    for the alternative and its cost.
+    [Limitations](methodology/limitations.md#subject-areas)
+    for the alternative and its cost. Running `prismabib enrich` first makes the filter work
+    once it has covered every record; it needs a different Scopus entitlement from Search (a
+    key entitled for one is often not entitled for the other), and the same section explains
+    the completeness rule.
 
 The reason codes are a **closed vocabulary**: an exclusion citing a code not listed for
 that stage is refused, which is what keeps the diagram's exclusion breakdown
