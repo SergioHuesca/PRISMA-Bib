@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`GLOSSARY.md`**, the project's domain vocabulary, at the repository root. Its terms for records, reports, studies and included studies follow PRISMA 2020 (the statement paper and the Explanation & Elaboration glossary, which do not use the word "corpus"). It separates a build stage from a screening stage, and unsure from unscreened.
-- **Glossary: Enrichment and Cascade.** "Enrichment" is fetching only the subject-area codes of every record from Scopus Abstract Retrieval, so a subject-area restriction can be applied; "Cascade" is filling a record's missing abstract, authors, affiliations and keywords (not subject-area codes) from Scopus STANDARD, then Scopus META, then OpenAlex, with DOI-less records first looked up in OpenAlex by title. "OpenAlex enrichment" names the cascade, not enrichment. (#284, #286)
+- **Glossary: Enrichment and Cascade.** "Enrichment" is fetching only the subject-area codes of every record from Scopus Abstract Retrieval, so a subject-area restriction can be applied; "Cascade" is filling a record's missing abstract, authors, affiliations and keywords (not subject-area codes) from Scopus STANDARD, then Scopus META, then OpenAlex (when the two Scopus steps run, they supply affiliations only), with DOI-less records first looked up in OpenAlex by title. "OpenAlex enrichment" names the cascade, not enrichment. (#284, #286)
 
 ### Changed
 
@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Eight links, reported by mkdocs as seven warnings, jumped nowhere.** Five pointed at the Limitations section on `subject_areas`, which had been renamed when abstract runs were loaded into Layer 1 (v0.15.0); the links were in Getting Started, Run a New Review, PRISMA Mapping, and twice in Amend Eligibility Criteria. One on the home page pointed at "what is built today" under its v1.0.0 id; the 1.1.0 release had changed the heading. Two in the query tutorial pointed at section names that did not exist as ids. All now resolve. The four passages on the `subject_areas` restriction (Getting Started, Run a New Review, Amend Eligibility Criteria, PRISMA Mapping) also gain one clause each: run `prismabib enrich` first and the filter works once it has covered every record, it needs a different Scopus entitlement from Search, and Limitations explains the completeness rule. The clauses are about the Scopus modes only. (#284, #285, #287)
+- **Amend Eligibility Criteria leads with `prismabib enrich` for a wider subject area, two older home-page ids land on the right section, and the Cascade entry says the Scopus steps supply affiliations only.** The answer to "our subject area is broader than I thought" and its `subject_areas` troubleshooting row now name enrichment first and no longer say the restriction cannot be done; screening by hand stays as the alternative. The older home-page ids `#what-is-built-today-v110` and `#what-is-built-today-v100` now also land on "What is built today" (the section keeps its fixed id `#what-is-built-today`). The Cascade glossary entry and its Changelog bullet now say the two Scopus steps supply affiliations only. (#289, #290, #291, #292)
 
 ## [1.1.0] — 2026-11-05
 
