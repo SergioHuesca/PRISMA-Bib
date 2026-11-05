@@ -152,8 +152,9 @@ These records differ from Scopus records, and a review that registers any must s
   count is reported as unavailable (`citations.registered_unavailable`), never imputed, and it
   is absent from every citation statistic.
 - **Authors, affiliations and keywords.** A registration keeps the authors, affiliations and
-  keywords of its OpenAlex work as stored values, and the record view and `exports/records.csv`
-  label them `openalex`. They are not loaded into the author, affiliation or keyword tables
+  keywords of its OpenAlex work as stored values. The record view (`records_all`) and
+  `exports/records.csv` label the authors and affiliations `openalex` and the keywords
+  `openalex-topic` (`store/schema.sql:308-319`). They are not loaded into the author, affiliation or keyword tables
   (`store/load.py:3212-3235`), so a registered paper adds no country, keyword or co-authorship
   node to any analysis, and the screening view, which reads those tables, shows it no keywords or
   authors.
