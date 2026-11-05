@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Eight links, reported by mkdocs as seven warnings, jumped nowhere.** Five pointed at the Limitations section on `subject_areas`, which had been renamed when abstract runs were loaded into Layer 1 (v0.15.0); the links were in Getting Started, Run a New Review, PRISMA Mapping, and twice in Amend Eligibility Criteria. One on the home page pointed at "what is built today" under its v1.0.0 id; the 1.1.0 release had changed the heading. Two in the query tutorial pointed at section names that did not exist as ids. All now resolve. The four passages on the `subject_areas` restriction (Getting Started, Run a New Review, Amend Eligibility Criteria, PRISMA Mapping) also gain one clause each: run `prismabib enrich` first and the filter works once it has covered every record, it needs a different Scopus entitlement from Search, and Limitations explains the completeness rule. The clauses are about the Scopus modes only. (#284, #285, #287)
+- **Amend Eligibility Criteria leads with `prismabib enrich` for a wider subject area.** The answer to "our subject area is broader than I thought" and its `subject_areas` troubleshooting row now name enrichment first and no longer say the restriction cannot be done; screening by hand stays as the alternative. (#289, #290)
 
 ## [1.1.0] — 2026-11-05
 
