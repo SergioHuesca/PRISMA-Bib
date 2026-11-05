@@ -211,35 +211,17 @@ temporal:
   year_start: 1900
   year_end: {year}
 
-# Scopus ASJC subject-area groupings, as four-letter codes: COMP, ENGI, MATH,
-# MEDI, MULT, ... An unknown code is refused rather than silently matching
-# nothing.
-#
-# NOT YET ENFORCEABLE. The Search API's view=COMPLETE does not return
-# subject-area codes, and while `prismabib enrich` fetches them into Layer 0,
-# nothing loads them into Layer 1 yet -- so no corpus has data for this filter.
-# Setting it is REFUSED rather than silently ignored, so that no diagram can
-# claim a filter that never ran. Leave it empty and put SUBJAREA(...) in your
-# project.toml query instead, which applies the restriction server-side.
-#
-# Note the trade-off, for when this does become enforceable: a record excluded
-# by a server-side SUBJAREA is never identified, so it can never appear in your
-# flow diagram. Filtering here is what makes the exclusion *reportable*.
-subject_areas: []
+{subject_note}subject_areas: []
 
 doc_types:
-  # Scopus subtype codes. Common ones: ar (article), cp (conference paper),
-  # re (review), ch (book chapter), bk (book). Empty = accept every type.
-  include: []
+{doctype_note}  include: []
   # Applies ONLY to records whose venue is a conference proceeding; journal
   # articles are never excluded by it. Matching is case-insensitive SUBSTRING,
   # so a short token like "AI" matches almost any venue name. Prefer a
   # distinctive fragment, e.g. "Computer Vision and Pattern Recognition".
   conference_whitelist: []
 
-# Matched against Scopus's own language string, case-insensitively and EXACTLY:
-# use "English", not "en" or "eng". A record with no language recorded is kept.
-languages: []
+{language_note}languages: []
 
 # Reason codes you may cite when excluding a record. prismabib refuses an
 # exclusion whose reason code is not listed here, so that the PRISMA diagram's
@@ -273,7 +255,62 @@ manual_fulltext:
 """
 
 
-def _default_criteria_yaml() -> str:
+#: The criteria.yaml comment blocks that differ by source mode; the ``scopus`` wording is the
+#: original, byte for byte.
+_CRITERIA_NOTES_SCOPUS = {
+    "subject_note": """\
+# Scopus ASJC subject-area groupings, as four-letter codes: COMP, ENGI, MATH,
+# MEDI, MULT, ... An unknown code is refused rather than silently matching
+# nothing.
+#
+# NOT YET ENFORCEABLE. The Search API's view=COMPLETE does not return
+# subject-area codes, and while `prismabib enrich` fetches them into Layer 0,
+# nothing loads them into Layer 1 yet -- so no corpus has data for this filter.
+# Setting it is REFUSED rather than silently ignored, so that no diagram can
+# claim a filter that never ran. Leave it empty and put SUBJAREA(...) in your
+# project.toml query instead, which applies the restriction server-side.
+#
+# Note the trade-off, for when this does become enforceable: a record excluded
+# by a server-side SUBJAREA is never identified, so it can never appear in your
+# flow diagram. Filtering here is what makes the exclusion *reportable*.
+""",
+    "doctype_note": """\
+  # Scopus subtype codes. Common ones: ar (article), cp (conference paper),
+  # re (review), ch (book chapter), bk (book). Empty = accept every type.
+""",
+    "language_note": """\
+# Matched against Scopus's own language string, case-insensitively and EXACTLY:
+# use "English", not "en" or "eng". A record with no language recorded is kept.
+""",
+}
+_CRITERIA_NOTES_OPENALEX = {
+    "subject_note": """\
+# Scopus ASJC subject-area groupings, as four-letter codes: COMP, ENGI, MATH,
+# MEDI, MULT, ... An unknown code is refused rather than silently matching
+# nothing.
+#
+# ENFORCEABLE in this mode. Each OpenAlex work's primary-topic subfield is
+# mapped to its ASJC code when the store is built. A work whose subfield has no
+# mapped code carries no subject area and passes this filter. If NO work in the
+# corpus carries a recognisable code, setting this is REFUSED rather than
+# silently ignored.
+""",
+    "doctype_note": """\
+  # Scopus-style subtype codes; OpenAlex work types are mapped to them: ar
+  # (article), re (review), ed (editorial), le (letter), er (erratum), bk (book),
+  # ch (book chapter), cp (conference paper). Any other OpenAlex type is kept as
+  # OpenAlex's own word (preprint, dataset, report, ...): list that word to
+  # include it. A work with no type fails a non-empty list. Empty = accept every type.
+""",
+    "language_note": """\
+# OpenAlex records never carry a language (it is not derived, ADR 0032), so this
+# rule excludes nothing, whatever you list here. A record with no language
+# recorded is kept.
+""",
+}
+
+
+def _default_criteria_yaml(source_mode: SourceMode | None = None) -> str:
     """Render the default ``criteria.yaml`` content written by :meth:`Project.init`.
 
     Returns:
@@ -282,7 +319,8 @@ def _default_criteria_yaml() -> str:
         immediately, but ``Project.criteria`` must not fail on a
         freshly-initialised project.
     """
-    return _DEFAULT_CRITERIA_YAML.format(year=datetime.now(UTC).year)
+    notes = _CRITERIA_NOTES_OPENALEX if source_mode == "openalex" else _CRITERIA_NOTES_SCOPUS
+    return _DEFAULT_CRITERIA_YAML.format(year=datetime.now(UTC).year, **notes)
 
 
 def _default_project_toml(slug: str, title: str, source_mode: SourceMode | None = None) -> str:
@@ -305,20 +343,26 @@ def _default_project_toml(slug: str, title: str, source_mode: SourceMode | None 
     """
     created = datetime.now(UTC).date().isoformat()
     escaped_title = title.replace('"', '\\"')
-    text = (
-        "[project]\n"
-        f'slug = "{slug}"\n'
-        f'title = "{escaped_title}"\n'
-        f"created = {created}\n"
-        "track_decisions = true\n"
-        "\n"
+    query_comment = (
         "# The Phase 1 Boolean query (BUILD_PLAN §3.1). Fill these in before running\n"
         "# `prismabib search`; an empty query is rejected rather than silently\n"
         "# returning the whole database.\n"
         "#\n"
         '# terms          -- each rendered as FIELD("term"), OR-ed together\n'
         "# compound_terms -- each { all = [...] } becomes an AND-ed group\n"
-        "[query]\n"
+    )
+    if source_mode == "openalex":  # the table stays: the [query] readers expect it
+        query_comment = (
+            "# Used only by the Scopus `prismabib search` command.\n"
+            "# NOT used in this mode: leave it empty and fill in [openalex_query] below.\n"
+        )
+    text = (
+        "[project]\n"
+        f'slug = "{slug}"\n'
+        f'title = "{escaped_title}"\n'
+        f"created = {created}\n"
+        "track_decisions = true\n"
+        "\n" + query_comment + "[query]\n"
         "terms = []\n"
         "compound_terms = []\n"
         'fields = ["TITLE-ABS-KEY"]\n'
@@ -515,7 +559,7 @@ class Project:
 
         criteria_yaml_path = project_root / "criteria.yaml"
         if not criteria_yaml_path.exists():
-            criteria_yaml_path.write_text(_default_criteria_yaml(), encoding="utf-8")
+            criteria_yaml_path.write_text(_default_criteria_yaml(source_mode), encoding="utf-8")
 
         decisions_jsonl_path = project_root / "decisions" / "decisions.jsonl"
         decisions_jsonl_path.touch(exist_ok=True)

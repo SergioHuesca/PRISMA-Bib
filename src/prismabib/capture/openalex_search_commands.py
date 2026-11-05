@@ -132,7 +132,7 @@ def openalex_search(
     ] = False,
     root: Annotated[Path | None, typer.Option("--root", "-r", show_default=False)] = None,
 ) -> None:
-    """Capture OpenAlex works for the [openalex_query] of a project, into a sealed Layer 0 run.
+    """Capture OpenAlex works for the \\[openalex_query] search of a project, into a sealed Layer 0 run.
 
     Needs OPENALEX_API_KEY (a free key; `prismabib credentials set openalex`) and sources mode
     `openalex`. Run `prismabib build <slug> --rebuild` afterwards to load a sealed run.
