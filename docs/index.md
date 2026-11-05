@@ -169,6 +169,7 @@ MIT. See [LICENSE](../LICENSE).
 ## Questions?
 
 - **Want to run a review?** Start with [Getting Started](getting-started.md), which states the Scopus access requirements before anything else
+- **Storing or checking an API key?** See [Enter Credentials](how-to/enter-credentials.md)
 - **Deciding whether to adopt this?** Read [Limitations](methodology/limitations.md) first
 - **New contributor?** See [Contributing](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/CONTRIBUTING.md)
 - **Want to understand the architecture?** Start with [Architecture Overview](architecture/overview.md)

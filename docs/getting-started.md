@@ -14,7 +14,7 @@ Budget an hour, most of it spent waiting for Scopus.
 
 ## Before you invest any time: Scopus `COMPLETE` entitlement
 
-!!! warning "prismabib requires a Scopus API key entitled to the COMPLETE view, and many researchers do not have one"
+!!! warning "A Scopus project needs a Scopus API key entitled to the COMPLETE view, and many researchers do not have one"
 
     `ScopusClient.search` always requests `view=COMPLETE` and **never** falls back to
     `STANDARD`. A 403 raises `EntitlementError` and the run stops. That is deliberate:
@@ -30,8 +30,10 @@ Budget an hour, most of it spent waiting for Scopus.
     2. Off campus, ask your university library for a Scopus **institutional token** and set
        `SCOPUS_INSTTOKEN` alongside `SCOPUS_API_KEY`. This is a routine request; librarians
        handle it regularly.
-    3. If your institution has no Scopus subscription, prismabib cannot run your review
-       today. Nothing later in this page changes that.
+    3. If your institution has no Scopus subscription, use source mode `openalex` instead. It
+       searches OpenAlex with a free key and needs no Scopus key; see
+       [Build an OpenAlex Query](how-to/build-an-openalex-query.md). A project has one of three
+       source modes, `scopus`, `scopus+openalex` or `openalex`. This page follows the Scopus path.
 
     Get a key at [dev.elsevier.com](https://dev.elsevier.com). There is no way to discover
     the entitlement problem except by attempting a capture, which is why it is stated here
@@ -117,6 +119,9 @@ client also registers the key with a structlog processor that scrubs it from eve
 `ProjectsRootSettings`, which declares no required secret — so you can lay a project out
 before your key arrives. `.env` is needed from `prismabib search` onward, which is the
 first step that talks to Scopus.
+
+To store, check or remove a key with the `prismabib credentials` commands instead of editing the
+file by hand, see [Enter Credentials](how-to/enter-credentials.md).
 
 ## 3. `prismabib init`
 

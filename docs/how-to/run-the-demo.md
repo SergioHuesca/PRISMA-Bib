@@ -61,9 +61,9 @@ ls -lh projects/demo-talk/exports/figures/
 
 **Read this whole step before writing anything.** The obvious short paragraph does not work, and finding that out on stage is the worst possible moment.
 
-`prismabib fill` fails in *both* directions: on a key your manuscript cites that `numbers.json` does not define, **and on a key `numbers.json` defines that your manuscript never cites**. A four-line paragraph cites four keys out of the forty-one required ones (`numbers.json` has 75 keys; the 34 optional `methods.*` snippet keys may be left uncited), so it exits non-zero with a wall of thirty-seven "unused key" names — before you have had a chance to demonstrate anything.
+`prismabib fill` fails in *both* directions: on a key your manuscript cites that `numbers.json` does not define, **and on a key `numbers.json` defines that your manuscript never cites**. A four-line paragraph cites four keys out of the forty-one required ones (`numbers.json` has 76 keys for this demo; the 35 optional `methods.*` snippet keys may be left uncited), so it exits non-zero with a wall of thirty-seven "unused key" names — before you have had a chance to demonstrate anything.
 
-That is the contract working as designed (a number that stopped being cited may have had its claim edited away with it), but it means **your demo manuscript must cite every key in `numbers.json` except the 34 optional `methods.*` keys: `methods.registered_sentence`, `methods.orphaned_decisions_text`, `methods.venue_unnamed_sentence`, `methods.cascade_sentence`, and the 30 integer `methods.cascade.<field>.*` and `methods.cascade_conflicts_*` counts.** `citations.registered_unavailable` is required.
+That is the contract working as designed (a number that stopped being cited may have had its claim edited away with it), but it means **your demo manuscript must cite every key in `numbers.json` except the 35 optional `methods.*` keys: `methods.registered_sentence`, `methods.orphaned_decisions_text`, `methods.venue_unnamed_sentence`, `methods.cascade_sentence`, `methods.source_sentence`, and the 30 integer `methods.cascade.<field>.*` and `methods.cascade_conflicts_*` counts.** `methods.source_sentence` is present because the demo creates its project with `--sources scopus` and captures a search. A legacy project, with no `[sources]` table, has the other 34 and no `methods.source_sentence`. `citations.registered_unavailable` is required.
 
 Two ways to handle it, and the second is better theatre:
 
@@ -434,7 +434,7 @@ Exported demo-talk to ./projects/demo-talk/exports
 
   figures                             2
   table renderings                   12
-  numbers.json keys                  75
+  numbers.json keys                  76
   git commit          3f9a2c11
 ```
 
