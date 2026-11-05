@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`GLOSSARY.md`**, the project's domain vocabulary, at the repository root. Its terms for records, reports, studies and included studies follow PRISMA 2020 (the statement paper and the Explanation & Elaboration glossary, which do not use the word "corpus"). It separates a build stage from a screening stage, and unsure from unscreened.
+
+### Changed
+
+- **Architecture overview, Layer 1.** Authors and affiliations are no longer described as "resolved and deduplicated": the loader keeps one row per source author id and performs no disambiguation. Citations are no longer described as coming from the ScienceDirect API: each snapshot comes from the citation count in the search response. Documentation only; no code or number changes.
+
 ## [1.1.0] — 2026-11-05
 
 **This release is of the software, with a second path that does not need a Scopus key.** A

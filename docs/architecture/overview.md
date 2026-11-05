@@ -44,10 +44,10 @@ Every HTTP response from Scopus and ScienceDirect is persisted verbatim as JSONL
 A single DuckDB file containing a relational schema derived from Layer 0. It includes:
 
 - **Records** — papers, reports, reviews (denormalized from Scopus's inconsistent field structure)
-- **Authors and affiliations** — resolved and deduplicated
+- **Authors and affiliations** — one row per source author id, used as-is; no author disambiguation is performed (see [Limitations](../methodology/limitations.md))
 - **Venues** — journal/conference metadata with ISSNs
 - **Keywords** — author and Scopus index keywords
-- **Citations** — if captured (via ScienceDirect API for entitled full text)
+- **Citations** — one snapshot per record and run, taken from the citation count in each search response
 
 **Key property:** Layer 1 must be reconstructible from Layer 0 by running one function. If something has been written to it that should have been an event in Layer 2, the architecture is broken.
 
