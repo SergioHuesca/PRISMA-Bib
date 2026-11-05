@@ -634,6 +634,12 @@ def _print_store_stats(stats: StoreStats, *, slug: str, db_path: Path) -> None:
         ("subject-area links", stats.subject_area_links_loaded),
         ("citation snapshots", stats.citation_snapshots_loaded),
     )
+    if stats.openalex_records_loaded:
+        # Mode openalex: the works are in openalex_records and add no `venues` rows.
+        rows = (
+            ("records (OpenAlex works)", stats.openalex_records_loaded),
+            *(row for row in rows if row[0] not in ("records", "venues")),
+        )
     topic_links = stats.record_keyword_links_by_kind.get("openalex-topic", 0)
     if topic_links:  # ADR 0030 Decision 4: shown only for topic-bearing stores
         rows = (*rows, ("openalex-topic links", topic_links))
