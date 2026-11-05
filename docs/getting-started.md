@@ -109,6 +109,20 @@ Each line starts with a level:
 prints the project's mode and which keys are set. With `--online` it makes one free request to
 `api.openalex.org`. Without `--online` it makes no network request.
 
+With a project slug in mode `openalex`, the key lines for Scopus say they are not used in that mode:
+
+```text
+sources mode: openalex
+SCOPUS_API_KEY: not set (not used in mode openalex)
+SCOPUS_INSTTOKEN: not set (not used in mode openalex)
+OPENALEX_API_KEY: set (.env)
+UNPAYWALL_EMAIL: not set
+```
+
+The output also lists the enabled commands before these lines, which is not shown here. The
+`OPENALEX_API_KEY` line reads `not set` until you store the key in the next section. It reads
+`set (environment)` instead of `set (.env)` when the variable is set in your shell.
+
 ### Store your OpenAlex key
 
 1. Create a free account at [openalex.org](https://openalex.org) and copy the API key.
@@ -269,28 +283,29 @@ uv run prismabib openalex-search baseball-pitch --budget 1
 ```
 
 `--budget` is the most pages this call may request. A page holds 100 works. The option is
-required, and it is also required with `--dry-run`. The stop line looks like this:
+required, and it is also required with `--dry-run`. When the page budget runs out before the
+search is finished, the stop line also gives the count, for this query:
 
 ```text
 stopped: the page budget of 1 is used (run <run id>, 1 page(s) this call, spent $0.001). The run is not sealed.
+OpenAlex reports 108 works for this query; 1 more page(s) of 100 needed.
 Run the same command again to resume from the saved cursor.
 ```
 
-The stop line does not show how many works OpenAlex reports, so this check reads the count from
-the run's `progress.json`. The file is kept while the run is unsealed. A future release may print
-the count on the stop line; until then, read it from the file:
+The count of pages still needed is the number of pages the count requires (108 works is 2 pages
+of 100) minus the page you already have, so `2 - 1 = 1`. The count is also saved in the run's
+`progress.json` while the run is unsealed, under `total_count`, if you want to check it there.
 
-```text
-<projects root>\baseball-pitch\raw\openalex-search\<run id>\progress.json
-```
+If the count is fewer than 100, the one page you fetched is the whole search. The check then seals
+the run, and it prints the sealed line and `Next: prismabib build baseball-pitch --rebuild`. There is
+nothing left to capture. Go to the build step.
 
-Look for `total_count`:
+If the count is exactly 100, the stop line says `no more pages are needed`. Run the same command again to finish the capture: it fetches one empty page and seals the run.
 
-```json
-  "total_count": 108,
-```
-
-For this query the count is 108. If the count is in the hundreds or thousands, narrow `search` in `project.toml` before you go on. A broad query can return thousands of works; one example query returned 2,497. The run you started stays on disk, unsealed. A changed query starts a new run.
+If the count is more than 100, read it before you go on. If it is in the hundreds or thousands,
+narrow `search` in `project.toml` first. A broad query can return thousands of
+works; one example query returned 2,497. The run you started stays on disk, unsealed. A changed query
+starts a new run.
 
 The check spends one page. The next call resumes this run, so no page is paid for twice.
 
@@ -328,6 +343,16 @@ Next: prismabib build baseball-pitch --rebuild
 
 A run is sealed only when every page arrived and the works captured equal the count OpenAlex
 reported. The `<n> page(s) this call` counts only the pages of this call. It is `1 page(s)` if you ran the size check first, because that check fetched page 1; otherwise it is `2 page(s)` for this query.
+
+If Step 4 already sealed the run (fewer than 100 works), this command makes no request. It prints:
+
+```text
+a sealed run of this query already exists (run <run id>); no request was made.
+Use --refresh to capture it again as a new run.
+```
+
+Then go to the build step. Do not use `--refresh` for this; it would capture the same works again
+and spend the quota again.
 
 If the call prints `stopped` instead, run the same command again. It resumes. See
 [If something goes wrong](#if-something-goes-wrong).
@@ -1149,7 +1174,8 @@ These are the differences:
 | `stopped: OpenAlex's daily budget is spent ... It resets in <h> h <mm> min (00:00 UTC)` or `It resets in <mm> min` | The day's allowance is used up. The run is kept, not sealed. | Run the same command after the reset. It resumes from the saved cursor. If the reset time is not known, the line says `It resets at 00:00 UTC.` |
 | `prismabib: UpstreamError`, then `OpenAlex request failed (<error type>).` | A network failure in the middle of a run. | Run the same command again. It resumes from the last page saved, and no saved page is requested again. |
 | `a sealed run of this query already exists (run <run id>); no request was made.` followed by `Use --refresh to capture it again as a new run.` | The query was captured before. Nothing was requested. | Nothing, if the sealed run is what you want. To capture it again, run the command with `--refresh`. That adds a new run and spends the quota again. |
-| `stopped: the page budget of <n> is used` | `--budget` ran out before the search finished. | Run the same command again. It resumes. A larger `--budget` finishes in one call. |
+| `stopped: the page budget of <n> is used`, then `OpenAlex reports <N> works for this query; <K> more page(s) of 100 needed.` | `--budget` ran out before the search finished. The second line is the count, and it is printed once the count is known. | Run the same command again. It resumes. A larger `--budget` finishes in one call. |
+| `SCOPUS_API_KEY: not set (not used in mode openalex)` in `doctor` or `credentials status` | Expected in mode `openalex`. The Scopus keys are not read. | Nothing to do. |
 | `run <run id> discarded: <reason>: discard and restart.` | The run can never seal. Examples: the count changed while the run was paged, or OpenAlex rejected the saved cursor. The command exits with status 1. | Run the same command again. It starts a new run and spends the quota again. The discarded run stays on disk and is never used. |
 | `` `search` is not available in sources mode 'openalex' (...). `` | A Scopus command in an OpenAlex project. | Use `openalex-search`, or create a new project with `--sources scopus`. |
 | `` `openalex-search` is not available in sources mode 'scopus' (...). `` | The OpenAlex command in a Scopus project. | Create a new project with `--sources openalex`. |
