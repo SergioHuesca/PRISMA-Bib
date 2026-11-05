@@ -155,8 +155,8 @@ defines none of them for the participant. A participant who does not know a term
 
 ## Relation to the guided scenario
 
-- The participant's instructions are the guided scenario, [Getting Started](../getting-started.md). The page on the main
-  branch is an older version. A rewritten guide is in review as PR #276.
+- The participant's instructions are the guided scenario, [Getting Started](../getting-started.md). The guide on `main`
+  is the one the participant opens.
 - Each session runs against one tag or commit. The facilitator records it, and checks that the guide the participant opens
   is the same text.
 - The kit links to the guide only as a page. It does not link to a section inside it, because section anchors change when
