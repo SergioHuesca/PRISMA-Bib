@@ -166,6 +166,48 @@ def test_command__budget_stop_then_resume__no_page_is_asked_twice(
     assert run_dirs(project) == [run_dir]
 
 
+def test_command__budget_stop__prints_size_and_pages_remaining_across_calls(
+    tmp_path: Path, fake: Fake
+) -> None:
+    make_project(tmp_path)
+    fake.count = 250  # 3 pages of 100; the fake serves 3 pages
+
+    _, out = invoke(tmp_path, "--budget", "1")
+
+    lines = out.strip().splitlines()
+    assert lines[-1] == "Run the same command again to resume from the saved cursor."
+    assert "OpenAlex reports 250 works for this query; 2 more page(s) of 100 needed." in lines
+
+    _, out = invoke(tmp_path, "--budget", "1")  # pages from earlier calls count
+
+    assert "OpenAlex reports 250 works for this query; 1 more page(s) of 100 needed." in out
+
+
+def test_command__one_page_query__budget_one_seals_and_rerun_makes_no_request(
+    tmp_path: Path, fake: Fake
+) -> None:
+    project = make_project(tmp_path)
+    fake.pages = [fake.pages[0]]  # 2 works, no next_cursor
+    fake.count = 2
+
+    code, out = invoke(tmp_path, "--budget", "1")
+
+    assert code == 0, out
+    (run_dir,) = run_dirs(project)
+    assert is_sealed(run_dir)
+    assert "sealed: 2 works captured of 2 reported by OpenAlex" in out
+    assert "OpenAlex reports" not in out
+    assert out.strip().splitlines()[-1] == "Next: prismabib build demo --rebuild"
+    assert len(fake.requests) == 1
+
+    code, out = invoke(tmp_path, "--budget", "1")
+
+    assert code == 0, out
+    assert "a sealed run of this query already exists" in out
+    assert "no request was made." in out
+    assert len(fake.requests) == 1
+
+
 def test_command__daily_429__prints_when_it_resets_exits_zero_and_resumes_next_day(
     tmp_path: Path, fake: Fake
 ) -> None:

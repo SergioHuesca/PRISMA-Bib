@@ -286,6 +286,16 @@ def status_lines(env_file: Path) -> list[str]:
     return [f"{name}: {key_status(name, values)}" for name in MANAGED_KEYS]
 
 
+def unused_in_openalex(lines: list[str]) -> list[str]:
+    """Mark unset Scopus lines as unused in mode ``openalex``; the prefix is unchanged."""
+    return [
+        f"{ln} (not used in mode openalex)"
+        if ln.startswith("SCOPUS_") and ln.endswith("not set")
+        else ln
+        for ln in lines
+    ]
+
+
 def openalex_key_missing() -> bool:
     """Whether ``OPENALEX_API_KEY`` is unset in the environment and in ``.env`` (no value read out)."""
     line = next(ln for ln in status_lines(Path(ENV_FILENAME)) if ln.startswith("OPENALEX_API_KEY:"))
@@ -472,10 +482,10 @@ def credentials_status(
         _echo(f"file: {env_file} ({exists})")
         _echo("git-ignored by a tracked rule: " + ("yes" if problem is None else f"no ({problem})"))
         lines = status_lines(env_file)
-        for line in lines:
+        mode = checked_mode(Project.open(project, root=root)) if project is not None else None
+        for line in unused_in_openalex(lines) if mode == "openalex" else lines:
             _echo(line)
         if project is not None:
-            mode = checked_mode(Project.open(project, root=root))
             _echo(f"sources mode: {mode}")
             if mode == "openalex" and not lines[0].endswith("not set"):
                 _echo(

@@ -82,11 +82,22 @@ def _summary(slug: str, result: OpenAlexSearchResult, budget: int, secret: str) 
                 "Use --refresh to capture it again as a new run.",
             ]
         case "budget_stop":
+            size = (
+                []
+                if result.total_count is None
+                else [
+                    (
+                        f"OpenAlex reports {result.total_count:,} works for this query; "
+                        f"{result.pages_remaining} more page(s) of {SEARCH_PAGE_SIZE} needed."
+                    )
+                ]
+            )
             return [
                 (
                     f"stopped: the page budget of {budget} is used "
                     f"(run {result.run_id}, {spent}). The run is not sealed."
                 ),
+                *size,
                 "Run the same command again to resume from the saved cursor.",
             ]
         case "daily_budget":

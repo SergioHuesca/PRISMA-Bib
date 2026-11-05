@@ -19,6 +19,7 @@ from prismabib.credentials import (
     openalex_key_missing,
     probe_scopus_key,
     status_lines,
+    unused_in_openalex,
 )
 from prismabib.doctor_checks import environment_report, openalex_reachable
 from prismabib.errors import ConfigError
@@ -153,7 +154,7 @@ def _project_report(project: Project, slug: str, _echo: Callable[[str], None]) -
     _echo(f"  enabled: {', '.join(enabled) or 'none'}")
     _echo(f"  not available in this mode: {', '.join(refused) or 'none'}")
     lines = status_lines(Path(ENV_FILENAME))
-    for line in lines:
+    for line in unused_in_openalex(lines) if mode == "openalex" else lines:
         _echo(line)
     if mode != "openalex" and lines[0].endswith("not set"):
         _echo("  store the Scopus key: prismabib credentials set scopus")

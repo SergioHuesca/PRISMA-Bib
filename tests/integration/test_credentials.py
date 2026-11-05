@@ -883,3 +883,30 @@ def test_dotenv_writer__git_failure_other_than_no_repository__is_reported_as_suc
         cred.write_env(repo / ".env", {"SCOPUS_API_KEY": SENTINEL})
 
     assert "not inside a git repository" not in str(caught.value)
+
+
+def test_doctor__openalex_mode__marks_scopus_keys_unused_but_keeps_the_lines(
+    repo: Path, tmp_path: Path
+) -> None:
+    Project.init("demo", title="D", root=tmp_path / "p", source_mode="openalex", actor="t")
+
+    result = runner.invoke(app, ["doctor", "demo", "--root", str(tmp_path / "p")])
+
+    assert result.exit_code == 0, result.output
+    assert "SCOPUS_API_KEY: not set (not used in mode openalex)" in result.output
+    assert "SCOPUS_INSTTOKEN: not set (not used in mode openalex)" in result.output
+    assert "OPENALEX_API_KEY: not set\n" in result.output
+
+
+def test_credentials_status__project_in_openalex_mode__marks_scopus_keys_unused(
+    repo: Path, tmp_path: Path
+) -> None:
+    Project.init("demo", title="D", root=tmp_path / "p", source_mode="openalex", actor="t")
+
+    args = ["credentials", "status", "--root", str(tmp_path / "p")]
+    plain = runner.invoke(app, args)
+    result = runner.invoke(app, [*args, "--project", "demo"])
+
+    assert "SCOPUS_API_KEY: not set\n" in plain.output  # without a project: unchanged
+    assert "SCOPUS_API_KEY: not set (not used in mode openalex)" in result.output
+    assert "sources mode: openalex" in result.output
