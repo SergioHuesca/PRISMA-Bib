@@ -133,10 +133,11 @@ then `git add .gitignore`. Staging is enough; a commit is not needed. The check 
 tracked `.gitignore` rule, so the rule file must be staged or committed. The check also refuses
 a `.env` that is already tracked.
 
-You need a key for a real search. Without a key a search cannot capture a review. Without a
-key, OpenAlex returns only the first page, and a later page answers 401 (`config.py`, `require_openalex_key`).
-A search without a key cannot seal, so prismabib refuses to start one. A real run stops before its
-first request if the key is missing, with this message:
+You need a key for a real search. On 2026-11-03, OpenAlex refused an anonymous search request as
+rate-limited (HTTP 429, "Anonymous search is temporarily rate-limited ... use a free API key"). So a
+keyless search cannot capture a review, and prismabib refuses to start one without
+`OPENALEX_API_KEY`. A real run stops before its first request if the key is missing, with this
+message:
 
 ```text
 OPENALEX_API_KEY is not set; run `prismabib credentials set openalex`.
