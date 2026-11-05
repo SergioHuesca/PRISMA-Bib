@@ -43,9 +43,14 @@ class ConnectScopusPanel:
         return [self.title, self.status, self.key_input, self.save_button, self.alert]
 
     def reload(self) -> None:
-        """Show "set" or "not set", never the value."""
-        line = next(ln for ln in status_lines(self.env_file) if ln.startswith(f"{KEY}:"))
-        self.status.object = "Scopus key: " + ("not set" if line.endswith("not set") else "set")
+        """Show "set" or "not set" and the file checked, never the value or the file's content."""
+        try:
+            line = next(ln for ln in status_lines(self.env_file) if ln.startswith(f"{KEY}:"))
+        except PrismabibError:  # unreadable or not UTF-8: say so without the reason's detail
+            state = "unknown (the file could not be read)"
+        else:
+            state = "not set" if line.endswith("not set") else "set"
+        self.status.object = f"Scopus key: {state}. File checked: {self.env_file}"
 
     def _on_save(self, _event: Any) -> None:
         self.save()
@@ -56,11 +61,12 @@ class ConnectScopusPanel:
         self.key_input.value = ""
         self.key_input.value_input = ""
         try:
+            if value:  # before the write, as `credentials set` does
+                register_secret_for_redaction(value)
             write_env(self.env_file, {KEY: value})
         except PrismabibError as exc:
             message = f"Refused: {exc}"
         else:
-            register_secret_for_redaction(value)
             message = "Saved."
         self.reload()
         self.alert.object = f'<div role="alert">{html.escape(message)}</div>'

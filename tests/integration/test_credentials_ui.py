@@ -37,7 +37,7 @@ def _models(panel: ConnectScopusPanel) -> str:
 def test_gui_connect_scopus__value_cleared_after_write_and_not_persisted(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     panel = ConnectScopusPanel(env_file=repo / ".env")
-    assert panel.status.object == "Scopus key: not set"
+    assert str(panel.status.object).startswith("Scopus key: not set.")
 
     panel.key_input.value = SENTINEL
     panel.key_input.value_input = SENTINEL
@@ -45,7 +45,8 @@ def test_gui_connect_scopus__value_cleared_after_write_and_not_persisted(tmp_pat
 
     assert message == "Saved."
     assert panel.key_input.value == "" and panel.key_input.value_input == ""
-    assert panel.status.object == "Scopus key: set"
+    assert str(panel.status.object).startswith("Scopus key: set.")
+    assert SENTINEL in scopus._REDACTED_SECRETS  # pyright: ignore[reportPrivateUsage]
     assert SENTINEL in (repo / ".env").read_text(encoding="utf-8")  # the one place it lives
     shown = f"{panel.status.object}{panel.alert.object}{message}{_models(panel)}"
     assert not leaks(shown)
@@ -99,3 +100,25 @@ def test_no_secret__notebooks_clean(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert not leaks(streams.out + streams.err)
     for path in repo.glob("notebooks/*.ipynb"):
         assert not leaks(path.read_text(encoding="utf-8"))
+
+
+def test_gui_connect_scopus__status_names_the_file_checked(tmp_path: Path) -> None:
+    env_file = tmp_path / "notebooks" / ".env"
+
+    panel = ConnectScopusPanel(env_file=env_file)
+
+    assert str(env_file) in str(panel.status.object)
+
+
+def test_gui_connect_scopus__unreadable_env__safe_status_and_alert(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / ".env").write_bytes(bytes([0xFF, 0xFE]) + b" SCOPUS_API_KEY=junk")  # not UTF-8
+    panel = ConnectScopusPanel(env_file=repo / ".env")
+    assert "could not be read" in str(panel.status.object)
+
+    panel.key_input.value = SENTINEL
+    message = panel.save()
+
+    assert message.startswith("Refused:")
+    assert panel.key_input.value == ""
+    assert not leaks(message + str(panel.alert.object) + str(panel.status.object))
