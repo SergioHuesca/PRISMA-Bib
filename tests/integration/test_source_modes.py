@@ -334,10 +334,10 @@ def test_doctor__legacy_project__says_so_and_offers_to_record(tmp_path: Path) ->
     assert "prismabib sources demo --set" in result.output
 
 
-def test_doctor__has_no_check_scopus_option_in_pr1() -> None:
+def test_doctor__has_the_opt_in_network_options() -> None:
     command = typer.main.get_command(app).commands["doctor"]  # type: ignore[attr-defined]
 
-    assert "--check-scopus" not in {name for p in command.params for name in p.opts}
+    assert {"--check-scopus", "--online"} <= {name for p in command.params for name in p.opts}
 
 
 def test_sources__without_set__prints_mode_and_last_event(tmp_path: Path) -> None:

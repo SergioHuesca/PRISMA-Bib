@@ -75,7 +75,9 @@ def test_init__scopus_modes__keep_the_scopus_next_steps(tmp_path: Path, mode: st
     assert "`prismabib search` cannot run until you edit these two files, in this order:" in out
     assert "Fill in [query] terms / compound_terms" in out
     assert "prismabib search demo   # spends Scopus quota; resumable" in out
-    assert "openalex-search" not in out
+    assert (
+        "prismabib openalex-search" not in out
+    )  # the mode lists it as refused, not as a next step
     assert "[openalex_query]" not in out
 
 
@@ -97,7 +99,9 @@ def test_doctor__scopus_mode__still_points_to_search(tmp_path: Path) -> None:
     out = runner.invoke(app, ["doctor", "demo", "--root", str(tmp_path)]).stdout
 
     assert "next: prismabib search demo" in out
-    assert "openalex-search" not in out
+    assert (
+        "prismabib openalex-search" not in out
+    )  # the mode lists it as refused, not as a next step
 
 
 def test_sources_set_openalex__hints_the_query_section_and_other_modes_do_not(
