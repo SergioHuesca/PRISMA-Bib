@@ -66,7 +66,7 @@ docs = [
     # Upper bound is deliberate: MkDocs 2.0 removes the plugin system entirely, which
     # breaks mkdocs-material and mkdocstrings — both mandated by §2.4. Without the
     # bound, a Dependabot PR could resolve to 2.0 and take the docs build down.
-    "mkdocs>=1.5.0,<2.0",
+    "mkdocs>=1.6.0,<2.0",
     "mkdocs-material>=9.4.0",  # §2.4 docs
     "mkdocstrings[python]>=0.24.0",
 ]
