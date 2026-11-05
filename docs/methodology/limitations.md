@@ -336,7 +336,7 @@ is reported under "No cross-database deduplication" above.
 **Built** (Stage 5): a Panel view, `prismabib.screening.ui.screener()`, for use in a
 notebook (it needs the `viz` extra). Decisions can also be recorded by calling
 `DecisionLog.append` in Python — see
-[Getting Started, step 8](../getting-started.md#8-record-your-first-screening-decision).
+[Getting Started, the Scopus path](../getting-started.md#record-your-first-screening-decision).
 
 The guarantees around a decision are already real: append-only, `fsync`ed per write,
 `flock`-serialised, checksum-guarded against hand-editing, folded by

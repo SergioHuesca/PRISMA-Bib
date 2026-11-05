@@ -277,7 +277,7 @@ _DOC_FILES = [
     "docs/how-to/run-the-demo.md",
     "docs/how-to/build-a-query.md",
 ]
-_INIT_LINE = re.compile(r"prismabib init (?P<args>[\w-]+ [^`#\n]*)")
+_INIT_LINE = re.compile(r"prismabib init (?P<args>\w[\w-]*[^`#\n]*)")
 
 
 def _documented_init_commands() -> list[tuple[str, list[str]]]:
