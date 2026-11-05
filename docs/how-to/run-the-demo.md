@@ -2,7 +2,7 @@
 
 A step-by-step walkthrough for presenting prismabib to an audience at a seminar or conference. This guide is written for a researcher who is a competent presenter but not a programmer. It covers a complete end-to-end demo in 10–15 minutes, with a breakdown of what to say at each step and how to recover gracefully if something goes wrong live.
 
-**Before you start:** prismabib requires Scopus entitlement to `view=COMPLETE`. See [Getting Started](../getting-started.md#before-you-invest-any-time-scopus-complete-entitlement) to confirm you have access. If you do not, none of the steps below will work.
+**Before you start:** prismabib requires Scopus entitlement to `view=COMPLETE`. See [Getting Started](../getting-started.md#do-you-have-scopus-access) to confirm you have access. If you do not, none of the steps below will work.
 
 ---
 

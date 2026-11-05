@@ -20,54 +20,59 @@ A four-layer pipeline:
 
 - **Layer 3 — Analysis views** (pure functions): Deterministic transformations producing figures, tables, a Panel dashboard, and exports. Every figure ships with the dataframe that produced it.
 
-## Before you start: Scopus access
+## Before you start: which source you need
 
-**prismabib needs a Scopus API key with `COMPLETE` view entitlement.** That entitlement
-is granted to subscribing institutions, not to personal or free API keys, and prismabib
-will not silently fall back to a lesser view — `STANDARD` omits author keywords and full
-affiliation data, which would quietly bias the keyword network and the geography analysis.
-A wrong number is worse than a refusal.
+A review runs on one source, chosen per project. A Scopus review needs a Scopus API key with
+`COMPLETE` view entitlement. That entitlement is granted to subscribing institutions, not to
+personal or free API keys, and prismabib will not silently fall back to a lesser view.
+`STANDARD` omits author keywords and full affiliation data, which would quietly bias the keyword
+network and the geography analysis. A wrong number is worse than a refusal. Running from your
+institution's network, or asking your university library for a Scopus *institutional token*
+(`SCOPUS_INSTTOKEN`), is often enough. Get a key at [dev.elsevier.com](https://dev.elsevier.com).
 
-In practice this means running from your institution's network, or asking your university
-library for a Scopus *institutional token* and setting `SCOPUS_INSTTOKEN`. If your
-institution has no Scopus subscription, this tool cannot run your review today. Better to
-know that now than after an hour of setup.
-
-Get a key at [dev.elsevier.com](https://dev.elsevier.com).
+Without Scopus access, a review runs on OpenAlex with a free key (source mode `openalex`). Its
+records are OpenAlex's, not Scopus's. [Getting Started](docs/getting-started.md) opens with that
+access question and walks the OpenAlex-only path from clone to a first screening decision.
 
 ## Quick start
 
+Two paths, depending on whether you have Scopus access. [Getting Started](docs/getting-started.md)
+opens with that question and covers each path in full.
+
+Clone with git, not a zip: `credentials set` needs a git repository. Install with the extras
+that the screening view and the notebook need:
+
 ```bash
-gh repo clone SergioHuesca/PRISMA-Bib
+git clone https://github.com/SergioHuesca/PRISMA-Bib.git
 cd PRISMA-Bib
-uv sync
-
-prismabib init my-review --sources scopus --title "My systematic review"
+uv sync --extra viz --extra notebook
 ```
 
-`init` creates `projects/my-review/`, records the project's source mode (`--sources`; without it
-and with a terminal, `init` asks "Do you have access to Scopus?"), and tells you which two
-files to edit. It needs no
-Scopus key — nothing before `search` touches the network — so you can lay a project out
-while you are still waiting for access. Fill in:
-
-- **`project.toml`** — the `[query]` table: the Boolean search itself.
-- **`criteria.yaml`** — your eligibility criteria: year window, document types, languages,
-  and the exclusion reason codes your review will use. It ships with a PRISMA-conventional
-  starter vocabulary to edit.
-
-Then:
+OpenAlex only (no Scopus key; mode `openalex`):
 
 ```bash
-cp .env.example .env          # put your Scopus key in it -- needed from here on
-prismabib search my-review    # spends Scopus quota; resumable if interrupted
-prismabib build my-review     # derive the Layer 1 store from the raw capture
-prismabib flow my-review      # print the PRISMA 2020 flow counts
+uv run prismabib init my-review --sources openalex --title "My systematic review" --actor "<your name>"
+uv run prismabib credentials set openalex      # a free OpenAlex key; the prompt is hidden
+# edit [openalex_query] search in projects/my-review/project.toml, and the year window in criteria.yaml
+uv run prismabib openalex-search my-review --budget 5
+uv run prismabib build my-review --rebuild
+uv run prismabib flow my-review
 ```
 
-Screening can run in the keyboard-first Panel view, `prismabib.screening.ui.screener()`
-(for use in a notebook; needs the `viz` extra), or by calling `DecisionLog.append` in Python. See [Getting Started](docs/getting-started.md) for the
-full walkthrough.
+Scopus (mode `scopus`):
+
+```bash
+uv run prismabib init my-scopus-review --sources scopus --title "My systematic review"
+uv run prismabib credentials set scopus        # a Scopus key entitled to COMPLETE; the prompt is hidden
+# edit [query] in projects/my-scopus-review/project.toml, and criteria.yaml
+uv run prismabib search my-scopus-review       # spends Scopus quota; resumable if interrupted
+uv run prismabib build my-scopus-review
+uv run prismabib flow my-scopus-review
+```
+
+Screening runs in `notebooks/01_screen_title_abstract.ipynb`, with the slug set in
+`PRISMABIB_NOTEBOOK_SLUG`. `DecisionLog.append` in Python is the scripted alternative. The
+walkthrough for each path is in [Getting Started](docs/getting-started.md).
 
 ## Project status
 

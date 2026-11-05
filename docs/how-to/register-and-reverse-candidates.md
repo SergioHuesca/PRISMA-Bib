@@ -17,7 +17,7 @@ The rules behind every step are in [ADR 0029](../architecture/adr/0029-reviewer-
   them: a person pastes each candidate, as ADR 0028 Decision 5 requires.
 - **A sealed OpenAlex response that contains the paper.** The view reads the sealed runs
   under `raw/openalex/` ([ADR 0031](../architecture/adr/0031-openalex-responses-are-layer0-runs.md)).
-  Capturing one needs the network and stays its own step, `prismabib openalex <slug>` (or
+  Capturing one needs the network and stays its own step. In mode `scopus+openalex` it is `prismabib openalex <slug>` (or
   `prismabib cascade <slug>`, which also searches OpenAlex by title and year for every
   DOI-less candidate and records the DOI it finds in the candidate log, never replacing one
   already there); the view never fetches anything. A capture made before the `type`, `primary_location` and
@@ -26,6 +26,65 @@ The rules behind every step are in [ADR 0029](../architecture/adr/0029-reviewer-
 - **A built Layer 1 store**, for two checks. Without `uv run prismabib build <slug>` having
   run once, the duplicate-of-Scopus check cannot run, and the reversal warning reads
   "impact unknown" (see [Reverse a registration](#reverse-a-registration)).
+
+## In sources mode `openalex`
+
+In mode `openalex` the capture step is `prismabib cascade <slug>`. `prismabib openalex <slug>`
+is refused in this mode (`COMMAND_MODES` in `src/prismabib/source_mode.py`). Run `cascade`
+without `--opt-in` and `--scopus-budget`: the command refuses both flags in this mode, because
+this mode has no Scopus records to fill.
+
+What `cascade` captures here: the candidates in `decisions/candidates.jsonl` that are not already
+records. For each candidate with a DOI it asks OpenAlex for that DOI. For each DOI-less candidate
+it searches OpenAlex by title and year. A DOI-less candidate is matched only on an exact
+normalised title with the same year, so a near miss is not found. Each DOI that OpenAlex returns
+for a DOI-less candidate is written back to the candidate log, and never replaces a DOI already
+there. A DOI or title that a sealed run already answered is not asked again, unless you pass
+`--refresh`. The sealed responses go to `raw/openalex/`, which the view reads.
+
+Check the plan before you spend requests:
+
+```bash
+uv run prismabib cascade <slug> --dry-run
+```
+
+It makes no request and writes nothing. It prints how many DOIs and titles it would send to
+OpenAlex. The count of DOIs that OpenAlex finds for DOI-less candidates is not included.
+
+`cascade` rebuilds the store at its end, so the view's duplicate check reads the current store. A
+registration made later still needs `uv run prismabib build <slug> --rebuild` to reach the figures.
+
+### Worked example in mode `openalex` (run live)
+
+The steps below were run on a project in mode `openalex`. The paper is not among the works of its
+search.
+
+1. Paste the candidate. Reading from stdin needs `--reviewer`. A row is `title<TAB>year[<TAB>doi]`,
+   or the same fields separated by commas:
+
+   ```bash
+   printf 'Deep Residual Learning for Image Recognition\t2016\t10.1109/CVPR.2016.90\n' | uv run prismabib candidates add <slug> --reviewer "<your name>"
+   ```
+
+   The output is `added 1, enriched 0, already present 0, conflict 0`. `candidates add` also
+   accepts `--file <path>` in place of stdin.
+2. Run `uv run prismabib cascade <slug>`, with no `--opt-in` and no `--scopus-budget`. The output
+   includes `openalex: value 1, not_found 0, refused 0`. The response is sealed under
+   `raw/openalex/<run>/response-0000.jsonl`.
+3. Find the `candidate_id` of your row in `decisions/candidates.jsonl`. No command lists candidate
+   ids; `candidates` has only `add`. The id is a hash of the normalised title and year. Then run:
+
+   ```bash
+   uv run prismabib register <slug> <candidate_id> --reviewer "<your name>" --payload openalex/<run>/response-0000.jsonl
+   ```
+
+   The output is `registered registered:<id> (event <id>)`. `--match-rule` defaults to `doi`.
+   `title_year` is for a candidate with no DOI. `near_confirmed` also needs `--confirm-near`.
+4. Run `uv run prismabib build <slug> --rebuild` and `uv run prismabib flow <slug>`. The flow gains
+   the line `registered by a reviewer (other methods)   1` under Identification. Identified is
+   unchanged. The build's `subject-area links` count rises by one.
+5. Run `uv run prismabib registrations <slug>`. It lists each active registration as
+   `<registration id>  registered:<candidate id>  <doi>  <reviewer>  <timestamp>`.
 
 ## Open the view
 

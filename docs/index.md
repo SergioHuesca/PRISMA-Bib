@@ -96,23 +96,37 @@ plainly stated list before adopting this for a real review.
 
 ## Getting started
 
+Clone with git, not a zip: `credentials set` needs a git repository. Install with the extras
+that the screening view and the notebook need.
+
 ```bash
 git clone https://github.com/SergioHuesca/PRISMA-Bib.git
 cd PRISMA-Bib
-uv sync
-cp .env.example .env                                    # then put your Scopus key in it
+uv sync --extra viz --extra notebook
 
-uv run prismabib init my-review --sources scopus --title "My review"   # then edit the two files it names
-uv run prismabib search my-review                       # spends Scopus quota; resumable
-uv run prismabib build my-review
+# OpenAlex only (no Scopus key; mode openalex)
+uv run prismabib init my-review --sources openalex --title "My review" --actor "<your name>"
+uv run prismabib credentials set openalex      # a free OpenAlex key; the prompt is hidden
+uv run prismabib openalex-search my-review --budget 5
+uv run prismabib build my-review --rebuild
 uv run prismabib flow my-review
+
+# Scopus (mode scopus)
+uv run prismabib init my-scopus-review --sources scopus --title "My review"
+uv run prismabib credentials set scopus        # a Scopus key entitled to COMPLETE
+uv run prismabib search my-scopus-review
+uv run prismabib build my-scopus-review
+uv run prismabib flow my-scopus-review
 ```
 
-**prismabib needs a Scopus API key entitled to `view=COMPLETE`**, which is granted to
-subscribing institutions rather than to personal keys. If your institution has no Scopus
-subscription, this tool cannot run your review today — better to know that now.
-[Getting Started](getting-started.md) states the access requirements first and walks the
-whole path from clone to a first screening decision.
+Edit the two files each `init` names before the search step: `[openalex_query] search` or
+`[query]` in `project.toml`, and the year window in `criteria.yaml`.
+
+**A review runs on one source, chosen per project.** A Scopus review needs a Scopus API key
+entitled to `view=COMPLETE`, which subscribing institutions are granted and personal keys are
+not. Without Scopus access, a review runs on OpenAlex with a free key (source mode `openalex`).
+[Getting Started](getting-started.md) opens with that access question and walks the
+OpenAlex-only path from clone to a first screening decision.
 
 `uv sync` installs the library and the CLI. The test and documentation toolchains are
 optional extras, so working on the project itself needs `uv sync --all-extras` — which is
@@ -168,7 +182,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ## Questions?
 
-- **Want to run a review?** Start with [Getting Started](getting-started.md), which states the Scopus access requirements before anything else
+- **Want to run a review?** Start with [Getting Started](getting-started.md), which asks whether you have Scopus access before anything else
 - **Storing or checking an API key?** See [Enter Credentials](how-to/enter-credentials.md)
 - **Deciding whether to adopt this?** Read [Limitations](methodology/limitations.md) first
 - **New contributor?** See [Contributing](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/CONTRIBUTING.md)
