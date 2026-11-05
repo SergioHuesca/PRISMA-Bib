@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`GLOSSARY.md`**, the project's domain vocabulary, at the repository root. Its terms for records, reports, studies and included studies follow PRISMA 2020 (the statement paper and the Explanation & Elaboration glossary, which do not use the word "corpus"). It separates a build stage from a screening stage, and unsure from unscreened.
+- **Glossary: Enrichment and Cascade.** "Enrichment" is fetching subject-area codes from Scopus Abstract Retrieval; "Cascade" is filling missing fields from Scopus STANDARD, then Scopus META, then OpenAlex. "OpenAlex enrichment" names the cascade, not enrichment. (#284, #286)
 
 ### Changed
 
