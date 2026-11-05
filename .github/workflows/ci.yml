@@ -446,3 +446,38 @@ jobs:
 
       - name: mkdocs build --strict
         run: uv run mkdocs build --strict
+
+  # Clean-machine proof (Sprint A): a peer WITHOUT Scopus access installs the minimal extras and
+  # runs the documented OpenAlex-only first-run path, offline, with every credential variable
+  # scrubbed by the script itself. `[project.optional-dependencies] dev` is an extra, not a
+  # dependency group, so `uv sync --extra viz --extra notebook` installs no test tooling.
+  #
+  # Deliberately NOT in the required-check set: same precedent as `e2e` and `reproducibility`.
+  # Promote it only after it has passed on `main` at least once.
+  clean-install:
+    name: clean-install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install (a peer's minimal install)
+        run: uv sync --extra viz --extra notebook
+
+      - name: prismabib --version
+        run: uv run prismabib --version
+
+      - name: prismabib doctor
+        run: uv run prismabib doctor
+
+      - name: OpenAlex-only first run, offline
+        run: uv run python scripts/clean_install_scenario.py
