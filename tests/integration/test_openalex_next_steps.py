@@ -97,7 +97,9 @@ def test_doctor__scopus_mode__still_points_to_search(tmp_path: Path) -> None:
     out = runner.invoke(app, ["doctor", "demo", "--root", str(tmp_path)]).stdout
 
     assert "next: prismabib search demo" in out
-    assert "openalex-search" not in out
+    assert (
+        "prismabib openalex-search" not in out
+    )  # the mode lists it as refused, not as a next step
 
 
 def test_sources_set_openalex__hints_the_query_section_and_other_modes_do_not(
