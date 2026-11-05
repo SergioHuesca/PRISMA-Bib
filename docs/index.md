@@ -63,6 +63,8 @@ Deterministic transformations over Layers 1+2, designed to produce:
 
 **Critical design:** No caching of results into files that could go stale. Figures are produced by functions that take a `Corpus` handle and return a figure object plus the dataframe that produced it. Every figure ships with its own data provenance.
 
+<a id="what-is-built-today-v110"></a><a id="what-is-built-today-v100"></a>
+
 ## What is built today (v1.1.0) {#what-is-built-today}
 
 **All four layers are built and tested.** The software is feature-complete against its build
