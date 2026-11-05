@@ -151,9 +151,12 @@ These records differ from Scopus records, and a review that registers any must s
 - **No Scopus citation counts.** A registered record has no citation snapshot. Its citation
   count is reported as unavailable (`citations.registered_unavailable`), never imputed, and it
   is absent from every citation statistic.
-- **Authors, affiliations and keywords.** A registration stores the authors, affiliations and
-  keywords of its OpenAlex work, read from the sealed body, and the record view labels them as
-  OpenAlex values. Each analysis reads its own tables, so check the output you cite.
+- **Authors, affiliations and keywords.** A registration keeps the authors, affiliations and
+  keywords of its OpenAlex work as stored values, and the record view and `exports/records.csv`
+  label them `openalex`. They are not loaded into the author, affiliation or keyword tables
+  (`store/load.py:3212-3235`), so a registered paper adds no country, keyword or co-authorship
+  node to any analysis, and the screening view, which reads those tables, shows it no keywords or
+  authors.
 - **Language filter.** A registration's `language` is NULL and passes the language filter.
   In the two stores ADR 0032 measured, every stored Scopus record also has `language` NULL, so
   the filter excluded nothing there; that is true of those stores only. A Scopus record with a

@@ -13,7 +13,7 @@ Run every command on this page from the repository root, the folder that holds `
 |---|---|---|
 | `SCOPUS_API_KEY` | `credentials set scopus` | `search`, `enrich`, the Scopus steps of `cascade`, and `credentials test scopus`. A project in source mode `openalex` never reads it. |
 | `SCOPUS_INSTTOKEN` | `credentials set scopus` (optional) | The institutional token that your library issued for that key, if it issued one. |
-| `OPENALEX_API_KEY` | `credentials set openalex` | `openalex-search` requires it. The OpenAlex lookups in `cascade` and `openalex` use it when it is set. |
+| `OPENALEX_API_KEY` | `credentials set openalex` | `openalex-search` requires it for a real run. Its `--dry-run` does not, and prints `OpenAlex key: NOT SET (a real run is refused)`. The OpenAlex lookups in `cascade` and `openalex` use it when it is set. |
 | `UNPAYWALL_EMAIL` | `credentials set unpaywall` | The Unpaywall lookup in `fulltext`. It is a contact address, not a secret. |
 
 `credentials` manages only these four names. ScienceDirect's key, `ELSEVIER_SD_API_KEY`, is not
@@ -81,7 +81,10 @@ UNPAYWALL_EMAIL: not set
 - `set (.env)` means the value is in the file. `set (environment)` means the variable is set in your
   environment. The environment wins over the file, so `status` reports that case.
 - `--project` adds the source mode of that project. In mode `openalex`, a stored Scopus key is reported
-  as unused in that mode.
+  as unused in that mode. `--project` reads the project from the projects root, and `--root` names
+  that root when it is not the default.
+- The line `git-ignored by a tracked rule` reads `no (<reason>)` when the file is not safely ignored.
+  The reason is the one the writer would give, so `set` would refuse for the same reason.
 
 `status` never prints a value.
 
@@ -98,6 +101,10 @@ This makes one request to Scopus with the stored key. It reports one of these re
 - `scopus: 403: the key is not entitled here (check the institutional token)`
 - `scopus: network error (<error type>)`
 - `scopus: http <status>` for any other status
+
+If no Scopus key is stored, the command stops with ``SCOPUS_API_KEY is not set; run `prismabib
+credentials set scopus`.`` and makes no request. If the key or the institutional token contains a
+non-ASCII character, it reports `the key or token contains non-ASCII characters; no request made`.
 
 The command exits with status 1 unless the result is `ok`. With `--project`, the command refuses in a
 project whose mode is `openalex`, before any request.
