@@ -22,7 +22,8 @@ Do you have Scopus access (an API key with the COMPLETE view, usually through an
 
 Your answer is recorded per project when you run `init`, with `--sources openalex`,
 `--sources scopus` or `--sources scopus+openalex`. In a terminal, `init` asks the question if
-you leave the flag out. In a script it refuses without the flag, and writes nothing.
+you leave the flag out. When there is no terminal to ask on (stdin is not a terminal), it refuses
+without the flag and writes nothing.
 
 If you answer no, the project is in mode `openalex`, and the Scopus commands refuse to run.
 For example, `search` prints this and exits:
@@ -57,9 +58,14 @@ These steps are the same for every mode.
 ```bash
 git clone https://github.com/SergioHuesca/PRISMA-Bib.git
 cd PRISMA-Bib
-uv sync
+uv sync --extra viz --extra notebook
 uv run prismabib --version
 ```
+
+`uv sync` alone installs the core package and the CLI, but not the screening view or the
+figures. Those need the `viz` extra (Panel and param). Opening the screening notebook needs the
+`notebook` extra. The two `--extra` flags above install both. CI runs `uv sync --all-extras`,
+which also installs the test and docs tools; you do not need them to run a review.
 
 `uv sync` installs the package and its console script. The version is derived from the git
 tag, never typed into `pyproject.toml`. A clone at `v0.5.0` prints `prismabib 0.5.0`. A clone
@@ -120,7 +126,16 @@ The key goes into `.env`, in the folder you run the command from. The repository
 git confirms that a tracked rule ignores the file. It never prints the value.
 `uv run prismabib credentials status` shows `OPENALEX_API_KEY: set (.env)` and no value.
 
-You need a key for a real search. Keyless search is rate-limited. A real run stops before its
+The folder must be a git clone. `credentials set` refuses outside a git repository, because
+the check that keeps `.env` out of commits runs `git`. Clone with git. Do not download a zip.
+A zip or tarball has no `.git`. If you must use an archive, run `git init` in the folder and
+then `git add .gitignore`. Staging is enough; a commit is not needed. The check reads the
+tracked `.gitignore` rule, so the rule file must be staged or committed. The check also refuses
+a `.env` that is already tracked.
+
+You need a key for a real search. Without a key a search cannot capture a review. Without a
+key, OpenAlex returns only the first page, and a later page answers 401 (`config.py`, `require_openalex_key`).
+A search without a key cannot seal, so prismabib refuses to start one. A real run stops before its
 first request if the key is missing, with this message:
 
 ```text
@@ -274,11 +289,9 @@ Look for `total_count`:
   "total_count": 108,
 ```
 
-For this query the count is 108. If the count is in the hundreds or thousands, narrow `search`
-in `project.toml` before you go on. In live testing, a broad query returned 2,497 works. The run
-you started stays on disk, unsealed. A changed query starts a new run.
+For this query the count is 108. If the count is in the hundreds or thousands, narrow `search` in `project.toml` before you go on. A broad query can return thousands of works; one example query returned 2,497. The run you started stays on disk, unsealed. A changed query starts a new run.
 
-The check cost one page. The next call resumes this run, so no page is paid for twice.
+The check spends one page. The next call resumes this run, so no page is paid for twice.
 
 ### Step 5. Capture the search
 
@@ -313,10 +326,7 @@ Next: prismabib build baseball-pitch --rebuild
 ```
 
 A run is sealed only when every page arrived and the works captured equal the count OpenAlex
-reported. The `<n> page(s) this call` counts only the pages of this call. If you ran the size
-check first, this call fetched one page, so it says `1 page(s)`. When the whole search runs in
-one call, the line says `2 page(s)`. In the earlier live run it read `2 page(s) this call, spent $0.002`. In the re-run that
-followed the size check it read `1 page(s) this call, spent $0.001`.
+reported. The `<n> page(s) this call` counts only the pages of this call. It is `1 page(s)` if you ran the size check first, because that check fetched page 1; otherwise it is `2 page(s)` for this query.
 
 If the call prints `stopped` instead, run the same command again. It resumes. See
 [If something goes wrong](#if-something-goes-wrong).
@@ -328,7 +338,7 @@ uv run prismabib build baseball-pitch --rebuild
 ```
 
 `--rebuild` builds the store from the sealed runs. Without it, an existing store is reused, and
-nothing new is loaded. The output summary, with log lines on stderr left out, looks like this:
+nothing new is loaded. The command also prints one `[info] store.build_store.complete` log line above the summary; it is left out below. The summary looks like this:
 
 ```text
 Rebuilt store at <projects root>\baseball-pitch\store\corpus.duckdb
@@ -370,8 +380,8 @@ at the top. The rest of the summary is the same.
 uv run prismabib flow baseball-pitch
 ```
 
-This is the output of a live run of these steps, with the year window from step 3 (2015 to
-2026), before any screening:
+The output below uses the year window from step 3 (2015 to 2026) and is printed before any
+screening. Counts drift as OpenAlex updates its records, so your numbers may differ:
 
 ```
 PRISMA 2020 flow -- project 'baseball-pitch'
@@ -433,7 +443,7 @@ uv run panel serve notebooks/01_screen_title_abstract.ipynb --show
 
 In bash, put both variables in front of the command on one line. Without the slug the notebook
 shows a red **Screening cannot start** message that names the reason. The screen opens with
-author names and citation counts hidden. Those are the default settings of the notebook.
+author names and citation counts absent, not hidden: the view does not receive them. The notebook uses the default. To show them, call `screener(..., blind=False)` yourself.
 
 The keys come from the notebook's key map:
 
@@ -472,8 +482,7 @@ No number is typed in. Every line is recomputed from the store and the log each 
 
 Use this step when you know a paper that the search missed. A reviewer registers it as a record.
 The flow counts it on its own `registered` line and never adds it to `identified`. The example
-below uses a paper that is not among the 108 works. These steps were run live on this project.
-The full rules are in
+below uses a paper that is not among the 108 works. The full rules are in
 [Register and Reverse a Candidate](how-to/register-and-reverse-candidates.md).
 
 1. Paste the candidate. A row is `title<TAB>year[<TAB>doi]`, or the same fields separated by
@@ -561,10 +570,30 @@ numbers until the tree is clean. The same applies when the commit is on no remot
 a reader cannot fetch the code. Commit or discard your changes in the prismabib clone and export
 again.
 
-Commit `criteria.yaml` and `project.toml` in the repository where you keep your review, before you
-export. Those two files define the review, and the criteria history is read from git. The
-`projects/` folder is git-ignored in this repository (`.gitignore`), so the review folder does not
-change the state of the prismabib clone.
+Commit `criteria.yaml` and `project.toml` before you export. The criteria history is read from
+git, so an uncommitted amendment cannot be replayed. This repository ignores `projects/` (the
+`projects/` rule in `.gitignore`), so git does not pick the review up by itself. Choose one of
+two ways:
+
+- Keep the review in your own repository. Set `PRISMABIB_PROJECTS_ROOT` to a folder inside that
+  repository, and commit the two files there.
+- Or add the two files to this clone with `-f`, and commit them. The `.gitignore` comment gives
+  the same command for `decisions.jsonl`:
+
+  ```bash
+  git add -f projects/<slug>/criteria.yaml projects/<slug>/project.toml
+  git commit -m "Protocol for <slug>"
+  ```
+
+Do not add `raw/`, `store/` or `fulltext/`. Those are licensed or derived, and the ignore rules
+keep them out. A force-added file is tracked from then on. If you edit it and do not commit, the
+clone is dirty, and the export warns.
+
+The export's dirty check reads the prismabib clone, which is the code that produced the numbers
+(`export.py`, `_code_root`). It is not your review folder. A review folder that is git-ignored
+does not make that clone dirty. A force-added file that you have edited and not committed does,
+because it is in the same repository. The export also warns when the commit is on no remote
+branch. That is expected for a local review.
 
 After an export, `exports/` lists these entries:
 
@@ -590,7 +619,7 @@ What the export writes, under `exports/`:
 - `provenance_conflicts.csv` lists disagreements between Scopus and OpenAlex values. This
   walkthrough has no Scopus records, so there is nothing to disagree with.
 - `numbers.json` holds the scalars a manuscript may cite. In this mode it includes
-  `methods.source_sentence`. In the live run that sentence reads:
+  `methods.source_sentence`. For the example query the sentence reads:
 
   ```text
   Records were identified by searching OpenAlex; no Scopus search was run. The search was `"baseball" AND "pose estimation" AND "pitcher"`, run on 2026-11-05. OpenAlex reported 108 works across 1 distinct query. Metadata, including abstracts rebuilt from OpenAlex's inverted index and subject areas taken from OpenAlex's primary topic, is OpenAlex's own (see Limitations).
@@ -612,9 +641,9 @@ uv run prismabib fill <manuscript.md> <projects root>\baseball-pitch\exports\num
 `fill` substitutes `{{key}}` placeholders from `numbers.json`. It fails in both directions. It
 fails if the manuscript cites a key that `numbers.json` does not define, and it fails if
 `numbers.json` has a key that the manuscript never cites. A short paragraph therefore fails.
-[Run the Demo](how-to/run-the-demo.md) explains the rule in its Step 5 and shows how to list the
-keys to cite. That example is written for a Scopus demo, so take its key counts as examples and
-generate your own list from your `numbers.json`.
+[Run the Demo](how-to/run-the-demo.md) explains the rule in its "Before the day" item 5, "Prepare
+the manuscript", and shows how to list the keys to cite. That example is written for a Scopus
+demo, so take its key counts as examples and generate your own list from your `numbers.json`.
 
 ### What you have now
 
@@ -641,7 +670,8 @@ generate your own list from your `numbers.json`.
 ## The Scopus path
 
 Use this path if you answered yes and you want a Scopus-only review (mode `scopus`). The steps
-below are the Scopus steps this page has always had, with the credentials step added.
+below are the Scopus steps this page has always had, with the credentials step added. The same
+path in more detail, with a look at the Layer 0 files, is in [Run a New Review](how-to/run-a-new-review.md).
 
 !!! warning "A Scopus project needs a Scopus API key entitled to the COMPLETE view, and many researchers do not have one"
 
@@ -1114,9 +1144,10 @@ These are the differences:
 | `doctor`: `warn .env: present, not safely git-ignored (<reason>)` | A key in `.env` could be committed by mistake. `doctor` still exits `0`. | Run `uv run prismabib credentials status` for the reason, and fix the ignore rule. |
 | `OPENALEX_API_KEY is not set; run `prismabib credentials set openalex`.` | A real search needs the key. Nothing was sent. | Run `uv run prismabib credentials set openalex`. |
 | `OpenAlex key: NOT SET (a real run is refused)` | The same problem, shown by `--dry-run`. | The same fix. |
-| `Refusing to write <path>: <reason>. A key is only stored in a file that a tracked .gitignore ignores ...` | Git does not confirm that `.env` is ignored by a tracked rule. Nothing was written. | Run the command from the repository root. The reason names the check that failed, for example that `.env` is tracked, or that git cannot run. Fix that, then run `credentials set` again. |
+| `Refusing to write <path>: <reason>. A key is only stored in a file that a tracked .gitignore ignores ...` | Git does not confirm that `.env` is ignored by a tracked rule. Nothing was written. | Run the command from the repository root. The reason names the check that failed. A folder that is not a git repository (for example, an unpacked zip) gets `is not inside a git repository`: clone with git instead, or run `git init` and then `git add .gitignore`. `.env` tracked by git is refused too. Fix the reason, then run `credentials set` again. |
 | `stopped: OpenAlex's daily budget is spent ... It resets in <h> h <mm> min (00:00 UTC)` or `It resets in <mm> min` | The day's allowance is used up. The run is kept, not sealed. | Run the same command after the reset. It resumes from the saved cursor. If the reset time is not known, the line says `It resets at 00:00 UTC.` |
-| `prismabib: UpstreamError`, then `OpenAlex request failed (<error type>).` | A network failure in the middle of a run. | Run the same command again. It resumes from the last page saved, and no saved page is requested again. The live run confirmed this. |
+| `prismabib: UpstreamError`, then `OpenAlex request failed (<error type>).` | A network failure in the middle of a run. | Run the same command again. It resumes from the last page saved, and no saved page is requested again. |
+| `a sealed run of this query already exists (run <run id>); no request was made.` followed by `Use --refresh to capture it again as a new run.` | The query was captured before. Nothing was requested. | Nothing, if the sealed run is what you want. To capture it again, run the command with `--refresh`. That adds a new run and spends the quota again. |
 | `stopped: the page budget of <n> is used` | `--budget` ran out before the search finished. | Run the same command again. It resumes. A larger `--budget` finishes in one call. |
 | `run <run id> discarded: <reason>: discard and restart.` | The run can never seal. Examples: the count changed while the run was paged, or OpenAlex rejected the saved cursor. The command exits with status 1. | Run the same command again. It starts a new run and spends the quota again. The discarded run stays on disk and is never used. |
 | `` `search` is not available in sources mode 'openalex' (...). `` | A Scopus command in an OpenAlex project. | Use `openalex-search`, or create a new project with `--sources scopus`. |
@@ -1151,3 +1182,12 @@ All four layers (0 to 3) are built and tested. Concretely:
 
 `prismabib code` does not exist — deliberately, rather than as a stub that accepts arguments
 and does nothing.
+
+## Next
+
+These links apply to every path.
+
+- [Run a New Review](how-to/run-a-new-review.md) — the review workflow in more detail.
+- [Limitations](methodology/limitations.md) — what this tool cannot do today. Read it before you cite a number.
+- [Architecture Overview](architecture/overview.md) — the four-layer model.
+- [Testing](testing.md) — the test taxonomy and how to run each subset.

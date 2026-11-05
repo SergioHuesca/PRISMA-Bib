@@ -96,17 +96,31 @@ plainly stated list before adopting this for a real review.
 
 ## Getting started
 
+Clone with git, not a zip: `credentials set` needs a git repository. Install with the extras
+that the screening view and the notebook need.
+
 ```bash
 git clone https://github.com/SergioHuesca/PRISMA-Bib.git
 cd PRISMA-Bib
-uv sync
-cp .env.example .env                                    # then put your Scopus key in it
+uv sync --extra viz --extra notebook
 
-uv run prismabib init my-review --sources scopus --title "My review"   # then edit the two files it names
-uv run prismabib search my-review                       # spends Scopus quota; resumable
-uv run prismabib build my-review
+# OpenAlex only (no Scopus key; mode openalex)
+uv run prismabib init my-review --sources openalex --title "My review" --actor "<your name>"
+uv run prismabib credentials set openalex      # a free OpenAlex key; the prompt is hidden
+uv run prismabib openalex-search my-review --budget 5
+uv run prismabib build my-review --rebuild
 uv run prismabib flow my-review
+
+# Scopus (mode scopus)
+uv run prismabib init my-scopus-review --sources scopus --title "My review"
+uv run prismabib credentials set scopus        # a Scopus key entitled to COMPLETE
+uv run prismabib search my-scopus-review
+uv run prismabib build my-scopus-review
+uv run prismabib flow my-scopus-review
 ```
+
+Edit the two files each `init` names before the search step: `[openalex_query] search` or
+`[query]` in `project.toml`, and the year window in `criteria.yaml`.
 
 **A review runs on one source, chosen per project.** A Scopus review needs a Scopus API key
 entitled to `view=COMPLETE`, which subscribing institutions are granted and personal keys are
