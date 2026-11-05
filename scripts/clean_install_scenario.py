@@ -49,7 +49,11 @@ def scrub_environment() -> None:
 
 def cli(*args: str, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
     """Run the real CLI as a subprocess; return (exit code, stdout + stderr)."""
-    env = {**os.environ, **(extra_env or {})}
+    # Children get an unroutable proxy (httpx trusts the environment), so an accidental real
+    # request fails fast instead of reaching OpenAlex. Not applied to the in-process mock step.
+    dead = "http://127.0.0.1:9"
+    proxies = dict.fromkeys(("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"), dead)
+    env = {**os.environ, **proxies, "NO_PROXY": "", "no_proxy": "", **(extra_env or {})}
     proc = subprocess.run(
         [sys.executable, "-m", "prismabib.cli", *args],
         capture_output=True,
@@ -106,9 +110,9 @@ def run_steps(root: Path) -> None:
     projects = root / "projects"
     repo = root / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, timeout=60)
     (repo / ".gitignore").write_text("*.env\n", encoding="utf-8")
-    subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=True)
+    subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=True, timeout=60)
     os.chdir(repo)
     os.environ["PRISMABIB_PROJECTS_ROOT"] = str(projects)
     n = int(json.loads(FIXTURE.read_text(encoding="utf-8"))["meta"]["count"])
@@ -234,6 +238,8 @@ def run_steps(root: Path) -> None:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):  # FAIL text may be non-ASCII on a Windows pipe
+        sys.stdout.reconfigure(encoding="utf-8")
     scrub_environment()
     with tempfile.TemporaryDirectory(prefix="prismabib-clean-", ignore_cleanup_errors=True) as tmp:
         try:

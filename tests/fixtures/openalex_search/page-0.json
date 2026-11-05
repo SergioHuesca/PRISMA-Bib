@@ -13609,12 +13609,12 @@
      "is_corresponding": true,
      "raw_author_name": "Ayane Kusafuka",
      "raw_affiliation_strings": [
-      "Department of Intermedia Art and Science, Faculty of Science and Engineering, Waseda University, Tokyo, Japan. ayanekusafuka@gmail.com"
+      "Department of Intermedia Art and Science, Faculty of Science and Engineering, Waseda University, Tokyo, Japan. example@example.org"
      ],
      "raw_orcid": null,
      "affiliations": [
       {
-       "raw_affiliation_string": "Department of Intermedia Art and Science, Faculty of Science and Engineering, Waseda University, Tokyo, Japan. ayanekusafuka@gmail.com",
+       "raw_affiliation_string": "Department of Intermedia Art and Science, Faculty of Science and Engineering, Waseda University, Tokyo, Japan. example@example.org",
        "institution_ids": [
         "https://openalex.org/I150744194"
        ]
