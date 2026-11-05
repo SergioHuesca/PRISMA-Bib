@@ -267,10 +267,33 @@ def _parse_access_answer(text: str) -> str:
     return answer
 
 
-def _choose_source_mode(sources: _Sources | None, slug: str = "<slug>") -> SourceMode:
-    """The mode for a new project: ``--sources``, else the question, else a refusal."""
+def _not_sure_notes(slug: str) -> list[str]:
+    """What to print once the "not sure" choice has been recorded."""
+    return [
+        "Mode openalex was recorded: this tool cannot assume you have Scopus access.",
+        (
+            "To check a Scopus key later, run `prismabib credentials set scopus` and then "
+            "`prismabib credentials test scopus` (one request; it needs no project). Only "
+            "`credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` "
+            "need a project in a Scopus mode."
+        ),
+        (
+            f"To switch: `prismabib sources {slug} --set scopus --actor NAME` (or "
+            "`--set scopus+openalex`). It is refused once any OpenAlex search run exists under "
+            "raw/openalex-search/ (whatever its state) or screening decisions exist; then "
+            "create a new project."
+        ),
+    ]
+
+
+def _choose_source_mode(sources: _Sources | None) -> tuple[SourceMode, bool]:
+    """The mode for a new project and whether the owner answered "not sure".
+
+    ``--sources``, else the question, else a refusal. Nothing is printed here: the caller prints
+    the "not sure" notes only after the project has been created.
+    """
     if sources is not None:
-        return sources.value
+        return sources.value, False
     if not _stdin_is_tty():
         raise ValidationError(
             "A new project needs --sources {openalex,scopus,scopus+openalex}: there is no "
@@ -281,23 +304,10 @@ def _choose_source_mode(sources: _Sources | None, slug: str = "<slug>") -> Sourc
     access = typer.prompt(
         "Do you have access to Scopus? [y/n/not sure]", value_proc=_parse_access_answer
     )
-    if access == "not sure":
-        _echo("Mode openalex was recorded: this tool cannot assume you have Scopus access.")
-        _echo(
-            "To check a Scopus key later, run `prismabib credentials set scopus` and then "
-            "`prismabib credentials test scopus` (one request). The test only works in a "
-            "Scopus mode, so you would need a new project or the switch below."
-        )
-        _echo(
-            f"To switch: `prismabib sources {slug} --set scopus` (or `--set scopus+openalex`). "
-            "It is refused once any OpenAlex search run exists under raw/openalex-search/ "
-            "(whatever its state) or screening decisions exist; then create a new project."
-        )
-        return "openalex"
-    if access == "no":
-        return "openalex"
+    if access in ("no", "not sure"):
+        return "openalex", access == "not sure"
     fill = typer.confirm("Also fill missing fields of Scopus records from OpenAlex?", default=True)
-    return "scopus+openalex" if fill else "scopus"
+    return ("scopus+openalex" if fill else "scopus"), False
 
 
 def _choose_actor(actor: str | None) -> str:
@@ -362,6 +372,7 @@ def init(
         projects_root = root if root is not None else ProjectsRootSettings().prismabib_projects_root
         existed = (projects_root / slug / "project.toml").is_file()
         mode: SourceMode | None = None
+        not_sure = False
         actor_name: str | None = None
         if existed:
             # Never prompts and never refuses for a missing flag; only a contradiction is refused.
@@ -373,7 +384,7 @@ def init(
                     f"`prismabib sources {slug} --set {sources.value} --actor NAME`."
                 )
         else:
-            mode = _choose_source_mode(sources, slug)
+            mode, not_sure = _choose_source_mode(sources)
             actor_name = _choose_actor(actor)
         project = Project.init(
             slug, title=title, root=projects_root, source_mode=mode, actor=actor_name
@@ -384,6 +395,9 @@ def init(
             _echo(
                 f"Sources mode: {mode} (recorded by {actor_name}; change it with `prismabib sources`)"
             )
+        if not_sure:
+            for note in _not_sure_notes(slug):
+                _echo(note)
         _echo()
         openalex = project.source_mode == "openalex"
         if existed:

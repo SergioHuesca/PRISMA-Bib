@@ -833,7 +833,7 @@ def test_loader__digest_mismatch_message__names_the_file_and_the_line_ending_cau
     assert "response-0000" in text and "line-ending" in text and "core.autocrlf" in text
 
 
-def test_build__reuse_in_mode_openalex__malformed_run__message_says_a_rebuild_reproduces_it(
+def test_build__reuse_in_mode_openalex__malformed_run__message_says_a_rebuild_refuses_a_broken_capture(
     tmp_path: Path,
 ) -> None:
     # A capture with nothing loadable is now refused at build time, so the only way to meet an
@@ -851,7 +851,9 @@ def test_build__reuse_in_mode_openalex__malformed_run__message_says_a_rebuild_re
         build_store(project)
 
     text = str(caught.value)
-    assert "malformed_entries" in text and "reproduces" in text and "--rebuild" in text
+    assert "malformed_entries" in text and "--rebuild" in text
+    assert "capture again" in text and "refuses" in text
+    assert "reproduces" not in text
     assert "Call build_store(project, rebuild=True)" not in text
 
 

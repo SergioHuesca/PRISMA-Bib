@@ -72,6 +72,25 @@ def test_guard__below_ten_skips__never_fires_even_above_five_percent(tmp_path: P
     assert _records(project.db_path) == 20
 
 
+@pytest.mark.parametrize(("bad", "builds"), [(10, True), (11, False)])
+def test_guard__the_five_percent_boundary__is_exclusive(
+    tmp_path: Path, bad: int, builds: bool
+) -> None:
+    """10 skips of 200 is exactly 5%: not above it. 11 of 200 is."""
+    project = openalex_project(tmp_path)
+    write_search_run(
+        project, _RUN_A, "q", [[work(n) for n in range(1, 201 - bad)] + _bad(500, bad)]
+    )
+
+    if builds:
+        build_store(project, rebuild=True)
+        assert _records(project.db_path) == 200 - bad
+    else:
+        with pytest.raises(StoreError, match=f"{bad} of the 200"):
+            build_store(project, rebuild=True)
+        assert not project.db_path.exists()
+
+
 def test_guard__malformed_copies_of_loaded_works__are_not_skips(tmp_path: Path) -> None:
     project = openalex_project(tmp_path)
     good = [work(n) for n in range(1, 11)]

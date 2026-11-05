@@ -1208,11 +1208,32 @@ def test_init__not_sure__prints_how_to_check_and_how_to_switch(
 ) -> None:
     result = _ask(tmp_path, monkeypatch, "s\n")
 
-    assert "Mode openalex was recorded" in result.output
-    assert "prismabib credentials set scopus" in result.output
-    assert "prismabib credentials test scopus" in result.output
-    assert "prismabib sources demo --set scopus" in result.output
-    assert "raw/openalex-search/" in result.output
+    out = result.output
+    assert "Mode openalex was recorded" in out
+    assert out.index("Created project") < out.index("Mode openalex was recorded")
+    assert "prismabib credentials set scopus" in out
+    assert "prismabib credentials test scopus" in out
+    assert "only works in a Scopus mode" not in out  # false: the plain test works in any mode
+    assert "--project <slug>" in out and "doctor --check-scopus" in out
+    assert "prismabib sources demo --set scopus --actor NAME" in out
+    assert "raw/openalex-search/" in out
+
+
+def test_init__not_sure_then_no_actor__does_not_claim_the_mode_was_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("prismabib.cli.git_user_name", lambda: "")
+
+    result = _ask_without_actor(tmp_path, monkeypatch, "s\n\n")
+
+    assert result.exit_code != 0
+    assert "was recorded" not in result.output
+    assert not (tmp_path / "demo").exists()
+
+
+def _ask_without_actor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: str) -> Result:
+    monkeypatch.setattr("prismabib.cli._stdin_is_tty", lambda: True)
+    return runner.invoke(app, ["init", "demo", "--root", str(tmp_path)], input=answers)
 
 
 @pytest.mark.parametrize("answers", ["n\n", "y\ny\n"])

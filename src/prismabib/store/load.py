@@ -3644,9 +3644,10 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
                     f"{project.db_path} holds no records but {search_dir.name} in "
                     f"raw/{OPENALEX_SEARCH_DIRNAME}/ reports {search.total_count:,} works. Either "
                     "the build died early or none of those works is loadable (see the "
-                    "malformed_entries table); a rebuild reproduces this store in the second "
-                    "case, so run `prismabib build <slug> --rebuild` and read malformed_entries "
-                    "before re-capturing."
+                    "malformed_entries table). Run `prismabib build <slug> --rebuild`: it "
+                    "rebuilds the store in the first case, and in the second it refuses "
+                    "(naming the unloadable works), because a capture with nothing loadable is "
+                    "broken: capture again."
                 )
         return
     if stats.records_loaded:
