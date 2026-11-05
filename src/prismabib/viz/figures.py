@@ -729,7 +729,7 @@ def prisma_flow_figure(counts: FlowCounts, project: Project) -> tuple[str, MplFi
         can still participate in "renders both backends"-style sweeps
         alongside the other eight; it carries no separate rendering.
     """
-    svg = flow_diagram_svg(counts, title=project.title)
+    svg = flow_diagram_svg(counts, title=project.title, mode=project.source_mode)
     fig = MplFigure(
         figsize=(theme.SINGLE_COLUMN_WIDTH_IN, theme.FIGURE_HEIGHT_IN), dpi=theme.EXPORT_DPI
     )

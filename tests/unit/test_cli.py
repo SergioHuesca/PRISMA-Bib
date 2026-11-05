@@ -15,6 +15,7 @@ shape ``capture/writer.py`` actually logs.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import UTC, datetime
 
@@ -29,6 +30,7 @@ from prismabib.cli import (
     _CaptureProgress,
     _print_flow,
     _reporting_errors,
+    _warn_if_inconsistent,
     app,
 )
 from prismabib.errors import ConfigError, QuotaExceededError
@@ -276,6 +278,29 @@ def test_print_flow__counts__reports_every_unsure_bucket(
     assert "  unsure or not yet screened                           32" in out
     assert "  unsure or not yet screened                            7" in out
     assert "never resolves to inclusion" in out
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("mode", "label", "command"),
+    [
+        ("scopus", "records identified (Scopus total_results)", "prismabib search"),
+        ("scopus+openalex", "records identified (Scopus total_results)", "prismabib search"),
+        ("openalex", "records identified (OpenAlex meta.count)", "prismabib openalex-search"),
+    ],
+)
+def test_cli__flow_and_search_text__mode_aware(
+    capsys: pytest.CaptureFixture[str], mode: str, label: str, command: str
+) -> None:
+    """ADR 0042 Verification 66: the identified label and the equation-1 guidance follow the mode."""
+    _print_flow(_counts(), slug="demo", mode=mode)  # type: ignore[arg-type]
+    printed = capsys.readouterr().out
+    unbalanced = dataclasses.replace(_counts(), identified=_counts().identified + 1)
+    _warn_if_inconsistent(unbalanced, mode=mode)  # type: ignore[arg-type]
+    warned = capsys.readouterr().err
+
+    assert f"  {label:<46}" in printed
+    assert f"last `{command}` finished" in warned
 
 
 @pytest.mark.unit

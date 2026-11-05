@@ -12,7 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from click.testing import Result
+from typer.testing import CliRunner
 
+from prismabib.cli import app
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
 from prismabib.store.db import connect
@@ -526,3 +529,92 @@ def test_flow_counts__randomised_openalex_projects__equation_one_always_closes(
 ) -> None:
     """Fixed seeds: refreshes, DOI twins, malformed works, empty and unsealed runs, run order."""
     _flow(_random_project(tmp_path, seed))
+
+
+def test_numbers_map__openalex_mode__carries_the_source_sentence(tmp_path: Path) -> None:
+    """ADR 0042 methods text: the exported numbers name OpenAlex and the stored query."""
+    from prismabib.report.numbers import numbers_map
+
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "carbon capture", [[work(1), work(2)]])
+    build_store(project, rebuild=True)
+
+    sentence = numbers_map(project)["methods.source_sentence"]
+
+    assert sentence.startswith("Records were identified by searching OpenAlex;")
+    assert "`carbon capture`, run on 2026-11-03" in sentence
+    assert "OpenAlex reported 2 works across 1 distinct query" in sentence
+
+
+def _scopus_mode_project(tmp_path: Path, total: int) -> Project:
+    """An explicit mode-``scopus`` project with one captured record and a reported ``total``."""
+    from tests.prisma_helpers import RUN_ID, RUN_STARTED_AT, RecordSpec
+
+    project = Project.init(
+        "demo", title="Demo", root=tmp_path / "p", source_mode="scopus", actor="t"
+    )
+    write_sealed_run(
+        project.raw_dir,
+        RUN_ID,
+        [RecordSpec(number=1).to_entry()],
+        started_at=RUN_STARTED_AT,
+        total_results=total,
+    )
+    build_store(project, rebuild=True)
+    return project
+
+
+def _openalex_unbalanced(tmp_path: Path) -> Project:
+    """An ``openalex`` project whose reported total (5) exceeds the 2 works captured."""
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "carbon capture", [[work(1), work(2)]], total=5)
+    build_store(project, rebuild=True)
+    return project
+
+
+def _flow_cli(project: Project, tmp_path: Path) -> Result:
+    return CliRunner().invoke(app, ["flow", project.slug, "--root", str(tmp_path / "p")])
+
+
+def test_cli_flow__openalex_project__prints_openalex_label_and_command(tmp_path: Path) -> None:
+    result = _flow_cli(_openalex_unbalanced(tmp_path), tmp_path)
+
+    assert result.exit_code == 0
+    assert "records identified (OpenAlex meta.count)" in result.stdout
+    assert "Scopus total_results" not in result.stdout
+    assert "`prismabib openalex-search` finished" in result.stderr
+
+
+def test_cli_flow__scopus_project__prints_scopus_label_and_command(tmp_path: Path) -> None:
+    result = _flow_cli(_scopus_mode_project(tmp_path, total=999), tmp_path)
+
+    assert result.exit_code == 0
+    assert "records identified (Scopus total_results)" in result.stdout
+    assert "`prismabib search` finished" in result.stderr
+
+
+def test_export_and_figure__openalex_project__svg_names_openalex(tmp_path: Path) -> None:
+    from prismabib.report.export import export_project
+    from prismabib.viz.figures import prisma_flow_figure
+
+    project = openalex_project(tmp_path)
+    write_search_run(project, _RUN_A, "carbon capture", [[work(1), work(2)]])
+    build_store(project, rebuild=True)
+
+    exported = export_project(project)
+    svg = (exported.root / "figures" / "prisma_flow.svg").read_text(encoding="utf-8")
+    figure_svg, _ = prisma_flow_figure(compute_flow_counts(project), project)
+
+    assert "Records identified from OpenAlex" in svg
+    assert "Records identified from OpenAlex" in figure_svg
+
+
+def test_numbers_map__scopus_mode__carries_a_scopus_only_source_sentence(tmp_path: Path) -> None:
+    from prismabib.report.numbers import numbers_map
+
+    project = _scopus_mode_project(tmp_path, total=1)
+
+    sentence = numbers_map(project)["methods.source_sentence"]
+
+    assert sentence.startswith("Records were identified by searching Scopus.")
+    assert "OpenAlex" not in sentence

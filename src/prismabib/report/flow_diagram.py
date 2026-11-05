@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from prismabib.prisma.flow import FlowCounts
+    from prismabib.source_mode import SourceMode
 
 #: Geometry, in user units. Fixed rather than computed from text length: a
 #: layout that depended on the rendered width of a label would depend on the
@@ -202,7 +203,13 @@ def _note_text(x: int, y: int, lines: Sequence[str]) -> str:
     )
 
 
-def flow_diagram_svg(counts: FlowCounts, *, title: str, orphaned_decisions: int = 0) -> str:
+def flow_diagram_svg(
+    counts: FlowCounts,
+    *,
+    title: str,
+    orphaned_decisions: int = 0,
+    mode: SourceMode = "scopus+openalex",
+) -> str:
     """Render ``counts`` as a PRISMA 2020 flow diagram.
 
     Args:
@@ -213,16 +220,19 @@ def flow_diagram_svg(counts: FlowCounts, *, title: str, orphaned_decisions: int 
         orphaned_decisions: How many current decisions name a record outside
             ``S_raw`` (ADR 0033 §3), shown as a count beside the diagram. Not
             a :class:`FlowCounts` field and not an arithmetic term.
+        mode: The project's source mode (ADR 0042). Only ``openalex`` changes the output, by
+            naming OpenAlex in the identification box; both Scopus modes keep the Scopus label.
 
     Returns:
         A complete SVG document as text. The same ``counts`` and ``title``
         always produce identical bytes -- no timestamps, no font metrics, no
         dictionary ordering (see :func:`_fulltext_exclusion_note`).
     """
+    source = "OpenAlex" if mode == "openalex" else "Scopus"
     stages: list[tuple[str, list[str]]] = [
         (
             "identification",
-            [f"Records identified from Scopus (n = {counts.identified})"],
+            [f"Records identified from {source} (n = {counts.identified})"],
         ),
         (
             "removed-before-screening",

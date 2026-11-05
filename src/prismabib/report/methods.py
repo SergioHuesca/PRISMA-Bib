@@ -12,10 +12,16 @@ There is no methods generator beyond these two snippets: manuscripts are user te
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from prismabib.prisma.orphans import OrphanedDecision
+
+if TYPE_CHECKING:
+    import duckdb
+
+    from prismabib.source_mode import SourceMode
 
 
 def registered_sentence(numbers: Mapping[str, Any]) -> str:
@@ -141,9 +147,101 @@ def cascade_sentence(numbers: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _count(n: int, one: str, many: str) -> str:
+    """``"1 record"`` or ``"2 records"``; for ``record was``/``records were`` pass both phrases."""
+    return f"{n} {one if n == 1 else many}"
+
+
+def _code_span(text: str) -> str:
+    """``text`` as a Markdown code span: whitespace collapsed, fence longer than any backtick run."""
+    flat = " ".join(text.split())
+    fence = "`" * (max((len(run) for run in re.findall(r"`+", flat)), default=0) + 1)
+    pad = " " if flat.startswith("`") or flat.endswith("`") else ""
+    return f"{fence}{pad}{flat}{pad}{fence}"
+
+
+def source_sentence(
+    connection: duckdb.DuckDBPyConnection,
+    mode: SourceMode,
+    *,
+    identified: int,
+    duplicates: int,
+    registered: int,
+) -> str:
+    """The methods sentence naming the search source (ADR 0042, "The methods text").
+
+    Reads each distinct query and the date of its earliest run from the store, the rule that
+    ``identified`` itself follows. Mode ``scopus+openalex`` -- which is also every project with
+    no ``[sources]`` table -- gets ``""``, so its methods text keeps its bytes (OQ-14).
+
+    Args:
+        connection: An open Layer 1 connection (``runs`` and ``openalex_search_runs`` are read).
+        mode: The project's source mode.
+        identified: ``FlowCounts.identified``.
+        duplicates: ``FlowCounts.duplicates_across_searches``.
+        registered: ``FlowCounts.registered``.
+
+    Returns:
+        The sentence for mode ``openalex`` or ``scopus``; ``""`` for ``scopus+openalex``. The
+        Scopus sentence says nothing about OpenAlex: Q-B leaves no OpenAlex rows in that mode.
+    """
+    if mode == "scopus+openalex":
+        return ""
+    if mode == "openalex":
+        # OpenAlex run ids are `%Y%m%dT%H%M%SZ-...`, so the run date is their first 8 characters.
+        rows = connection.execute(
+            "SELECT query, strptime(substr(run_id, 1, 8), '%Y%m%d')::DATE FROM openalex_search_runs "
+            "WHERE (query_key, run_id) IN "
+            "(SELECT query_key, MIN(run_id) FROM openalex_search_runs GROUP BY query_key) "
+            "ORDER BY run_id"
+        ).fetchall()
+    else:
+        rows = connection.execute(
+            "SELECT query, CAST(started_at AS DATE) FROM runs WHERE (query, run_id) IN "
+            "(SELECT query, MIN(run_id) FROM runs GROUP BY query) ORDER BY run_id"
+        ).fetchall()
+    if not rows:
+        return ""
+    queries = "; ".join(_code_span(query) for query, _ in rows)
+    which = "search was" if len(rows) == 1 else "searches were"
+    dates = ", ".join(sorted({day.isoformat() for _, day in rows}))
+    distinct = _count(len(rows), "distinct query", "distinct queries")
+    if mode == "scopus":
+        return (
+            f"Records were identified by searching Scopus. The {which} {queries}, run on "
+            f"{dates}. Scopus reported {_count(identified, 'record', 'records')} across "
+            f"{distinct}."
+        )
+    if duplicates == 1:
+        dupes = ", of which 1 duplicate work (a work whose DOI or id was seen more than once) was counted once"
+    elif duplicates:
+        dupes = (
+            f", of which {duplicates} duplicate works (works whose DOI or id was seen more than "
+            "once) were counted once"
+        )
+    else:
+        dupes = ""
+    registered_clause = (
+        f"{_count(registered, 'record was', 'records were')} registered by a reviewer from "
+        "manual Google Scholar searches (ADR 0029). "
+        if registered
+        else ""
+    )
+    return (
+        "Records were identified by searching OpenAlex; no Scopus search was run. "
+        f"The {which} {queries}, run on {dates}. "
+        f"OpenAlex reported {_count(identified, 'work', 'works')} across {distinct}"
+        f"{dupes}. {registered_clause}"
+        "Metadata, including abstracts rebuilt from OpenAlex's inverted "
+        "index and subject areas taken from OpenAlex's primary topic, is OpenAlex's own "
+        "(see Limitations)."
+    )
+
+
 __all__ = [
     "cascade_sentence",
     "orphaned_decisions_text",
     "registered_sentence",
+    "source_sentence",
     "venue_unnamed_sentence",
 ]

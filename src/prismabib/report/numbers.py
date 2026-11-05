@@ -33,6 +33,7 @@ from prismabib.report.methods import (
     cascade_sentence,
     orphaned_decisions_text,
     registered_sentence,
+    source_sentence,
     venue_unnamed_sentence,
 )
 from prismabib.stage import PrismaStage
@@ -310,6 +311,13 @@ def numbers_map(
         # Only inside the methods snippet, never a required key: a plain key would make
         # every existing manuscript fail fill's unused-key check (ADR 0040 Decision 12).
         unnamed_venues = count_unnamed_venues(corpus, stage=PrismaStage.RAW)
+        source = source_sentence(
+            connection,
+            project.source_mode,
+            identified=resolved.identified,
+            duplicates=resolved.duplicates_across_searches,
+            registered=resolved.registered,
+        )
     finally:
         connection.close()
 
@@ -321,6 +329,9 @@ def numbers_map(
         unnamed_venues, numbers["corpus.size"]
     )
     numbers["methods.cascade_sentence"] = cascade_sentence(numbers)
+    # Present only when there is a sentence, so a legacy or scopus+openalex numbers.json keeps its keys.
+    if source:
+        numbers["methods.source_sentence"] = source
     numbers["methods.orphaned_decisions_text"] = orphaned_decisions_text(found)
 
     for key, value in numbers.items():
