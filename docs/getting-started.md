@@ -296,9 +296,11 @@ The count of pages still needed is the number of pages the count requires (108 w
 of 100) minus the page you already have, so `2 - 1 = 1`. The count is also saved in the run's
 `progress.json` while the run is unsealed, under `total_count`, if you want to check it there.
 
-If the count is 100 or fewer, the one page you fetched is the whole search. The check then seals
+If the count is fewer than 100, the one page you fetched is the whole search. The check then seals
 the run, and it prints the sealed line and `Next: prismabib build baseball-pitch --rebuild`. There is
 nothing left to capture. Go to the build step.
+
+If the count is exactly 100, the stop line says `no more pages are needed`. Run the same command again to finish the capture: it fetches one empty page and seals the run.
 
 If the count is more than 100, read it before you go on. If it is in the hundreds or thousands,
 narrow `search` in `project.toml` first. A broad query can return thousands of
@@ -342,7 +344,7 @@ Next: prismabib build baseball-pitch --rebuild
 A run is sealed only when every page arrived and the works captured equal the count OpenAlex
 reported. The `<n> page(s) this call` counts only the pages of this call. It is `1 page(s)` if you ran the size check first, because that check fetched page 1; otherwise it is `2 page(s)` for this query.
 
-If Step 4 already sealed the run (100 works or fewer), this command makes no request. It prints:
+If Step 4 already sealed the run (fewer than 100 works), this command makes no request. It prints:
 
 ```text
 a sealed run of this query already exists (run <run id>); no request was made.

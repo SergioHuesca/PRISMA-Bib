@@ -910,3 +910,16 @@ def test_credentials_status__project_in_openalex_mode__marks_scopus_keys_unused(
     assert "SCOPUS_API_KEY: not set\n" in plain.output  # without a project: unchanged
     assert "SCOPUS_API_KEY: not set (not used in mode openalex)" in result.output
     assert "sources mode: openalex" in result.output
+
+
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_doctor__scopus_modes__scopus_lines_have_no_unused_suffix(
+    repo: Path, tmp_path: Path, mode: str
+) -> None:
+    Project.init("demo", title="D", root=tmp_path / "p", source_mode=mode, actor="t")  # type: ignore[arg-type]
+
+    result = runner.invoke(app, ["doctor", "demo", "--root", str(tmp_path / "p")])
+
+    assert "SCOPUS_API_KEY: not set\n" in result.output
+    assert "SCOPUS_INSTTOKEN: not set\n" in result.output
+    assert "not used in mode" not in result.output

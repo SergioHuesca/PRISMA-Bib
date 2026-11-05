@@ -183,6 +183,21 @@ def test_command__budget_stop__prints_size_and_pages_remaining_across_calls(
     assert "OpenAlex reports 250 works for this query; 1 more page(s) of 100 needed." in out
 
 
+def test_command__budget_stop_with_no_pages_left__says_run_again_to_finish(
+    tmp_path: Path, fake: Fake
+) -> None:
+    make_project(tmp_path)
+    fake.count = 100  # full last page, but the server still sends a cursor
+
+    _, out = invoke(tmp_path, "--budget", "1")
+
+    assert (
+        "OpenAlex reports 100 works for this query; no more pages are needed. "
+        "Run the same command again to finish."
+    ) in out
+    assert "0 more page(s)" not in out
+
+
 def test_command__one_page_query__budget_one_seals_and_rerun_makes_no_request(
     tmp_path: Path, fake: Fake
 ) -> None:
