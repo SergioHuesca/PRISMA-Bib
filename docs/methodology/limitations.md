@@ -9,20 +9,104 @@ is, and what to do instead.
 
 Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
 
-## Coverage: Scopus first, other sources only by explicit opt-in
+## Coverage: one source per project, chosen by its source mode
 
-**Current state, and deliberate.** The only search source is the Scopus Search API.
+**Current state, and deliberate.** Each project has one search source, recorded as its source
+mode in `project.toml` (`[sources] mode`,
+[ADR 0042](../architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md)):
+
+- `scopus`: the Scopus Search API. The field-level cascade is refused in this mode.
+- `scopus+openalex`: the same Scopus search. OpenAlex fills missing fields of Scopus records,
+  and Scopus `STANDARD` and `META` may do so only with `--opt-in`.
+- `openalex`: an OpenAlex works search, through `prismabib openalex-search`. No Scopus search
+  runs, and no Scopus key is read.
+
+A project with no `[sources]` table, which is every project created before the mode was recorded,
+has mode `scopus+openalex`. `prismabib sources <slug> --set` changes the mode. A change is
+refused when a screening decision exists, when a search run of the other kind exists, and, from
+`scopus+openalex` to `scopus`, when OpenAlex enrichment or an active registration exists. Each
+change is recorded in `decisions/source_modes.jsonl`.
+
 There is no Web of Science, Crossref, PubMed or Dimensions search, and no manual-import path
-for records exported from another database. The design lets other sources fill individual
-*fields* of a Scopus record, never add records to the search, and a value would never come from a second
-source without a recorded label. That field-level cascade is built
+for records exported from another database. In the Scopus modes the design lets other sources
+fill individual *fields* of a Scopus record, never add records to the search, and a value would
+never come from a second source without a recorded label. That field-level cascade is built
 ([ADR 0028](../architecture/adr/0028-field-level-fallback-cascade.md),
 [ADR 0041](../architecture/adr/0041-field-level-provenance-and-cascade-completion.md)) and is
 off until you ask for it. `prismabib cascade <slug>` fills missing fields from OpenAlex, and
 from Scopus `STANDARD` and `META` only with `--opt-in` and an explicit `--scopus-budget`;
 `prismabib openalex <slug>` runs the OpenAlex step alone. Every value carries its source label.
+Neither command runs in mode `scopus`.
 
-Consequences for your review:
+**Mode `openalex`: the records and their metadata are OpenAlex's.** Each record is a work that an
+`openalex-search` query returned, and its values are the ones OpenAlex gives:
+
+- **Abstracts** are rebuilt from OpenAlex's inverted index, so the text is the one OpenAlex
+  reconstructs, not the publisher's. A work with no index has no abstract.
+- **Subject areas** come from the work's primary topic only, through a fixed table that maps its
+  subfield to a subject code. A work whose primary topic has no mapped subfield has no subject
+  area, and its coverage is recorded as `none_assigned`.
+- **Keywords** are OpenAlex topics, of the kind `openalex-topic`. They are not author keywords,
+  and this mode has no Scopus index terms.
+- **Authors and institutions** carry OpenAlex ids (`openalex-author:`, `openalex-inst:`), and a
+  name key where OpenAlex gives no id.
+
+**A country named by an authorship is a deliberate departure from institution-only geography.**
+In the Scopus modes a record's countries come from its affiliations. In mode `openalex`, a country
+that an authorship names, but none of its institutions carries, becomes an affiliation
+`openalex-country:XX`, so the geography analyses count it. A code that does not map to a country is
+skipped, and it is logged once per code per build. This can add a country that the work's own
+institutions do not name.
+
+**The subject criterion does real work in this mode.** A non-empty `subject_areas` list needs
+subject data. In the Scopus modes that data comes only from `prismabib enrich` (below). In mode
+`openalex` it comes with each work's primary topic, so the criterion can remove works without any
+enrichment. A work without a subject area passes that criterion, as a Scopus record with no
+subject data does.
+
+**Works with no source, and works with no year.** A work with no source (no venue name) has no
+venue type, so the conference whitelist does not apply to it, and it passes that test, as a
+Scopus record with no source does. A work with no publication year fails the year test and is
+counted under `year` in the automated exclusions.
+
+**OpenAlex's counts can move, and a run whose count moves is discarded.** `identified` in this
+mode is the `meta.count` that OpenAlex reports for each distinct query. A run whose count changes
+while it is paged, or between one call and the next, is discarded. A discarded run stays on disk
+and is never loaded, and the next call starts a new run and spends the quota again.
+
+**The daily budget.** Checked on 2026-11-05 against OpenAlex's help page: a free OpenAlex key
+carries $1 of usage a day, which prismabib takes as about 1,000 search pages, or 100,000 works at
+100 a page. The allowance resets at midnight UTC. OpenAlex may change it. prismabib requires a key
+for every search and refuses to start one without it, before its first request.
+
+**Duplicates are matched by DOI as well as by id.** A work is a duplicate when its OpenAlex id or
+its normalised DOI is already held, whether by an earlier query or by an earlier copy in the same
+run. The second copy is not loaded, and it is counted under `duplicates_across_searches`, so it is
+removed before screening. In the Scopus modes two records with one DOI are both kept and both
+screened.
+
+**The ratio guard does not catch a capture of unloadable works in this mode.** A search work with
+no id or no title is recorded in `malformed_entries` and counted under `removed_other_reasons`.
+The build refuses a capture whose entries are mostly unloadable, but the guard counts Scopus
+entries only. In this mode, a capture in which every work is malformed builds a store with zero
+records and no refusal. Check the counts before you cite them.
+
+**A registration of a paper that an OpenAlex search also finds is superseded at build.** A
+registration is refused when its paper is already an OpenAlex record, but that check reads the
+store as it was last built, so a registration made before the next build is not refused. At
+build, a registration whose DOI, or normalised title and year, an OpenAlex work holds is not
+loaded. The OpenAlex work is screened in its place, and the build names the pair
+(`registered_openalex_overlap`) and writes a `supersede` event to the registration log after the
+store is installed. The event is written once: the superseded registration is no longer active,
+so a later build writes nothing for it. Decisions logged on the registration are orphaned, as for
+a Scopus supersession, and the OpenAlex work starts with no decisions
+([ADR 0042](../architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md), Decision 9).
+
+**Query syntax.** The OpenAlex query refuses characters that could change the search without an
+error, such as curly quotes, full-width and half-width characters (including half-width katakana),
+and zero-width joiners. See [Build an OpenAlex Query](../how-to/build-an-openalex-query.md).
+
+Consequences for your review in the Scopus modes:
 
 - Your search is a single-database search and must be reported as one. PRISMA's "records
   identified from databases" is a single number here, from a single register — a sum over
@@ -32,7 +116,8 @@ Consequences for your review:
   in the diagram. Records a reviewer registers from a manual Google Scholar search
   ([ADR 0029](../architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md))
   are counted separately as `registered` ("other methods"), never added into `identified`;
-  `identified` stays the Scopus total alone
+  `identified` stays the Scopus total alone in the Scopus modes, and OpenAlex's total for the
+  distinct queries in mode `openalex`
   ([ADR 0033](../architecture/adr/0033-flowcounts-registered-count-and-orphaned-decisions.md)).
 - Fields Scopus refuses stay missing until you run the cascade (`prismabib cascade`, above),
   which fills them from a lower level with a source label on each value; a field no level can
@@ -66,9 +151,13 @@ These records differ from Scopus records, and a review that registers any must s
 - **No Scopus citation counts.** A registered record has no citation snapshot. Its citation
   count is reported as unavailable (`citations.registered_unavailable`), never imputed, and it
   is absent from every citation statistic.
-- **No authors, affiliations or keywords.** Registrations carry none in this version, so
-  they contribute no country, keyword or network node, and the screening view shows title,
-  abstract and venue only.
+- **Authors, affiliations and keywords.** A registration keeps the authors, affiliations and
+  keywords of its OpenAlex work as stored values. The record view (`records_all`) and
+  `exports/records.csv` label the authors and affiliations `openalex` and the keywords
+  `openalex-topic` (`store/schema.sql:308-319`). They are not loaded into the author, affiliation or keyword tables
+  (`store/load.py:3212-3235`), so a registered paper adds no country, keyword or co-authorship
+  node to any analysis, and the screening view, which reads those tables, shows it no keywords or
+  authors.
 - **Language filter.** A registration's `language` is NULL and passes the language filter.
   In the two stores ADR 0032 measured, every stored Scopus record also has `language` NULL, so
   the filter excluded nothing there; that is true of those stores only. A Scopus record with a
@@ -99,7 +188,8 @@ Two things follow:
   duplicates did so as a screening decision and must report that count from `StoreStats` and
   say where it came from.
 - Because there is only one source, the duplicates you will see are Scopus-internal (the
-  same DOI indexed twice), not cross-database ones. Merging a Scopus corpus with a Web of
+  same DOI indexed twice) in the Scopus modes, and OpenAlex-internal in mode `openalex`, not
+  cross-database ones. Merging a Scopus corpus with a Web of
   Science corpus is not something this tool can do at all.
 
 Records that arrive twice under the *same* `record_id` — the ordinary case when a review runs
@@ -117,6 +207,9 @@ A richer `(normalised_title, first_author_surname, year)` key exists as
 DOI collision is reported.
 
 ## `subject_areas` requires enrichment, and enrichment must be complete
+
+This section describes the Scopus modes. In mode `openalex` the subject areas come from each
+work's primary topic, as described under Coverage.
 
 **The Search API cannot supply this data.** The Scopus Search API's `view=COMPLETE`
 response does not carry subject-area codes, so a corpus captured by `prismabib search`

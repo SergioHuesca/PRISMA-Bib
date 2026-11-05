@@ -30,7 +30,7 @@ record membership.
 
 | Set | Definition | Function | Nature |
 | --- | --- | --- | --- |
-| `S_raw` | Every record captured from the query | `engine.raw_set(project)` | Every `record_id` in Layer 1's `records` table |
+| `S_raw` | Every record captured from the query | `engine.raw_set(project)` | Every `record_id` in Layer 1's `records_all` view: Scopus rows, registered rows and, in mode `openalex`, OpenAlex search rows |
 | `A` | `S_raw` filtered by year ∧ subject area ∧ document type | `engine.automated_set(project)` | **Deterministic** — a pure function of `criteria.yaml` and Layer 1 |
 | `L` | `A` further filtered by language | `engine.language_set(project)` | **Deterministic**, same sense |
 | `M_abs` | Records in `L` whose aggregated `title_abstract` decision is `include` | `engine.manual_abstract_set(project)` | Derived by folding the decision log |
@@ -73,14 +73,17 @@ comparing two reviews' numbers needs to know them:
   A `NULL` language, or a record with no `subject_areas` rows, passes. This matters
   concretely: `store/load.py` documents that the Scopus Search API `view=COMPLETE` responses
   this codebase captures carry no subject-area codes at all, so the strict reading would let
-  a data-source limitation masquerade as a screening decision and empty the corpus.
+  a data-source limitation masquerade as a screening decision and empty the corpus. In mode
+  `openalex` a work's subject area comes from its primary topic, so the same concern does not
+  arise unless no work in the corpus has a mapped subfield.
 
     The corollary is bounded, though: applied to a corpus where *no* record carries the
     data, the same convention would turn the filter into a silent no-op — every record
     passing a restriction the diagram claims was applied. So
     `engine._refuse_unenforceable_subject_filter` raises `ConfigError` when `subject_areas`
     is non-empty and not one record in the corpus has subject-area data, which is every
-    corpus captured from the Scopus Search API. See
+    corpus captured from the Scopus Search API, and an `openalex` corpus in which no work has a
+    mapped subfield. See
     [Limitations](limitations.md#subject_areas-is-declared-but-not-enforceable).
 - **Document types match on either the Scopus code or its description.** `records.doc_type`
   is populated with the description form (`"Conference Paper"`) whenever the captured entry
@@ -160,7 +163,7 @@ Every number in the diagram is one field of the frozen dataclass
 
 | PRISMA 2020 box | `FlowCounts` field | Producer | Derivation |
 | --- | --- | --- | --- |
-| Records identified from databases | `identified` | `flow._identified_count` | The sum, over the project's **distinct searches**, of each search's `total_results` — one term per distinct `runs.query`, taken from that query's earliest run (`(query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)`), copied verbatim from that run's `RunManifest.total_results`. Never a row count. A run that re-queries the *same* search string to refresh citation counts joins an existing term and adds nothing. See [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md) |
+| Records identified from databases | `identified` | `flow._identified_count` | The sum, over the project's **distinct searches**, of each search's `total_results` — one term per distinct `runs.query`, taken from that query's earliest run (`(query, run_id) IN (SELECT query, MIN(run_id) FROM runs GROUP BY query)`), copied verbatim from that run's `RunManifest.total_results`. Never a row count. A run that re-queries the *same* search string to refresh citation counts joins an existing term and adds nothing. See [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md). In mode `openalex` the same rule reads `openalex_search_runs`, with `total_count` (OpenAlex's `meta.count`) in place of `total_results`; see [ADR 0042](../architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md), Decision 5 |
 | Records removed before screening — duplicate records removed | `duplicates_across_searches` | `flow._cross_run_duplicate_count` | `SUM(duplicates)` over Layer 1's `run_duplicates` table, which `build_store` writes during the load: captured entries that resolved to a `record_id` an earlier run **under a different query** had already loaded — identified by two searches, stored once, because `records.record_id` is a primary key. **Not** the normalised-DOI report — see [below](#reading-the-two-removed-before-screening-counts) |
 | Records removed before screening — records removed for other reasons | `removed_other_reasons` | `flow._unloadable_count` | `COUNT(*)` over Layer 1's `malformed_entries` table — the Layer 0 entries `build_store` could not turn into a record ([ADR 0012](../architecture/adr/0012-persisting-skipped-layer0-entries.md)). Counted as *entries*, not records |
 | Records removed before screening — marked ineligible by automation tools (year / subject / document type) | `excluded_automated` | `engine.raw_set`, `engine.automated_set` | `|S_raw| - |A|` |
@@ -177,9 +180,9 @@ Every number in the diagram is one field of the frozen dataclass
 
 ### Reading the two removed-before-screening counts
 
-`duplicates_across_searches` and `removed_other_reasons` are the bridge between what Scopus
-said it had (`identified`, a server-reported total) and what Layer 1 actually holds
-(`|S_raw|`). They are kept apart, on PRISMA's own two lines, because they mean opposite
+`duplicates_across_searches` and `removed_other_reasons` are the bridge between what the search
+source said it had (`identified`, a server-reported total: Scopus's in the Scopus modes, OpenAlex's
+`meta.count` in mode `openalex`) and what Layer 1 actually holds (`|S_raw|`). They are kept apart, on PRISMA's own two lines, because they mean opposite
 things about a review:
 
 - **A duplicate across searches is expected.** Two search strings aimed at one register
@@ -189,7 +192,9 @@ things about a review:
   counted, that the review spent quota on, and that no reviewer will ever screen because the
   entry could not be parsed. A non-zero value here should be read, cited, and — per
   [ADR 0012](../architecture/adr/0012-persisting-skipped-layer0-entries.md) — traced to the
-  exact payload line through the `malformed_entries` table.
+  exact payload line through the `malformed_entries` table. In mode `openalex` the payload line
+  is the work's index in its response's `results` array, not a line of the file (ADR 0042,
+  Decision 5).
 
 Three things `duplicates_across_searches` is **not**:
 
@@ -215,7 +220,8 @@ afterwards knows how many searches found it.
 
 `identified` sums one `total_results` per **distinct query string**, so a citation-refresh run
 — the same query re-run later — contributes nothing to it, while a genuinely different search
-string contributes its own total. `runs` keeps one row per run with its `query`, `started_at`
+string contributes its own total. In mode `openalex` each term is OpenAlex's `meta.count` for one
+distinct query, taken from that query's earliest sealed run. `runs` keeps one row per run with its `query`, `started_at`
 and `total_results`, so a review that must report identification per search reads the
 breakdown straight out of Layer 1 and cites it.
 
@@ -251,7 +257,8 @@ assume it is covered:
   (`StoreStats.duplicate_doi_groups` and `duplicate_records` in `store/load.py`), and both
   members of a duplicate-DOI pair are retained as ordinary rows and both are screened. A
   review that removed such duplicates did so as a screening decision and must report that
-  count from `StoreStats`, and say so.
+  count from `StoreStats`, and say so. In mode `openalex` a second copy of a work (the same
+  OpenAlex id or DOI) is not loaded and is counted under `duplicates_across_searches`.
 - **"Records removed for other reasons" — narrowly.** `removed_other_reasons` counts exactly
   one thing: Layer 0 entries the loader could not turn into a record. There is no other
   pre-screening removal path — no manual removal, no out-of-scope purge, nothing an operator
@@ -263,7 +270,8 @@ assume it is covered:
   zero by construction. Full-text acquisition is built (`fulltext/`, `prismabib fulltext`), but
   its failures are not counted in `FlowCounts`, so a review that failed to obtain some reports
   cannot express that there and must report it in prose.
-- **"Registers."** This system searches Scopus and ScienceDirect only. The register column
+- **"Registers."** This system searches one database per project: Scopus in the Scopus modes, and
+  OpenAlex in mode `openalex`. ScienceDirect is used for full text only. The register column
   of the PRISMA diagram is empty.
 
 ## The five consistency equations
@@ -295,7 +303,8 @@ accumulated in the same single pass that builds `A`, so a record cannot be exclu
 being charged to exactly one reason.
 
 **Equation 1 is a genuine cross-check and can legitimately fail.** `identified` is the sum of
-the servers' own reported totals across the project's distinct searches; `after_automated`
+the servers' own reported totals across the project's distinct searches (OpenAlex's `meta.count`
+in mode `openalex`); `after_automated`
 descends from the records actually loaded into Layer 1. Everything between them is now named:
 `duplicates_across_searches` and `removed_other_reasons` account for the two ways a record can
 be identified and not be a row in `records`, and `excluded_automated` accounts for the
@@ -315,7 +324,10 @@ not an automation exclusion and must not be presented as one.
 
 ### When a registration is reversed or superseded
 
-Reversing a registration, or a Scopus record superseding it, removes that record from `S_raw`.
+Reversing a registration, or a record superseding it, removes that registration from `S_raw`.
+The superseding record is a Scopus record (`supersede` with a `scopus:` id) in the Scopus modes,
+or an OpenAlex work (`supersede` with an `openalex:` id) in mode `openalex`. Both are written at
+build, not when a search runs (see the last paragraph of this section).
 Its current decisions stay in `decisions.jsonl` but are **orphaned**: they are not folded into
 any count. The diagram footnote shows only their count; the methods text
 (`methods.orphaned_decisions_text`) lists each one with `event_id`, `record_id`, stage and
@@ -327,14 +339,24 @@ What the counts then do, as the code behaves:
 - `registered` falls by one, and so does every count the record contributed to, at whichever
   stage its decisions had taken it. `included` falls only if the paper had reached `included`;
   a paper excluded at title and abstract lowers `excluded_title_abstract` instead.
-- After a **supersession** the Scopus record enters `S_raw` with no decisions. It counts in
+- After a **supersession** the superseding record enters `S_raw` with no decisions. It counts in
   `unsure_title_abstract` (it is not excluded, and not included) until a reviewer decides it
   again; decisions are never transferred. `included` therefore stays lower by one until then.
-- Equation 1 still closes: `identified` and the Scopus side of `S_raw` move together, and
-  `registered` falls by the superseded registration.
+- Equation 1 still closes: `identified` and the search side of `S_raw` move together (the
+  OpenAlex side in mode `openalex`), and `registered` falls by the superseded registration.
 
 The published `included` can thus fall after a draft quoted it. Compare the orphan listing
 in the methods text with the draft.
+
+In mode `openalex`, a registration whose paper an OpenAlex work also holds (by DOI, or by
+normalised title and year) is superseded by that work. The fold does
+not load the registration, so the OpenAlex work is the only copy in `S_raw` and it is screened
+once. The build names the pair (`registered_openalex_overlap`) and writes the `supersede` event
+after the store is installed. The event is written once: a later build finds the registration no
+longer active, so it writes nothing more for it. Decisions logged on the registration become
+orphans with outcome `supersession`, which the methods text lists (ADR 0033, section 3). Equation 1
+stays closed, because `identified` counts the OpenAlex work and `registered` no longer counts the
+registration.
 
 ### When equation 1 does not close
 
@@ -344,11 +366,15 @@ cause observed so far is here:
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| `identified` far exceeds `|S_raw|`, by roughly a page multiple | **The capture is incomplete.** Paging stopped early, or the API's result cap was hit, so Layer 0 holds fewer entries than the server said existed | Compare `manifest.pages_fetched` and the run's entry count against `total_results`. Re-running `prismabib search` resumes an unsealed run; a *sealed* short run is a fact about the capture and must be reported as one |
+| *Scopus modes:* `identified` far exceeds `|S_raw|`, by roughly a page multiple | **The capture is incomplete.** Paging stopped early, or the API's result cap was hit, so Layer 0 holds fewer entries than the server said existed | Compare `manifest.pages_fetched` and the run's entry count against `total_results`. Re-running `prismabib search` resumes an unsealed run; a *sealed* short run is a fact about the capture and must be reported as one |
 | `identified` exceeds `|S_raw|` by a small amount, and the store was built a while ago | **The store predates the last search.** `prismabib build` without `--rebuild` reuses the existing store and loads no run captured since | `uv run prismabib build <slug> --rebuild` |
 | A stubborn residual on a project with more than one search string | **A search string that is not distinct.** `identified` sums one term per distinct `runs.query`, verbatim; two runs whose queries differ only in whitespace are two searches to this rule and one search to a reader | `SELECT run_id, query, total_results FROM runs ORDER BY run_id` and read the query strings side by side. Do not normalise them in the code — see the Constraints in [ADR 0013](../architecture/adr/0013-identified-sums-across-searches.md) |
 | `identified` exceeds `|S_raw|` by exactly the number of entries the build reported skipping | **Entries the loader could not read**, not reflected in the counts | Check `removed_other_reasons` against `SELECT COUNT(*) FROM malformed_entries`; if they disagree, the store was not rebuilt after the entries were skipped |
+| *Mode `openalex`:* `identified` exceeds `|S_raw|` by a small amount, and the store was built before the last `openalex-search` | **The store predates the last search.** The build without `--rebuild` reuses the store, and a sealed OpenAlex run captured since is not loaded | `uv run prismabib build <slug> --rebuild` |
+| *Mode `openalex`:* `identified` differs from the sealed run totals | **The identification total is read from `openalex_search_runs`**, one `total_count` per distinct `query_key`, from its earliest sealed run. A discarded or unsealed run contributes nothing | `SELECT run_id, query_key, total_count, works_captured FROM openalex_search_runs WHERE (query_key, run_id) IN (SELECT query_key, MIN(run_id) FROM openalex_search_runs GROUP BY query_key) ORDER BY run_id` (a refresh adds no term, so the earliest run per query is the one that counts) |
 | A multi-search project whose `duplicates_across_searches` is `0` | **The store predates this accounting.** `run_duplicates` is written *during* the load, so a store built by an earlier version — or reused without `--rebuild` — has no rows in it, and the overlap between the searches goes unsubtracted | `uv run prismabib build <slug> --rebuild`. The count cannot be recovered any other way: `records.run_id` keeps only the first run that loaded a record |
+
+In mode `openalex`, works the loader could not load (no id, or no title) are already subtracted through `removed_other_reasons`, counted once per distinct work id when they have an id, and once per row when they have none (`prisma/flow.py:378-426`), so they do not by themselves break equation 1. To list them, run `SELECT run_id, payload_file, payload_line, reason FROM malformed_entries WHERE reason = 'malformed_openalex_search_work'`; `payload_line` is the work's index in its response's `results` array, not a line of the file (ADR 0042, Decision 5).
 
 Two causes are **no longer** on this list, and a diagram from before this change may still
 show them:

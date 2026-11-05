@@ -145,9 +145,10 @@ Pinned by `test_normalise_venue_name__variants__fold_to_the_same_key` and
 
 `data`: `venue`, `venue_type`, `count`, sorted by `count` descending then
 `venue` ascending, truncated to `top_n`. `venue_type` is the single type
-when every raw variant agrees, `"mixed"` when Scopus indexes the same
-venue under more than one `prism:aggregationType` — naming the disagreement
-rather than silently picking one.
+when every raw variant agrees, `"mixed"` when two different non-null types are seen under one
+name: in the Scopus modes, when Scopus indexes the same venue under more than one
+`prism:aggregationType`; in mode `openalex`, when the mapped OpenAlex source types differ. The
+disagreement is named rather than silently picked.
 
 `report/numbers.py::_venue_numbers` and `report/tables.py::top_venues_table`
 delegate to this function (over `PrismaStage.RAW`, their historical,
@@ -210,6 +211,10 @@ Full counting over `term_norm` — every record carrying a term counts once
 toward that term, unweighted by how many keywords the record carries
 overall.
 
+Where a function takes `kind`, its default is `None`, which reads the project's keyword kind:
+`author` in the Scopus modes, and `openalex-topic` in mode `openalex`, whose keywords are
+OpenAlex topics.
+
 ### The stopword list is project data, never a source literal (ADR 0022 Decision 6)
 
 A default list ships as a package data file,
@@ -222,13 +227,13 @@ has a `Corpus`, not a `Project`, so the caller (a notebook, a CLI command,
 source text for the default list's terms, so hardcoding the list back into
 Python reds it.
 
-### Keyword frequency — `keyword_frequency(corpus, *, stage=INCLUDED, kind="author", min_occurrence=1, stopwords_path=None)`
+### Keyword frequency — `keyword_frequency(corpus, *, stage=INCLUDED, kind=None, min_occurrence=1, stopwords_path=None)`
 
 `data`: `term`, `count`, restricted to `count >= min_occurrence`, sorted by
 `count` descending then `term` ascending. `min_occurrence` and `kind` are
 in `params` (S07-AC4).
 
-### Keyword evolution — `keyword_evolution(corpus, *, stage=INCLUDED, kind="author", min_occurrence=1, stopwords_path=None)`
+### Keyword evolution — `keyword_evolution(corpus, *, stage=INCLUDED, kind=None, min_occurrence=1, stopwords_path=None)`
 
 `data`: `year`, `term`, `count` — the same `min_occurrence` threshold
 applied to a term's *total* count across every year, so this reports on
@@ -258,7 +263,7 @@ member — independent of any hash seed. Pinned by
 `test_network__clustering__is_deterministic_under_fixed_seed`, run under
 `pytest-randomly`.
 
-### Keyword co-occurrence — `keyword_cooccurrence_network(corpus, *, stage=INCLUDED, kind="author", min_occurrence=2, top_n=50, resolution=1.0, seed=0, stopwords_path=None)`
+### Keyword co-occurrence — `keyword_cooccurrence_network(corpus, *, stage=INCLUDED, kind=None, min_occurrence=2, top_n=50, resolution=1.0, seed=0, stopwords_path=None)`
 
 `data`: `node_a`, `node_a_label`, `node_b`, `node_b_label`, `weight` — the
 top `top_n` edges by weight. `params["communities"]` carries
@@ -269,7 +274,9 @@ six-record fixture an analyst can count by hand.
 
 ### Co-authorship — `coauthorship_network(corpus, *, stage=INCLUDED, min_occurrence=1, top_n=50, resolution=1.0, seed=0)`
 
-Same shape; node ids are Scopus `author_id` values, labels are surnames.
+Same shape. In the Scopus modes node ids are Scopus `author_id` values. In mode `openalex` they
+are `openalex-author:<OpenAlex author id>`, or `openalex-name:<normalised name>` for an author
+that OpenAlex gives no id. Labels are surnames.
 
 ### VOSviewer export
 
