@@ -20,20 +20,19 @@ A four-layer pipeline:
 
 - **Layer 3 — Analysis views** (pure functions): Deterministic transformations producing figures, tables, a Panel dashboard, and exports. Every figure ships with the dataframe that produced it.
 
-## Before you start: Scopus access
+## Before you start: which source you need
 
-**prismabib needs a Scopus API key with `COMPLETE` view entitlement.** That entitlement
-is granted to subscribing institutions, not to personal or free API keys, and prismabib
-will not silently fall back to a lesser view — `STANDARD` omits author keywords and full
-affiliation data, which would quietly bias the keyword network and the geography analysis.
-A wrong number is worse than a refusal.
+A review runs on one source, chosen per project. A Scopus review needs a Scopus API key with
+`COMPLETE` view entitlement. That entitlement is granted to subscribing institutions, not to
+personal or free API keys, and prismabib will not silently fall back to a lesser view.
+`STANDARD` omits author keywords and full affiliation data, which would quietly bias the keyword
+network and the geography analysis. A wrong number is worse than a refusal. Running from your
+institution's network, or asking your university library for a Scopus *institutional token*
+(`SCOPUS_INSTTOKEN`), is often enough. Get a key at [dev.elsevier.com](https://dev.elsevier.com).
 
-In practice this means running from your institution's network, or asking your university
-library for a Scopus *institutional token* and setting `SCOPUS_INSTTOKEN`. If your
-institution has no Scopus subscription, this tool cannot run your review today. Better to
-know that now than after an hour of setup.
-
-Get a key at [dev.elsevier.com](https://dev.elsevier.com).
+Without Scopus access, a review runs on OpenAlex with a free key (source mode `openalex`). Its
+records are OpenAlex's, not Scopus's. [Getting Started](docs/getting-started.md) opens with that
+access question and walks the OpenAlex-only path from clone to a first screening decision.
 
 ## Quick start
 
@@ -59,7 +58,7 @@ while you are still waiting for access. Fill in:
 Then:
 
 ```bash
-cp .env.example .env          # put your Scopus key in it -- needed from here on
+cp .env.example .env          # Scopus path: put your Scopus key in it (OpenAlex path: see Getting Started)
 prismabib search my-review    # spends Scopus quota; resumable if interrupted
 prismabib build my-review     # derive the Layer 1 store from the raw capture
 prismabib flow my-review      # print the PRISMA 2020 flow counts

@@ -108,11 +108,11 @@ uv run prismabib build my-review
 uv run prismabib flow my-review
 ```
 
-**prismabib needs a Scopus API key entitled to `view=COMPLETE`**, which is granted to
-subscribing institutions rather than to personal keys. If your institution has no Scopus
-subscription, this tool cannot run your review today — better to know that now.
-[Getting Started](getting-started.md) states the access requirements first and walks the
-whole path from clone to a first screening decision.
+**A review runs on one source, chosen per project.** A Scopus review needs a Scopus API key
+entitled to `view=COMPLETE`, which subscribing institutions are granted and personal keys are
+not. Without Scopus access, a review runs on OpenAlex with a free key (source mode `openalex`).
+[Getting Started](getting-started.md) opens with that access question and walks the
+OpenAlex-only path from clone to a first screening decision.
 
 `uv sync` installs the library and the CLI. The test and documentation toolchains are
 optional extras, so working on the project itself needs `uv sync --all-extras` — which is
@@ -168,7 +168,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ## Questions?
 
-- **Want to run a review?** Start with [Getting Started](getting-started.md), which states the Scopus access requirements before anything else
+- **Want to run a review?** Start with [Getting Started](getting-started.md), which asks whether you have Scopus access before anything else
 - **Storing or checking an API key?** See [Enter Credentials](how-to/enter-credentials.md)
 - **Deciding whether to adopt this?** Read [Limitations](methodology/limitations.md) first
 - **New contributor?** See [Contributing](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/CONTRIBUTING.md)
