@@ -917,7 +917,7 @@ Five rules that change published counts, all enforced in code:
 
     Leave it `[]` and record the restriction in your protocol, applying it during
     title/abstract screening where it becomes a logged decision with a reason code. See
-    [Limitations](methodology/limitations.md#subject_areas-is-declared-but-not-enforceable)
+    [Limitations](methodology/limitations.md#subject-areas)
     for the alternative and its cost.
 
 The reason codes are a **closed vocabulary**: an exclusion citing a code not listed for

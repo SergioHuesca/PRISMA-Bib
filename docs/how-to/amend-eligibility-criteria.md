@@ -239,7 +239,7 @@ any, and a non-empty `subject_areas` would be a filter that matched everything w
 appearing in your diagram as a restriction. It is therefore **refused**: the engine raises
 `ConfigError` naming the codes and the corpus. Keep `subject_areas: []` and apply the
 restriction at title/abstract screening, where it becomes a logged decision with a reason
-code. See [Limitations](../methodology/limitations.md#subject_areas-is-declared-but-not-enforceable).
+code. See [Limitations](../methodology/limitations.md#subject-areas).
 
 **"I want to see what the corpus looked like under 1.0.0."** Replay against the old version:
 `engine.replay(project, criteria_version="1.0.0")`. Nothing is mutated, and you can compare
@@ -257,7 +257,7 @@ its `automated`/`language` sizes against the current ones.
 | "does not satisfy the criteria.yaml schema" | The edited YAML is invalid (e.g. a non-semantic `version`) | Fix the file; the message names the failing field |
 | "contains N key(s) prismabib does not understand" | A misspelled or unsupported key | The message names each one, the block it is in, and the closest valid key. If prismabib cannot express the criterion, apply it at screening as a logged decision |
 | "temporal.year_end … precedes temporal.year_start" | The window is inverted | Check whether the two values are transposed |
-| "restricts subject_areas to … but not one of the N records … carries subject-area data" | `subject_areas` is non-empty on a Scopus Search API corpus | Set `subject_areas: []`; see [Limitations](../methodology/limitations.md#subject_areas-is-declared-but-not-enforceable) |
+| "restricts subject_areas to … but not one of the N records … carries subject-area data" | `subject_areas` is non-empty on a Scopus Search API corpus | Set `subject_areas: []`; see [Limitations](../methodology/limitations.md#subject-areas) |
 
 A `StoreError` instead means Layer 1 has not been built yet for this project — replay reads
 the store to recompute `A` and `L`. A `LogError` means `decisions.jsonl` failed its checksum

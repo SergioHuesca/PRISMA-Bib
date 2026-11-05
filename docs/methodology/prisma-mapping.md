@@ -84,7 +84,7 @@ comparing two reviews' numbers needs to know them:
     is non-empty and not one record in the corpus has subject-area data, which is every
     corpus captured from the Scopus Search API, and an `openalex` corpus in which no work has a
     mapped subfield. See
-    [Limitations](limitations.md#subject_areas-is-declared-but-not-enforceable).
+    [Limitations](limitations.md#subject-areas).
 - **Document types match on either the Scopus code or its description.** `records.doc_type`
   is populated with the description form (`"Conference Paper"`) whenever the captured entry
   carries one, while `criteria.yaml` is written in code form (`ar`, `cp`). The closed

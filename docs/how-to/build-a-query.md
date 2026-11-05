@@ -28,7 +28,7 @@ A researcher who puts all their restrictions in `criteria.yaml` ends up with a s
 
 ---
 
-## The `[query]` Table: Terms and Compound Terms
+## The `[query]` Table: Terms and Compound Terms {#terms-and-compound-terms}
 
 Your query lives in `project.toml` under `[query]`. Three keys control it:
 
@@ -246,7 +246,7 @@ This filter is applied *after* Scopus returns results. Any record whose year fal
 
 ---
 
-## Subject Areas—A Sharp Edge
+## Subject Areas—A Sharp Edge {#subject-areas}
 
 **Status: available since v0.12.0.** Subject-area filtering needs data the Search API does not return, so it requires a separate enrichment pass — `prismabib enrich` — against Scopus's Abstract Retrieval API. That endpoint had been addressed wrongly since v0.8.0 and never worked; it was fixed in v0.12.0. Abstract Retrieval is also a **different Scopus entitlement** from Search `view=COMPLETE`, so a key that captures your corpus may still be refused here. Read on for the workaround if it is.
 
