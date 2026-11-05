@@ -95,6 +95,8 @@ class OpenAlexSearchResult:
         resets_in_seconds: For ``daily_budget``, the server's ``retry-after`` (seconds until the
             budget resets at 00:00 UTC), else ``None``.
         reason: For ``daily_budget``, the server's message (truncated), else empty.
+        total_count: ``meta.count`` of the first page once known, else ``None``.
+        pages_remaining: Pages still to fetch at ``per_page`` (all calls counted), when known.
     """
 
     status: Status
@@ -105,6 +107,8 @@ class OpenAlexSearchResult:
     message: str = ""
     resets_in_seconds: float | None = None
     reason: str = ""
+    total_count: int | None = None
+    pages_remaining: int | None = None
 
 
 class _Progress(BaseModel):
@@ -406,8 +410,23 @@ def capture_openalex_search(
         resets_in_seconds: float | None = None,
         reason: str = "",
     ) -> OpenAlexSearchResult:
+        total = progress.total_count
+        remaining = (
+            None
+            if total is None
+            else max(0, -(-total // progress.per_page) - len(progress.requests))
+        )
         return OpenAlexSearchResult(
-            status, run_dir.name, fetched, spent, manifest, message, resets_in_seconds, reason
+            status,
+            run_dir.name,
+            fetched,
+            spent,
+            manifest,
+            message,
+            resets_in_seconds,
+            reason,
+            total,
+            remaining,
         )
 
     if resumed is not None and (torn := _torn_page(run_dir, progress.requests)) is not None:

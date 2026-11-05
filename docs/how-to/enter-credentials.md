@@ -86,6 +86,22 @@ UNPAYWALL_EMAIL: not set
 - The line `git-ignored by a tracked rule` reads `no (<reason>)` when the file is not safely ignored.
   The reason is the one the writer would give, so `set` would refuse for the same reason.
 
+With `--project` in mode `openalex`, an unset Scopus key is labelled as not used in that mode:
+
+```text
+file: /path/to/repository/.env (exists)
+git-ignored by a tracked rule: yes
+SCOPUS_API_KEY: not set (not used in mode openalex)
+SCOPUS_INSTTOKEN: not set (not used in mode openalex)
+OPENALEX_API_KEY: set (.env)
+UNPAYWALL_EMAIL: not set
+sources mode: openalex
+```
+
+If a Scopus key is stored in `.env` in that mode, its line reads `SCOPUS_API_KEY: set (.env)`, and the
+command adds this line after the `sources mode:` line: `SCOPUS_API_KEY is stored but unused in this mode;
+`prismabib credentials clear scopus` removes it from .env.`
+
 `status` never prints a value.
 
 ## Test the Scopus key
