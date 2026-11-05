@@ -147,6 +147,13 @@ nav:
       - Pre-push Check: how-to/pre-push-check.md
       - Stacked Merge Check: how-to/stacked-merge-check.md
   - Testing: testing.md
+  - Evaluation:
+      - Overview: evaluation/index.md
+      - Run Card: evaluation/run-card.md
+      - Tasks: evaluation/tasks.md
+      - Protocol: evaluation/protocol.md
+      - Questionnaires: evaluation/questionnaires.md
+      - Note Sheet: evaluation/note-sheet.md
   - API Reference: reference/index.md
 
 strict: true
