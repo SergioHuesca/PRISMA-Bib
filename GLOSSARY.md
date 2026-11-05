@@ -53,7 +53,7 @@ Fetching the subject-area codes of every record from Scopus Abstract Retrieval, 
 _Avoid_: OpenAlex enrichment (that is the cascade)
 
 **Cascade**:
-Filling the fields a record is missing from further sources in a fixed order: Scopus STANDARD, then Scopus META, then OpenAlex.
+Filling the bibliographic fields a record is missing from further sources in a fixed order: Scopus STANDARD, then Scopus META, then OpenAlex. Records with no DOI are first looked up in OpenAlex by title, to find a DOI for the Scopus steps.
 
 ### Eligibility
 
