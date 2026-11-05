@@ -91,7 +91,8 @@ walkthrough for each path is in [Getting Started](docs/getting-started.md).
   - `sources <slug> [--set MODE]`: Show the project's source mode, or change it with --set (an append-only event).
   - `doctor [slug]`: Check the environment (Python, git, projects root, .env), then the project's mode and keys.
   - `credentials`: Store, inspect, test and remove API keys in the git-ignored .env (ADR 0042).
-  - `openalex-search <slug> --budget N`: Capture OpenAlex works for the [openalex_query] search of a project, into a sealed Layer 0 run.
+  - `openalex-search <slug> --budget N`: Capture OpenAlex works for the [openalex_query] search of a project, into a sealed Layer 0 run. Needs `OPENALEX_API_KEY`.
+  - `candidates add`, `manual-entry`, `manual-reverse`, `conflict-resolve`, `conflict-reverse`: Record candidates, manual values and conflict decisions. See [CHANGELOG.md](CHANGELOG.md).
   - `cascade <slug>`: Fill missing fields: Scopus STANDARD, Scopus META, then OpenAlex.
   - `openalex <slug>`: Capture OpenAlex works for records and candidates with a field still missing.
 

@@ -14,8 +14,10 @@ project now has one source mode, recorded as `[sources] mode` in `project.toml`.
 Scopus search, with no field-level cascade. `scopus+openalex` is the Scopus search with the
 cascade, where OpenAlex fills missing fields; every project created before this release has this
 mode and keeps its behaviour. `openalex` is an OpenAlex works search, with no Scopus call and no
-Scopus key read. In mode `openalex` OpenAlex is the primary source: `prismabib openalex-search`
-captures works into sealed Layer 0 runs, Layer 1 holds them in their own tables, the flow equation
+Scopus key read. It needs a free OpenAlex key, `OPENALEX_API_KEY`. On 2026-11-03 OpenAlex refused
+an anonymous search request as rate-limited, so a keyless search cannot capture a review, and
+`openalex-search` refuses to start one without the key. In mode `openalex` OpenAlex is the primary
+source: `prismabib openalex-search` captures works into sealed Layer 0 runs, Layer 1 holds them in their own tables, the flow equation
 counts them, and the analyses and reports read them. The decision record is
 [ADR 0042](docs/architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md). The
 release also adds `prismabib credentials` (`set`, `status`, `test`, `clear`), the Connect Scopus
@@ -26,8 +28,8 @@ the access question, a `clean-install` job in CI, and the peer evaluation kit in
 **This release does not claim that a usability evaluation has been done.** The peer sessions in
 `docs/evaluation/` have not taken place, so nothing in this release is a participant's result.
 Four things are unverified. The screening keys in a browser: the tests check the serialised model
-of the Connect Scopus panel, not a browser or a Jupyter session. The first-run estimate of 20 to
-30 minutes. macOS and Linux behaviour on a participant's own machine. The Windows 11 path is the
+of the Connect Scopus panel, not a browser or a Jupyter session. A first-run time of about 25
+minutes (`docs/getting-started.md:178`), an estimate and not a measurement. macOS and Linux behaviour on a participant's own machine. The Windows 11 path is the
 one exercised. The `clean-install` job also runs on Ubuntu, but that is a CI runner, not a user's
 computer, and the job is not a required check until it has passed on `main`. In mode `openalex`
 the metadata is OpenAlex's own, not the publisher's: abstracts are rebuilt from OpenAlex's
@@ -37,7 +39,7 @@ author and institution ids are OpenAlex's. See
 
 ### Upgrading from 1.0.0
 
-Each item below was checked against the code or against an entry in this section.
+Each item below is taken from the code or from an entry in this section.
 
 - **A script that creates a project must pass `--sources`.** On a new project, `prismabib init`
   with no terminal refuses without `--sources {openalex,scopus,scopus+openalex}` and writes
@@ -46,22 +48,32 @@ Each item below was checked against the code or against an entry in this section
   Existing projects are not asked again.
 - **A store built before this release is refused until you rebuild it.** The store now has
   schema 2 and a stamp, `store/build_stamp.json`. A store with no stamp is refused in every mode
-  with "run `prismabib build <slug> --rebuild`". Nothing is re-fetched: the rebuild reads Layer 0.
-- **Scopus-touching commands are refused in mode `openalex`.** `search`, `enrich`, `openalex`,
-  `conflict-resolve`, `credentials test scopus` and `doctor --check-scopus` are refused, each with
-  its reason. `cascade` still runs in mode `openalex`, for candidates only, and refuses
-  `--opt-in` and `--scopus-budget`. `openalex-search` is refused in `scopus` and
-  `scopus+openalex`. A project without a `[sources]` table is `scopus+openalex` and is not
-  refused any of these.
+  with "Run `prismabib build <slug> --rebuild`". Nothing is re-fetched: the rebuild reads Layer 0.
+- **Scopus-touching commands are refused in mode `openalex`.** `search`, `enrich`, `openalex`
+  and `conflict-resolve` are refused, each with its reason. `credentials test scopus --project
+  <slug>` and `doctor --check-scopus <slug>` are refused in mode `openalex`. A plain
+  `credentials test scopus`, with no `--project`, runs in any mode and makes one Scopus request.
+  `cascade` still runs in mode `openalex`, for candidates only, and refuses `--opt-in` and
+  `--scopus-budget`. `openalex-search` is refused in `scopus` and `scopus+openalex`.
+- **Which modes refuse what.** A project without a `[sources]` table is `scopus+openalex`. It is
+  not refused `search`, `enrich`, `openalex`, `cascade` or `conflict-resolve`, but it is refused
+  `openalex-search`. A project in mode `scopus`, new or changed with `sources --set`, also refuses
+  `cascade`, `openalex`, `register` and `conflict-resolve`, which need OpenAlex records.
+- **`openalex-search` needs a new environment variable.** `OPENALEX_API_KEY` is read by
+  `openalex-search`, which refuses to start without it (`src/prismabib/config.py:152-163`), and
+  the `cascade` and `openalex` OpenAlex lookups use it when it is set. Store it with
+  `prismabib credentials set openalex`. This mode needs no Scopus key.
 - **`Settings.scopus_api_key` is optional.** Its type is now `SecretStr | None`, and it is checked
   only when a Scopus command runs. The OpenAlex, Unpaywall, Crossref and ScienceDirect clients no
   longer need it. Code that reads the attribute must handle `None`.
 - **`numbers.json` changes for every project, and the source sentence is the one mode-dependent
   key.** `methods.source_sentence` is written only for an explicit `scopus` or `openalex` project
   with a search run. Legacy and `scopus+openalex` projects get no such key, so the source sentence
-  does not change their output. Compared with 1.0.0, though, every project gains keys:
-  `flow.registered`, `citations.registered_unavailable`, `methods.registered_sentence`,
-  `methods.orphaned_decisions_text` and `methods.venue_unnamed_sentence`. The bytes of
+  does not change their output. Compared with 1.0.0, though, every project gains keys,
+  including `flow.registered`, `citations.registered_unavailable`, `methods.registered_sentence`,
+  `methods.orphaned_decisions_text`, `methods.venue_unnamed_sentence`, and the cascade keys
+  `methods.cascade_sentence`, `methods.cascade_conflicts_open`,
+  `methods.cascade_conflicts_resolved` and `methods.cascade.<field>.*`. The bytes of
   `numbers.json` therefore differ from 1.0.0 for every project.
 - **A template needs one new required key.** `fill` requires `citations.registered_unavailable`.
   The `methods.*` keys are optional.
@@ -92,7 +104,11 @@ Each item below was checked against the code or against an entry in this section
   and `CoverageReport` require `taxonomy_engine_behaviour`, and `CoverageReport` also requires
   `audit_seeds`. The keyword analyses default to `kind=None`, which `Corpus.keyword_kind` resolves
   by mode; outside mode `openalex` it resolves to `author`, as before.
-- **New commands:** `prismabib credentials`, `sources`, `doctor` and `openalex-search`.
+- **New commands:** `cascade`, `openalex`,
+  `openalex-search`, `register`, `reverse`, `registrations`, `candidates add`, `manual-entry`,
+  `manual-reverse`, `conflict-resolve`, `conflict-reverse`, `sources`, `doctor` and `credentials`
+  (`set`, `status`, `test`, `clear`). `init`, `search`, `build`, `flow`, `enrich`, `fulltext`,
+  `export` and `fill` are the v1.0.0 commands.
 
 ### Added
 
