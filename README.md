@@ -76,7 +76,7 @@ walkthrough for each path is in [Getting Started](docs/getting-started.md).
 
 ## Project status
 
-**v1.0.0 (2026-10-20) — feature-complete against the build plan.** What works today:
+**v1.1.0 (2026-11-05) — feature-complete against its build plan since v1.0.0; adds a Scopus-free source mode ([ADR 0042](docs/architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md)).** What works today:
 
 - **Scopus acquisition** into an immutable, sealed Layer 0 archive, with a resumable
   cursor, a per-run HTTP cache that only resumes an interrupted run, and rate limiting.
@@ -87,10 +87,16 @@ walkthrough for each path is in [Getting Started](docs/getting-started.md).
 - **The PRISMA engine**: the formal sets `S_raw`/`A`/`L`/`M_abs`/`M_full`/`C`, an
   append-only decision log with fsync-per-write and tamper detection, `FlowCounts` with a
   consistency guard, and replay under amended criteria.
-- **A CLI**: `prismabib init | search | build | flow | enrich | fulltext | export | fill`. `register | reverse | registrations` are on `main`, unreleased (see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`).
+- **A CLI**: `prismabib init | search | build | flow | enrich | fulltext | export | fill`. `register | reverse | registrations` are released in v1.1.0 (see [CHANGELOG.md](CHANGELOG.md)). Also in v1.1.0:
+  - `sources <slug> [--set MODE]`: Show the project's source mode, or change it with --set (an append-only event).
+  - `doctor [slug]`: Check the environment (Python, git, projects root, .env), then the project's mode and keys.
+  - `credentials`: Store, inspect, test and remove API keys in the git-ignored .env (ADR 0042).
+  - `openalex-search <slug> --budget N`: Capture OpenAlex works for the [openalex_query] search of a project, into a sealed Layer 0 run.
+  - `cascade <slug>`: Fill missing fields: Scopus STANDARD, Scopus META, then OpenAlex.
+  - `openalex <slug>`: Capture OpenAlex works for records and candidates with a field still missing.
 
 The screening view, full-text retrieval, bibliometrics, the taxonomy engine,
-dashboards, and export/reporting are also built. Known limitations of v1.0.0 are in
+dashboards, and export/reporting are also built. What v1.1.0 does and does not claim is stated in
 [CHANGELOG.md](CHANGELOG.md). See
 [docs/methodology/limitations.md](docs/methodology/limitations.md) for what that means in
 practice before you adopt this for a real review, and

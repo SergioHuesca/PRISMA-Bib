@@ -7,7 +7,7 @@ This is a statement of current state, not an apology. Some entries are stages no
 built; others are properties of the data source that will not change. Each says which it
 is, and what to do instead.
 
-Everything here describes **v1.0.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
+Everything here describes **v1.1.0**: Layers 0 to 3 are built; the one CLI command still absent is `prismabib code` (see below).
 
 ## Coverage: one source per project, chosen by its source mode
 

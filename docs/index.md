@@ -63,10 +63,10 @@ Deterministic transformations over Layers 1+2, designed to produce:
 
 **Critical design:** No caching of results into files that could go stale. Figures are produced by functions that take a `Corpus` handle and return a figure object plus the dataframe that produced it. Every figure ships with its own data provenance.
 
-## What is built today (v1.0.0)
+## What is built today (v1.1.0)
 
-**All four layers are built and tested.** The software is feature-complete against the build
-plan and tagged `v1.0.0` (2026-10-20).
+**All four layers are built and tested.** The software is feature-complete against its build
+plan since v1.0.0; v1.1.0 (2026-11-05) adds a Scopus-free source mode ([ADR 0042](architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md)).
 
 What works:
 
@@ -160,8 +160,8 @@ uv run mkdocs build --strict    # Static HTML in site/; the CI gate
 
 ## Project status
 
-- **Released:** v1.0.0 (2026-10-20) — feature-complete against the build plan; all four layers
-  are built. See [what is built today](#what-is-built-today-v100).
+- **Released:** v1.1.0 (2026-11-05) — feature-complete against the build plan; all four layers
+  are built. See [what is built today](#what-is-built-today-v110).
 - **Not built:** inter-reviewer agreement statistics (κ), and the `prismabib code` command.
 - **Per-release detail:** [CHANGELOG.md](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/CHANGELOG.md),
   which records what each stage added, changed, and fixed.
