@@ -209,14 +209,13 @@ _LINK_TARGET = re.compile(r"\]\([^)]*\)")
 def _prose_pages(root: Path) -> list[Path]:
     """README and the docs pages the word is banned from (helper, not a test).
 
-    ADRs, graph reports, and the Glossary and Changelog pages are exempt.
+    ADRs and graph reports are exempt; the Glossary and Changelog sit at the
+    repository root, so they are never scanned.
     """
     docs = sorted(
         p
         for p in (root / "docs").rglob("*.md")
-        if root / "docs" / "architecture" / "adr" not in p.parents
-        and "graphify-out" not in p.parts
-        and p.stem.lower() not in {"glossary", "changelog"}
+        if root / "docs" / "architecture" / "adr" not in p.parents and "graphify-out" not in p.parts
     )
     return [root / "README.md", *docs]
 
@@ -268,7 +267,7 @@ def test_corpus_check__on_a_small_tree__reports_each_failure_mode(tmp_path: Path
         "Fine `corpus` and [x](corpus.md)\n```\ncorpus\n```\nthe Corpus here\n", encoding="utf-8"
     )
     (tmp_path / "docs" / "open.md").write_text("ok\n~~~\ncorpus\n", encoding="utf-8")
-    (tmp_path / "docs" / "glossary.md").write_text("corpus\n", encoding="utf-8")
+    (tmp_path / "GLOSSARY.md").write_text("corpus\n", encoding="utf-8")
 
     problems = _corpus_problems(tmp_path, {("README.md", "gone"): "stale"})
 
