@@ -55,8 +55,8 @@ cases, and the message says to create a new project instead:
 Whether a key may use the COMPLETE view is decided by Elsevier and by your institution.
 prismabib cannot change that. The search is refused rather than run on a lower view. A
 researcher without a subscription therefore cannot run a Scopus search. Mode `openalex`
-exists for that case: it searches OpenAlex with a free key. It is a different corpus from a
-Scopus corpus, and the methods text says which source you used. Read
+exists for that case: it searches OpenAlex with a free key. It returns different records from
+Scopus, and the methods text says which source you used. Read
 [Limitations](methodology/limitations.md) before you cite its numbers.
 
 ## Install
@@ -176,7 +176,7 @@ $0.002 at list price. The allowance resets at 00:00 UTC.
 ## The OpenAlex-only walkthrough
 
 This walkthrough takes about 25 minutes, most of it screening. Everyone runs the same query, so
-everyone gets the same corpus:
+everyone gets the same records:
 
 `"baseball" AND "pose estimation" AND "pitcher"`
 
@@ -714,7 +714,7 @@ path in more detail, with a look at the Layer 0 files, is in [Run a New Review](
     `ScopusClient.search` always requests `view=COMPLETE` and **never** falls back to
     `STANDARD`. A 403 raises `EntitlementError` and the run stops. That is deliberate:
     `STANDARD` omits `authkeywords`, the full `author` block and `dc:description`, so a
-    corpus built from it would be missing author keywords, affiliations and abstracts
+    set of records built from it would be missing author keywords, affiliations and abstracts
     while looking complete — quietly biasing every keyword and geography analysis built on
     it afterwards.
 
@@ -904,16 +904,16 @@ Five rules that change published counts, all enforced in code:
 - **Unknown keys are refused, not ignored.** Writing `language:` instead of `languages:`
   raises `ConfigError` naming the key, the block it appeared in, and the closest valid
   alternative. A silently dropped key would be an eligibility rule that silently did not
-  apply, and the resulting corpus looks entirely plausible.
+  apply, and the resulting records look entirely plausible.
 - **An inverted year window is refused.** `year_start: 2026` with `year_end: 2015` would
-  match no record at all and report that automation excluded your entire corpus.
+  match no record at all and report that automation excluded your entire set of records.
 
-!!! warning "subject_areas cannot be enforced on a Scopus Search API corpus"
+!!! warning "subject_areas cannot be enforced on records captured from the Scopus Search API"
 
     The Search API's `view=COMPLETE` response does not carry subject-area codes, so no
-    record in a corpus captured by prismabib has any. Rather than let the filter quietly
+    record captured by prismabib has any. Rather than let the filter quietly
     become a no-op — a PRISMA diagram claiming a restriction that never ran — a non-empty
-    `subject_areas` against a corpus with no subject-area data raises `ConfigError`.
+    `subject_areas` against records with no subject-area data raises `ConfigError`.
 
     Leave it `[]` and record the restriction in your protocol, applying it during
     title/abstract screening where it becomes a logged decision with a reason code. See
@@ -1018,7 +1018,7 @@ Three things on that screen are deliberate and worth knowing before you rely on 
   and neither is an eligibility criterion. Pass `blind=False` if your protocol says
   otherwise.
 - **The order is seeded from your project slug** and is uncorrelated with citation count,
-  so you are not calibrating on the most-cited papers first. It is stable as your corpus
+  so you are not calibrating on the most-cited papers first. It is stable as your set of records
   grows, so re-capturing does not send you back through a reshuffled queue.
 - **The record id under the status line carries its current decision**, which is what makes
   `z` checkable: step back with `p`, see `· include`, press `z`, see `· unsure`.
@@ -1146,7 +1146,7 @@ truncates them.
 | `QuotaExceededError` | A quota is exhausted: the weekly Scopus quota, or a server-reported reset more than an hour away (prismabib raises rather than sleeping until it) | Wait for the reset, then run the same command again. Everything already captured is in Layer 0 and resumable. A `fulltext` run stops at the error (it does not fail each remaining record) and stays unsealed; the next `prismabib fulltext` resumes it |
 | `ConfigError: … SCOPUS_API_KEY` | No `.env` and no environment variable | `uv run prismabib credentials set scopus`, or `cp .env.example .env` |
 | `ConfigError` naming a `criteria.yaml` key | An unknown key — usually a typo | The message names the closest valid key and lists what is valid in that block |
-| `ConfigError` about `subject_areas` | A restriction that no record in the corpus can be evaluated against | Set `subject_areas: []`; see [Limitations](methodology/limitations.md) |
+| `ConfigError` about `subject_areas` | A restriction that none of your records can be evaluated against | Set `subject_areas: []`; see [Limitations](methodology/limitations.md) |
 | `StoreError: No Layer 1 store at …` | Layer 1 has not been built | `uv run prismabib build <slug>` |
 | `LogError` about a `reason_code` | The code is not declared for that stage in `criteria.yaml` | Add it to the vocabulary (and bump `version`), or use a declared code |
 | `ValidationError: query has no terms` | `[query].terms` and `compound_terms` are both empty | Fill in the query before running `search` |

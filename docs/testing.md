@@ -358,7 +358,7 @@ return criteria.temporal.year_start <= attrs.year <= criteria.temporal.year_end
 ```
 
 Mutate the second `<=` to `<` and every record published in the final year of the window
-silently leaves the corpus. The suite goes green if no test happens to assert on a
+silently leaves the set of records. The suite goes green if no test happens to assert on a
 boundary-year record. `after_language` drops from 1,550 to 1,509, `included` drops with it,
 every figure downstream shifts, and 1,509 looks exactly as reasonable as 1,550 in a
 manuscript. Nobody catches it in review, because nothing looks wrong.

@@ -153,11 +153,11 @@ The dashboard's sidebar (project selector, year range, taxonomy dimension,
 citation snapshot) and its nine tabs (Overview, PRISMA, Trends, Geography,
 Venues, Keywords, Network, Taxonomy, Corpus browser) all read the same
 `Corpus` handle, so every tab is consistent by construction — never a
-second, independently-filtered copy of the corpus.
+second, independently-filtered copy of the records.
 
 ## Captions
 
-Every figure's caption states `n`, the corpus's as-at date, the citation
+Every figure's caption states `n`, the as-at date of the records, the citation
 snapshot where applicable, and the criteria version — read straight off the
 `AnalysisResult`'s own provenance, never typed by hand:
 

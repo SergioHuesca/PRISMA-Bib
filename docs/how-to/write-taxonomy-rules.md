@@ -96,7 +96,7 @@ from prismabib.taxonomy.rules import load_rule_file
 rule_file = load_rule_file(project.taxonomy_rules_dir / "architecture.yaml", schema=schema)
 ```
 
-**Everything that can go wrong here fails at load, not partway through coding the corpus**
+**Everything that can go wrong here fails at load, not partway through coding the records**
 (ADR 0023 Decision 6): a malformed regex, an unknown field, a category the dimension does not
 declare, a missing `version`/`dimension`/`counting_unit`, or a `dimension:` no schema
 declares. A rule file that failed on record 900 of 1000 would already have written 899
@@ -104,10 +104,10 @@ assignments under a file that was never valid — this project refuses that outc
 construction.
 
 One exception is *not* an error: a rule referencing a field that carries no content anywhere
-in the corpus (the live `Baseball-CVPR` project's `index_keywords`, always empty — the Scopus
+in the records (the live `Baseball-CVPR` project's `index_keywords`, always empty — the Scopus
 Search API never returns indexed keywords) is valid and matches nothing, silently, forever.
 That is reported as a diagnostic in the coverage report, not refused at load: the rule may be
-correct for the next corpus, and refusing it would make rule files un-shareable between
+correct for the next set of records, and refusing it would make rule files un-shareable between
 reviews.
 
 ## Step 3: run the coder
@@ -128,7 +128,7 @@ written to the store — a taxonomy assignment is a function of Layer 1 *and* th
 which live in the project's own git repository on their own versioning cadence, deliberately
 outside Layer 0 ([ADR 0018](../architecture/adr/0018-abstract-runs-in-layer-1.md)'s "any table
 Layer 1 holds must be a function of Layer 0" is why). Re-coding after a rule edit costs one
-pass over the corpus and no reconciliation.
+pass over the records and no reconciliation.
 
 `result.effective_categories("architecture")` gives you, per record, the categories currently
 in force after folding any human override over the rule output.
@@ -248,15 +248,15 @@ facts, and this stage never conflates them.
 `queue.audit_samples[dimension]` — and stays put while you work through it. Only `queue.entries` shrinks, because that is the *work list*.
 Those being two different things is what makes the rate computable at all: an earlier version
 drew the sample from the work list, so reviewing a sampled record removed it from the pool, the
-next run re-drew a different sample, and the rate was permanently `None` for every corpus.
+next run re-drew a different sample, and the rate was permanently `None` for every set of records.
 
 **Read `audit_agreement_by_band` alongside the headline rate.** A single number averages every
-rule that fired, so it moves when the mix of categories in a corpus moves even though no rule
+rule that fired, so it moves when the mix of categories among the records moves even though no rule
 has changed. The bands say which rules the number is about, and a record is placed by the
 *weakest* confidence among the categories assigned to it — a record coded partly by a `0.6`
 rule is only as trustworthy as that rule.
 
-## On the live corpus
+## On the live project
 
 `Baseball-CVPR`'s `\|C\|` is empty until screening (Stage 4/5) has run, so
 `test_counting_unit__papers_single_label__sums_to_corpus_size`-style behaviour can only be

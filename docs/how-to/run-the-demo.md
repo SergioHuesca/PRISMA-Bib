@@ -67,13 +67,13 @@ That is the contract working as designed (a number that stopped being cited may 
 
 Two ways to handle it, and the second is better theatre:
 
-**Either** write a manuscript that cites all of them. Generate the key list from your own export first — the count and the venue names differ per corpus:
+**Either** write a manuscript that cites all of them. Generate the key list from your own export first — the count and the venue names differ from project to project:
 
 ```bash
 python -c "import json,sys; sys.stdout.write(chr(10).join(sorted(json.load(open('projects/demo-talk/exports/numbers.json')))))"
 ```
 
-Then save something like this as `paper-draft.md` (this version cites exactly the 41 required keys a Stage 10 export of the reference corpus produces):
+Then save something like this as `paper-draft.md` (this version cites exactly the 41 required keys a Stage 10 export of the reference records produces):
 
 ```markdown
 ## Methods (excerpt)
@@ -509,7 +509,7 @@ and included 18 studies in the final corpus.
 **What to point out:**
 
 - No number was typed. Every count came from the store or the decision log.
-- If you change the corpus, re-run `build`, re-run `export`, and the manuscript fills with new numbers automatically.
+- If you change the records, re-run `build`, re-run `export`, and the manuscript fills with new numbers automatically.
 - If you cite a key that does not exist, `fill` fails. If a number stops being cited, `fill` fails. That is the whole point: it catches the drift that produced the inconsistent manuscript.
 
 ---
@@ -565,7 +565,7 @@ reader could not fetch the code behind the numbers.
 
 **Recovery:**
 
-- Explain: "Here's a corpus where nothing was included—this is the result of screening decisions. If I had included more records beforehand, the diagram would show them. This is what the *process* looks like; the numbers are just small because I didn't screen much for this demo."
+- Explain: "Here's a set of records where nothing was included—this is the result of screening decisions. If I had included more records beforehand, the diagram would show them. This is what the *process* looks like; the numbers are just small because I didn't screen much for this demo."
 - It is honest and teaches the point: the tool reflects *real decisions*, not invented numbers.
 
 ### `prismabib flow` prints a warning

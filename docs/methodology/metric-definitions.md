@@ -4,7 +4,7 @@ Every quantitative finding this system produces is computed by
 `src/prismabib/bibliometrics/` (BUILD_PLAN Stage 7) and returned as an
 `AnalysisResult` (`bibliometrics/base.py`) — `data` (a figure-ready
 `polars.DataFrame`), `params` (every knob that affected `data`), and
-`provenance` (the corpus and the capture it was computed from). `caption()`
+`provenance` (the set of records and the capture it was computed from). `caption()`
 renders those three into one sentence, generated rather than typed, so a
 figure's caption cannot drift from the number it shows. This page documents
 the formula and the convention behind every number; each links to the test
@@ -23,7 +23,7 @@ this page is the formulas, not the reasoning behind the contract shape.
 | --- | --- |
 | `corpus_size` | `n` — record count in the requested PRISMA stage, `records.height` |
 | `stage` | Which `PrismaStage` (`RAW`, `INCLUDED`, ...) `n` is over |
-| `retrieved_at` | `max(runs.started_at)` — the corpus's own as-at date, independent of `stage` |
+| `retrieved_at` | `max(runs.started_at)` — the as-at date of the records, independent of `stage` |
 | `run_ids` | Every sealed search run that contributed a record to this result, sorted |
 | `criteria_versions` | The distinct `criteria.yaml` versions those runs were captured under, sorted |
 | `citation_snapshot` | The latest `retrieved_at` among the citation rows read, or `None` if this result never read citations |
@@ -37,7 +37,7 @@ true for every analysis generically: changing a parameter changes `params`,
 and the caption is derived from `params`, so it changes too — no module
 writes its own caption logic.
 
-**"Partial final year" is derived from the corpus, never from the wall
+**"Partial final year" is derived from the records, never from the wall
 clock** (ADR 0022 Decision 2): `first_incomplete_year(corpus)` is
 `year(max(runs.started_at))`. No module under `bibliometrics/` calls
 `datetime.now()`, `date.today()` or `time.time()` —
@@ -79,7 +79,7 @@ Raises `AnalysisError` rather than returning a number for:
 | `v_start == 0` | the ratio is infinite; "infinite growth" is not a finding |
 | Fewer than two distinct years after partial-year exclusion | a single year (or none) has no growth rate — this also covers `span_years == 0`, since two *distinct* years can never span zero |
 
-An empty corpus is the one case in this whole package that raises rather
+An empty set of records is the one case in this whole package that raises rather
 than returning a zero-row result (ADR 0022 Decision 10): there is no growth
 rate over no years, and `0.0` would be a number a reader could quote.
 
@@ -98,8 +98,8 @@ exact 30% growth returns `0.30` to `1e-9`),
 Two counting methods, always in `params` and therefore the caption:
 
 - **`"full"`** (default): each distinct country on a record counts once for
-  that record. Shares are over records, so a heavily co-authored corpus's
-  shares sum to **more than 100%** — documented, intended behaviour, not a
+  that record. Shares are over records, so the shares of a heavily co-authored
+  set of records sum to **more than 100%** — documented, intended behaviour, not a
   bug.
 - **`"fractional"`**: each record contributes exactly `1.0`, split `1/k`
   over its `k` distinct countries. Shares sum to `1.0` within float
@@ -109,7 +109,7 @@ A record with no country-bearing affiliation at all — no affiliation data,
 or every affiliation's country is unmapped/absent — is bucketed under the
 explicit country `"UNK"`. Both modes account for **every** record in
 `stage`: dropping the unknowns would make the denominator quietly smaller
-than the corpus and every other share quietly larger.
+than the set of records and every other share quietly larger.
 
 `data`: `country`, `count`, `share`, sorted by `count` descending then
 `country` ascending.
@@ -155,7 +155,7 @@ delegate to this function (over `PrismaStage.RAW`, their historical,
 unfiltered scope) rather than grouping by exact `venues.name` themselves —
 see [ADR 0022 Decision 5](../architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md#5-venue-normalisation-is-defined-here-and-stage-10-delegates-to-it)
 and [Limitations](limitations.md) for the measured effect on the live
-corpus.
+set of records.
 
 ### Venue-type split — `venue_type_split(corpus, *, stage=INCLUDED)`
 
@@ -187,7 +187,7 @@ Pinned by `test_hindex__hand_computed_fixture__matches` (S07-AC3, the
 textbook `[10, 8, 5, 4, 3] -> h=4` example) and
 `test_citation_statistics__hand_computed_counts__matches`.
 
-Unlike CAGR, an all-zero citation table on an empty corpus is a real,
+Unlike CAGR, an all-zero citation table on an empty set of records is a real,
 reportable state (ADR 0022 Decision 10) — every field is `0`/`0.0`, not an
 error.
 

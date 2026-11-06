@@ -175,3 +175,104 @@ def test_public_text__denying_the_field_level_cascade__is_absent() -> None:
         if phrase in text
     ]
     assert hits == []
+
+
+#: Prose says "records" or "included studies"; "corpus" names the code handle
+#: and so lives only in code. These are the literal names that are not prose:
+#: (page, line text stripped) -> why the word stays.
+CORPUS_ALLOWED: dict[tuple[str, str], str] = {
+    (
+        "docs/evaluation/run-card.md",
+        (
+            "**T7.** Copy the flow counts you have now. Delete only the file store\\corpus.duckdb"
+            " in your project folder. Rebuild the"
+        ),
+    ): "stored file name, exactly as the software names it",
+    (
+        "docs/evaluation/tasks.md",
+        (
+            "> Copy the flow counts you have now. Delete only the file store\\corpus.duckdb"
+            " in your project folder. Rebuild the store,"
+        ),
+    ): "stored file name, exactly as the software names it",
+    (
+        "docs/how-to/figure-gallery.md",
+        "Venues, Keywords, Network, Taxonomy, Corpus browser) all read the same",
+    ): "interface tab name, exactly as the interface shows it",
+}
+
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+_INLINE_CODE = re.compile(r"(`+).+?\1")
+_LINK_TARGET = re.compile(r"\]\([^)]*\)")
+
+
+def _prose_pages(root: Path) -> list[Path]:
+    """README and the docs pages the word is banned from (helper, not a test).
+
+    ADRs and graph reports are exempt; the Glossary and Changelog sit at the
+    repository root, so they are never scanned.
+    """
+    docs = sorted(
+        p
+        for p in (root / "docs").rglob("*.md")
+        if root / "docs" / "architecture" / "adr" not in p.parents and "graphify-out" not in p.parts
+    )
+    return [root / "README.md", *docs]
+
+
+def _corpus_problems(root: Path, allowed: dict[tuple[str, str], str]) -> list[str]:
+    """Every misuse of "corpus" in prose, as one message each (helper, not a test).
+
+    Fenced code, inline code and link targets are stripped first; indented
+    text, admonition titles and HTML comments stay prose. An allow-list entry
+    that excused nothing is itself a problem.
+    """
+    problems: list[str] = []
+    used: set[tuple[str, str]] = set()
+    for page in _prose_pages(root):
+        name = page.relative_to(root).as_posix()
+        fence = ""
+        for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+            opener = _FENCE.match(line)
+            if fence:
+                if opener and opener[1][0] == fence[0] and len(opener[1]) >= len(fence):
+                    fence = ""
+                continue
+            if opener:
+                fence = opener[1]
+                continue
+            prose = _LINK_TARGET.sub("]", _INLINE_CODE.sub("", line))
+            if re.search("corpus", prose, re.IGNORECASE):
+                if (name, line.strip()) in allowed:
+                    used.add((name, line.strip()))
+                else:
+                    problems.append(f"{name}:{number}: {line.strip()!r}")
+        if fence:
+            problems.append(f"{name}: unclosed code fence {fence!r}")
+    problems += [f"stale allow-list entry: {key!r}" for key in allowed if key not in used]
+    return problems
+
+
+@pytest.mark.unit
+def test_docs_prose__uses_the_word_corpus__only_where_allowed() -> None:
+    """Prose says "records" or "included studies", not "corpus" (the Glossary's rule)."""
+    assert _corpus_problems(REPO_ROOT, CORPUS_ALLOWED) == []
+
+
+@pytest.mark.unit
+def test_corpus_check__on_a_small_tree__reports_each_failure_mode(tmp_path: Path) -> None:
+    """A violation names page, line and text; a stray fence names the page; a stale entry fails."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "README.md").write_text(
+        "Fine `corpus` and [x](corpus.md)\n```\ncorpus\n```\nthe Corpus here\n", encoding="utf-8"
+    )
+    (tmp_path / "docs" / "open.md").write_text("ok\n~~~\ncorpus\n", encoding="utf-8")
+    (tmp_path / "GLOSSARY.md").write_text("corpus\n", encoding="utf-8")
+
+    problems = _corpus_problems(tmp_path, {("README.md", "gone"): "stale"})
+
+    assert problems == [
+        "README.md:5: 'the Corpus here'",
+        "docs/open.md: unclosed code fence '~~~'",
+        "stale allow-list entry: ('README.md', 'gone')",
+    ]

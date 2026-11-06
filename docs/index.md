@@ -4,7 +4,7 @@ A reproducible PRISMA + bibliometric research lab: a Python library and Jupyter 
 
 ## The problem
 
-Reference manuscripts often contain internally inconsistent numbers: dataset-usage counts in prose disagree with corresponding figures, and claims about methodology performance disagree with tables on the same page. This is not carelessness—it is the **predictable result** of numbers being computed once, copied into prose, and then drifting when the corpus is refreshed.
+Reference manuscripts often contain internally inconsistent numbers: dataset-usage counts in prose disagree with corresponding figures, and claims about methodology performance disagree with tables on the same page. This is not carelessness—it is the **predictable result** of numbers being computed once, copied into prose, and then drifting when the records are refreshed.
 
 No amount of careful writing prevents this. The only solution is **architectural**: numbers must not be copyable. Every number that appears in any output must be a query against a versioned store, evaluated at render time.
 

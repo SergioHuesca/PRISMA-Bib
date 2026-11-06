@@ -108,7 +108,7 @@ Every `Record` has a canonical primary key:
 scopus:2-s2.0-85123456789
 ```
 
-This is Scopus's internal identifier, prefixed with `scopus:` to allow future multi-source deduplication (OpenAlex, Web of Science, etc.). The `record_id` field is required and unique within a corpus.
+This is Scopus's internal identifier, prefixed with `scopus:` to allow future multi-source deduplication (OpenAlex, Web of Science, etc.). The `record_id` field is required and unique within a set of records.
 
 **Format**: `scopus:2-s2.0-<numeric-id>`
 
@@ -464,7 +464,7 @@ The 11 tables frozen in the BUILD_PLAN are:
 **`subject_areas`** — Scopus subject classification codes for records.
 - **Primary key:** implicit
 - **Columns:** `record_id`, `area_code` (e.g. "COMP" for computer science, per `criteria.yaml`)
-- **Role:** Supports subject-based filtering. Empty for a corpus captured only from the Search API — `view=COMPLETE` returns no subject-area codes — and populated by `prismabib enrich`, whose sealed Abstract Retrieval runs load via [ADR 0018](adr/0018-abstract-runs-in-layer-1.md). Holds Scopus's four-digit ASJC `@code`; `criteria.yaml` declares the four-letter grouping and `prismabib.asjc` bridges the two ([ADR 0017](adr/0017-subject-areas-match-by-asjc-grouping.md)).
+- **Role:** Supports subject-based filtering. Empty for a set of records captured only from the Search API — `view=COMPLETE` returns no subject-area codes — and populated by `prismabib enrich`, whose sealed Abstract Retrieval runs load via [ADR 0018](adr/0018-abstract-runs-in-layer-1.md). Holds Scopus's four-digit ASJC `@code`; `criteria.yaml` declares the four-letter grouping and `prismabib.asjc` bridges the two ([ADR 0017](adr/0017-subject-areas-match-by-asjc-grouping.md)).
 
 ### `abstract_runs`
 
@@ -472,7 +472,7 @@ The 11 tables frozen in the BUILD_PLAN are:
 
 ### `record_subject_area_coverage`
 
-- **Role:** Per record and run, whether Scopus assigned areas (`assigned`), assigned none (`none_assigned`), had no such record (`not_found`), or refused (`not_entitled`). **A record with no row here was never looked up** — absence is the fourth state, and it is what lets the engine tell "this paper carries no classification" apart from "we never asked". Once enrichment has been run, a record in that state makes `subject_areas` unenforceable and the engine refuses rather than filtering over part of the corpus.
+- **Role:** Per record and run, whether Scopus assigned areas (`assigned`), assigned none (`none_assigned`), had no such record (`not_found`), or refused (`not_entitled`). **A record with no row here was never looked up** — absence is the fourth state, and it is what lets the engine tell "this paper carries no classification" apart from "we never asked". Once enrichment has been run, a record in that state makes `subject_areas` unenforceable and the engine refuses rather than filtering over part of the set of records.
 
 **`malformed_entries`** — one row per Layer 0 entry that could not be turned into a record. **Not part of the frozen BUILD_PLAN schema**; added by [ADR 0012](adr/0012-persisting-skipped-layer0-entries.md).
 - **Primary key:** `(payload_file, payload_line)` composite key
@@ -492,7 +492,7 @@ The 11 tables frozen in the BUILD_PLAN are:
   - `duplicates`: INTEGER how many of that run's entries resolved to a `record_id` an earlier, *differently queried* run had already loaded
 - **Role:** PRISMA 2020's "duplicate records removed" line. `FlowCounts.duplicates_across_searches` is `SUM(duplicates)` over this table, which is what lets the flow diagram's first consistency equation close on a review that ran more than one search string.
 - **Why it must be written during the load:** it cannot be recomputed afterwards. `records.run_id` keeps only the *first* run that loaded a record, so once the load is over Layer 1 no longer knows how many runs a record appeared in. Only the loader is ever in a position to count this.
-- **Why not derive it as a remainder** (`identified + registered - |S_raw| - removed_other_reasons`): that would make equation 1 an identity that cannot fail, silently absorbing a run manifest that disagrees with the corpus it produced — the one defect the consistency guard exists to catch. Measured independently, the equation can still disagree, and a disagreement then means something real.
+- **Why not derive it as a remainder** (`identified + registered - |S_raw| - removed_other_reasons`): that would make equation 1 an identity that cannot fail, silently absorbing a run manifest that disagrees with the set of records it produced — the one defect the consistency guard exists to catch. Measured independently, the equation can still disagree, and a disagreement then means something real.
 - **A refresh is not a duplicate.** An entry is counted only when the record was first loaded under a different `runs.query`. Re-running the *same* query to refresh citation counts contributes one `total_results` term to `identified` in total (see ADR 0013), so counting its re-found records would subtract them a second time and break equation 1 in the other direction.
 - **Rows are inserted in sorted `run_id` order**, so the table's checksum does not depend on which run happened to be walked first.
 
@@ -622,7 +622,7 @@ The enum members are:
 | `LANGUAGE` | `"language"` | AUTOMATED further filtered by language (deterministic) |
 | `TITLE_ABSTRACT` | `"title_abstract"` | LANGUAGE folded through the decision log at title/abstract screening |
 | `FULLTEXT` | `"fulltext"` | TITLE_ABSTRACT folded through the decision log at full-text screening |
-| `INCLUDED` | `"included"` | Final corpus = FULLTEXT |
+| `INCLUDED` | `"included"` | The included studies (= FULLTEXT) |
 
 **Critical caveat:** Only `PrismaStage.RAW` is answerable from Layer 1 alone. Every other member raises `NotImplementedError` naming the missing Stage 4 engine. This is intentional and honest—calling `.records(stage=PrismaStage.INCLUDED)` will fail loudly rather than silently returning wrong counts. This is tested with `xfail(strict=True)` until Stage 4 lands, then flipped in the same PR.
 

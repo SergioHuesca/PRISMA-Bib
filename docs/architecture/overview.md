@@ -98,7 +98,7 @@ Every figure ships with its own data provenance—you can see exactly which reco
 
 ## Why this architecture?
 
-This design solves the central problem: **numbers that drift between a manuscript and a corpus.**
+This design solves the central problem: **numbers that drift between a manuscript and a set of records.**
 
 A traditional workflow:
 
@@ -124,7 +124,7 @@ The manuscript never contains a literal count. It contains a reference: "The dat
 - **Immutability of sources:** Layer 0 is append-only; once written, a raw API response never changes
 - **Deterministic derivation:** Layer 1 is reproducible; identical Layer 0 always produces identical Layer 1
 - **Append-only decisions:** Layer 2 events are never edited; disagreement is recorded as a new event
-- **Stateless queries:** Layer 3 functions take inputs (corpus, criteria) and produce outputs; no hidden state
+- **Stateless queries:** Layer 3 functions take inputs (`corpus`, criteria) and produce outputs; no hidden state
 - **No cross-layer dependencies:** Layers do not import each other's internals; they communicate through data only
 
 ## Repository structure
@@ -160,7 +160,7 @@ Two *contract* deviations were made inside those files, both recorded as ADRs pe
 
 **`src/prismabib/stage.py`** (Stage 3, PRISMA flow stages)
 
-The `PrismaStage` enum, naming the six named record sets of the PRISMA 2020 flow: `RAW` (unfiltered), `AUTOMATED` (deterministic year/subject/doc-type filter), `LANGUAGE` (deterministic language filter), `TITLE_ABSTRACT` (human-screened), `FULLTEXT` (human-screened), and `INCLUDED` (final corpus). Used as the `stage` parameter of `Corpus.records()` and `Corpus.keywords()` (BUILD_PLAN lines 895–896), and later the Stage 5 `screening_queue()` contract.
+The `PrismaStage` enum, naming the six named record sets of the PRISMA 2020 flow: `RAW` (unfiltered), `AUTOMATED` (deterministic year/subject/doc-type filter), `LANGUAGE` (deterministic language filter), `TITLE_ABSTRACT` (human-screened), `FULLTEXT` (human-screened), and `INCLUDED` (included studies). Used as the `stage` parameter of `Corpus.records()` and `Corpus.keywords()` (BUILD_PLAN lines 895–896), and later the Stage 5 `screening_queue()` contract.
 
 **Rationale:** `PrismaStage` is conceptually a Stage 4 artefact (the PRISMA engine is its sole producer), but Stage 3's frozen `Corpus` contract already needs it as a parameter type, and BUILD_PLAN §0 rule 1 forbids Stage 3 from importing the not-yet-built `prisma/` package. A standalone leaf module with zero dependencies lets both `prismabib.store` (Stage 3) and `prismabib.prisma` (Stage 4) depend on it downward without either depending on the other. See [data-model.md](data-model.md#prismastage-before-stage-4-exists) for full rationale.
 

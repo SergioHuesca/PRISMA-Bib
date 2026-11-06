@@ -107,3 +107,8 @@ _Avoid_: corpus, final corpus (PRISMA 2020 does not use the word)
 
 **Flow counts**:
 The full set of numbers in the PRISMA 2020 diagram. They are recomputed from stored data on every request and must satisfy the diagram's consistency equations.
+
+### Code names
+
+**Corpus**:
+The name the code gives to the handle every analysis takes: the records of a project at a chosen stage. It names a code object and is not a PRISMA term. Prose writes "records" or "included studies" for the concept and uses the word only to name the code object.
