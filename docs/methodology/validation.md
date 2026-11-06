@@ -8,9 +8,9 @@ nothing on this page should be read as one. The distinction is recorded in
 
 ## What was established
 
-### The pipeline runs end to end on a real corpus
+### The pipeline runs end to end on real records
 
-`Baseball-CVPR`, a live Scopus corpus, exercised through every stage: search capture → Layer 1
+`Baseball-CVPR`, live Scopus records, exercised through every stage: search capture → Layer 1
 store → decision log → bibliometrics → taxonomy → figures → export.
 
 | | |

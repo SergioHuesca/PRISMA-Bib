@@ -144,8 +144,8 @@ Scholar search as a record
 [ADR 0032](../architecture/adr/0032-registered-records-table-and-classification-map.md)).
 These records differ from Scopus records, and a review that registers any must say so:
 
-- **Selection risk.** The reviewer chooses which resolved candidates to register. The corpus
-  therefore depends on what a person pasted and resolved, not only on the Scopus query.
+- **Selection risk.** The reviewer chooses which resolved candidates to register. The records
+  therefore depend on what a person pasted and resolved, not only on the Scopus query.
 - **OpenAlex-derived classification.** A registered record's `doc_type`, venue type and
   subject area come from its OpenAlex work through a fixed, versioned map (OpenAlex type and
   source type to the engine's values; OpenAlex subfield to ASJC code). Thirteen subfield rows
@@ -169,9 +169,9 @@ These records differ from Scopus records, and a review that registers any must s
   subject-area filter; a registered record always carries one and is filtered by it.
 - **Conference whitelist.** Scopus records with no `venue_id` pass the whitelist; a
   registration is judged on its OpenAlex source name.
-- **Counted in the corpus.** Registrations count in `corpus.size`, the year bounds and the
+- **Counted in the set of records.** Registrations count in `corpus.size`, the year bounds and the
   venue tables; the methods sentence reports the registered count beside them.
-- **Reproducibility needs more than Layer 0.** A corpus with registrations reproduces only
+- **Reproducibility needs more than Layer 0.** A set of records with registrations reproduces only
   with `registrations.jsonl`, its sidecar (both tracked in git) and the referenced Layer 0
   OpenAlex payloads, which are not committed and stay in the local archive.
 
@@ -192,8 +192,8 @@ Two things follow:
   say where it came from.
 - Because there is only one source, the duplicates you will see are Scopus-internal (the
   same DOI indexed twice) in the Scopus modes, and OpenAlex-internal in mode `openalex`, not
-  cross-database ones. Merging a Scopus corpus with a Web of
-  Science corpus is not something this tool can do at all.
+  cross-database ones. Merging Scopus records with Web of
+  Science records is not something this tool can do at all.
 
 Records that arrive twice under the *same* `record_id` — the ordinary case when a review runs
 more than one search string — collapse into one row, because `records.record_id` is the
@@ -215,7 +215,7 @@ This section describes the Scopus modes. In mode `openalex` the subject areas co
 work's primary topic, as described under Coverage.
 
 **The Search API cannot supply this data.** The Scopus Search API's `view=COMPLETE`
-response does not carry subject-area codes, so a corpus captured by `prismabib search`
+response does not carry subject-area codes, so a set of records captured by `prismabib search`
 alone has none. `prismabib enrich` fetches them from the **Abstract Retrieval API** — a
 separate entitlement and a separate weekly quota, one call per record — and those sealed
 runs load into Layer 1 ([ADR 0018](../architecture/adr/0018-abstract-runs-in-layer-1.md)).
@@ -223,7 +223,7 @@ runs load into Layer 1 ([ADR 0018](../architecture/adr/0018-abstract-runs-in-lay
 **Enrichment must be complete, and it must precede screening.** A record that was never
 looked up carries no subject areas, so it passes the filter for exactly the same reason a
 record Scopus genuinely classified as nothing does. If enrichment covered only part of the
-corpus — an exhausted quota, an interrupted run, a `--budget` cap — the diagram would report
+set of records — an exhausted quota, an interrupted run, a `--budget` cap — the diagram would report
 one "excluded by subject area" figure computed over an unknown fraction of the review.
 prismabib refuses that state rather than reporting it: `record_subject_area_coverage` records
 what was asked, and the engine raises, naming how many records remain. Enrichment is
@@ -234,13 +234,13 @@ Scopus cannot resolve (404) or refuses (403) do not block screening — they wer
 answer is recorded.
 
 The engine's general convention is that a record with no data on a dimension is never
-excluded on that dimension. Applied to a corpus where *no* record has the data, that would
+excluded on that dimension. Applied to a set of records where *no* record has the data, that would
 silently turn the whole filter into a no-op: every record passes, the automated-exclusion
 count omits a restriction you believe you applied, and the published diagram claims a filter
 that never ran. The numbers look entirely plausible, which is what makes it dangerous — so
 a project that declares `subject_areas` without the data to evaluate it is refused.
 
-So a non-empty `subject_areas` against a corpus with no subject-area data **raises
+So a non-empty `subject_areas` against a set of records with no subject-area data **raises
 `ConfigError`** rather than quietly doing nothing. Your options:
 
 1. **Set `subject_areas: []` and apply the restriction during title/abstract screening**,
@@ -292,13 +292,13 @@ progress saved. The next `prismabib fulltext` call resumes it, and records alrea
 are not re-paid for. Any other error fails only the record it occurred on. A download over
 100 MiB is refused as an `UpstreamError`, which the resolvers treat as a failed candidate.
 
-**State the mechanism plainly, because it determines whose corpus you actually read.**
+**State the mechanism plainly, because it determines whose records you actually read.**
 ScienceDirect answers for Elsevier journals only — Pattern Recognition, Neurocomputing,
 Knowledge-Based Systems, and similar Elsevier venues are, in principle, retrievable by
 resolver 1 alone. IEEE, Springer, MDPI, and CVF/AAAI proceedings are not: resolver 1 can
 never succeed for them, and they depend entirely on resolver 2 (whether an OA copy happens
 to exist) or resolver 3 (a reviewer's own access). The three resolvers therefore do not
-sample the underlying corpus uniformly by publisher, and **the set of records with resolved
+sample the underlying set of records uniformly by publisher, and **the set of records with resolved
 full text is not a representative subset of `M_abs`** — it is systematically weighted
 toward Elsevier, and secondarily toward however open-access-friendly each remaining
 publisher happens to be. Any statistic computed only over resolved full text (a
@@ -330,7 +330,7 @@ than a stated, measured one:
 `prismabib build <slug> --rebuild` to fold the run into the store, then `prismabib export
 <slug>` and read `tables/fulltext_coverage_by_resolver.{csv,md,tex}` and
 `tables/fulltext_coverage_by_publisher.{csv,md,tex}` — no numbers are asserted here, since
-they depend entirely on your corpus's publisher mix and your institution's entitlements.
+they depend entirely on the publisher mix of your records and your institution's entitlements.
 Report them alongside any full-text-derived finding, the same way a database's own coverage
 is reported under "No cross-database deduplication" above.
 
@@ -360,7 +360,7 @@ strip a leading `The`, strip a trailing parenthetical *only when it is purely a 
 `&` and `and` — because a rule that merges on similarity can invent a venue that published
 papers it did not, which is worse than reporting one venue twice.
 
-The consequence, measured on the reference corpus: **a recurring conference appears once per
+The consequence, measured on the reference set of records: **a recurring conference appears once per
 edition.**
 
 ```
@@ -369,7 +369,7 @@ Proceedings 2020 IEEE Winter Conference on Applications of Computer Vision Works
 Proceedings 2024 IEEE Winter Conference on Applications of Computer Vision Workshops WACVW 2024
 ```
 
-Three names, one workshop. Fifteen such groups span 21 of that corpus's 769 names, and no
+Three names, one workshop. Fifteen such groups span 21 of the 769 names in that set of records, and no
 normalisation rule fires on a single one of them — the difference is a *year*, not
 formatting. So `venues.total = 769` should be read as "769 distinct venue name strings", not
 "769 venues". Folding editions would give 746, a 3% change that leaves the top-ten table
@@ -405,7 +405,7 @@ indistinguishable from a working one in a shell script or a methods section.
 
 The full bibliometric analyses are library-only for now: no CLI command emits them, so they are
 reached from a notebook through `prismabib.bibliometrics` over a `Corpus` handle. `prismabib export`
-writes only selected scalars to `numbers.json` (flow counts, corpus and citation summary
+writes only selected scalars to `numbers.json` (flow counts, record and citation summary
 statistics, and the top venues by record count), not those analyses.
 Numbers you derive by querying Layer 1 yourself, rather than through those functions, carry
 no provenance and no caption — and are your responsibility, not the store's.

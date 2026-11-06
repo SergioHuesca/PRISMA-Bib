@@ -442,7 +442,7 @@ PRISMA number — it appends to the log, and `prisma/` folds it.
 
 ## bibliometrics
 
-Stage 7: every quantitative finding, computed from the corpus and returned as an
+Stage 7: every quantitative finding, computed from the set of records and returned as an
 `AnalysisResult` that carries the parameters which produced it, its provenance, and a
 **generated** caption -- so a figure cannot drift from the number it shows. See
 [ADR 0022](../architecture/adr/0022-the-analysis-result-contract-and-its-provenance.md),

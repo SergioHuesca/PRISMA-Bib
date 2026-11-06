@@ -24,7 +24,7 @@ answer.
 
 ## The formal sets
 
-The methodology defines the corpus as a chain of set transformations. Each one is a single
+The methodology defines the record sets as a chain of set transformations. Each one is a single
 function in `src/prismabib/prisma/engine.py`, and no other module in the codebase computes
 record membership.
 
@@ -35,7 +35,7 @@ record membership.
 | `L` | `A` further filtered by language | `engine.language_set(project)` | **Deterministic**, same sense |
 | `M_abs` | Records in `L` whose aggregated `title_abstract` decision is `include` | `engine.manual_abstract_set(project)` | Derived by folding the decision log |
 | `M_full` (`M_ft`) | Records in `M_abs` whose aggregated `fulltext` decision is `include` | `engine.manual_fulltext_set(project)` | Derived by folding the decision log |
-| `C` | The final corpus, `C = M_full` | `engine.corpus(project)` | Alias of `M_full`; a distinct name, not a distinct computation |
+| `C` | The included studies, `C = M_full` | `engine.corpus(project)` | Alias of `M_full`; a distinct name, not a distinct computation |
 
 The same six sets are named by the `PrismaStage` enum in `src/prismabib/stage.py`
 (`RAW`, `AUTOMATED`, `LANGUAGE`, `TITLE_ABSTRACT`, `FULLTEXT`, `INCLUDED`), which is what
@@ -73,18 +73,18 @@ comparing two reviews' numbers needs to know them:
   A `NULL` language, or a record with no `subject_areas` rows, passes. This matters
   concretely: `store/load.py` documents that the Scopus Search API `view=COMPLETE` responses
   this codebase captures carry no subject-area codes at all, so the strict reading would let
-  a data-source limitation masquerade as a screening decision and empty the corpus. In mode
+  a data-source limitation masquerade as a screening decision and empty the set of records. In mode
   `openalex` a work's subject area comes from its primary topic, so the same concern does not
-  arise unless no work in the corpus has a mapped subfield.
+  arise unless no work in the set of records has a mapped subfield.
 
-    The corollary is bounded, though: applied to a corpus where *no* record carries the
+    The corollary is bounded, though: applied to a set of records where *no* record carries the
     data, the same convention would turn the filter into a silent no-op — every record
     passing a restriction the diagram claims was applied. So
     `engine._refuse_unenforceable_subject_filter` raises `ConfigError` when `subject_areas`
-    is non-empty and not one record in the corpus has subject-area data, which is every
-    corpus captured from the Scopus Search API, and an `openalex` corpus in which no work has a
+    is non-empty and not one record in the set of records has subject-area data, which is every
+    set of records captured from the Scopus Search API, and an `openalex` set of records in which no work has a
     mapped subfield. See
-    [Limitations](limitations.md#subject-areas). On a Scopus corpus, running `prismabib enrich`
+    [Limitations](limitations.md#subject-areas). For Scopus records, running `prismabib enrich`
     first makes the filter work once it has covered every record; it needs a different Scopus
     entitlement from Search (a key entitled for one is often not entitled for the other), and
     the same section explains the completeness rule.
@@ -105,7 +105,7 @@ comparing two reviews' numbers needs to know them:
 C ⊆ M_abs ⊆ (S_raw ∩ A ∩ L) ⊆ S_raw
 ```
 
-Read left to right: the corpus is a subset of what survived title/abstract screening, which
+Read left to right: the included studies are a subset of what survived title/abstract screening, which
 is a subset of what the deterministic filters admitted, which is a subset of everything
 captured. Since `L ⊆ A ⊆ S_raw` by construction, `S_raw ∩ A ∩ L` is just `L`; the
 intersection is written out because it is the form the property test asserts, and writing it
@@ -217,7 +217,7 @@ Neither count is a remainder. `removed_other_reasons` is a row count over `malfo
 and `duplicates_across_searches` is a sum over `run_duplicates`, both written by the loader
 from Layer 0. Deriving either as `identified + registered - |S_raw| - the other` would make equation 1 an
 identity that cannot fail, which would defeat the only check that compares a run's manifest
-against the corpus that run produced. `run_duplicates` also *cannot* be recomputed after the
+against the set of records that run produced. `run_duplicates` also *cannot* be recomputed after the
 load: `records.run_id` keeps only the first run that loaded a record, so nothing in Layer 1
 afterwards knows how many searches found it.
 
