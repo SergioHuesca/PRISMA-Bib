@@ -177,8 +177,8 @@ manual_fulltext:
   whose venue is a conference; a journal article is never excluded by it.
 - **Unknown keys are refused**, with the closest valid key named — `language:` for
   `languages:` is caught rather than silently dropped.
-- **An inverted year window is refused** rather than emptying your corpus.
-- **`subject_areas` cannot be enforced** on a corpus captured from the Scopus Search API,
+- **An inverted year window is refused** rather than leaving you with no records.
+- **`subject_areas` cannot be enforced** on records captured from the Scopus Search API,
   because `view=COMPLETE` does not return subject-area codes. A non-empty list raises
   `ConfigError`. See
   [Limitations](../methodology/limitations.md#subject-areas). Running `prismabib enrich` first
@@ -550,7 +550,7 @@ still citing it — which is the intended behaviour, not an inconvenience.
   entitlement gaps are recorded per resolver.
   "Reports not retrieved" cannot be expressed in `FlowCounts` and must be reported in prose.
 - **Inter-reviewer agreement statistics** — the decision log already folds per reviewer,
-  so a second coder can screen the same corpus independently, but nothing computes a
+  so a second coder can screen the same records independently, but nothing computes a
   kappa from the two sets yet.
 - **Three of Stage 10's tables** — the taxonomy distribution, dataset/benchmark usage and
   research-gap tables read analysis output that does not exist yet. They arrive with the

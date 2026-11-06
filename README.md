@@ -4,7 +4,7 @@ A reproducible PRISMA + bibliometric research lab. Python library + Jupyter note
 
 ## The problem
 
-Reference manuscripts often contain internally inconsistent numbers: dataset-usage counts in prose disagree with corresponding figures, and claims about methodology performance disagree with tables on the same page. This is not carelessness—it is the predictable result of numbers being computed once, copied into prose, and then drifting when the corpus is refreshed.
+Reference manuscripts often contain internally inconsistent numbers: dataset-usage counts in prose disagree with corresponding figures, and claims about methodology performance disagree with tables on the same page. This is not carelessness—it is the predictable result of numbers being computed once, copied into prose, and then drifting when the records are refreshed.
 
 **This project's central architectural commitment: every number that appears in any output is a query against a versioned store, never a literal.** If a stage's design lets a human type a count into a document, that stage is wrong.
 

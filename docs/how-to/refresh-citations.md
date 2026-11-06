@@ -13,6 +13,6 @@ This page will contain:
 - **Versioning and traceability** — how updated figures are tagged with the new Layer 0 manifest hash (Stage 10)
 - **Workflow** — running `notebooks/03_bibliometrics.ipynb` and `notebooks/06_export_report.ipynb` with refreshed data (Stage 10)
 
-Citation refresh is designed to be **deterministic and traceable**: the same input (corpus records + citation counts from manifest hash M1) always produces identical output. If you refresh citations three months later (now at manifest hash M2), the output includes both M1 and M2 in its provenance metadata.
+Citation refresh is designed to be **deterministic and traceable**: the same input (records + citation counts from manifest hash M1) always produces identical output. If you refresh citations three months later (now at manifest hash M2), the output includes both M1 and M2 in its provenance metadata.
 
 See [Provenance](../architecture/provenance.md) for how to trace figures back to Layer 0 manifests, and [Metric Definitions](../methodology/metric-definitions.md) for how citations are counted.

@@ -196,7 +196,7 @@ to the rules, which needs an ADR, not a change to this page.
 
    - *Orphans* counts the current screening decisions on that record: one per stage and
      reviewer, with superseded ones not counted. These are the decisions a reversal would
-     leave pointing at a record outside the corpus. Reversal is still allowed, and the view
+     leave pointing at a record outside the project's records. Reversal is still allowed, and the view
      does not forbid it.
    - *Currently included* says whether the paper is in the set that the flow diagram's
      **Included** count is taken from, as the store was last built.

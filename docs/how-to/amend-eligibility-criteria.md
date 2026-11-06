@@ -86,7 +86,7 @@ Four things worth knowing before you write a list:
   it appeared in, and the closest valid alternative. A silently dropped key would be an
   eligibility rule that silently did not apply.
 - **An inverted window is refused.** `year_end` below `year_start` would match no record at
-  all and report that automation excluded the entire corpus.
+  all and report that automation excluded the entire set of records.
 - **A record with no Layer 1 data on a dimension is never excluded on that dimension.** A
   record with a `NULL` language passes a `languages` filter. See
   [PRISMA Mapping — filter conventions](../methodology/prisma-mapping.md#four-filter-conventions-that-change-published-numbers)
@@ -243,7 +243,7 @@ filter would match every record while your diagram showed a restriction, and the
 `ConfigError` naming the codes. If you cannot enrich, keep `subject_areas: []` and apply the
 restriction at title/abstract screening, where it becomes a logged decision with a reason code.
 
-**"I want to see what the corpus looked like under 1.0.0."** Replay against the old version:
+**"I want to see what the records looked like under 1.0.0."** Replay against the old version:
 `engine.replay(project, criteria_version="1.0.0")`. Nothing is mutated, and you can compare
 its `automated`/`language` sizes against the current ones.
 

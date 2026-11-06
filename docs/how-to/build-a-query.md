@@ -10,16 +10,16 @@ If your project has no Scopus access (sources mode `openalex`), see [Build an Op
 
 This is the most important idea, and the place researchers most often get wrong.
 
-**The `[query]` table in `project.toml`** is server-side. It is the Boolean string sent to Scopus. Every term you put there changes *what Scopus identifies* as matching your search. If you put a term in the query and then remove it, you get a smaller corpus—because Scopus never sees those records at all.
+**The `[query]` table in `project.toml`** is server-side. It is the Boolean string sent to Scopus. Every term you put there changes *what Scopus identifies* as matching your search. If you put a term in the query and then remove it, you get fewer records—because Scopus never sees those records at all.
 
-**The `criteria.yaml` file** is client-side. It describes rules applied *after* Scopus has returned results. A criterion filters the records you've already identified, removing them before screening. If you add a criterion and then remove it, your corpus shrinks only if you re-run your screening; Scopus has already returned all those records.
+**The `criteria.yaml` file** is client-side. It describes rules applied *after* Scopus has returned results. A criterion filters the records you've already identified, removing them before screening. If you add a criterion and then remove it, your set of records shrinks only if you re-run your screening; Scopus has already returned all those records.
 
 **Why this matters for PRISMA:** The diagram tracks *exclusions*, and those two kinds of exclusions are reported differently.
 
 - Records excluded by the query never appear in the "records identified" count. They are not excluded; they were never identified.
 - Records excluded by `criteria.yaml` are *automatically* excluded and appear in the diagram as an automated-exclusion count.
 
-A researcher who puts all their restrictions in `criteria.yaml` ends up with a smaller corpus than one who puts the same restrictions in the query. Both get the same final set of included studies, but their PRISMA diagrams tell different stories about the search. The second diagram says "Scopus found 10,000, we automatically excluded 9,900"; the first says "Scopus found 100, we automatically excluded 0." Only one story is true for the search you actually ran.
+A researcher who puts all their restrictions in `criteria.yaml` ends up with fewer records than one who puts the same restrictions in the query. Both get the same final set of included studies, but their PRISMA diagrams tell different stories about the search. The second diagram says "Scopus found 10,000, we automatically excluded 9,900"; the first says "Scopus found 100, we automatically excluded 0." Only one story is true for the search you actually ran.
 
 **Decision rule:** If a restriction is available *both* ways, prefer the query—because it is honest about what Scopus found. Only move it to `criteria.yaml` if:
 
@@ -235,28 +235,28 @@ This filter is applied *after* Scopus returns results. Any record whose year fal
 
 **The year comes from the record's cover date** (the date Scopus indexes it under), not the access date or any other field.
 
-**An inverted window is refused.** If you write `year_start: 2026` and `year_end: 2010`, prismabib rejects the file and names the mistake—because an inverted window would exclude *every* record and empty your corpus without any signal that something is wrong. It is easy to transpose two numbers; silently running with an empty corpus is not.
+**An inverted window is refused.** If you write `year_start: 2026` and `year_end: 2010`, prismabib rejects the file and names the mistake—because an inverted window would exclude *every* record and leave you with no records, without any signal that something is wrong. It is easy to transpose two numbers; silently running with no records is not.
 
 ### Choosing Between Them
 
 - **Use the query restriction** if you want to be honest about what Scopus found. If your search was limited to 2010–2026, say so in the query, and the "records identified" number reflects that limitation.
 - **Use `criteria.yaml` if** you want to explore the sensitivity of your results to the time window. You can re-run the screening under different temporal restrictions without re-capturing from Scopus. This is rare but legitimate in a protocol that specifically asks "how do results change if we include papers from before 2010?"
 
-**For most systematic reviews, restrict in `criteria.yaml` and leave the query unrestricted.** A PRISMA diagram is supposed to show the reader how many records each criterion removed, and a restriction applied in the query removes them before they are ever counted — the number cannot be reported because it was never retrieved. Restrict in the query only when the corpus would otherwise be unmanageably large, and say so in your protocol, because you are choosing not to report that exclusion.
+**For most systematic reviews, restrict in `criteria.yaml` and leave the query unrestricted.** A PRISMA diagram is supposed to show the reader how many records each criterion removed, and a restriction applied in the query removes them before they are ever counted — the number cannot be reported because it was never retrieved. Restrict in the query only when the records would otherwise be unmanageably large, and say so in your protocol, because you are choosing not to report that exclusion.
 
 ---
 
 ## Subject Areas—A Sharp Edge {#subject-areas}
 
-**Status: available since v0.12.0.** Subject-area filtering needs data the Search API does not return, so it requires a separate enrichment pass — `prismabib enrich` — against Scopus's Abstract Retrieval API. That endpoint had been addressed wrongly since v0.8.0 and never worked; it was fixed in v0.12.0. Abstract Retrieval is also a **different Scopus entitlement** from Search `view=COMPLETE`, so a key that captures your corpus may still be refused here. Read on for the workaround if it is.
+**Status: available since v0.12.0.** Subject-area filtering needs data the Search API does not return, so it requires a separate enrichment pass — `prismabib enrich` — against Scopus's Abstract Retrieval API. That endpoint had been addressed wrongly since v0.8.0 and never worked; it was fixed in v0.12.0. Abstract Retrieval is also a **different Scopus entitlement** from Search `view=COMPLETE`, so a key that captures your records may still be refused here. Read on for the workaround if it is.
 
 Subject-area codes are Scopus's classification of papers into fields: `COMP` (Computer Science), `ENGI` (Engineering), `LIFE` (Life Sciences), etc. They are useful for narrowing to your discipline.
 
 ### Why It Is Complicated
 
-The Scopus Search API's `view=COMPLETE` (the only view prismabib uses) does *not* return subject-area codes. So when you capture from the Search API, no record in Layer 1 carries that data. If you then write a non-empty `subject_areas` restriction in `criteria.yaml`, every record *still passes* because "no data" is treated as "not excludable on this dimension" (see [engine.py](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/src/prismabib/prisma/engine.py)'s module docstring). Your filter silently does nothing, your corpus is smaller than you think, and the PRISMA diagram claims an automated exclusion that never ran.
+The Scopus Search API's `view=COMPLETE` (the only view prismabib uses) does *not* return subject-area codes. So when you capture from the Search API, no record in Layer 1 carries that data. If you then write a non-empty `subject_areas` restriction in `criteria.yaml`, every record *still passes* because "no data" is treated as "not excludable on this dimension" (see [engine.py](https://github.com/SergioHuesca/PRISMA-Bib/blob/main/src/prismabib/prisma/engine.py)'s module docstring). Your filter silently does nothing, your set of records is smaller than you think, and the PRISMA diagram claims an automated exclusion that never ran.
 
-To catch this, prismabib refuses a non-empty `subject_areas` list when not one record in the corpus carries subject-area data. The error message names the situation plainly and offers two fixes.
+To catch this, prismabib refuses a non-empty `subject_areas` list when not one of the captured records carries subject-area data. The error message names the situation plainly and offers two fixes.
 
 ### Workaround: SUBJAREA(...) in the Query
 
@@ -274,7 +274,7 @@ manifest = capture_search(
 
 This restriction is applied by Scopus *before* results are returned, so records outside those subject areas are never identified. The exact query (including the subject-area restriction) is recorded in `manifest.json`.
 
-**Important caveat:** The `[query]` table in `project.toml` cannot express this directly—every entry is rendered as `FIELD("term")`, so a `SUBJAREA(...)` entry would become a literal text search for that string, matching papers that mention "SUBJAREA" in their abstract. It is a trap that produces a near-empty corpus a researcher may then read as "the search works, but the results are just rare."
+**Important caveat:** The `[query]` table in `project.toml` cannot express this directly—every entry is rendered as `FIELD("term")`, so a `SUBJAREA(...)` entry would become a literal text search for that string, matching papers that mention "SUBJAREA" in their abstract. It is a trap that produces a near-empty set of records a researcher may then read as "the search works, but the results are just rare."
 
 If you use `SUBJAREA(...)` in an explicit query, leave `subject_areas: []` in `criteria.yaml` (the default). Do not try to list the codes twice.
 
@@ -328,7 +328,7 @@ An empty list means "no restriction"—every document type is accepted. A non-em
 | `[ar]` | matches (via the code→description map) | matches (directly) |
 | `[article]` | matches (directly) | **no match** |
 
-So `[ar, cp]` is correct whichever form Scopus supplied, while `[article, conference paper]` silently drops any record that carries the bare code. Scopus supplies the description for most records — a real 1,864-record corpus checked while writing this held `'Article'` and `'Conference Paper'` throughout, and both forms passed the same 1,747 records — but "most" is not "all", and a filter that excludes records for a reason you did not choose is exactly the failure this project exists to prevent.
+So `[ar, cp]` is correct whichever form Scopus supplied, while `[article, conference paper]` silently drops any record that carries the bare code. Scopus supplies the description for most records — a real set of 1,864 records checked while writing this held `'Article'` and `'Conference Paper'` throughout, and both forms passed the same 1,747 records — but "most" is not "all", and a filter that excludes records for a reason you did not choose is exactly the failure this project exists to prevent.
 
 There is no error and no warning when this happens. The records simply do not appear:
 
@@ -564,7 +564,7 @@ uv run prismabib build carbon-capture
 | `ConfigError: ... must not be a bare string (got 'all'); did you mean the single-term group {'all': ['all']}?` | You wrote **one table instead of a list of tables** — `compound_terms = {all = [...]}` rather than `compound_terms = [{all = [...]}]`. The message is misleading here: `compound_terms` is iterated, and iterating a table yields its *keys*, so prismabib sees the string `'all'` and reports that. It is not describing what you wrote. | Wrap it: `compound_terms = [{all = [...]}]`, or use the `[[query.compound_terms]]` header form, which cannot be written wrong |
 | `ValidationError: query has no terms: ...both empty` | Both `terms` and `compound_terms` are empty | Add at least one term to either list |
 | `ConfigError: temporal.year_end precedes temporal.year_start` | Year window is inverted (e.g., `year_start: 2026, year_end: 2010`) | Swap the two values |
-| `ConfigError: ... restricts subject_areas to [...], but not one of the ... records in this corpus carries subject-area data` | Trying to filter by subject_areas on a corpus from the Search API | Leave `subject_areas: []` and use `SUBJAREA(...)` in the query instead |
+| `ConfigError: ... restricts subject_areas to [...], but not one of the ... records in this corpus carries subject-area data` | Trying to filter by subject_areas on records from the Search API | Leave `subject_areas: []` and use `SUBJAREA(...)` in the query instead |
 | `ConfigError: version ... is not a semantic version` | `version` in criteria.yaml is not `MAJOR.MINOR.PATCH` shaped | Use `0.1.0`, `1.0.0`, etc. |
 | `ConfigError: an unknown key is not a criteria.yaml key` | Typo in criteria.yaml (e.g., `language:` instead of `languages:`) | Check spelling; the message names the closest valid key |
 
