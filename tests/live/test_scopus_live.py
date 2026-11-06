@@ -25,14 +25,19 @@ import pytest
 
 from prismabib.config import Settings
 from prismabib.sources.scopus import ScopusClient
+from tests.scopus_live_helpers import skip_on_ci_auth_error
 
 pytestmark = pytest.mark.live
 
 _QUERY = 'TITLE-ABS-KEY("video anomaly detection")'
 
 
+# A 401 (AuthError) skips this test on GitHub Actions only: the runners cannot be
+# given a Scopus key the project controls. It is NOT lost coverage -- locally a 401
+# still fails, and any other error (schema drift, 5xx, network) fails everywhere.
+# The rule is proven in tests/unit/sources/test_scopus_live_skip_rule.py.
 def test_live__search_one_page__matches_recorded_shape() -> None:
-    with ScopusClient(Settings()) as client:
+    with skip_on_ci_auth_error(), ScopusClient(Settings()) as client:
         page = next(iter(client.search(_QUERY)))
 
     results = page["search-results"]
