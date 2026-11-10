@@ -16,7 +16,7 @@ from prismabib.gui import layer
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
 from prismabib.gui.new_project import build_stepper
-from prismabib.project import Project
+from prismabib.project import Project, scaffold_criteria
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -56,6 +56,76 @@ def test_form__saved__writes_criteria_the_library_reads_back(project: Project) -
     assert saved.manual_abstract.exclude_reason_codes == ["OFF_TOPIC", "TOO_OLD"]
     assert "saved" in _text(view)
     assert not (project.root / "criteria.yaml.tmp").exists()
+
+
+HAND_EDITED = """\
+# my protocol, version 2 -- do not lose this comment
+version: 0.2.0   # bumped after the pilot
+temporal:
+  year_start: 2010
+  year_end: 2024
+subject_areas: []   # none on purpose
+doc_types:
+  include: [ar]
+  conference_whitelist: []
+languages: []
+manual_abstract:
+  exclude_reason_codes: [OFF_TOPIC]
+manual_fulltext:
+  exclude_reason_codes: [NO_FULL_TEXT]
+"""
+BACKUP = "criteria.yaml.before-app"
+
+
+def _hand_edit(project: Project, text: str = HAND_EDITED) -> bytes:
+    data = text.encode("utf-8")
+    (project.root / "criteria.yaml").write_bytes(data)
+    return data
+
+
+def test_form__saving_over_a_hand_edited_file__keeps_the_original_byte_for_byte(
+    project: Project,
+) -> None:
+    original = _hand_edit(project)
+    view = build_criteria(project)
+    _w(view, "Include languages").value = "English"
+    _w(view, "Save Criteria").clicks += 1
+
+    assert (project.root / BACKUP).read_bytes() == original
+    assert project.criteria.languages == ["English"]
+    assert BACKUP in _text(view) and "original" in _text(view)  # the screen says where it is
+
+
+def test_form__second_save__does_not_overwrite_the_backup(project: Project) -> None:
+    original = _hand_edit(project)
+    view = build_criteria(project)
+    _w(view, "Save Criteria").clicks += 1
+    _hand_edit(project, HAND_EDITED.replace("my protocol", "my newer protocol"))  # edited again
+    view = build_criteria(project)
+    _w(view, "Save Criteria").clicks += 1
+
+    assert (project.root / BACKUP).read_bytes() == original
+
+
+def test_form__saving_over_a_file_the_app_wrote__makes_no_backup(project: Project) -> None:
+    view = build_criteria(project)
+    _w(view, "Save Criteria").clicks += 1  # the scaffold's comments go; the backup keeps them
+    (project.root / BACKUP).unlink()
+
+    view = build_criteria(project)
+    _w(view, "Include languages").value = "English"
+    _w(view, "Save Criteria").clicks += 1
+
+    assert not (project.root / BACKUP).exists()
+    assert BACKUP not in _text(view)
+
+
+def test_layer__saving_an_unreadable_hand_edit__keeps_it_too(project: Project) -> None:
+    broken = _hand_edit(project, "version: [")
+    with layer.open_session("demo", root=project.root.parent) as session:
+        layer.save_criteria(session, criteria_from_form(form_from_criteria(scaffold_criteria())))
+
+    assert (project.root / BACKUP).read_bytes() == broken
 
 
 def test_form__invalid_rule__message_sits_beside_its_field_and_nothing_is_written(

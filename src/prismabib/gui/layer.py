@@ -22,6 +22,7 @@ from typing import Final, Self, TypeVar
 
 import httpx
 import yaml
+from pydantic import ValidationError as PydanticValidationError
 
 from prismabib.capture.layout import NON_RUN_DIRNAMES, OPENALEX_SEARCH_DIRNAME, is_sealed
 from prismabib.errors import (
@@ -459,17 +460,52 @@ def save_query(session: Session, inputs: QueryInputs) -> None:
     _save_query(project, inputs)
 
 
+#: Where the file a save replaced is kept, next to it, the first time the save would lose text.
+CRITERIA_BACKUP_NAME: Final = "criteria.yaml.before-app"
+
+
+def _criteria_text(criteria: Criteria) -> str:
+    return _CRITERIA_HEADER + yaml.safe_dump(criteria.model_dump(), sort_keys=False)
+
+
+def _written_by_the_app(current: bytes) -> bool:
+    """Whether ``current`` is exactly what :func:`save_criteria` would write for its own data."""
+    try:
+        parsed = Criteria.model_validate(yaml.safe_load(current))
+    except (yaml.YAMLError, PydanticValidationError):
+        return False
+    return current == _criteria_text(parsed).encode("utf-8")
+
+
+def _keep_original(path: Path) -> None:
+    """Copy a ``criteria.yaml`` the app did not write to its backup name, once, never over one."""
+    backup = path.with_name(CRITERIA_BACKUP_NAME)
+    if not path.is_file():
+        return
+    current = path.read_bytes()
+    if _written_by_the_app(current):
+        return  # nothing is lost: the save rewrites the same layout
+    try:
+        with backup.open("xb") as handle:  # exclusive: an existing backup is never overwritten
+            handle.write(current)
+    except FileExistsError:
+        pass
+
+
 @write_operation
 def save_criteria(session: Session, criteria: Criteria) -> Path:
     """Write ``criteria.yaml`` unless the session is read-only or a Decision has been logged.
 
     The file stays the hand-editable source of truth; ``criteria`` is already validated by the
-    library's own model. Bytes are written with ``\\n`` endings on every platform.
+    library's own model. Bytes are written with ``\\n`` endings on every platform. A save
+    rewrites the whole file, so the first time it would replace text the app did not write
+    (comments, layout) that text is copied once to ``criteria.yaml.before-app`` next to it.
     """
     project = session.require_writable()
     require_unlocked(project, "criteria")
     path = project.root / "criteria.yaml"
-    text = _CRITERIA_HEADER + yaml.safe_dump(criteria.model_dump(), sort_keys=False)
+    text = _criteria_text(criteria)
+    _keep_original(path)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_bytes(text.encode("utf-8"))
     tmp.replace(path)

@@ -65,6 +65,11 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
             status.object = f"**{msg.sentence}** {msg.next_step}"
             return
         status.object = f"Criteria version {criteria.version} saved to criteria.yaml."
+        if (project.root / layer.CRITERIA_BACKUP_NAME).is_file():
+            status.object += (
+                f" The original file, with its comments and layout, was kept as "
+                f"`{layer.CRITERIA_BACKUP_NAME}` next to it."
+            )
 
     save.on_click(submit)
     return pn.Column(*rows, save, status, sizing_mode="stretch_width")
