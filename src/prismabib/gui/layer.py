@@ -8,12 +8,15 @@ next step. Step progress and step locks are functions of what is on disk.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Final
+from typing import Final, Self, TypeVar
 
 import httpx
 
@@ -224,8 +227,121 @@ def create_project(
     return _create_project(slug, title=title, root=root, source_mode=source_mode, reviewer=name)
 
 
-def set_source_mode(project: Project, mode: SourceMode, *, reviewer: str) -> SourceModeEvent | None:
-    """Change the Source mode unless the step is locked (stricter than the library)."""
+# -- the single-writer lock ----------------------------------------------------------------------
+
+LOCK_NAME: Final = ".prismabib.lock"
+_F = TypeVar("_F", bound=Callable[..., object])
+#: Names of the layer functions that change a Project; each refuses a read-only session.
+WRITE_OPERATIONS: Final[list[str]] = []
+
+
+def _pid_alive(pid: int) -> bool:
+    if sys.platform == "win32":  # os.kill would terminate the process there
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if handle:
+            kernel32.CloseHandle(handle)
+        return bool(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+class Session:
+    """One window's hold on a Project: write rights, or a read-only view with the reason.
+
+    Open with :func:`open_session`; call :meth:`close` (or use ``with``) to release the lock.
+    A lock left by a crashed process makes the session read-only until :meth:`take_over` is
+    called with ``confirmed=True``.
+    """
+
+    def __init__(self, project: Project) -> None:
+        self.project = project
+        self.reason: str | None = None
+        self.stale = False
+        self._acquire()
+
+    @property
+    def read_only(self) -> bool:
+        return self.reason is not None
+
+    @property
+    def _lock(self) -> Path:
+        return self.project.root / LOCK_NAME
+
+    def _acquire(self) -> None:
+        try:
+            fd = os.open(self._lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            self._explain_holder()
+            return
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"pid": os.getpid()}, handle)
+        self.reason, self.stale = None, False
+
+    def _explain_holder(self) -> None:
+        try:
+            pid = int(json.loads(self._lock.read_text(encoding="utf-8"))["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pid = -1
+        self.stale = pid <= 0 or not _pid_alive(pid)
+        self.reason = (
+            "A window that was working on this Project closed unexpectedly and left its lock."
+            if self.stale
+            else "Another window is working on this Project, so this one is read-only."
+        )
+
+    def take_over(self, *, confirmed: bool) -> None:
+        """Take write rights from a crashed window's lock, only after the researcher confirms."""
+        if not self.read_only:
+            return
+        if not self.stale:
+            raise ProjectLockedError(self.reason or "")
+        if not confirmed:
+            raise ValidationError("Confirm taking over the lock left by the closed window.")
+        self._lock.unlink(missing_ok=True)
+        self._acquire()
+
+    def close(self) -> None:
+        """Release the lock if this session holds it; the session is read-only afterwards."""
+        if not self.read_only:
+            self._lock.unlink(missing_ok=True)
+            self.reason = "This session is closed."
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def require_writable(self) -> Project:
+        """The Project, or :class:`ProjectLockedError` with the reason if read-only."""
+        if self.reason is not None:
+            raise ProjectLockedError(self.reason)
+        return self.project
+
+
+def open_session(slug: str, *, root: Path) -> Session:
+    """Open a Project (see :func:`open_project`) and try to take its write lock."""
+    return Session(open_project(slug, root=root))
+
+
+def write_operation(fn: _F) -> _F:
+    """Register ``fn`` as a write operation: its first argument is a :class:`Session`."""
+    WRITE_OPERATIONS.append(fn.__name__)
+    return fn
+
+
+@write_operation
+def set_source_mode(session: Session, mode: SourceMode, *, reviewer: str) -> SourceModeEvent | None:
+    """Change the Source mode unless the session is read-only or the step is locked."""
+    project = session.require_writable()
     name = _require_reviewer(reviewer)
     require_unlocked(project, "source_mode")
     return set_mode(project, mode, actor=name)
