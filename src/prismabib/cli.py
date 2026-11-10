@@ -75,6 +75,13 @@ from prismabib.errors import (
     ValidationError,
 )
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
+from prismabib.onboarding import (
+    create_project,
+    next_steps,
+    not_sure_notes,
+    parse_access_answer,
+    source_mode_from_answer,
+)
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
@@ -250,41 +257,12 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-_ACCESS_ANSWERS: Final = {
-    "y": "yes",
-    "yes": "yes",
-    "n": "no",
-    "no": "no",
-    "s": "not sure",
-    "not sure": "not sure",
-}
-
-
 def _parse_access_answer(text: str) -> str:
     """Normalise an answer to the access question; anything else makes click ask again."""
-    answer = _ACCESS_ANSWERS.get(" ".join(text.lower().split()))
-    if answer is None:
-        raise typer.BadParameter("please answer y, n or not sure")
-    return answer
-
-
-def _not_sure_notes(slug: str) -> list[str]:
-    """What to print once the "not sure" choice has been recorded."""
-    return [
-        "Mode openalex was recorded: this tool cannot assume you have Scopus access.",
-        (
-            "To check a Scopus key later, run `prismabib credentials set scopus` and then "
-            "`prismabib credentials test scopus` (one request; it needs no project). Only "
-            "`credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` "
-            "need a project in a Scopus mode."
-        ),
-        (
-            f"To switch: `prismabib sources {slug} --set scopus --actor NAME` (or "
-            "`--set scopus+openalex`). It is refused once any OpenAlex search run exists under "
-            "raw/openalex-search/ (whatever its state) or screening decisions exist; then "
-            "create a new project."
-        ),
-    ]
+    try:
+        return parse_access_answer(text)
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def _choose_source_mode(sources: _Sources | None) -> tuple[SourceMode, bool]:
@@ -305,10 +283,10 @@ def _choose_source_mode(sources: _Sources | None) -> tuple[SourceMode, bool]:
     access = typer.prompt(
         "Do you have access to Scopus? [y/n/not sure]", value_proc=_parse_access_answer
     )
-    if access in ("no", "not sure"):
-        return "openalex", access == "not sure"
+    if access != "yes":
+        return source_mode_from_answer(access), access == "not sure"
     fill = typer.confirm("Also fill missing fields of Scopus records from OpenAlex?", default=True)
-    return ("scopus+openalex" if fill else "scopus"), False
+    return source_mode_from_answer(access, fill_gaps=fill), False
 
 
 def _choose_actor(actor: str | None) -> str:
@@ -387,9 +365,12 @@ def init(
         else:
             mode, not_sure = _choose_source_mode(sources)
             actor_name = _choose_actor(actor)
-        project = Project.init(
-            slug, title=title, root=projects_root, source_mode=mode, actor=actor_name
-        )
+        if mode is not None:
+            project = create_project(
+                slug, title=title, root=projects_root, source_mode=mode, reviewer=actor_name or ""
+            )
+        else:
+            project = Project.init(slug, title=title, root=projects_root)
 
         _echo(f"{'Reused' if existed else 'Created'} project {slug!r} at {project.root}")
         if mode is not None:
@@ -397,59 +378,16 @@ def init(
                 f"Sources mode: {mode} (recorded by {actor_name}; change it with `prismabib sources`)"
             )
         if not_sure:
-            for note in _not_sure_notes(slug):
+            for note in not_sure_notes(slug):
                 _echo(note)
-        _echo()
-        openalex = project.source_mode == "openalex"
-        if existed:
-            _echo(
-                "project.toml and criteria.yaml were already there and were left exactly "
-                "as they are; any missing directory has been recreated."
-            )
-            _echo()
-            _echo("The two files that define this review are, in the order they are used:")
-        else:
-            command = "openalex-search" if openalex else "search"
-            _echo(
-                f"`prismabib {command}` cannot run until you edit these two files, in this order:"
-            )
-        _echo()
-        _echo(f"  1. {project.root / 'project.toml'}")
-        if openalex:
-            _echo(
-                "     Fill in `search` under [openalex_query] -- the OpenAlex search itself "
-                '(words, "quoted phrases", uppercase AND / OR / NOT). It is scaffolded empty, '
-                "and an empty query is refused rather than sent."
-            )
-        else:
-            _echo(
-                "     Fill in [query] terms / compound_terms -- the Boolean search itself. They "
-                "are scaffolded empty, and an empty query is refused rather than silently run "
-                "against all of Scopus."
-            )
-        _echo(f"  2. {project.root / 'criteria.yaml'}")
-        # An OpenAlex work never carries a language, so that rule cannot exclude anything.
-        restricted = "doc_types.include" if openalex else "doc_types.include and languages"
-        _echo(
-            f"     Set temporal.year_start / year_end, and whichever of {restricted} "
-            "your protocol restricts; every list left empty means no restriction on "
-            "that dimension, which is a real eligibility choice rather than a placeholder. "
-            "Replace the starter exclusion reason codes with the ones your review actually "
-            "distinguishes, and bump `version` whenever you change any of it. The file's own "
-            "comments explain each block."
-        )
-        _echo()
-        _echo("Then, in order:")
-        if openalex:
-            if openalex_key_missing():
-                _echo("  prismabib credentials set openalex   # a free OpenAlex key is required")
-            _echo(f"  prismabib openalex-search {slug} --budget 30 --dry-run   # cost; no request")
-            _echo(f"  prismabib openalex-search {slug} --budget 30   # resumable")
-            _echo(f"  prismabib build {slug} --rebuild")
-        else:
-            _echo(f"  prismabib search {slug}   # spends Scopus quota; resumable")
-            _echo(f"  prismabib build {slug}")
-        _echo(f"  prismabib flow {slug}")
+        for line in next_steps(
+            slug,
+            project.root,
+            mode=project.source_mode,
+            existed=existed,
+            key_missing=openalex_key_missing(),
+        ):
+            _echo(line)
 
 
 # ---------------------------------------------------------------------------
