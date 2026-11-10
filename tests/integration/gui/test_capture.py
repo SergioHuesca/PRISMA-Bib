@@ -300,6 +300,8 @@ def test_discard__only_unsealed_run__state_is_discarded(tmp_path: Path) -> None:
 def test_operations_and_controls__none_deletes_or_overwrites_a_sealed_run(tmp_path: Path) -> None:
     project = _project(tmp_path)
     ops = set(layer.WRITE_OPERATIONS) | {n for n in dir(cl) if not n.startswith("_")}
+    # delete_store (#337) removes only the built store; its own tests hash everything else
+    ops -= {"delete_store"}
     assert not [n for n in ops if any(w in n for w in ("delete", "remove", "overwrite", "erase"))]
     view = build_capture(project)
     names = [w.name.lower() for w in view.select(pn.widgets.Widget)]
