@@ -12,6 +12,7 @@ import prismabib
 from prismabib import doctor_checks
 from prismabib.doctor_checks import Check
 from prismabib.gui import home_model as hm
+from prismabib.gui import path_limit
 from prismabib.user_settings import (
     PROJECTS_FOLDER_KEY,
     USER_FILE_OVERRIDE_VAR,
@@ -91,16 +92,42 @@ def test_take_first_run__true_once_then_false() -> None:
     assert hm.take_first_run() is False
 
 
-def test_check_folder__240_characters__is_accepted_and_241_refused(tmp_path: Path) -> None:
+def _folder_of(tmp_path: Path, length: int) -> Path:
     base = str(tmp_path)
-    for length, refused in ((240, False), (241, True)):
-        path = Path(base + os.sep + "a" * (length - len(base) - 1))
-        assert len(str(path)) == length
-        result = hm.check_folder(path)
-        if refused:
-            assert result.refusal and "240" in result.refusal
-        else:
-            assert result.refusal is None, result.refusal
+    if length < len(base) + 2:
+        pytest.skip("this machine's temp folder is longer than the path to build")
+    path = Path(base + os.sep + "a" * (length - len(base) - 1))
+    assert len(str(path)) == length
+    return path
+
+
+def test_check_folder__budget_edge__is_accepted_and_one_more_refused(
+    tmp_path: Path, real_path_limit: int
+) -> None:
+    """A folder must leave room for a Project's deepest file, so the budget is below 240."""
+    budget = path_limit.max_folder_chars()
+    assert budget == real_path_limit - len(str(path_limit.LONGEST_RELATIVE_PATH)) - 3
+    assert hm.check_folder(_folder_of(tmp_path, budget)).refusal is None
+    refused = hm.check_folder(_folder_of(tmp_path, budget + 1)).refusal
+    assert refused and str(budget) in refused and "240" in refused  # it says what the budget is
+
+
+def test_check_folder__130_characters__is_refused_because_no_project_would_fit(
+    tmp_path: Path, real_path_limit: int
+) -> None:
+    folder = _folder_of(tmp_path, 130)
+
+    assert hm.check_folder(folder).refusal  # was accepted (<= 240), then every New Project failed
+    assert path_limit.path_refusal(folder, "demo")  # the layer agrees
+
+
+def test_check_folder__reads_the_limit_when_called__not_when_imported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", 10_000)
+    assert hm.check_folder(_folder_of(tmp_path, 300)).refusal is None
+    monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", 100)
+    assert hm.check_folder(tmp_path).refusal
 
 
 def test_check_folder__cannot_write__is_refused(tmp_path: Path) -> None:
@@ -165,7 +192,7 @@ def test_use_folder__remembers_the_choice_and_creates_when_asked(tmp_path: Path)
     assert read_user_setting(PROJECTS_FOLDER_KEY) == str(target)
 
 
-def test_use_folder__refused_path__is_not_remembered(tmp_path: Path) -> None:
+def test_use_folder__refused_path__is_not_remembered(tmp_path: Path, real_path_limit: int) -> None:
     long = tmp_path / ("a" * 250)
     assert hm.use_folder(long, create=True).refusal
     assert read_user_setting(PROJECTS_FOLDER_KEY) is None

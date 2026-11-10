@@ -23,6 +23,15 @@ LONGEST_RELATIVE_PATH: Final = PurePosixPath(
 )
 
 
+def max_folder_chars() -> int:
+    """The longest Projects folder path that still leaves room for a one-character Project name.
+
+    The limit is read when called, never copied at import, so a test (or a future setting) that
+    changes ``MAX_PATH_CHARS`` is honoured everywhere.
+    """
+    return MAX_PATH_CHARS - len(str(LONGEST_RELATIVE_PATH)) - 3  # two separators and the name
+
+
 def deepest_path(root: Path, slug: str) -> Path:
     """The longest path a Project ``slug`` in ``root`` can hold."""
     return root.expanduser().absolute() / slug / LONGEST_RELATIVE_PATH

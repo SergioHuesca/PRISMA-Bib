@@ -117,8 +117,12 @@ def _socket_policy(request: pytest.FixtureRequest) -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _gui_path_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Lift the 240-character Project path limit: a long temp path (a Windows user name, xdist's
-    worker folder) would otherwise make tests pass on one machine and fail on another.
+    """Lift the Project path limit (``path_limit.MAX_PATH_CHARS``) for every test.
+
+    A long temp path (a Windows user name, xdist's worker folder) would otherwise make tests pass
+    on one machine and fail on another. The code under test reads the limit when it is called,
+    through ``path_limit``, so this one patch reaches the layer, the New Project preview and the
+    home screen's folder check alike.
 
     A test of the limit itself asks for the ``real_path_limit`` fixture, which restores it.
     """

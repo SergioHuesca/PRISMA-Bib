@@ -70,7 +70,9 @@ def test_build_home__choice_is_remembered_on_the_next_launch(tmp_path: Path) -> 
     assert next(iter(again.select(pn.widgets.TextInput))).value == str(target)
 
 
-def test_build_home__long_path__is_refused_with_the_limit(tmp_path: Path) -> None:
+def test_build_home__long_path__is_refused_with_the_limit(
+    tmp_path: Path, real_path_limit: int
+) -> None:
     view = build_home(tmp_path, checks=lambda: PASSING)
     next(iter(view.select(pn.widgets.TextInput))).value = str(tmp_path / ("a" * 250))
     _button(view, "Create this folder").clicks += 1

@@ -23,7 +23,7 @@ from prismabib.doctor_checks import (
     uv_check,
 )
 from prismabib.errors import ConfigError
-from prismabib.gui.path_limit import MAX_PATH_CHARS
+from prismabib.gui import path_limit
 from prismabib.project import Project
 from prismabib.user_settings import (
     FIRST_RUN_SEEN_KEY,
@@ -126,11 +126,13 @@ def check_folder(path: Path, *, is_synced: Callable[[Path], bool] = is_synced) -
     """Whether ``path`` can be the Projects folder, decided before any capture can start."""
     path = path.expanduser().absolute()
     text = str(path)
-    if len(text) > MAX_PATH_CHARS:
+    budget = path_limit.max_folder_chars()
+    if len(text) > budget:
         return FolderCheck(
             refusal=(
-                f"This path is {len(text)} characters; the limit is {MAX_PATH_CHARS} "
-                "(Windows stops at 260 and a Project needs room inside the folder). "
+                f"This path is {len(text)} characters; a Projects folder can have at most "
+                f"{budget}. The limit for any path is {path_limit.MAX_PATH_CHARS} (Windows stops "
+                "at 260), and a Project needs the rest for its deepest file and its name. "
                 "Choose a shorter path."
             )
         )
