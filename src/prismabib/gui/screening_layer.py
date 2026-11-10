@@ -8,12 +8,13 @@ library's queue; nothing here formats or edits it.
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Final
 
 import panel as pn  # the hosted Screener repaints an extra pane
 
 from prismabib.errors import ValidationError
-from prismabib.gui import layer
+from prismabib.gui import layer, tasks
 from prismabib.gui.layer import Session, write_operation
 from prismabib.prisma.events import Decision, DecisionEvent
 from prismabib.prisma.log import DecisionLog
@@ -28,6 +29,13 @@ from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting
 #: name the library records on Source mode changes.
 REVIEWER_LABEL: Final = "Reviewer (recorded on every Decision you make here)"
 ACTOR_LABEL: Final = "Actor (recorded by the library on Source mode changes; a separate field)"
+#: What undo really does: the library appends an Unsure Decision, so an undone Record is Unsure.
+UNDO_NOTE: Final = (
+    "Undo withdraws your Decision on the Record on screen by adding an Unsure Decision; "
+    "the Decision log keeps both, and the Record then counts as Unsure, not Unscreened."
+)
+UNDONE_STATUS: Final = "undone: the Record now counts as Unsure (the log keeps both Decisions)"
+LOAD_TASK_NAME: Final = "Opening the Screener"
 
 
 def missing(project: Project) -> list[str]:
@@ -130,6 +138,7 @@ def screen_markdown(model: dict[str, Any]) -> str:
         f"**{ACTOR_LABEL}:** set by the library, not by you",
         f"**Unscreened:** {c['unscreened']} · **Unsure:** {c['unsure']} · **Records:** {c['total']}",
         f"**Blind mode:** {'on' if model['blind'] else 'off'}",
+        f"_{UNDO_NOTE}_",
     ]
     others = model.get("other_decisions")
     if others:
@@ -160,6 +169,11 @@ class HostedScreener(ui.Screener):
                 screen_model(self.queue, self._screen_records, blind=self.blind)
             )
 
+    def undo(self) -> None:
+        super().undo()
+        if self.status == "undone":  # the library's own word, which hides that the Record is Unsure
+            self._set_status(UNDONE_STATUS)
+
     def view(self) -> pn.viewable.Viewable:
         return pn.Column(self._header, super().view(), sizing_mode="stretch_width")
 
@@ -179,5 +193,53 @@ def open_screening(
     """
     if gaps := missing(project):
         raise ValidationError(" ".join(gaps))
+    queue, records = _load(project, stage, reviewer, log)
+    return HostedScreener(queue, records, blind=blind)
+
+
+def _load(
+    project: Project, stage: PrismaStage, reviewer: str, log: DecisionLog | None = None
+) -> tuple[LockedQueue, dict[str, ui.ScreeningRecord]]:
+    """The slow, widget-free half of opening: the queue and every Record it will show."""
     queue = LockedQueue(project, stage, reviewer, log=log)
-    return HostedScreener(queue, ui.load_records(project, queue.pending), blind=blind)
+    return queue, ui.load_records(project, queue.pending)
+
+
+def start_loading(project: Project, stage: PrismaStage, reviewer: str) -> None:
+    """Load the queue on the Project's task runner, so :func:`load_status` can be read meanwhile.
+
+    Not a write operation: loading reads only; every Decision still goes through the lock.
+
+    Raises:
+        ValidationError: When Criteria or the store are missing, or another task is running.
+    """
+    if gaps := missing(project):
+        raise ValidationError(" ".join(gaps))
+
+    def work(
+        _cancel: threading.Event, _report: Any
+    ) -> tuple[LockedQueue, dict[str, ui.ScreeningRecord]]:
+        return _load(project, stage, reviewer)
+
+    tasks.runner_for(project).start(LOAD_TASK_NAME, work)
+
+
+def load_status(project: Project) -> tasks.TaskStatus:
+    """The load's status, else an idle one (a memory read, so it answers while the queue loads)."""
+    status = tasks.runner_for(project).status()
+    return status if status.name == LOAD_TASK_NAME else tasks.TaskStatus()
+
+
+def finish_loading(project: Project, *, blind: bool) -> HostedScreener | None:
+    """The Screener once the load is done (built on the caller's thread); else ``None``.
+
+    Raises:
+        Exception: Whatever the load raised (a blank Reviewer, for one).
+    """
+    status = load_status(project)
+    if status.error is not None:
+        raise status.error
+    if status.outcome != "done":
+        return None
+    queue, records = status.result
+    return HostedScreener(queue, records, blind=blind)
