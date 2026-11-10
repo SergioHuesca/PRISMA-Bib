@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import tomllib
 import uuid
@@ -278,6 +279,7 @@ _F = TypeVar("_F", bound=Callable[..., object])
 WRITE_OPERATIONS: Final[list[str]] = []
 #: Sessions that hold a lock right now, so the launcher can release them all when the app stops.
 _held: set[Session] = set()
+_held_lock = threading.Lock()  # sessions are opened and closed from server threads
 
 
 #: A half-written lock file younger than this is a window starting up, not a crashed one.
@@ -324,7 +326,8 @@ class Session:
             holder = {"pid": os.getpid(), "start": process_start_token(os.getpid())}
             json.dump({**holder, "token": self.token}, handle)
         self.reason, self.stale = None, False
-        _held.add(self)
+        with _held_lock:
+            _held.add(self)
 
     def _read_lock(self) -> str | None:
         try:
@@ -397,8 +400,14 @@ class Session:
             if current is not None and current != self._seen:  # replaced since this window looked
                 self._explain_holder()
                 return
-            self._lock.unlink(missing_ok=True)
-            self._acquire()
+            try:
+                self._lock.unlink(missing_ok=True)
+                self._acquire()
+            except OSError as exc:  # Windows: the lock file is open in another process
+                raise ValidationError(
+                    "The lock file is in use by another program, so it could not be taken over. "
+                    "Close the other window or program, then try again."
+                ) from exc
         finally:
             os.close(guard_fd)
             self._lock.with_name(LOCK_NAME + ".takeover").unlink(missing_ok=True)
@@ -413,7 +422,8 @@ class Session:
             if owner == self.token:  # never remove a lock another window has taken over
                 self._lock.unlink(missing_ok=True)
             self.reason = "This session is closed."
-        _held.discard(self)
+        with _held_lock:
+            _held.discard(self)
 
     def __enter__(self) -> Self:
         return self
@@ -445,12 +455,13 @@ def session_for(project: Project, held: Session | None) -> Iterator[Session]:
 
 def held_sessions() -> list[Session]:
     """The sessions in this process that hold a lock right now."""
-    return list(_held)
+    with _held_lock:
+        return list(_held)
 
 
 def release_all() -> None:
     """Release every lock this process holds (the app is stopping)."""
-    for session in list(_held):
+    for session in held_sessions():
         session.close()
 
 

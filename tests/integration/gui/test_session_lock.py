@@ -220,6 +220,54 @@ def test_take_over__concurrent_windows__exactly_one_wins(root: Path) -> None:
     assert sum(not s.read_only for s in sessions) == 1
 
 
+def test_take_over__lock_file_held_open_by_another_process__is_refused_with_a_sentence(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_lock(root, pid=2**22 + 12345)
+    session = layer.open_session("demo", root=root)
+    real_unlink = Path.unlink
+
+    def locked_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name == layer.LOCK_NAME:  # Windows: a file another process has open
+            raise PermissionError(13, "The process cannot access the file")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+
+    with pytest.raises(ValidationError, match="in use") as caught:
+        session.take_over(confirmed=True)
+
+    assert layer.translate(caught.value).error_class is layer.ErrorClass.INPUT  # not "unexpected"
+    assert session.read_only and session.stale  # still read-only, and it can be tried again
+    assert not (root / "demo" / (layer.LOCK_NAME + ".takeover")).exists()  # the guard is released
+
+
+def test_held_sessions__every_access_to_the_registry_holds_its_lock(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Guarded(set[layer.Session]):
+        """A set that fails when touched without the registry lock (it is mutated from threads)."""
+
+        def add(self, item: layer.Session) -> None:
+            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+            super().add(item)
+
+        def discard(self, item: layer.Session) -> None:
+            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+            super().discard(item)
+
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+            return super().__iter__()
+
+    monkeypatch.setattr(layer, "_held", Guarded())
+    session = layer.open_session("demo", root=root)
+
+    assert layer.held_sessions() == [session]
+    layer.release_all()
+    assert layer.held_sessions() == []
+
+
 def test_close__lock_now_owned_by_another_window__is_left_alone(root: Path) -> None:
     first = layer.open_session("demo", root=root)
     _write_lock(root, pid=os.getpid(), start="x", token="someone-else")  # taken over from under it
