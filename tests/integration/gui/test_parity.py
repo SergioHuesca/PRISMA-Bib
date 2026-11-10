@@ -488,3 +488,39 @@ def test_parity__openalex_capture_and_refresh__sealed_payload_hash_equals_the_cl
         run_cli("--refresh")
     assert hashes(gui) == hashes(cli) and len(hashes(gui)) == 2
     tasks.reset_runners()
+
+
+def test_parity__flow_counts_and_registration__gui_equals_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #334: the same counts, and the same candidate and registration logs, as the CLI."""
+    from prismabib.capture import candidate_commands
+    from prismabib.capture.registrations import register_candidate
+    from prismabib.gui import flow_layer as fl
+    from tests.integration.capture.test_registrations import NOW, PAYLOAD, _Ids
+    from tests.integration.gui import test_flow as tf
+
+    for module in (fl, candidate_commands):
+        monkeypatch.setattr(module, "datetime", _FixedDatetime)
+    kwdefaults = register_candidate.__kwdefaults__
+    monkeypatch.setitem(kwdefaults, "now", lambda: NOW)
+    gui, cli = (tf.make_project(tmp_path / n) for n in ("gui", "cli"))
+    assert tf.screen_numbers(gui) == tf.cli_numbers(gui)
+
+    monkeypatch.setitem(kwdefaults, "new_id", _Ids())
+    cid = tf._add(gui, tf.EXACT)
+    tf._register(gui, cid)
+    pasted = tmp_path / "pasted.txt"
+    pasted.write_text(tf.EXACT, encoding="utf-8")
+    monkeypatch.setitem(kwdefaults, "new_id", _Ids())
+    root = str(tmp_path / "cli")
+    for args in (
+        ["candidates", "add", "stage04", "--reviewer", "Ada", "--file", str(pasted)],
+        ["register", "stage04", cid, "--reviewer", "Ada", "--payload", PAYLOAD],
+    ):
+        result = CliRunner().invoke(app, [*args, "--root", root])
+        assert result.exit_code == 0, result.output
+    outs = [normalise(p.root / "decisions") for p in (gui, cli)]
+    assert any("registrations" in name for name in outs[0])
+    assert_parity(*outs)
+    assert tf.screen_numbers(gui) == tf.cli_numbers(gui)
