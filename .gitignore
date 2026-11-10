@@ -128,3 +128,6 @@ logs/
 
 # graphify knowledge graph output (a local index of this repo, regenerated on demand)
 graphify-out/
+
+# GUI single-writer lock (a Project folder outside projects/ is still covered)
+.prismabib.lock

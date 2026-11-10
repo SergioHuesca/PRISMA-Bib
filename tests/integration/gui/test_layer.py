@@ -199,7 +199,7 @@ def test_locks__source_mode__refused_once_a_run_exists(project: Project) -> None
     (project.raw_dir / "openalex-search" / "r1").mkdir(parents=True)
 
     with pytest.raises(StepLockedError, match="Run exists"):
-        layer.set_source_mode(project, "scopus", reviewer="Ada")
+        layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
 
     assert project.source_mode == "openalex"
 
@@ -208,7 +208,7 @@ def test_locks__source_mode__refused_once_a_decision_exists(project: Project) ->
     _decide(project)
 
     with pytest.raises(StepLockedError, match="Decision has been logged"):
-        layer.set_source_mode(project, "scopus", reviewer="Ada")
+        layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
 
 
 def test_locks__query__read_only_once_the_first_run_starts(project: Project) -> None:
@@ -229,7 +229,7 @@ def test_locks__criteria__read_only_once_the_first_decision_is_logged(project: P
 
 
 def test_set_source_mode__unlocked__changes_the_mode(project: Project) -> None:
-    layer.set_source_mode(project, "scopus", reviewer="Ada")
+    layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
 
     assert project.source_mode == "scopus"
 
@@ -310,7 +310,7 @@ def test_layer__operations__never_start_a_subprocess(
 
     made = layer.create_project("p", title="P", root=tmp_path, source_mode="scopus", reviewer="Ada")
     opened = layer.open_project("p", root=tmp_path)
-    layer.set_source_mode(opened, "scopus+openalex", reviewer="Ada")
+    layer.set_source_mode(layer.Session(opened), "scopus+openalex", reviewer="Ada")
     layer.step_progress(opened)
     layer.locks(opened)
     layer.translate(RuntimeError("x"))
