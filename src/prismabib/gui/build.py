@@ -6,6 +6,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import build_layer as bl
 from prismabib.gui import layer
+from prismabib.gui.delete_store import build_delete_store
 from prismabib.project import Project
 
 BUILD_POLL_MS = 1000
@@ -22,8 +23,10 @@ def build_build(project: Project) -> pn.Column:
     state = pn.pane.Markdown("")
     message = pn.pane.Markdown("")
     bar = pn.indicators.Progress(name="Build progress", active=True, visible=False)
+    delete, refresh_delete = build_delete_store(project, after=lambda: show())
 
     def show(*_: object) -> None:
+        refresh_delete()
         s = bl.build_status(project)
         start.name = "Rebuild the store" if project.db_path.is_file() else "Build the store"
         start.disabled = s.running
@@ -70,5 +73,6 @@ def build_build(project: Project) -> pn.Column:
         bar,
         message,
         pn.Row(start, cancel),
+        delete,
         sizing_mode="stretch_width",
     )

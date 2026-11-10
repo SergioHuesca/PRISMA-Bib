@@ -15,6 +15,7 @@ from prismabib.gui.criteria import build_criteria
 from prismabib.gui.flow import build_flow
 from prismabib.gui.keys import build_keys
 from prismabib.gui.query_form import build_query_form
+from prismabib.gui.screening import build_screening
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting, write_user_settings
 
@@ -105,6 +106,7 @@ def build_stepper(project: Project) -> pn.Row:
             ),
             *([build_build(project)] if row.key == "build" else []),
             *([build_flow(project)] if row.key == "flow" else []),
+            *([build_screening(project)] if row.key == "screening" else []),
         ]
 
     def _shower(row: npm.StepRow) -> Callable[[object], None]:
