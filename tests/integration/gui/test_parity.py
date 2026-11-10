@@ -39,6 +39,7 @@ from prismabib import project as project_module
 from prismabib import source_mode
 from prismabib.cli import app
 from prismabib.gui import layer
+from prismabib.gui import screening_layer as sl
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
 from tests.conftest import SeededIdFactory
 
@@ -177,6 +178,51 @@ def test_parity__scopus_access_answer__gui_and_cli_leave_identical_files(
     )
     assert result.exit_code == 0, result.output
     assert_parity(layer_out, normalise(tmp_path / "cli" / "demo"))
+
+
+def _screening_log(
+    root: Path, monkeypatch: pytest.MonkeyPatch, *, via_layer: bool
+) -> dict[str, str]:
+    """Ticket #332: screening has no CLI, so the other path is the Screener's decide interface."""
+    from prismabib.prisma import log as log_module
+    from prismabib.prisma.log import DecisionLog
+    from prismabib.screening.queue import ScreeningQueue
+    from prismabib.screening.ui import Screener
+    from prismabib.stage import PrismaStage
+    from tests.integration.gui.test_screening import make_project
+
+    monkeypatch.setattr(log_module, "datetime", _FixedDatetime)
+    project = make_project(root)
+    stage = PrismaStage.TITLE_ABSTRACT
+    queue = ScreeningQueue(
+        project, stage, "Ada", log=DecisionLog(project, id_factory=SeededIdFactory(0, "id"))
+    )
+    if via_layer:
+        with layer.Session(project) as session:
+            sl.decide(session, queue, "include")
+            sl.decide(session, queue, "exclude", reason_code="OFF_TOPIC")
+            sl.decide(session, queue, "unsure")
+    else:
+        screener = Screener(queue, {})
+        screener.decide("include")
+        screener.decide("exclude", reason_code="OFF_TOPIC")
+        screener.decide("unsure")
+    only = root / "log-only"
+    only.mkdir()
+    (only / "decisions.jsonl").write_bytes(project.decisions_path.read_bytes())
+    return normalise(only)
+
+
+def test_parity__screening_decisions__layer_and_screener_leave_identical_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    layer_out = _screening_log(tmp_path / "layer", monkeypatch, via_layer=True)
+    other_out = _screening_log(tmp_path / "screener", monkeypatch, via_layer=False)
+    assert layer_out["decisions.jsonl"].count("\n") == 3
+    assert_parity(layer_out, other_out)
+    altered = {name: text.replace("include", "includf", 1) for name, text in layer_out.items()}
+    with pytest.raises(AssertionError):
+        assert_parity(altered, other_out)
 
 
 def _init_cli(root: Path, mode: str) -> Path:

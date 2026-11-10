@@ -281,6 +281,8 @@ module = [
   "prismabib.gui.new_project",
   "prismabib.gui.query_form",
   "prismabib.gui.size_check",
+  "prismabib.gui.screening",
+  "prismabib.gui.screening_layer",
   "prismabib.gui.settings",
   "prismabib.gui.server",
 ]

@@ -14,6 +14,7 @@ from prismabib.gui import build_layer as bl
 from prismabib.gui import capture_layer as cl
 from prismabib.gui import layer
 from prismabib.gui import openalex_capture_layer as oal
+from prismabib.gui import screening_layer as sl
 from prismabib.gui.layer import Session
 from prismabib.gui.query_form_model import QueryInputs
 
@@ -39,6 +40,8 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
             session, budget=1, confirmed=True
         ),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
+        "decide": lambda: sl.decide(session, None, "include"),  # type: ignore[arg-type]
+        "undo": lambda: sl.undo(session, None),  # type: ignore[arg-type]
     }
 
 
