@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import os
-import sys
+import time
 import tomllib
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ from prismabib.errors import (
     UpstreamError,
     ValidationError,
 )
+from prismabib.gui.process_id import pid_alive, process_start_token
 from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.query_form_model import save_query as _save_query
 from prismabib.onboarding import create_project as _create_project
@@ -241,22 +243,10 @@ WRITE_OPERATIONS: Final[list[str]] = []
 _held: set[Session] = set()
 
 
-def _pid_alive(pid: int) -> bool:
-    if sys.platform == "win32":  # os.kill would terminate the process there
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
-        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if handle:
-            kernel32.CloseHandle(handle)
-        return bool(handle)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+#: A half-written lock file younger than this is a window starting up, not a crashed one.
+_LOCK_SETTLE_SECONDS: Final = 2.0
+#: A take-over guard older than this was left by a crash and is removed.
+_GUARD_STALE_SECONDS: Final = 30.0
 
 
 class Session:
@@ -265,12 +255,18 @@ class Session:
     Open with :func:`open_session`; call :meth:`close` (or use ``with``) to release the lock.
     A lock left by a crashed process makes the session read-only until :meth:`take_over` is
     called with ``confirmed=True``.
+
+    The lock file records the holder's pid, the process start token (see
+    :func:`prismabib.gui.process_id.process_start_token`, so a reused pid is not mistaken for the
+    holder) and this session's own ``token``, which :meth:`close` checks before it removes the file.
     """
 
     def __init__(self, project: Project) -> None:
         self.project = project
+        self.token = uuid.uuid4().hex
         self.reason: str | None = None
         self.stale = False
+        self._seen: str | None = None  # the lock text that was judged stale
         self._acquire()
 
     @property
@@ -288,37 +284,97 @@ class Session:
             self._explain_holder()
             return
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"pid": os.getpid()}, handle)
+            holder = {"pid": os.getpid(), "start": process_start_token(os.getpid())}
+            json.dump({**holder, "token": self.token}, handle)
         self.reason, self.stale = None, False
         _held.add(self)
 
-    def _explain_holder(self) -> None:
+    def _read_lock(self) -> str | None:
         try:
-            pid = int(json.loads(self._lock.read_text(encoding="utf-8"))["pid"])
-        except (OSError, ValueError, KeyError, TypeError):
-            pid = -1
-        self.stale = pid <= 0 or not _pid_alive(pid)
+            return self._lock.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _holder_gone(self, text: str | None) -> bool:
+        """Whether the process that wrote the lock ``text`` no longer exists."""
+        try:
+            holder = json.loads(text or "")
+            pid = int(holder["pid"])
+        except (ValueError, KeyError, TypeError):
+            try:  # a lock being written right now is a live window, not a crashed one
+                young = time.time() - self._lock.stat().st_mtime < _LOCK_SETTLE_SECONDS
+            except OSError:
+                young = False
+            return not young
+        if pid <= 0 or not pid_alive(pid):
+            return True
+        recorded, now = holder.get("start"), process_start_token(pid)
+        return isinstance(recorded, str) and now is not None and recorded != now
+
+    def _explain_holder(self) -> None:
+        self._seen = self._read_lock()
+        self.stale = self._holder_gone(self._seen)
         self.reason = (
             "A window that was working on this Project closed unexpectedly and left its lock."
             if self.stale
             else "Another window is working on this Project, so this one is read-only."
         )
 
+    def _take_guard(self) -> int | None:
+        """Exclusive create of the take-over guard, so only one window takes over at a time."""
+        guard = self._lock.with_name(LOCK_NAME + ".takeover")
+        for _ in range(2):
+            try:
+                return os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    if time.time() - guard.stat().st_mtime < _GUARD_STALE_SECONDS:
+                        return None
+                    guard.unlink(missing_ok=True)  # left by a crash in the middle of a take-over
+                except OSError:
+                    return None
+        return None
+
     def take_over(self, *, confirmed: bool) -> None:
-        """Take write rights from a crashed window's lock, only after the researcher confirms."""
+        """Take write rights from a crashed window's lock, only after the researcher confirms.
+
+        Two windows may confirm at once: one at a time holds the guard, it checks the lock is
+        still the stale one it saw, removes it and creates its own with an exclusive create. A
+        window that loses stays read-only, with the reason that another window has the lock.
+        """
         if not self.read_only:
             return
         if not self.stale:
             raise ProjectLockedError(self.reason or "")
         if not confirmed:
             raise ValidationError("Confirm taking over the lock left by the closed window.")
-        self._lock.unlink(missing_ok=True)
-        self._acquire()
+        guard_fd = self._take_guard()
+        if guard_fd is None:
+            self.stale = False
+            self.reason = (
+                "Another window is taking over this Project right now, so this one is read-only."
+            )
+            return
+        try:
+            current = self._read_lock()
+            if current is not None and current != self._seen:  # replaced since this window looked
+                self._explain_holder()
+                return
+            self._lock.unlink(missing_ok=True)
+            self._acquire()
+        finally:
+            os.close(guard_fd)
+            self._lock.with_name(LOCK_NAME + ".takeover").unlink(missing_ok=True)
 
     def close(self) -> None:
-        """Release the lock if this session holds it; the session is read-only afterwards."""
+        """Release the lock if this session still holds it; the session is read-only afterwards."""
         if not self.read_only:
-            self._lock.unlink(missing_ok=True)
+            try:
+                owner = json.loads(self._read_lock() or "").get("token")
+            except (ValueError, AttributeError):
+                owner = None
+            if owner == self.token:  # never remove a lock another window has taken over
+                self._lock.unlink(missing_ok=True)
             self.reason = "This session is closed."
         _held.discard(self)
 
