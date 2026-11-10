@@ -34,7 +34,11 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
         msg = layer.translate(exc)
         status.object = f"**{msg.sentence}** Fix criteria.yaml, then reopen this step."
         return pn.Column(title, status)
-    loaded = [(project.root / "criteria.yaml").read_bytes()]  # what this form was filled from
+    try:
+        loaded = [(project.root / "criteria.yaml").read_bytes()]  # what this form was filled from
+    except OSError:
+        status.object = "**criteria.yaml could not be read.** Check that no other program has it open, then reopen this step."
+        return pn.Column(title, status)
     lock = layer.locks(project)["criteria"]
     widgets: dict[str, pn.widgets.Widget] = {}
     errors: dict[str, pn.pane.Markdown] = {}

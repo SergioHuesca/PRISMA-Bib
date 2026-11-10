@@ -112,6 +112,42 @@ def test_form__second_hand_edit__is_backed_up_too_and_no_backup_is_overwritten(
     assert f"{BACKUP}.2" in _text(view)  # the screen names the backup actually made
 
 
+def test_layer__every_backup_name_taken__refuses_instead_of_overwriting(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(layer, "_BACKUP_LIMIT", 2)
+    edited = _hand_edit(project)
+    (project.root / BACKUP).write_bytes(b"first")
+    (project.root / f"{BACKUP}.1").write_bytes(b"second")
+    with (
+        layer.open_session("demo", root=project.root.parent) as session,
+        pytest.raises(ValidationError, match="backup"),
+    ):
+        layer.save_criteria(session, project.criteria)
+
+    assert (project.root / "criteria.yaml").read_bytes() == edited  # nothing was written
+    assert (project.root / BACKUP).read_bytes() == b"first"
+    assert (project.root / f"{BACKUP}.1").read_bytes() == b"second"
+
+
+def test_form__file_unreadable_when_opened__shows_a_sentence_not_an_error(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Path.read_bytes
+
+    def denied(self: Path) -> bytes:
+        if self.name == "criteria.yaml":
+            raise PermissionError(13, "Access is denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+
+    view = build_criteria(project)
+
+    assert "criteria.yaml" in _text(view) and "could not be read" in _text(view)
+    assert not view.select(pn.widgets.Button)
+
+
 def test_form__file_edited_while_the_form_is_open__save_is_refused_and_writes_nothing(
     project: Project,
 ) -> None:

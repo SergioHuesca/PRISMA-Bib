@@ -499,6 +499,7 @@ def save_query(session: Session, inputs: QueryInputs) -> None:
 #: Where the file a save replaced is kept, next to it. The first backup has this name, the next
 #: ones ``.1``, ``.2``, ...: a backup is never overwritten.
 CRITERIA_BACKUP_NAME: Final = "criteria.yaml.before-app"
+_BACKUP_LIMIT = 10_000  # backup names tried before a save refuses (a test patches it)
 
 
 def _criteria_text(criteria: Criteria) -> str:
@@ -527,7 +528,7 @@ def _keep_original(path: Path) -> None:
     current = path.read_bytes()
     if _written_by_the_app(current):
         return  # nothing is lost: the save rewrites the same layout
-    for number in range(10_000):
+    for number in range(_BACKUP_LIMIT):
         backup = path.with_name(CRITERIA_BACKUP_NAME + (f".{number}" if number else ""))
         try:
             with backup.open("xb") as handle:  # exclusive: an existing backup is never overwritten
@@ -535,6 +536,11 @@ def _keep_original(path: Path) -> None:
         except FileExistsError:
             continue
         return
+    raise ValidationError(
+        f"There are already {_BACKUP_LIMIT} backups of criteria.yaml next to it, so there is no "
+        "free name for another. Nothing was written. Move or delete the old backups "
+        f"({CRITERIA_BACKUP_NAME}, {CRITERIA_BACKUP_NAME}.1, ...), then save again."
+    )
 
 
 @write_operation
