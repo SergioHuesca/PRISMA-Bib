@@ -1,4 +1,4 @@
-"""What the home screen decides, without widgets (GUI spec #312, ticket #322).
+"""What the home screen decides, without widgets.
 
 The first-run prerequisite check, the Projects folder (resolve, validate, remember) and the list of
 Projects found there. Nothing here writes inside the installed package or anywhere but the folder
@@ -23,6 +23,7 @@ from prismabib.doctor_checks import (
     uv_check,
 )
 from prismabib.errors import ConfigError
+from prismabib.gui.path_limit import MAX_PATH_CHARS
 from prismabib.project import Project
 from prismabib.user_settings import (
     FIRST_RUN_SEEN_KEY,
@@ -30,9 +31,6 @@ from prismabib.user_settings import (
     read_user_setting,
     write_user_settings,
 )
-
-#: Headroom under the classic 260-character Windows path limit.
-MAX_PATH_CHARS: Final = 240
 
 # -- first-run prerequisites ---------------------------------------------------------------------
 

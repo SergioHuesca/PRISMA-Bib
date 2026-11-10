@@ -1,4 +1,4 @@
-"""What New Project and the stepper decide, without widgets (GUI spec #312, ticket #324)."""
+"""What New Project and the stepper decide, without widgets."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Final
 
 from prismabib.errors import ConfigError, ValidationError
 from prismabib.gui import layer
+from prismabib.gui.path_limit import path_refusal
 from prismabib.onboarding import source_mode_from_answer
 from prismabib.project import Project
 from prismabib.source_mode import SourceMode
@@ -51,7 +52,7 @@ def folder_refusal(name: str, root: Path) -> str | None:
         return str(exc)
     if (root / slug).exists():
         return f"A folder named {slug!r} already exists here. Choose another name."
-    return None
+    return path_refusal(root, slug)
 
 
 def mode_for_choice(choice: str | None, *, fill_gaps: bool) -> SourceMode:

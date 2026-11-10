@@ -40,6 +40,7 @@ from prismabib.errors import (
     UpstreamError,
     ValidationError,
 )
+from prismabib.gui.path_limit import path_refusal
 from prismabib.gui.process_id import pid_alive, process_start_token
 from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.query_form_model import save_query as _save_query
@@ -240,10 +241,16 @@ def _require_reviewer(reviewer: str) -> str:
 def create_project(
     slug: str, *, title: str, root: Path, source_mode: SourceMode, reviewer: str
 ) -> Project:
-    """Create a Project; refuses a blank reviewer name or a folder that already exists."""
+    """Create a Project; refuses a blank reviewer, a folder that exists, or too long a path.
+
+    The path limit (see :mod:`prismabib.gui.path_limit`) is checked on the deepest path the
+    Project can hold, before anything is written.
+    """
     name = _require_reviewer(reviewer)
     if (root / slug).exists():
         raise ValidationError(f"A Project named {slug!r} already exists. Choose another name.")
+    if refusal := path_refusal(root, slug):
+        raise ValidationError(refusal)
     return _create_project(slug, title=title, root=root, source_mode=source_mode, reviewer=name)
 
 

@@ -25,7 +25,8 @@ from prismabib.errors import (
     UpstreamError,
     ValidationError,
 )
-from prismabib.gui import layer
+from prismabib.gui import layer, path_limit
+from prismabib.gui import new_project_model as npm
 from prismabib.gui.layer import ErrorClass
 from prismabib.project import Project
 from prismabib.source_mode import load_mode_events
@@ -311,6 +312,51 @@ def test_create_project__existing_folder__refused_not_overwritten(project: Proje
         )
 
     assert _tree_digest(project.root) == before
+
+
+def _root_for_total(tmp_path: Path, slug: str, total: int) -> Path:
+    """A Projects folder under ``tmp_path`` whose deepest Project path is ``total`` characters."""
+    deepest = len(str(tmp_path / "r" / slug / path_limit.LONGEST_RELATIVE_PATH))
+    root = tmp_path / ("r" * (1 + total - deepest))
+    assert len(str(root / slug / path_limit.LONGEST_RELATIVE_PATH)) == total
+    return root
+
+
+def test_create_project__deepest_path_of_240_characters__is_created(tmp_path: Path) -> None:
+    root = _root_for_total(tmp_path, "demo", 240)
+
+    layer.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
+
+    assert (root / "demo" / "project.toml").is_file()
+
+
+def test_create_project__deepest_path_of_241_characters__refused_before_writing_anything(
+    tmp_path: Path,
+) -> None:
+    root = _root_for_total(tmp_path, "demo", 241)
+
+    with pytest.raises(ValidationError, match="240") as caught:
+        layer.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
+
+    assert "241" in str(caught.value)  # it says how long the path would be, and the limit
+    assert not root.exists()  # not even the Projects folder was made
+
+
+def test_create_project__very_long_name__refused_with_the_same_sentence(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="240"):
+        layer.create_project(
+            "a" * 200, title="D", root=tmp_path, source_mode="openalex", reviewer="Ada"
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_new_project_screen__default_root_too_long__refuses_with_the_limit(
+    tmp_path: Path,
+) -> None:
+    root = _root_for_total(tmp_path, "demo", 260)
+
+    assert "240" in (npm.folder_refusal("Demo", root) or "")
 
 
 def _log_with_version(project: Project, version: str) -> None:

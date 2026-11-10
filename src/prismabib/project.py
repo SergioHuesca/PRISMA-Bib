@@ -338,7 +338,9 @@ def scaffold_criteria(year: int | None = None) -> Criteria:
     if year is None:
         return scaffold
     return scaffold.model_copy(
-        update={"temporal": TemporalCriteria(year_start=scaffold.temporal.year_start, year_end=year)}
+        update={
+            "temporal": TemporalCriteria(year_start=scaffold.temporal.year_start, year_end=year)
+        }
     )
 
 
