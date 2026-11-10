@@ -16,8 +16,13 @@ from prismabib.project import Project
 CAPTURE_POLL_MS = 1000
 
 
-def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Column:
-    """The capture controls and the state of the capture of ``project`` (OpenAlex or Scopus)."""
+def build_capture(
+    project: Project, session: layer.Session | None = None, *, user_file: Path | None = None
+) -> pn.Column:
+    """The capture controls and the state of the capture of ``project`` (OpenAlex or Scopus).
+
+    ``session`` is the window's held write lock; a bare screen takes one per click.
+    """
     openalex = project.source_mode == "openalex"
     status_of = oal.openalex_status if openalex else cl.capture_status
     texts = oal.STATE_TEXT if openalex else cl.STATE_TEXT
@@ -74,17 +79,17 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
     def go(new_run: bool) -> None:
         message.object = ""
         try:
-            with layer.Session(project) as session:
+            with layer.session_for(project, session) as active:
                 if openalex:
                     oal.start_openalex_capture(
-                        session,
+                        active,
                         budget=budget.value or 0,
                         confirmed=confirm.value,
                         refresh=new_run,
                         user_file=user_file,
                     )
                 else:
-                    cl.start_capture(session, confirmed=confirm.value, user_file=user_file)
+                    cl.start_capture(active, confirmed=confirm.value, user_file=user_file)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             fail(exc)
         confirm.value = False  # every start, a resume included, is confirmed again
@@ -103,8 +108,8 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
     def on_discard(_: object) -> None:
         run = status_of(project).run_id
         try:
-            with layer.Session(project) as session:
-                cl.discard_capture(session, run or "", confirmed=True)
+            with layer.session_for(project, session) as active:
+                cl.discard_capture(active, run or "", confirmed=True)
         except Exception as exc:  # noqa: BLE001
             fail(exc)
         ask_discard(False)
@@ -134,9 +139,14 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
     )
 
 
-def build_capture_step(project: Project, *, on_keys: Callable[[], None] | None = None) -> pn.Column:
+def build_capture_step(
+    project: Project,
+    session: layer.Session | None = None,
+    *,
+    on_keys: Callable[[], None] | None = None,
+) -> pn.Column:
     """The size check, and below it the capture, shown once the researcher continues."""
-    panel = build_capture(project)
+    panel = build_capture(project, session)
     status_of = oal.openalex_status if project.source_mode == "openalex" else cl.capture_status
     panel.visible = status_of(project).state is not cl.CaptureState.NOT_STARTED
     return pn.Column(

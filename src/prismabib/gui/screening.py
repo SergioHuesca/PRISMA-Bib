@@ -21,8 +21,11 @@ class ScreeningStep(pn.Column):
     poll: Callable[[], None]
 
 
-def build_screening(project: Project) -> ScreeningStep:
-    """Reviewer, stage and blind mode, then the Screener; says what is missing when opened early."""
+def build_screening(project: Project, session: layer.Session | None = None) -> ScreeningStep:
+    """Reviewer, stage and blind mode, then the Screener; says what is missing when opened early.
+
+    ``session`` is the window's held write lock; every Decision uses it, else takes a short one.
+    """
     gaps = sl.missing(project)
     if gaps:
         early = ScreeningStep(
@@ -65,7 +68,7 @@ def build_screening(project: Project) -> ScreeningStep:
         nonlocal waiting
         message.object = "Loading the Records."
         try:
-            sl.start_loading(project, STAGES[stage.value], reviewer.value or "")
+            sl.start_loading(project, STAGES[stage.value], reviewer.value or "", session)
             waiting = True
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             msg = layer.translate(exc)

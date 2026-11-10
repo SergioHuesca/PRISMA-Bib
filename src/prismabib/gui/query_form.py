@@ -100,11 +100,8 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
             status.object = "Not saved. Correct the fields marked above."
             return
         try:
-            if session is not None:
-                layer.save_query(session, form)
-            else:
-                with layer.Session(project) as own:
-                    layer.save_query(own, form)
+            with layer.session_for(project, session) as active:
+                layer.save_query(active, form)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             msg = layer.translate(exc)
             status.object = f"**{msg.sentence}** {msg.next_step}"

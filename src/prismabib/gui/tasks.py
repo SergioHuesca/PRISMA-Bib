@@ -12,6 +12,7 @@ same one reopened, reads the same status.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ class TaskRunner:
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
         self._status = TaskStatus()
+        self._when_idle: list[Callable[[], None]] = []
 
     def start(self, name: str, work: Work) -> None:
         """Start ``work``; refused while another task of this Project is running."""
@@ -54,11 +56,18 @@ class TaskRunner:
                 raise ValidationError(
                     f"{self._status.name} is still running. Wait for it to finish or cancel it."
                 )
+            before = self._status
             self._cancel = cancel = threading.Event()
             self._status = TaskStatus(name=name, running=True)
             task = stop_model.register(name, cancel)
-            self._thread = threading.Thread(target=self._run, args=(task, work, cancel))
-            self._thread.start()
+            thread = threading.Thread(target=self._run, args=(task, work, cancel))
+            try:
+                thread.start()
+            except BaseException:  # no thread, so nothing will ever clear "running" or unregister
+                stop_model.unregister(task)
+                self._status = before
+                raise
+            self._thread = thread
 
     def _report(self, progress: Any) -> None:
         with self._lock:
@@ -82,6 +91,9 @@ class TaskRunner:
                 self._status = TaskStatus(
                     task.name, False, False, self._status.progress, outcome, result, error
                 )
+                waiting, self._when_idle = self._when_idle, []
+            for callback in waiting:
+                callback()
 
     def cancel(self) -> None:
         """Ask the running task to stop at its next safe point; a no-op when none runs."""
@@ -90,6 +102,14 @@ class TaskRunner:
                 self._cancel.set()
                 s = self._status
                 self._status = TaskStatus(s.name, True, True, progress=s.progress)
+
+    def when_idle(self, callback: Callable[[], None]) -> None:
+        """Call ``callback`` now, or as soon as the running task ends (on that task's thread)."""
+        with self._lock:
+            if self._status.running:
+                self._when_idle.append(callback)
+                return
+        callback()
 
     def status(self) -> TaskStatus:
         with self._lock:
@@ -110,6 +130,17 @@ def runner_for(project: Project) -> TaskRunner:
     key = project.root.resolve()
     with _registry_lock:
         return _runners.setdefault(key, TaskRunner())
+
+
+def stop_all(wait: float) -> list[str]:
+    """Ask every running task to stop, wait up to ``wait`` seconds in all, and name the stragglers."""
+    stop_model.cancel_all()
+    with _registry_lock:
+        runners = list(_runners.values())
+    deadline = time.monotonic() + wait
+    for runner in runners:
+        runner.join(max(0.0, deadline - time.monotonic()))
+    return [name for r in runners if (name := r.status().name) and r.status().running]
 
 
 def reset_runners() -> None:

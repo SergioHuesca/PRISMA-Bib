@@ -50,8 +50,11 @@ def _table(project: Project) -> str:
     return text
 
 
-def build_flow(project: Project) -> pn.Column:
-    """The Flow counts of ``project`` and the Register form, in reading order."""
+def build_flow(project: Project, session: layer.Session | None = None) -> pn.Column:
+    """The Flow counts of ``project`` and the Register form, in reading order.
+
+    ``session`` is the window's held write lock; a bare screen takes one per click.
+    """
     counts_pane = pn.pane.HTML("", name="Flow counts")
     counts_message = pn.pane.Markdown("")
     refresh = pn.widgets.Button(name="Refresh the Flow counts")
@@ -128,8 +131,8 @@ def build_flow(project: Project) -> pn.Column:
 
     def on_add(_: object) -> None:
         try:
-            with layer.Session(project) as session:
-                done = fl.add_candidates(session, paste.value or "", reviewer=reviewer.value or "")
+            with layer.session_for(project, session) as active:
+                done = fl.add_candidates(active, paste.value or "", reviewer=reviewer.value or "")
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             message.object = f"**{_sentence(exc)}**"
             return
@@ -145,9 +148,9 @@ def build_flow(project: Project) -> pn.Column:
             if sel is None:
                 raise ValidationError("Choose a candidate and a captured response first.")
             confirmed = NearConfirmation().select(sel).tick(bool(near.value)).confirmed_near
-            with layer.Session(project) as session:
+            with layer.session_for(project, session) as active:
                 event = fl.register_record(
-                    session,
+                    active,
                     candidate_id=sel[0],
                     reviewer=reviewer.value or "",
                     payload_file=sel[1],

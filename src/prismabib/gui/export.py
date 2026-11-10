@@ -15,8 +15,11 @@ NOTE = (
 )
 
 
-def build_export(project: Project) -> pn.Column:
-    """The export button and the state of the export of ``project``."""
+def build_export(project: Project, session: layer.Session | None = None) -> pn.Column:
+    """The export button and the state of the export of ``project``.
+
+    ``session`` is the window's held write lock; a bare screen takes one per click.
+    """
     start = pn.widgets.Button(name="Export the citable bundle", button_type="primary")
     cancel = pn.widgets.Button(name="Cancel the export")
     state = pn.pane.Markdown("")
@@ -50,8 +53,8 @@ def build_export(project: Project) -> pn.Column:
     def on_start(_: object) -> None:
         message.object = ""
         try:
-            with layer.Session(project) as session:
-                el.start_export(session)
+            with layer.session_for(project, session) as active:
+                el.start_export(active)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             msg = layer.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"

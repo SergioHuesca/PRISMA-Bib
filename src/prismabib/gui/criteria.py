@@ -21,8 +21,11 @@ _LABELS = {
 }
 
 
-def build_criteria(project: Project) -> pn.Column:
-    """Edit the Project's Criteria; read-only with the reason once a Decision is logged."""
+def build_criteria(project: Project, session: layer.Session | None = None) -> pn.Column:
+    """Edit the Project's Criteria; read-only with the reason once a Decision is logged.
+
+    ``session`` is the window's held write lock; a bare screen takes one per save.
+    """
     title = pn.pane.Markdown("## Criteria")
     status = pn.pane.Markdown("")
     try:
@@ -50,8 +53,8 @@ def build_criteria(project: Project) -> pn.Column:
         status.object = ""
         try:
             criteria = cm.criteria_from_form({k: str(w.value or "") for k, w in widgets.items()})
-            with layer.Session(project) as session:
-                layer.save_criteria(session, criteria)
+            with layer.session_for(project, session) as active:
+                layer.save_criteria(active, criteria)
         except cm.CriteriaFormError as exc:
             for key, message in exc.fields.items():
                 (errors.get(key) or status).object = f"**{message}**"

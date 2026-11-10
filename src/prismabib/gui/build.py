@@ -16,14 +16,17 @@ NOTE = (
 )
 
 
-def build_build(project: Project) -> pn.Column:
-    """The build button and the state of the build of ``project``."""
+def build_build(project: Project, session: layer.Session | None = None) -> pn.Column:
+    """The build button and the state of the build of ``project``.
+
+    ``session`` is the window's held write lock; a bare screen takes one per click.
+    """
     start = pn.widgets.Button(name="Build the store", button_type="primary")
     cancel = pn.widgets.Button(name="Cancel the build")
     state = pn.pane.Markdown("")
     message = pn.pane.Markdown("")
     bar = pn.indicators.Progress(name="Build progress", active=True, visible=False)
-    delete, refresh_delete = build_delete_store(project, after=lambda: show())
+    delete, refresh_delete = build_delete_store(project, session, after=lambda: show())
 
     def show(*_: object) -> None:
         refresh_delete()
@@ -50,8 +53,8 @@ def build_build(project: Project) -> pn.Column:
     def on_start(_: object) -> None:
         message.object = ""
         try:
-            with layer.Session(project) as session:
-                bl.start_build(session)
+            with layer.session_for(project, session) as active:
+                bl.start_build(active)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             msg = layer.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"

@@ -21,9 +21,15 @@ def confirmation_text() -> str:
 
 
 def build_delete_store(
-    project: Project, *, after: Callable[[], None] = lambda: None
+    project: Project,
+    session: layer.Session | None = None,
+    *,
+    after: Callable[[], None] = lambda: None,
 ) -> tuple[pn.Column, Callable[[], None]]:
-    """The delete control for ``project`` and its refresh; ``after`` runs once a delete is tried."""
+    """The delete control for ``project`` and its refresh; ``after`` runs once a delete is tried.
+
+    ``session`` is the window's held write lock; a bare screen takes one per click.
+    """
     ask = pn.widgets.Button(name="Delete the built store")
     yes = pn.widgets.Button(
         name="Yes, delete the store",
@@ -48,8 +54,8 @@ def build_delete_store(
     def on_yes(_: object) -> None:
         toggle(False)
         try:
-            with layer.Session(project) as session:
-                dl.delete_store(session, confirmed=True)
+            with layer.session_for(project, session) as active:
+                dl.delete_store(active, confirmed=True)
             message.object = "**The store was deleted.** Build the store to make it again."
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             msg = layer.translate(exc)

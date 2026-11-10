@@ -11,7 +11,8 @@ import json
 import os
 import sys
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -236,6 +237,8 @@ LOCK_NAME: Final = ".prismabib.lock"
 _F = TypeVar("_F", bound=Callable[..., object])
 #: Names of the layer functions that change a Project; each refuses a read-only session.
 WRITE_OPERATIONS: Final[list[str]] = []
+#: Sessions that hold a lock right now, so the launcher can release them all when the app stops.
+_held: set[Session] = set()
 
 
 def _pid_alive(pid: int) -> bool:
@@ -287,6 +290,7 @@ class Session:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"pid": os.getpid()}, handle)
         self.reason, self.stale = None, False
+        _held.add(self)
 
     def _explain_holder(self) -> None:
         try:
@@ -316,6 +320,7 @@ class Session:
         if not self.read_only:
             self._lock.unlink(missing_ok=True)
             self.reason = "This session is closed."
+        _held.discard(self)
 
     def __enter__(self) -> Self:
         return self
@@ -333,6 +338,22 @@ class Session:
 def open_session(slug: str, *, root: Path) -> Session:
     """Open a Project (see :func:`open_project`) and try to take its write lock."""
     return Session(open_project(slug, root=root))
+
+
+@contextmanager
+def session_for(project: Project, held: Session | None) -> Iterator[Session]:
+    """The window's held session, else a short one for this one action (as a bare screen does)."""
+    if held is not None:
+        yield held
+    else:
+        with Session(project) as own:
+            yield own
+
+
+def release_all() -> None:
+    """Release every lock this process holds (the app is stopping)."""
+    for session in list(_held):
+        session.close()
 
 
 _CRITERIA_HEADER: Final = (

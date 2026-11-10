@@ -55,17 +55,22 @@ def creation_reviewer(project: Project) -> str:
 
 
 class LockedQueue(ScreeningQueue):
-    """A queue whose every Decision goes through the layer, so a read-only window refuses it."""
+    """A queue whose every Decision goes through the layer, so a read-only window refuses it.
+
+    ``session`` is the window's held write lock; without one each Decision takes a short one.
+    """
+
+    session: Session | None = None
 
     def decide(
         self, decision: Decision, *, reason_code: str | None = None, note: str = ""
     ) -> DecisionEvent:
-        with Session(self.project) as session:
-            return decide(session, self, decision, reason_code=reason_code, note=note)
+        with layer.session_for(self.project, self.session) as active:
+            return decide(active, self, decision, reason_code=reason_code, note=note)
 
     def undo(self) -> DecisionEvent | None:
-        with Session(self.project) as session:
-            return undo(session, self)
+        with layer.session_for(self.project, self.session) as active:
+            return undo(active, self)
 
 
 @write_operation
@@ -198,14 +203,21 @@ def open_screening(
 
 
 def _load(
-    project: Project, stage: PrismaStage, reviewer: str, log: DecisionLog | None = None
+    project: Project,
+    stage: PrismaStage,
+    reviewer: str,
+    log: DecisionLog | None = None,
+    session: Session | None = None,
 ) -> tuple[LockedQueue, dict[str, ui.ScreeningRecord]]:
     """The slow, widget-free half of opening: the queue and every Record it will show."""
     queue = LockedQueue(project, stage, reviewer, log=log)
+    queue.session = session
     return queue, ui.load_records(project, queue.pending)
 
 
-def start_loading(project: Project, stage: PrismaStage, reviewer: str) -> None:
+def start_loading(
+    project: Project, stage: PrismaStage, reviewer: str, session: Session | None = None
+) -> None:
     """Load the queue on the Project's task runner, so :func:`load_status` can be read meanwhile.
 
     Not a write operation: loading reads only; every Decision still goes through the lock.
@@ -219,7 +231,7 @@ def start_loading(project: Project, stage: PrismaStage, reviewer: str) -> None:
     def work(
         _cancel: threading.Event, _report: Any
     ) -> tuple[LockedQueue, dict[str, ui.ScreeningRecord]]:
-        return _load(project, stage, reviewer)
+        return _load(project, stage, reviewer, session=session)
 
     tasks.runner_for(project).start(LOAD_TASK_NAME, work)
 

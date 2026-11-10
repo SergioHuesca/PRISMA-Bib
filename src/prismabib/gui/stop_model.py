@@ -58,6 +58,15 @@ def running_names() -> list[str]:
         return [t.name for t in _tasks]
 
 
+def cancel_all() -> list[str]:
+    """Set every registered cancel flag; returns the names of the tasks asked to stop."""
+    with _lock:
+        tasks = list(_tasks)
+    for task in tasks:
+        task.cancel.set()
+    return [t.name for t in tasks]
+
+
 def install_stopper(stopper: Callable[[], object] | None) -> None:
     """Set what stops the server (the launcher installs it once the server exists)."""
     global _stopper
@@ -70,8 +79,7 @@ def request_stop(*, confirmed: bool) -> StopRequest:
         tasks = list(_tasks)
     if tasks and not confirmed:
         return StopRequest(False, CONFIRM_TEXT.format(names=", ".join(t.name for t in tasks)))
-    for task in tasks:
-        task.cancel.set()
+    cancel_all()
     if _stopper is not None:
         _stopper()
     return StopRequest(True)
