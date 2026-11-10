@@ -614,6 +614,29 @@ class ScopusClient:
                 break
             cursor = next_cursor
 
+    def probe_size(self, query: str) -> tuple[int, str | None]:
+        """Ask how many records ``query`` matches, with one one-record request.
+
+        Uses ``view=STANDARD`` (the count does not depend on the view, and no entitlement is
+        needed to read it) and no cache, so the allowance header is always the live one.
+
+        Returns:
+            ``(opensearch:totalResults, X-RateLimit-Remaining as sent or None)``.
+
+        Raises:
+            The same errors as :meth:`search`, plus :class:`UpstreamError` on a network failure.
+        """
+        params = {"query": query, "view": "STANDARD", "count": "1"}
+        try:
+            response = self._request_with_retry(self.SEARCH_ENDPOINT, params, view="STANDARD")
+        except httpx.HTTPError as exc:
+            # Class name only: a message may echo the URL.
+            raise UpstreamError(f"Scopus request failed ({type(exc).__name__}).") from exc
+        self.network_requests += 1
+        page = _parse_json(response.content)
+        _require_search_page(page)
+        return extract_total_results(page), response.headers.get("X-RateLimit-Remaining")
+
     def abstract(self, record_id: str) -> JsonDict:
         """Fetch the full Abstract Retrieval record for one Scopus record.
 

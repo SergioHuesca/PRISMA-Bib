@@ -51,6 +51,13 @@ class ConfigError(PrismabibError):
     """
 
 
+class CaptureCancelledError(PrismabibError):
+    """A capture stopped because the caller asked it to, between two result pages.
+
+    Not a failure and not a discard: the run is left unsealed and a later capture resumes it.
+    """
+
+
 class SourceError(PrismabibError):
     """Base class for failures talking to an external metadata/full-text source."""
 
