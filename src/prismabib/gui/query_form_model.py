@@ -150,7 +150,7 @@ def _criteria_text(project: Project, inputs: QueryInputs, *, with_subjects: bool
     ]
     if with_subjects:
         flow = "[" + ", ".join(json.dumps(a) for a in inputs.subject_areas) + "]"
-        edits.append((r"^(subject_areas:)[^\n]*\n(?:[ \t]+-[^\n]*\n)*", rf"\g<1> {flow}\n"))
+        edits.append((r"^(subject_areas:)[^\n]*\n(?:[ \t]*-[^\n]*\n)*", rf"\g<1> {flow}\n"))
     for pattern, replacement in edits:
         text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
         if count != 1:  # a layout this form cannot edit in place: say so, never guess

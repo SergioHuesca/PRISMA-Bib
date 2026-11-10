@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Final, Self, TypeVar
 
 import httpx
+import yaml
 
 from prismabib.capture.layout import NON_RUN_DIRNAMES, OPENALEX_SEARCH_DIRNAME, is_sealed
 from prismabib.errors import (
@@ -40,7 +41,7 @@ from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.query_form_model import save_query as _save_query
 from prismabib.onboarding import create_project as _create_project
 from prismabib.prisma.events import CURRENT_SCHEMA_VERSION
-from prismabib.project import Project
+from prismabib.project import Criteria, Project
 from prismabib.source_mode import SourceMode, SourceModeEvent, set_mode
 from prismabib.sources.openalex import DailyBudgetExhaustedError
 from prismabib.user_settings import user_settings_path
@@ -334,6 +335,12 @@ def open_session(slug: str, *, root: Path) -> Session:
     return Session(open_project(slug, root=root))
 
 
+_CRITERIA_HEADER: Final = (
+    "# Eligibility criteria, written by the prismabib app. You can edit this file by hand.\n"
+    "# An empty list means no restriction. Unknown keys are refused.\n"
+)
+
+
 def write_operation(fn: _F) -> _F:
     """Register ``fn`` as a write operation: its first argument is a :class:`Session`."""
     WRITE_OPERATIONS.append(fn.__name__)
@@ -355,6 +362,23 @@ def save_query(session: Session, inputs: QueryInputs) -> None:
     project = session.require_writable()
     require_unlocked(project, "query")
     _save_query(project, inputs)
+
+
+@write_operation
+def save_criteria(session: Session, criteria: Criteria) -> Path:
+    """Write ``criteria.yaml`` unless the session is read-only or a Decision has been logged.
+
+    The file stays the hand-editable source of truth; ``criteria`` is already validated by the
+    library's own model. Bytes are written with ``\\n`` endings on every platform.
+    """
+    project = session.require_writable()
+    require_unlocked(project, "criteria")
+    path = project.root / "criteria.yaml"
+    text = _CRITERIA_HEADER + yaml.safe_dump(criteria.model_dump(), sort_keys=False)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(text.encode("utf-8"))
+    tmp.replace(path)
+    return path
 
 
 # -- errors, in the researcher's words -----------------------------------------------------------

@@ -29,6 +29,7 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
     return {
         "set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada"),
         "save_query": lambda: layer.save_query(session, QueryInputs(terms=["a"])),
+        "save_criteria": lambda: layer.save_criteria(session, session.project.criteria),
     }
 
 

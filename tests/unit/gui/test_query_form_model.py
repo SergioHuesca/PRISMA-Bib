@@ -158,6 +158,16 @@ def test_load__broken_criteria__reports_instead_of_raising(tmp_path: Path) -> No
     assert loaded.load_problem and loaded.year_start is None
 
 
+def test_save_query__unindented_block_list__is_edited_in_place(tmp_path: Path) -> None:
+    project = _make(tmp_path, "openalex")
+    path = project.root / "criteria.yaml"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("subject_areas: []", "subject_areas:\n- ENGI\n- MATH"), "utf-8")
+    assert load(project).subject_areas == ["ENGI", "MATH"]
+    save_query(project, _inputs(subject_areas=["COMP"]))
+    assert project.criteria.subject_areas == ["COMP"]
+
+
 def test_layer_save_query__after_a_run_started__is_refused(tmp_path: Path) -> None:
     project = _make(tmp_path, "openalex")
     (project.raw_dir / "openalex_search" / "run1").mkdir(parents=True)

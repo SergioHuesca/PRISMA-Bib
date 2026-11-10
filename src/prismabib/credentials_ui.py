@@ -8,6 +8,7 @@ attempt, so the value does not outlive the click in the widget state that a note
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +26,15 @@ KEY = "SCOPUS_API_KEY"
 class ConnectScopusPanel:
     """Set the Scopus key. Handlers are plain methods so tests drive them without a browser."""
 
-    def __init__(self, project: Project | None = None, *, env_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        project: Project | None = None,
+        *,
+        env_file: Path | None = None,
+        writer: Callable[[Path, dict[str, str | None]], object] = write_env,
+    ) -> None:
         self.env_file = env_file or Path.cwd() / ENV_FILENAME
+        self._writer = writer  # the GUI passes the per-user writer, which has no git check
         mode = effective_mode(project) if project else None
         self.unused = mode is not None and mode not in CAPABILITY_MODES["scopus_search"]
         title = "Connect Scopus (unused in this mode)" if self.unused else "Connect Scopus"
@@ -63,7 +71,7 @@ class ConnectScopusPanel:
         try:
             if value:  # before the write, as `credentials set` does
                 register_secret_for_redaction(value)
-            write_env(self.env_file, {KEY: value})
+            self._writer(self.env_file, {KEY: value})
         except PrismabibError as exc:
             message = f"Refused: {exc}"
         else:

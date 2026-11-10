@@ -260,3 +260,23 @@ def test_parity__normaliser__hides_ids_and_timestamps_only() -> None:
     assert _ID_FIELD.sub(r'\1"<id>"', '{"event_id": "abc", "actor": "Ada"}') == (
         '{"event_id": "<id>", "actor": "Ada"}'
     )
+
+
+def test_parity__saved_criteria__gui_and_cli_projects_leave_identical_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #326: the CLI has no Criteria writer, so its Project (``init``) takes the same save."""
+    from prismabib.gui.criteria_model import criteria_from_form, form_from_criteria
+
+    _create_via_layer(tmp_path / "layer", monkeypatch)
+    _create_via_cli(tmp_path / "cli", monkeypatch)
+    outs = []
+    for name in ("layer", "cli"):
+        session = layer.open_session("demo", root=tmp_path / name)
+        form = form_from_criteria(session.project.criteria)
+        form |= {"version": "1.2.0", "languages": "English", "subject_areas": "COMP, MATH"}
+        layer.save_criteria(session, criteria_from_form(form))
+        session.close()
+        outs.append(normalise(tmp_path / name / "demo"))
+    assert "COMP" in outs[0]["criteria.yaml"]
+    assert_parity(*outs)
