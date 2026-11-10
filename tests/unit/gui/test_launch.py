@@ -11,7 +11,13 @@ from typer.testing import CliRunner
 
 from prismabib.cli import app
 from prismabib.errors import ConfigError
-from prismabib.gui.launch import is_allowed, pick_port, require_loopback, serve
+from prismabib.gui.launch import (
+    _create_server,  # pyright: ignore[reportPrivateUsage]
+    is_allowed,
+    pick_port,
+    require_loopback,
+    serve,
+)
 
 runner = CliRunner()
 
@@ -86,6 +92,34 @@ def test_serve__no_free_port__raises_the_error_before_any_browser_opens() -> Non
 
     with pytest.raises(ConfigError, match="No free port"):
         serve(bind=never, open_browser=lambda _url: pytest.fail("no browser"), run=lambda _s: None)
+
+
+@pytest.mark.unit
+def test_create_server__port_taken_between_picking_and_binding__retries_and_says_so(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ports: list[int] = []
+
+    def create(_host: str, port: int) -> str:
+        ports.append(port)
+        if len(ports) == 1:
+            raise OSError("address in use")  # someone took the port after it was picked
+        return "server"
+
+    picks = iter([5006, 6001])
+    server = _create_server(create, "127.0.0.1", 5006, lambda _h, _p: next(picks))
+
+    assert server == "server" and ports == [5006, 6001]
+    assert "5006 was taken a moment ago" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_create_server__port_always_taken__gives_up_with_the_no_free_port_error() -> None:
+    def create(_host: str, _port: int) -> str:
+        raise OSError("address in use")
+
+    with pytest.raises(ConfigError, match="No free port"):
+        _create_server(create, "127.0.0.1", 5006, lambda _h, p: p or 6001)
 
 
 @pytest.mark.unit

@@ -406,6 +406,11 @@ def session_for(project: Project, held: Session | None) -> Iterator[Session]:
             yield own
 
 
+def held_sessions() -> list[Session]:
+    """The sessions in this process that hold a lock right now."""
+    return list(_held)
+
+
 def release_all() -> None:
     """Release every lock this process holds (the app is stopping)."""
     for session in list(_held):

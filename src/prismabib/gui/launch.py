@@ -1,10 +1,13 @@
-"""``prismabib gui``: the launcher and its host, port and origin rules (ticket #318).
+"""``prismabib gui``: the launcher, its host, port and origin rules, and its shutdown.
 
 Nothing here imports Panel at module level, so ``prismabib gui --help`` works on a base install.
 Panel (the ``gui`` extra) is imported by :mod:`prismabib.gui.server` only when the app runs.
 
 The app is local-only: it binds a loopback address, there is no option to bind elsewhere, and the
 server rejects any request whose Host or Origin is not the local app on the chosen port.
+
+When the server stops (the Stop button, Ctrl+C or a closed terminal) the launcher cancels every
+running task, waits a bounded time for them, and releases the Project locks it holds.
 """
 
 from __future__ import annotations
@@ -79,6 +82,54 @@ def _run_forever(server: Any) -> None:
     server.run_until_shutdown()
 
 
+#: How long the app waits for a running task to reach a safe point once it is asked to stop.
+SHUTDOWN_WAIT_SECONDS: Final = 30.0
+#: Tries at binding the chosen port: another program can take it between picking and binding.
+_BIND_ATTEMPTS: Final = 3
+
+
+def _create_server(
+    create: Callable[[str, int], Any], host: str, port: int, bind: Callable[[str, int], int]
+) -> Any:
+    """Create the server on ``port`` (or another free one); the port can be taken in between."""
+    chosen = pick_port(host, port, bind)
+    for attempt in range(_BIND_ATTEMPTS):
+        try:
+            return create(host, chosen)
+        except OSError:
+            if attempt == _BIND_ATTEMPTS - 1:
+                break
+            typer.echo(f"Port {chosen} was taken a moment ago; choosing another one.")
+            chosen = pick_port(host, 0, bind)
+    raise ConfigError(f"No free port on {host}. Close a program that holds ports and try again.")
+
+
+def _shut_down(wait: float) -> None:
+    """Ask running tasks to stop, wait for them, and release the Project locks, saying what happens.
+
+    A lock whose task is still running is released the moment that task ends, never earlier.
+    """
+    from prismabib.gui import layer, tasks
+
+    running = stop_model.running_names()
+    if running:
+        typer.echo(
+            f"Stopping: asking {', '.join(running)} to stop at the next safe point. A capture "
+            f"keeps the pages already fetched and resumes the next time (waiting up to "
+            f"{wait:g} seconds)."
+        )
+    late = tasks.stop_all(wait)
+    for session in layer.held_sessions():
+        tasks.runner_for(session.project).when_idle(session.close)
+    if late:
+        typer.echo(
+            f"{', '.join(late)} did not stop within {wait:g} seconds. The app exits when it "
+            "does, and its Project stays locked until then."
+        )
+    else:
+        typer.echo("prismabib has stopped. Nothing running was left behind.")
+
+
 def serve(
     host: str = LOOPBACK,
     port: int = PREFERRED_PORT,
@@ -87,13 +138,15 @@ def serve(
     open_browser: Callable[[str], object] = webbrowser.open,
     bind: Callable[[str, int], int] = _try_bind,
     run: Callable[[Any], None] = _run_forever,
+    shutdown_wait: float = SHUTDOWN_WAIT_SECONDS,
 ) -> str:
     """Start the app on a loopback address, open the browser unless told not to, and block.
 
+    When ``run`` returns (the Stop button, Ctrl+C or a closed terminal) every running task is
+    asked to stop, joined for up to ``shutdown_wait`` seconds, and the Project locks are released.
     ``open_browser``, ``bind`` and ``run`` are seams for tests. Returns the URL it served.
     """
     host = require_loopback(host)
-    chosen = pick_port(host, port, bind)
     try:
         from prismabib.gui.server import create_server
     except ImportError as exc:
@@ -101,14 +154,19 @@ def serve(
             "The app needs the `gui` extra. Install it with: "
             'uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"'
         ) from exc
-    server = create_server(host, chosen)
+    server = _create_server(create_server, host, port, bind)
     # "Stop the app": the loop stops, run returns, and serve returns.
     stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
     url = f"http://{host}:{server.port}/"
     typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
-    if not no_browser:
-        open_browser(url)
-    run(server)
+    try:
+        if not no_browser:
+            open_browser(url)
+        run(server)
+    except KeyboardInterrupt:  # Ctrl+C is a normal way to stop
+        pass
+    finally:
+        _shut_down(shutdown_wait)
     return url
 
 
@@ -127,7 +185,7 @@ def register_gui_command(app: typer.Typer) -> None:
     ) -> None:
         """Open the local app in your browser. It serves on 127.0.0.1 only."""
         # Imported here: cli.py imports this module while it is still being defined.
-        from prismabib.cli import _reporting_errors
+        from prismabib.cli import reporting_errors
 
-        with _reporting_errors():
+        with reporting_errors():
             serve(port=port, no_browser=no_browser)

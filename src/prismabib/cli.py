@@ -193,7 +193,7 @@ def _fail(exc: PrismabibError) -> NoReturn:
 
 
 @contextmanager
-def _reporting_errors() -> Iterator[None]:
+def reporting_errors() -> Iterator[None]:
     """Turn any :class:`PrismabibError` raised inside into a clean CLI failure.
 
     Yields:
@@ -208,6 +208,10 @@ def _reporting_errors() -> Iterator[None]:
         yield
     except PrismabibError as exc:
         _fail(exc)
+
+
+#: The name the command modules import; ``reporting_errors`` is the public one.
+_reporting_errors = reporting_errors
 
 
 def _version_callback(value: bool) -> None:
