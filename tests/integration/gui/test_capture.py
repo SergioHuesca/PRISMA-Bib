@@ -27,6 +27,8 @@ from prismabib.gui.query_form_model import QueryInputs
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import returns_while_held, wait_for
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -95,13 +97,7 @@ def _start(project: Project, *, checked: bool = True, confirmed: bool = True) ->
 
 
 def _wait(project: Project, done: Callable[[cl.CaptureStatus], bool]) -> cl.CaptureStatus:
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        status = cl.capture_status(project)
-        if done(status):
-            return status
-        time.sleep(0.01)
-    raise AssertionError(f"state never reached; last {cl.capture_status(project)}")
+    return wait_for(lambda: cl.capture_status(project), done)
 
 
 def _finish(project: Project) -> cl.CaptureStatus:
@@ -118,10 +114,6 @@ def _tree(root: Path, skip: Callable[[Path], bool] = lambda p: False) -> str:
 
 def _runs(project: Project) -> list[Path]:
     return [p for p in project.raw_dir.iterdir() if p.is_dir() and p.name != "_cache"]
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 # -- the confirmation gate ---------------------------------------------------------------------
@@ -226,9 +218,8 @@ def test_capture__runs_cancels_resumes_and_seals_with_a_pollable_status(tmp_path
         assert stop_model.running_names() == [cl.TASK_NAME]
         assert stub.arrived.wait(10)  # page 1 is saved, the request for page 2 is held
         running = _wait(project, lambda s: s.pages_done == 1)
-        t0 = time.monotonic()
-        polled = cl.capture_status(project)
-        assert time.monotonic() - t0 < 1
+        # the request for page 2 is still held, so a status that waited for it would not return
+        polled = returns_while_held(lambda: cl.capture_status(project), stub.release)
         assert polled.state is S.RUNNING
         assert (polled.pages_done, polled.records_seen, polled.total_results) == (1, 1, 3)
         with pytest.raises(ValidationError, match="still running"):

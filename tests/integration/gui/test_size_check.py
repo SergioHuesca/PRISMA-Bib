@@ -19,6 +19,7 @@ from prismabib.gui.size_check import build_size_check
 from prismabib.gui.size_check_model import verdict
 from prismabib.project import Project
 from prismabib.user_settings import write_user_settings
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -62,10 +63,6 @@ def _oa(count: int, headers: dict[str, str] | None = None) -> httpx.MockTranspor
 def _scopus(total: int, headers: dict[str, str] | None = None) -> httpx.MockTransport:
     body = {"search-results": {"opensearch:totalResults": str(total), "entry": []}}
     return httpx.MockTransport(lambda r: httpx.Response(200, json=body, headers=headers))
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _button(view: pn.viewable.Viewable, start: str) -> pn.widgets.Button:

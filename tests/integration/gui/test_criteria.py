@@ -17,6 +17,7 @@ from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
 from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project, scaffold_criteria
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -31,10 +32,6 @@ def project(tmp_path: Path) -> Project:
 
 def _w(view: pn.Column, label: str) -> pn.widgets.Widget:
     return next(w for w in view.select(pn.widgets.Widget) if (w.name or "").startswith(label))
-
-
-def _text(view: pn.Column) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _log_decision(project: Project) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +33,8 @@ from tests.integration.capture.test_openalex_search import (
     Fake,
     works,
 )
+from tests.integration.gui.helpers import text as _text
+from tests.integration.gui.helpers import wait_for
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -98,21 +99,11 @@ def _finish(project: Project) -> cl.CaptureStatus:
 
 
 def _wait(project: Project, done: Callable[[cl.CaptureStatus], bool]) -> cl.CaptureStatus:
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        status = oal.openalex_status(project)
-        if done(status):
-            return status
-        time.sleep(0.01)
-    raise AssertionError(f"state never reached; last {oal.openalex_status(project)}")
+    return wait_for(lambda: oal.openalex_status(project), done)
 
 
 def _runs(project: Project) -> list[Path]:
     return sorted((project.raw_dir / OPENALEX_SEARCH_DIRNAME).iterdir())
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def test_start__without_confirmation_size_check_or_budget__is_refused(tmp_path: Path) -> None:

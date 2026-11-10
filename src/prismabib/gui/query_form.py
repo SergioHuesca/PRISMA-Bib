@@ -1,4 +1,4 @@
-"""The Query step: search terms and compound terms as chips, years, subject areas (ticket #327)."""
+"""The Query step: search terms and compound terms as chips, years, subject areas."""
 
 from __future__ import annotations
 

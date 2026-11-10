@@ -1,4 +1,4 @@
-"""Delete the built store of a Project (GUI spec #312, ticket #337).
+"""Delete the built store of a Project.
 
 STORE ONLY, by owner decision: the app removes the built store (the database file, its write-ahead
 log and its stamp) and nothing else. The Project stays listed and openable, and the build step

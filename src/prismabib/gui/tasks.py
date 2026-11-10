@@ -1,4 +1,4 @@
-"""The background-task runner every long step reuses (GUI spec #312, ticket #329).
+"""The background-task runner every long step reuses.
 
 One task at a time per Project, run on a non-daemon thread (so a stop of the app lets a capture
 reach its next page boundary before the process exits), with a progress value the worker reports
@@ -132,6 +132,23 @@ def runner_for(project: Project) -> TaskRunner:
         return _runners.setdefault(key, TaskRunner())
 
 
+def status_of(project: Project, name: str) -> TaskStatus:
+    """The runner's status when it is about task ``name``, else an idle one (a memory read).
+
+    The runner is shared by every task of a Project, so a screen reads its own task's status
+    only: another task's progress is not its progress.
+    """
+    status = runner_for(project).status()
+    return status if status.name == name else TaskStatus()
+
+
+def cancel_named(project: Project, *names: str) -> None:
+    """Stop the running task if it is one of ``names``; any other running task is left alone."""
+    runner = runner_for(project)
+    if runner.status().name in names:
+        runner.cancel()
+
+
 def stop_all(wait: float) -> list[str]:
     """Ask every running task to stop, wait up to ``wait`` seconds in all, and name the stragglers."""
     stop_model.cancel_all()
@@ -140,7 +157,8 @@ def stop_all(wait: float) -> list[str]:
     deadline = time.monotonic() + wait
     for runner in runners:
         runner.join(max(0.0, deadline - time.monotonic()))
-    return [name for r in runners if (name := r.status().name) and r.status().running]
+    statuses = [r.status() for r in runners]
+    return [str(s.name) for s in statuses if s.running]
 
 
 def reset_runners() -> None:

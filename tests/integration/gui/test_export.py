@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,8 @@ from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
 from prismabib.report import export as export_module
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import hold_at
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.integration.gui.test_screening import make_project
 
@@ -59,10 +61,6 @@ def _start(project: Project) -> None:
         xl.start_export(session)
 
 
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
-
-
 def _button(view: pn.viewable.Viewable, name: str) -> pn.widgets.Button:
     return next(b for b in view.select(pn.widgets.Button) if b.name == name)
 
@@ -70,22 +68,7 @@ def _button(view: pn.viewable.Viewable, name: str) -> pn.widgets.Button:
 def _hold_at(
     monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> tuple[threading.Event, threading.Event]:
-    arrived, release = threading.Event(), threading.Event()
-    real = export_module.export_project
-
-    def held(project: Project, **kwargs: Any) -> Any:
-        report: Callable[[Any], None] = kwargs["on_progress"]
-
-        def on_progress(event: Any) -> None:
-            report(event)
-            if event.phase == phase:
-                arrived.set()
-                assert release.wait(10)
-
-        return real(project, **{**kwargs, "on_progress": on_progress})
-
-    monkeypatch.setattr(export_module, "export_project", held)
-    return arrived, release
+    return hold_at(monkeypatch, export_module, "export_project", phase)
 
 
 def test_export__button__writes_the_bundle_and_the_summary_names_the_folder(

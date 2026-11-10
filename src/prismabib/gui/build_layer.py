@@ -1,4 +1,4 @@
-"""Build the store as the screen sees it (GUI spec #312, ticket #331): start, cancel, summary.
+"""Build the store as the screen sees it: start, cancel, summary.
 
 The build runs on the Project's task runner (:mod:`prismabib.gui.tasks`) through the library's
 ``build_store_cancellable``, which always rebuilds from Layer 0 into a temporary file and swaps it
@@ -45,9 +45,9 @@ class BuildSummary:
     duplicates_removed: int
 
 
-def progress_text(progress: object) -> str:
-    """A sentence for the last progress event the build reported."""
-    if not isinstance(progress, ProgressEvent):
+def progress_text(progress: ProgressEvent | None) -> str:
+    """A sentence for the last progress event the build reported (none yet: nothing)."""
+    if progress is None:
         return ""
     text = PHASE_TEXT.get(progress.phase, progress.phase)
     if progress.phase == "cascade_runs":
@@ -89,11 +89,13 @@ def start_build(session: Session) -> None:
 
 
 def cancel_build(project: Project) -> None:
-    """Stop the running build at its next safe point; the previous store stays."""
-    tasks.runner_for(project).cancel()
+    """Stop the running build at its next safe point; the previous store stays.
+
+    Only the build is stopped: another task of the Project (a capture) is left running.
+    """
+    tasks.cancel_named(project, TASK_NAME)
 
 
 def build_status(project: Project) -> tasks.TaskStatus:
     """The runner's status when it is about the build, else an idle one (a memory read)."""
-    status = tasks.runner_for(project).status()
-    return status if status.name == TASK_NAME else tasks.TaskStatus()
+    return tasks.status_of(project, TASK_NAME)

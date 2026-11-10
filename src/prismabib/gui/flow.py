@@ -1,4 +1,4 @@
-"""The Flow counts screen, and the form that registers a Record the search missed (ticket #334)."""
+"""The Flow counts screen, and the form that registers a Record the search missed."""
 
 from __future__ import annotations
 

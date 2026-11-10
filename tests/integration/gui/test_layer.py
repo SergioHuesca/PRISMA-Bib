@@ -317,12 +317,16 @@ def test_create_project__existing_folder__refused_not_overwritten(project: Proje
 def _root_for_total(tmp_path: Path, slug: str, total: int) -> Path:
     """A Projects folder under ``tmp_path`` whose deepest Project path is ``total`` characters."""
     deepest = len(str(tmp_path / "r" / slug / path_limit.LONGEST_RELATIVE_PATH))
+    if total < deepest:
+        pytest.skip("this machine's temp folder is too long to build a path of that length")
     root = tmp_path / ("r" * (1 + total - deepest))
     assert len(str(root / slug / path_limit.LONGEST_RELATIVE_PATH)) == total
     return root
 
 
-def test_create_project__deepest_path_of_240_characters__is_created(tmp_path: Path) -> None:
+def test_create_project__deepest_path_of_240_characters__is_created(
+    tmp_path: Path, real_path_limit: int
+) -> None:
     root = _root_for_total(tmp_path, "demo", 240)
 
     layer.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
@@ -331,7 +335,7 @@ def test_create_project__deepest_path_of_240_characters__is_created(tmp_path: Pa
 
 
 def test_create_project__deepest_path_of_241_characters__refused_before_writing_anything(
-    tmp_path: Path,
+    tmp_path: Path, real_path_limit: int
 ) -> None:
     root = _root_for_total(tmp_path, "demo", 241)
 
@@ -342,7 +346,31 @@ def test_create_project__deepest_path_of_241_characters__refused_before_writing_
     assert not root.exists()  # not even the Projects folder was made
 
 
-def test_create_project__very_long_name__refused_with_the_same_sentence(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("slack", "refused"), [(0, False), (-1, True)])
+def test_create_project__limit_measured_on_this_machine__boundary_is_inclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slack: int, refused: bool
+) -> None:
+    """The same boundary as 240/241, whatever length this machine's temp folder has."""
+    deepest = len(str(path_limit.deepest_path(tmp_path / "root", "demo")))
+    monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", deepest + slack)
+
+    def create() -> None:
+        layer.create_project(
+            "demo", title="D", root=tmp_path / "root", source_mode="openalex", reviewer="Ada"
+        )
+
+    if refused:
+        with pytest.raises(ValidationError, match="limit"):
+            create()
+        assert not (tmp_path / "root").exists()
+    else:
+        create()
+        assert (tmp_path / "root" / "demo" / "project.toml").is_file()
+
+
+def test_create_project__very_long_name__refused_with_the_same_sentence(
+    tmp_path: Path, real_path_limit: int
+) -> None:
     with pytest.raises(ValidationError, match="240"):
         layer.create_project(
             "a" * 200, title="D", root=tmp_path, source_mode="openalex", reviewer="Ada"
@@ -352,7 +380,7 @@ def test_create_project__very_long_name__refused_with_the_same_sentence(tmp_path
 
 
 def test_new_project_screen__default_root_too_long__refuses_with_the_limit(
-    tmp_path: Path,
+    tmp_path: Path, real_path_limit: int
 ) -> None:
     root = _root_for_total(tmp_path, "demo", 260)
 

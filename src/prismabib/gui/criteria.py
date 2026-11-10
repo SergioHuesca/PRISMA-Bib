@@ -1,4 +1,4 @@
-"""The Criteria form (ticket #326): guided entry that writes the Project's criteria.yaml."""
+"""The Criteria form: guided entry that writes the Project's criteria.yaml."""
 
 from __future__ import annotations
 

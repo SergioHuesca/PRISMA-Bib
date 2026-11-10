@@ -1,4 +1,4 @@
-"""Flow counts and registering a Record, as the screen sees them (GUI spec #312, ticket #334).
+"""Flow counts and registering a Record, as the screen sees them.
 
 Plain functions over the library: ``compute_flow_counts`` (what the CLI ``flow`` prints) and the
 CLI's own writers, ``CandidateLog.add`` and ``register_candidate``. Registering writes one event to

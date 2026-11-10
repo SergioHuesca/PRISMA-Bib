@@ -1,4 +1,4 @@
-"""OpenAlex capture as the screen sees it (GUI spec #312, ticket #330): start, refresh, state.
+"""OpenAlex capture as the screen sees it: start, refresh, state.
 
 Same rules as the Scopus capture in :mod:`prismabib.gui.capture_layer`, whose states, state texts,
 cancel and confirmed discard (``discard_run`` handles both kinds of run) it reuses: a confirmation
@@ -9,6 +9,7 @@ delete or overwrite of a Sealed run. The only write is ``capture_openalex_search
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,29 +49,23 @@ STATE_TEXT: Final[dict[CaptureState, str]] = {
 }
 
 
-def _disk(project: Project) -> CaptureStatus:
-    unsealed = discarded = None
-    sealed = False
+def _openalex_runs(project: Project) -> Iterator[tuple[bool, CaptureStatus | None]]:
     search = project.raw_dir / OPENALEX_SEARCH_DIRNAME
     for run in sorted(p for p in search.iterdir() if p.is_dir()) if search.is_dir() else []:
         if is_sealed(run):
-            sealed = True
+            yield True, None
         elif (progress := _read_progress(run)) is not None:
-            found = CaptureStatus(
-                CaptureState.DISCARDED if progress.discarded else CaptureState.UNSEALED,
-                run.name,
-                len(progress.requests),
-                total_results=progress.total_count,
+            state = CaptureState.DISCARDED if progress.discarded else CaptureState.UNSEALED
+            yield (
+                False,
+                CaptureStatus(
+                    state, run.name, len(progress.requests), total_results=progress.total_count
+                ),
             )
-            if progress.discarded:
-                discarded = found
-            else:
-                unsealed = found
-    if unsealed:
-        return unsealed
-    if sealed:
-        return CaptureStatus(CaptureState.SEALED)
-    return discarded or CaptureStatus(CaptureState.NOT_STARTED)
+
+
+def _disk(project: Project) -> CaptureStatus:
+    return cl.disk_status(_openalex_runs(project))
 
 
 def reset_text(finished: datetime, resets_in_seconds: float | None) -> str:
@@ -84,8 +79,8 @@ def reset_text(finished: datetime, resets_in_seconds: float | None) -> str:
 
 def openalex_status(project: Project) -> CaptureStatus:
     """The OpenAlex capture's state; while it runs this reads memory only."""
-    task = tasks.runner_for(project).status()
-    if task.name != TASK_NAME:  # another task (the Scopus capture) is not this screen's
+    task = tasks.status_of(project, TASK_NAME)  # another task (the Scopus capture) is not this one
+    if task.name is None:
         return _disk(project)
     seen = task.progress
     shown: dict[str, Any] = (

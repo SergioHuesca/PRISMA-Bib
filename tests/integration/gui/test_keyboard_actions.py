@@ -350,6 +350,8 @@ NON_SCREEN_MODULES = {
     "layer",
     "new_project_model",
     "openalex_capture_layer",
+    "path_limit",
+    "process_id",
     "query_form_model",
     "screening_layer",
     "server",

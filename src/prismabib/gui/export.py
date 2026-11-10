@@ -1,4 +1,4 @@
-"""The export screen: one button, progress, cancel, summary and the git warning (ticket #335)."""
+"""The export screen: one button, progress, cancel, summary and the git warning."""
 
 from __future__ import annotations
 

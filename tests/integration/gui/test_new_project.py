@@ -24,6 +24,7 @@ from prismabib.user_settings import (
     read_user_setting,
     write_user_settings,
 )
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -38,10 +39,6 @@ def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 def _w(view: pn.viewable.Viewable, kind: type[pn.widgets.Widget], name: str) -> pn.widgets.Widget:
     return next(w for w in view.select(kind) if w.name == name)
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _fill(view: pn.Column, name: str, reviewer: str = "Ada", access: str | None = "No") -> None:

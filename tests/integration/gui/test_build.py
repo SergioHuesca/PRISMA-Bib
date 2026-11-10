@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import threading
-import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -23,6 +21,8 @@ from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
 from prismabib.store.load import build_store
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import hold_at, returns_while_held
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.prisma_helpers import RUN_STARTED_AT, CorpusSpec, RecordSpec, build_project
 from tests.store_helpers import write_sealed_run
@@ -71,26 +71,7 @@ def _hold_at(
     monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> tuple[threading.Event, threading.Event]:
     """Make the real build wait for ``release`` when it reports ``phase``; ``arrived`` says when."""
-    arrived, release = threading.Event(), threading.Event()
-    real = bl.build_store_cancellable
-
-    def held(project: Project, **kwargs: Any) -> Any:
-        report: Callable[[Any], None] = kwargs["on_progress"]
-
-        def on_progress(event: Any) -> None:
-            report(event)
-            if event.phase == phase:
-                arrived.set()
-                assert release.wait(10)
-
-        return real(project, **{**kwargs, "on_progress": on_progress})
-
-    monkeypatch.setattr(bl, "build_store_cancellable", held)
-    return arrived, release
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
+    return hold_at(monkeypatch, bl, "build_store_cancellable", phase)
 
 
 def _button(view: pn.viewable.Viewable, name: str) -> pn.widgets.Button:
@@ -119,21 +100,19 @@ def test_build__no_capture__is_refused_with_the_next_step(tmp_path: Path) -> Non
         bl.start_build(session)
 
 
-def test_status__while_the_build_runs__answers_within_a_second_and_shows_cascade_progress(
+def test_status__while_the_build_runs__answers_without_waiting_and_shows_cascade_progress(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     arrived, release = _hold_at(monkeypatch, "cascade_runs")
     _start(project)
     assert arrived.wait(10)
 
-    began = time.monotonic()
-    status = bl.build_status(project)
-    text = _text(build_build(project))
-    elapsed = time.monotonic() - began
+    # both calls return while the worker is still held at "cascade_runs"
+    status = returns_while_held(lambda: bl.build_status(project), release)
+    text = returns_while_held(lambda: _text(build_build(project)), release)
     release.set()
     tasks.runner_for(project).join(30)
 
-    assert elapsed < 1
     assert status.running and bl.progress_text(status.progress).startswith("Adding the OpenAlex")
     assert "Adding the OpenAlex cascade" in text and "Layer" not in text
 

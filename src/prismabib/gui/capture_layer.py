@@ -1,4 +1,4 @@
-"""Scopus capture as the screen sees it (GUI spec #312, ticket #329): start, cancel, discard, state.
+"""Scopus capture as the screen sees it: start, cancel, discard, state.
 
 Starting needs an explicit confirmation that follows a size check of the query as it is now.
 The capture runs on the Project's task runner (:mod:`prismabib.gui.tasks`). Nothing here deletes
@@ -9,6 +9,7 @@ resumes an unsealed one) and the library's ``discard_run`` (which marks an unsea
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -88,28 +89,20 @@ def note_size_check(project: Project, query: str | None) -> None:
         _checked[key] = query
 
 
-def _disk(project: Project) -> CaptureStatus:
+def disk_status(runs: Iterable[tuple[bool, CaptureStatus | None]]) -> CaptureStatus:
+    """The state of a Project's runs on disk, one ``(is sealed, unsealed run's status)`` each.
+
+    Precedence: an unsealed run (resumable) over a Sealed one over a discarded one over none.
+    Both captures (Scopus and OpenAlex) classify their runs through this.
+    """
     unsealed: CaptureStatus | None = None
     discarded: CaptureStatus | None = None
     sealed = False
-    raw = project.raw_dir
-    runs = sorted(raw.iterdir()) if raw.is_dir() else []
-    for run in runs:
-        if not run.is_dir() or run.name in NON_RUN_DIRNAMES or run.name == CACHE_DIRNAME:
-            continue
-        if is_sealed(run):
+    for is_sealed_run, found in runs:
+        if is_sealed_run:
             sealed = True
-        elif (run / _CURSOR_FILENAME).is_file():
-            try:
-                cursor = _load_cursor_state(run / _CURSOR_FILENAME)
-            except (OSError, ValueError):
-                continue
-            found = CaptureStatus(
-                CaptureState.DISCARDED if cursor.discarded else CaptureState.UNSEALED,
-                run.name,
-                len(cursor.payload_files),
-            )
-            if cursor.discarded:
+        elif found is not None:
+            if found.state is CaptureState.DISCARDED:
                 discarded = found
             else:
                 unsealed = found
@@ -120,10 +113,30 @@ def _disk(project: Project) -> CaptureStatus:
     return discarded or CaptureStatus(CaptureState.NOT_STARTED)
 
 
+def _scopus_runs(project: Project) -> Iterator[tuple[bool, CaptureStatus | None]]:
+    raw = project.raw_dir
+    for run in sorted(raw.iterdir()) if raw.is_dir() else []:
+        if not run.is_dir() or run.name in NON_RUN_DIRNAMES or run.name == CACHE_DIRNAME:
+            continue
+        if is_sealed(run):
+            yield True, None
+        elif (run / _CURSOR_FILENAME).is_file():
+            try:
+                cursor = _load_cursor_state(run / _CURSOR_FILENAME)
+            except (OSError, ValueError):
+                continue
+            state = CaptureState.DISCARDED if cursor.discarded else CaptureState.UNSEALED
+            yield False, CaptureStatus(state, run.name, len(cursor.payload_files))
+
+
+def _disk(project: Project) -> CaptureStatus:
+    return disk_status(_scopus_runs(project))
+
+
 def capture_status(project: Project) -> CaptureStatus:
     """The capture's state. While it runs this reads memory only, so it returns at once."""
-    task = tasks.runner_for(project).status()
-    if task.name != TASK_NAME:  # another task (a build, an export) is not this screen's
+    task = tasks.status_of(project, TASK_NAME)  # another task (a build) is not this screen's
+    if task.name is None:
         return _disk(project)
     seen: CaptureProgress | None = task.progress
     shown: dict[str, Any] = (
@@ -181,9 +194,7 @@ def cancel_capture(project: Project) -> None:
 
     Only a capture is stopped: another task of the Project (a build, an export) is left running.
     """
-    runner = tasks.runner_for(project)
-    if runner.status().name in CAPTURE_TASK_NAMES:
-        runner.cancel()
+    tasks.cancel_named(project, *CAPTURE_TASK_NAMES)
 
 
 @write_operation

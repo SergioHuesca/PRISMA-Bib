@@ -1,4 +1,4 @@
-"""The Screening step: hosts the library's Screener inside the stepper (ticket #332)."""
+"""The Screening step: hosts the library's Screener inside the stepper."""
 
 from __future__ import annotations
 

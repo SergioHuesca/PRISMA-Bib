@@ -1,4 +1,4 @@
-"""Screening as the screen sees it (GUI spec #312, ticket #332).
+"""Screening as the screen sees it.
 
 Screening has no CLI path, so the layer wraps the library's own :class:`ScreeningQueue` and
 :class:`Screener` and adds only: what is missing, the Reviewer, the lock on every Decision, the

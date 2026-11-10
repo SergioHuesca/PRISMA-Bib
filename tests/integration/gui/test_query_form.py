@@ -16,6 +16,7 @@ from prismabib.gui.query_form import build_query_form
 from prismabib.gui.query_form_model import ENRICHMENT_REASON
 from prismabib.project import Project
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 
 pytestmark = pytest.mark.integration
@@ -38,10 +39,6 @@ def _make(tmp_path: Path, mode: str = "openalex") -> Project:
 
 def _w(view: pn.viewable.Viewable, kind: type[pn.widgets.Widget], name: str) -> pn.widgets.Widget:
     return next(w for w in view.select(kind) if w.name == name)
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _add(view: pn.viewable.Viewable, label: str, text: str) -> None:

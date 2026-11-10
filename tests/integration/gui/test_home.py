@@ -15,6 +15,7 @@ from prismabib.gui import layer
 from prismabib.gui.home import build_home
 from prismabib.gui.home_model import FIREWALL_NOTE
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import text as _text  # re-exported: other modules import it
 
 pytestmark = pytest.mark.integration
 
@@ -26,10 +27,6 @@ def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
     path = tmp_path_factory.mktemp("user") / "settings.env"
     monkeypatch.setenv(USER_FILE_OVERRIDE_VAR, str(path))
     return path
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _button(view: pn.viewable.Viewable, name: str) -> pn.widgets.Button:

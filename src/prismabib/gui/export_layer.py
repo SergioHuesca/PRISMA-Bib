@@ -1,4 +1,4 @@
-"""Export the citable bundle as the screen sees it (GUI spec #312, ticket #335).
+"""Export the citable bundle as the screen sees it: start, cancel, summary, git warnings.
 
 The export runs on the Project's task runner through the library's ``export_project`` and its
 progress and cancel hooks; a cancel stops at a safe point before anything is deleted, so no
@@ -44,9 +44,9 @@ class ExportSummary:
     warnings: tuple[str, ...]
 
 
-def progress_text(progress: object) -> str:
-    """A sentence for the last progress event the export reported."""
-    if not isinstance(progress, ProgressEvent):
+def progress_text(progress: ProgressEvent | None) -> str:
+    """A sentence for the last progress event the export reported (none yet: nothing)."""
+    if progress is None:
         return ""
     text = PHASE_TEXT.get(progress.phase, progress.phase)
     if progress.phase == "tables":
@@ -117,11 +117,13 @@ def start_export(session: Session) -> None:
 
 
 def cancel_export(project: Project) -> None:
-    """Stop the running export at its next safe point; the previous bundle stays."""
-    tasks.runner_for(project).cancel()
+    """Stop the running export at its next safe point; the previous bundle stays.
+
+    Only the export is stopped: another task of the Project (a capture) is left running.
+    """
+    tasks.cancel_named(project, TASK_NAME)
 
 
 def export_status(project: Project) -> tasks.TaskStatus:
     """The runner's status when it is about the export, else an idle one (a memory read)."""
-    status = tasks.runner_for(project).status()
-    return status if status.name == TASK_NAME else tasks.TaskStatus()
+    return tasks.status_of(project, TASK_NAME)

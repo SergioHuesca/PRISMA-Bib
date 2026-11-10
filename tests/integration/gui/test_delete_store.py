@@ -21,6 +21,7 @@ from prismabib.gui.delete_store import build_delete_store, confirmation_text
 from prismabib.project import Project
 from prismabib.store.stamp import stamp_path
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.prisma_helpers import CorpusSpec, RecordSpec, build_project
 
@@ -57,10 +58,6 @@ def _kept(project: Project) -> dict[str, str]:
 
 def _button(view: pn.viewable.Viewable, name: str) -> pn.widgets.Button:
     return next(b for b in view.select(pn.widgets.Button) if b.name == name)
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _delete(project: Project) -> None:

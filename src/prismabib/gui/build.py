@@ -1,4 +1,4 @@
-"""The build screen: one button, progress, cancel, and the summary (ticket #331)."""
+"""The build screen: one button, progress, cancel, and the summary."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Stopping the app from its own screen (GUI spec #312, ticket #323, story 66).
+"""Stopping the app from its own screen.
 
 A background task (the runner of ticket #17) registers itself here with its cancel flag. Stopping
 while one runs needs a confirmation first; once confirmed, every flag is set, so a capture ends at

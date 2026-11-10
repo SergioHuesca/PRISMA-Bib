@@ -1,4 +1,4 @@
-"""The New Project screen and the sidebar stepper (ticket #324)."""
+"""The New Project screen and the sidebar stepper."""
 
 from __future__ import annotations
 

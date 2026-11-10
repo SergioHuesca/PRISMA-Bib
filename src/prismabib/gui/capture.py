@@ -1,4 +1,4 @@
-"""The capture screen: confirm, run in the background, cancel, resume, discard (ticket #329)."""
+"""The capture screen: confirm, run in the background, cancel, resume, discard."""
 
 from __future__ import annotations
 

@@ -1,8 +1,17 @@
-"""The layer every screen calls (GUI spec #312, ticket #319).
+"""The layer every screen calls.
 
 Plain functions over library code: no widgets, no subprocess, no terminal text. Screens call an
 operation, and on failure pass the exception to :func:`translate`, which returns a sentence and the
-next step. Step progress and step locks are functions of what is on disk.
+next step. It holds:
+
+- step progress and step locks, which are functions of what is on disk;
+- opening and creating a Project (format-version check, path-length limit);
+- the single-writer :class:`Session` lock and the write operations that refuse a read-only one
+  (Source mode, query, Criteria, with a one-time backup of a hand-edited ``criteria.yaml``);
+- :func:`translate`, the exception-to-sentence table.
+
+The longer operations (capture, build, export, screening, Flow counts) live in the sibling
+``*_layer`` modules and use the same :class:`Session` and :func:`translate`.
 """
 
 from __future__ import annotations
@@ -232,7 +241,7 @@ def open_project(slug: str, *, root: Path) -> Project:
     return project
 
 
-def _require_reviewer(reviewer: str) -> str:
+def require_reviewer(reviewer: str) -> str:
     if not reviewer.strip():
         raise ValidationError("Enter the reviewer name: every Decision will carry it.")
     return reviewer.strip()
@@ -246,7 +255,7 @@ def create_project(
     The path limit (see :mod:`prismabib.gui.path_limit`) is checked on the deepest path the
     Project can hold, before anything is written.
     """
-    name = _require_reviewer(reviewer)
+    name = require_reviewer(reviewer)
     if (root / slug).exists():
         raise ValidationError(f"A Project named {slug!r} already exists. Choose another name.")
     if refusal := path_refusal(root, slug):
@@ -454,7 +463,7 @@ def write_operation(fn: _F) -> _F:
 def set_source_mode(session: Session, mode: SourceMode, *, reviewer: str) -> SourceModeEvent | None:
     """Change the Source mode unless the session is read-only or the step is locked."""
     project = session.require_writable()
-    name = _require_reviewer(reviewer)
+    name = require_reviewer(reviewer)
     require_unlocked(project, "source_mode")
     return set_mode(project, mode, actor=name)
 

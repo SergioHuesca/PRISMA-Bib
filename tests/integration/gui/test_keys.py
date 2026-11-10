@@ -19,6 +19,7 @@ from prismabib.project import Project
 from prismabib.report.export import export_project
 from prismabib.store.load import build_store
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR, write_user_settings
+from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.openalex_search_helpers import work, write_search_run
 
@@ -45,10 +46,6 @@ def _client(status: int) -> httpx.Client:
 
 def _w(view: pn.viewable.Viewable, kind: type[pn.widgets.Widget], name: str) -> pn.widgets.Widget:
     return next(w for w in view.select(kind) if w.name == name)
-
-
-def _text(view: pn.viewable.Viewable) -> str:
-    return "\n".join(str(p.object) for p in view.select(pn.pane.Markdown))
 
 
 def _save(view: pn.Column, value: str = SECRET) -> None:

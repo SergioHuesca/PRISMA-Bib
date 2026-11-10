@@ -1,4 +1,4 @@
-"""What the Settings view shows and changes (GUI spec #312, ticket #323)."""
+"""What the Settings view shows and changes."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from prismabib.gui import home_model
-from prismabib.gui.layer import _require_reviewer
+from prismabib.gui.layer import require_reviewer
 from prismabib.user_settings import (
     REVIEWER_NAME_KEY,
     read_user_setting,
@@ -38,6 +38,6 @@ def save_reviewer_name(name: str) -> str:
     Raises:
         ValidationError: If the name is blank.
     """
-    name = _require_reviewer(name)
+    name = require_reviewer(name)
     write_user_settings({REVIEWER_NAME_KEY: name})
     return name
