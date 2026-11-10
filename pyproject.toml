@@ -273,6 +273,7 @@ module = [
   "prismabib.capture.manual_ui",
   "prismabib.credentials_ui",
   "prismabib.gui.app",
+  "prismabib.gui.criteria",
   "prismabib.gui.home",
   "prismabib.gui.new_project",
   "prismabib.gui.settings",

@@ -9,6 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer
 from prismabib.gui import new_project_model as npm
+from prismabib.gui.criteria import build_criteria
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting, write_user_settings
 
@@ -79,6 +80,7 @@ def build_stepper(project: Project) -> pn.Row:
     """The sidebar of steps (finished ones marked, read from disk) beside the chosen step."""
     rows = npm.stepper_rows(project)
     detail = pn.pane.Markdown("")
+    body = pn.Column(detail)
     buttons: list[pn.widgets.Button] = []
 
     def show(row: npm.StepRow) -> None:
@@ -86,6 +88,7 @@ def build_stepper(project: Project) -> pn.Row:
         if row.lock:
             text += f"\n\nRead-only. {row.lock}"
         detail.object = text
+        body[:] = [detail, *([build_criteria(project)] if row.key == "criteria" else [])]
 
     def _shower(row: npm.StepRow) -> Callable[[object], None]:
         return lambda _: show(row)
@@ -101,6 +104,6 @@ def build_stepper(project: Project) -> pn.Row:
     show(next((r for r in rows if r.current), rows[-1]))  # resume at the first unfinished step
     return pn.Row(
         pn.Column(pn.pane.Markdown(f"**{project.title}**"), *buttons, width=300),
-        detail,
+        body,
         sizing_mode="stretch_width",
     )
