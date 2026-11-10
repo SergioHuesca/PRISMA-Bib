@@ -398,6 +398,48 @@ def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
         assert result.exit_code == 0, result.output
     assert _sealed_hash(gui) == _sealed_hash(cli)
     assert_parity(_by_run(gui), _by_run(cli))
+
+
+_GIT_FIELDS = ("git_commit", "dirty", "commit_is_pushed")
+
+
+def _export_files(project: project_module.Project) -> dict[str, str]:
+    """Every file of ``exports/`` (figures, tables, records, conflicts, numbers, manifest),
+    normalised, with only the manifest's git fields dropped (a tool install has no repository)."""
+    import json
+
+    out = normalise(project.root / "exports")
+    manifest = json.loads(out["manifest.json"])
+    out["manifest.json"] = json.dumps({k: v for k, v in manifest.items() if k not in _GIT_FIELDS})
+    return out
+
+
+def test_parity__export__numbers_and_sealed_hash_exact_rest_of_bundle_normalised(
+    tmp_path: Path,
+) -> None:
+    """Ticket #335: the screen's export equals ``prismabib export`` for the same Project."""
+    from prismabib.gui import export_layer as xl
+    from prismabib.gui import tasks
+    from tests.integration.gui.test_screening import make_project
+
+    gui = make_project(tmp_path / "gui")
+    cli = make_project(tmp_path / "cli")
+    with layer.Session(gui) as session:
+        xl.start_export(session)
+    tasks.runner_for(gui).join(30)
+    assert xl.export_status(gui).outcome == "done"
+    result = CliRunner().invoke(app, ["export", "demo", "--root", str(tmp_path / "cli")])
+    assert result.exit_code == 0, result.output
+
+    gui_numbers = (gui.root / "exports" / "numbers.json").read_bytes()
+    assert gui_numbers == (cli.root / "exports" / "numbers.json").read_bytes()  # no normalising
+    assert _sealed_hash(gui) == _sealed_hash(cli)
+    gui_out, cli_out = _export_files(gui), _export_files(cli)
+    assert {"manifest.json", "records.csv", "figures/prisma_flow.svg"} <= gui_out.keys()
+    assert_parity(gui_out, cli_out)
+    gui_out["records.csv"] += "x"
+    with pytest.raises(AssertionError):  # liveness: one altered byte must fail
+        assert_parity(gui_out, cli_out)
     tasks.reset_runners()
 
 

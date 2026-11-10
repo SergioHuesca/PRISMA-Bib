@@ -277,6 +277,7 @@ module = [
   "prismabib.gui.capture",
   "prismabib.gui.criteria",
   "prismabib.gui.delete_store",
+  "prismabib.gui.export",
   "prismabib.gui.flow",
   "prismabib.gui.home",
   "prismabib.gui.keys",

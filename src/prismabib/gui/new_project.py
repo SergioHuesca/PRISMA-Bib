@@ -12,6 +12,7 @@ from prismabib.gui import new_project_model as npm
 from prismabib.gui.build import build_build
 from prismabib.gui.capture import build_capture_step
 from prismabib.gui.criteria import build_criteria
+from prismabib.gui.export import build_export
 from prismabib.gui.flow import build_flow
 from prismabib.gui.keys import build_keys
 from prismabib.gui.query_form import build_query_form
@@ -107,6 +108,7 @@ def build_stepper(project: Project) -> pn.Row:
             *([build_build(project)] if row.key == "build" else []),
             *([build_flow(project)] if row.key == "flow" else []),
             *([build_screening(project)] if row.key == "screening" else []),
+            *([build_export(project)] if row.key == "export" else []),
         ]
 
     def _shower(row: npm.StepRow) -> Callable[[object], None]:
