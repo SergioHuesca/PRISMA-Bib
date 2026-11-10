@@ -200,6 +200,7 @@ class SearchPageResponse:
 
     status: int
     body: bytes
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -627,7 +628,7 @@ class OpenAlexClient:
         except httpx.HTTPError as exc:
             # Class name only: a message may echo the URL.
             raise UpstreamError(f"OpenAlex request failed ({type(exc).__name__}).") from exc
-        return SearchPageResponse(response.status_code, response.content)
+        return SearchPageResponse(response.status_code, response.content, dict(response.headers))
 
     def _search_request(self, params: Mapping[str, str]) -> httpx.Response:
         self._rate_limiter.acquire()
