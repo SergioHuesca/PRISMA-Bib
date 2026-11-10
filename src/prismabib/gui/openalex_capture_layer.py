@@ -31,7 +31,7 @@ from prismabib.project import Project
 from prismabib.query import build_openalex_query_for_project
 from prismabib.user_settings import load_settings
 
-TASK_NAME: Final = "The OpenAlex capture"
+TASK_NAME: Final = cl.OPENALEX_TASK_NAME
 
 BLOCKED_TEXT: Final = (
     "This run can never seal. It still blocks a change of Source mode, because its pages stay "

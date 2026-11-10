@@ -151,6 +151,67 @@ def test_start__read_only_session__is_refused(tmp_path: Path) -> None:
         cl.start_capture(second, confirmed=True)
 
 
+# -- another task on the same runner is not the capture ----------------------------------------
+
+
+def _run_other_task(project: Project, *, hold: threading.Event | None = None) -> None:
+    """A task that is not the capture (a build, say) on the Project's one shared runner."""
+
+    def work(cancel: threading.Event, report: Callable[[object], None]) -> str:
+        report("Adding the OpenAlex cascade")  # a build's progress is not a CaptureProgress
+        if hold is not None:
+            assert hold.wait(10)
+        return "built"
+
+    tasks.runner_for(project).start("Building the store", work)
+    if hold is None:
+        tasks.runner_for(project).join(10)
+
+
+def test_capture_status__after_another_task_finished__reads_the_disk_not_its_progress(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    _run_other_task(project)
+
+    status = cl.capture_status(project)  # was: AttributeError on the build's progress
+
+    assert status.state is S.NOT_STARTED
+    assert status.run_id is None
+
+
+def test_capture_status__another_task_running__is_not_shown_as_the_capture(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    hold = threading.Event()
+    _run_other_task(project, hold=hold)
+
+    status = cl.capture_status(project)
+    hold.set()
+    tasks.runner_for(project).join(10)
+
+    assert status.state is S.NOT_STARTED
+
+
+def test_cancel_capture__another_task_running__does_not_cancel_it(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    hold = threading.Event()
+    _run_other_task(project, hold=hold)
+
+    cl.cancel_capture(project)
+
+    assert not tasks.runner_for(project).status().cancelling
+    hold.set()
+    tasks.runner_for(project).join(10)
+    assert tasks.runner_for(project).status().outcome == "done"
+
+
+def test_capture_screen__after_a_build__builds_and_shows_not_started(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    _run_other_task(project)
+
+    assert "Not started" in _text(build_capture(project))
+
+
 # -- running, polling, cancel, resume ----------------------------------------------------------
 
 

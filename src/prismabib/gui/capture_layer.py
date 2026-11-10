@@ -31,6 +31,9 @@ from prismabib.query import build_query_for_project
 from prismabib.user_settings import load_settings
 
 TASK_NAME: Final = "The Scopus capture"
+OPENALEX_TASK_NAME: Final = "The OpenAlex capture"
+#: The tasks the capture screen's Cancel may stop.
+CAPTURE_TASK_NAMES: Final = frozenset({TASK_NAME, OPENALEX_TASK_NAME})
 
 
 class CaptureState(StrEnum):
@@ -120,6 +123,8 @@ def _disk(project: Project) -> CaptureStatus:
 def capture_status(project: Project) -> CaptureStatus:
     """The capture's state. While it runs this reads memory only, so it returns at once."""
     task = tasks.runner_for(project).status()
+    if task.name != TASK_NAME:  # another task (a build, an export) is not this screen's
+        return _disk(project)
     seen: CaptureProgress | None = task.progress
     shown: dict[str, Any] = (
         {}
@@ -172,8 +177,13 @@ def start_capture(session: Session, *, confirmed: bool, user_file: Path | None =
 
 
 def cancel_capture(project: Project) -> None:
-    """Stop the running capture at its next page; the run stays unsealed and resumable."""
-    tasks.runner_for(project).cancel()
+    """Stop the running capture at its next page; the run stays unsealed and resumable.
+
+    Only a capture is stopped: another task of the Project (a build, an export) is left running.
+    """
+    runner = tasks.runner_for(project)
+    if runner.status().name in CAPTURE_TASK_NAMES:
+        runner.cancel()
 
 
 @write_operation
