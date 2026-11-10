@@ -114,7 +114,11 @@ def _scaffold_years(project: Project) -> set[int]:
 
 
 def criteria_written(project: Project) -> bool:
-    """Whether ``criteria.yaml`` differs from the unmodified scaffold on any field.
+    """Whether the researcher has made ``criteria.yaml`` their own.
+
+    True when the form saved it (the file carries the header :func:`save_criteria` writes and
+    ``init``'s scaffold does not, so saving the defaults unchanged counts), or when it differs
+    from the unmodified scaffold on any field.
 
     ``temporal.year_end`` is the year the scaffold was written, so a Project created in an
     earlier year still counts as untouched until somebody edits that field to another year.
@@ -122,8 +126,11 @@ def criteria_written(project: Project) -> bool:
     """
     try:
         criteria = project.criteria
-    except ConfigError:
+        text = (project.root / "criteria.yaml").read_text(encoding="utf-8")
+    except (ConfigError, OSError):
         return False
+    if CRITERIA_HEADER_MARK in text:  # the form saved it: unrestricted by choice is still a choice
+        return True
     return all(criteria != scaffold_criteria(year) for year in _scaffold_years(project))
 
 
@@ -447,8 +454,10 @@ def release_all() -> None:
         session.close()
 
 
+#: The first words of the header the form writes; ``init``'s scaffold never carries them.
+CRITERIA_HEADER_MARK: Final = "# Eligibility criteria, written by the prismabib app."
 _CRITERIA_HEADER: Final = (
-    "# Eligibility criteria, written by the prismabib app. You can edit this file by hand.\n"
+    f"{CRITERIA_HEADER_MARK} You can edit this file by hand.\n"
     "# An empty list means no restriction. Unknown keys are refused.\n"
 )
 

@@ -159,6 +159,18 @@ def test_read_only_window__decision__is_refused_and_logged_nothing(tmp_path: Pat
     holder.close()
 
 
+def test_open__criteria_saved_unchanged_with_the_defaults__screening_is_not_blocked(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path, criteria=False)  # the init scaffold, store built
+    assert any("Criteria are not written" in gap for gap in sl.missing(project))
+
+    with layer.open_session("demo", root=tmp_path) as session:
+        layer.save_criteria(session, project.criteria)  # unrestricted, by choice
+
+    assert sl.missing(project) == []
+
+
 def test_open_early__says_what_is_missing(tmp_path: Path) -> None:
     project = make_project(tmp_path, built=False, criteria=False)
 

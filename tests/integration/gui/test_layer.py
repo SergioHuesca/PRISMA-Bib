@@ -28,7 +28,7 @@ from prismabib.errors import (
 from prismabib.gui import layer, path_limit
 from prismabib.gui import new_project_model as npm
 from prismabib.gui.layer import ErrorClass
-from prismabib.project import Project
+from prismabib.project import Project, scaffold_criteria
 from prismabib.source_mode import load_mode_events
 from prismabib.sources.openalex import DailyBudgetExhaustedError
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
@@ -148,6 +148,26 @@ def test_criteria_written__unreadable_file__is_not_written(project: Project) -> 
     (project.root / "criteria.yaml").write_text("version: [", encoding="utf-8")
 
     assert layer.criteria_written(project) is False
+
+
+def test_criteria_written__defaults_saved_unchanged__is_written(project: Project) -> None:
+    """A researcher who wants no restriction saves the form as it is: that is a decision."""
+    with layer.open_session("demo", root=project.root.parent) as session:
+        layer.save_criteria(session, project.criteria)
+
+    assert project.criteria == scaffold_criteria()  # nothing differs from the scaffold's data
+    assert layer.criteria_written(project) is True
+    assert layer.step_progress(project)["criteria"] is True
+
+
+def test_criteria_written__saved_by_the_app_then_hand_edited_keeping_the_header__is_written(
+    project: Project,
+) -> None:
+    with layer.open_session("demo", root=project.root.parent) as session:
+        layer.save_criteria(session, project.criteria)
+    _edit_criteria(project, "version: 0.1.0", "version: 0.1.1")
+
+    assert layer.criteria_written(project) is True
 
 
 def test_step_progress__unsealed_run__capture_not_done_but_locks_hold(project: Project) -> None:
