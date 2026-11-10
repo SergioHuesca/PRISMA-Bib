@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import textwrap
@@ -20,6 +21,14 @@ from prismabib.gui.launch import (
 )
 
 runner = CliRunner()
+#: Help and error text is drawn by rich, which colours it and wraps it to the terminal width on
+#: some machines (a CI runner, FORCE_COLOR). Fix the width and strip the colour before asserting.
+_PLAIN_ENV = {"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _plain(output: str) -> str:
+    return _ANSI.sub("", output)
 
 
 @pytest.mark.unit
@@ -130,18 +139,18 @@ def test_serve__refuses_a_non_loopback_host_before_binding_anything() -> None:
 
 @pytest.mark.unit
 def test_gui_command__has_no_option_to_bind_elsewhere() -> None:
-    result = runner.invoke(app, ["gui", "--host", "0.0.0.0"])
+    result = runner.invoke(app, ["gui", "--host", "0.0.0.0"], env=_PLAIN_ENV)
 
     assert result.exit_code != 0
-    assert "No such option" in result.output
+    assert "No such option" in _plain(result.output)
 
 
 @pytest.mark.unit
 def test_gui_command__help_works_and_names_the_no_browser_flag() -> None:
-    result = runner.invoke(app, ["gui", "--help"])
+    result = runner.invoke(app, ["gui", "--help"], env=_PLAIN_ENV)
 
     assert result.exit_code == 0
-    assert "--no-browser" in result.output
+    assert "--no-browser" in _plain(result.output)
 
 
 @pytest.mark.unit
@@ -154,11 +163,12 @@ def test_gui_help__base_install__never_imports_panel_or_param() -> None:
             sys.modules[name] = None  # a base install: importing any of these raises
         from typer.testing import CliRunner
         from prismabib.cli import app
-        result = CliRunner().invoke(app, ["gui", "--help"])
+        import re
+        result = CliRunner().invoke(app, ["gui", "--help"], env=ENV)
         assert result.exit_code == 0, result.output
-        assert "--no-browser" in result.output
+        assert "--no-browser" in re.sub(r"\\x1b\\[[0-9;?]*[A-Za-z]", "", result.output), result.output
         """
-    )
+    ).replace("ENV", repr(_PLAIN_ENV))
     done = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=False, timeout=120
     )
