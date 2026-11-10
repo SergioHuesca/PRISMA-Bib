@@ -81,8 +81,13 @@ def build_size_check(
             result.object = f"**{msg.sentence}** {msg.next_step} The saved query is unchanged."
             return
         state["verdict"] = model.verdict(count)
-        if scopus and state["verdict"] != "block":
-            note_size_check(project, build_query_for_project(project))
+        if state["verdict"] != "block":
+            note_size_check(
+                project,
+                build_query_for_project(project)
+                if scopus
+                else build_openalex_query_for_project(project),
+            )
         result.object = "\n\n".join(lines)
         if state["verdict"] == "block":
             notice.object = f"**{model.BLOCK_TEXT}**"

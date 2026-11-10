@@ -13,6 +13,7 @@ from prismabib.errors import ProjectLockedError, ValidationError
 from prismabib.gui import build_layer as bl
 from prismabib.gui import capture_layer as cl
 from prismabib.gui import layer
+from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui.layer import Session
 from prismabib.gui.query_form_model import QueryInputs
 
@@ -34,6 +35,9 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
         "save_criteria": lambda: layer.save_criteria(session, session.project.criteria),
         "start_capture": lambda: cl.start_capture(session, confirmed=True),
         "start_build": lambda: bl.start_build(session),
+        "start_openalex_capture": lambda: oal.start_openalex_capture(
+            session, budget=1, confirmed=True
+        ),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
     }
 
