@@ -178,9 +178,9 @@ def _quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _validated(updates: Mapping[str, str | None]) -> None:
+def _validated(updates: Mapping[str, str | None], allowed: tuple[str, ...] = MANAGED_KEYS) -> None:
     for name, value in updates.items():
-        if name not in MANAGED_KEYS:
+        if name not in allowed:
             raise ConfigError(f"{name} is not a credential this command manages.")
         if value is None:
             continue
@@ -214,13 +214,22 @@ def _edited(text: str, updates: Mapping[str, str | None]) -> str:
     return "".join(out)
 
 
-def write_env(env_file: Path, updates: Mapping[str, str | None]) -> Path:
+def write_env(
+    env_file: Path,
+    updates: Mapping[str, str | None],
+    *,
+    allowed: tuple[str, ...] = MANAGED_KEYS,
+    check_ignored: bool = True,
+) -> Path:
     """Set (or, with ``None``, remove) managed keys in ``env_file``, atomically and only if safe.
 
     Args:
         env_file: The file to write; created if missing. The ignore check runs against its
             resolved path, wherever it is.
         updates: ``NAME -> value`` for the managed keys; ``None`` removes the key.
+        allowed: The key names ``updates`` may hold.
+        check_ignored: ``False`` only for the per-user settings file, which is outside any
+            repository (see :mod:`prismabib.user_settings`).
 
     Returns:
         The resolved path that was written.
@@ -229,8 +238,8 @@ def write_env(env_file: Path, updates: Mapping[str, str | None]) -> Path:
         ConfigError: If a value is unusable, git does not confirm the file as ignored (see
             :func:`check_env_file_ignored`), or the write fails (the old file is left in place).
     """
-    _validated(updates)
-    path = check_env_file_ignored(env_file)
+    _validated(updates, allowed)
+    path = check_env_file_ignored(env_file) if check_ignored else env_file.resolve()
     try:
         old = path.read_bytes().decode("utf-8") if path.exists() else ""
     except (OSError, UnicodeDecodeError) as exc:
