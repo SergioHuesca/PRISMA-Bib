@@ -1,0 +1,318 @@
+"""The layer every screen calls: progress, errors, locks, opening (ticket #319)."""
+
+from __future__ import annotations
+
+import hashlib
+import subprocess
+from pathlib import Path
+
+import httpx
+import pytest
+from typer.testing import CliRunner
+
+from prismabib.cli import app
+from prismabib.errors import (
+    AuthError,
+    CaptureCancelledError,
+    ConfigError,
+    OperationCancelled,
+    ProjectLockedError,
+    ProjectVersionError,
+    QuotaExceededError,
+    RateLimitError,
+    StepLockedError,
+    UpstreamError,
+    ValidationError,
+)
+from prismabib.gui import layer
+from prismabib.gui.layer import ErrorClass
+from prismabib.project import Project
+from prismabib.sources.openalex import DailyBudgetExhaustedError
+from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path_factory.mktemp("user") / "settings.env"
+    monkeypatch.setenv(USER_FILE_OVERRIDE_VAR, str(path))
+    return path
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Project:
+    return layer.create_project(
+        "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
+    )
+
+
+def _seal(project: Project, name: str = "20260101T000000Z-aaaaaaaa") -> Path:
+    run = project.raw_dir / name
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text("{}", encoding="utf-8")
+    return run
+
+
+def _decide(project: Project) -> None:
+    project.decisions_path.write_text('{"schema_version": 1}\n', encoding="utf-8")
+
+
+def _tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
+    return digest.hexdigest()
+
+
+# -- step progress -------------------------------------------------------------------------------
+
+
+def test_step_progress__new_project__only_source_mode_done(project: Project) -> None:
+    progress = layer.step_progress(project)
+
+    assert list(progress) == list(layer.STEPS)
+    assert [s for s, done in progress.items() if done] == ["source_mode"]
+    assert layer.first_unfinished(progress) == "query"
+
+
+def test_step_progress__query_and_criteria_saved__marked_done(project: Project) -> None:
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('search = ""', 'search = "carbon"'),
+        encoding="utf-8",
+    )
+    criteria = project.root / "criteria.yaml"
+    criteria.write_text(
+        criteria.read_text(encoding="utf-8").replace("version: 0.1.0", "version: 1.0.0"),
+        encoding="utf-8",
+    )
+
+    progress = layer.step_progress(project)
+
+    assert progress["query"] and progress["criteria"]
+    assert layer.first_unfinished(progress) == "capture"
+
+
+def test_step_progress__unsealed_run__capture_not_done_but_locks_hold(project: Project) -> None:
+    (project.raw_dir / "openalex-search" / "r1").mkdir(parents=True)
+
+    assert layer.step_progress(project)["capture"] is False
+    assert layer.locks(project)["query"] is not None
+
+
+def test_step_progress__sealed_run_and_built_store__capture_and_build_done(
+    project: Project,
+) -> None:
+    _seal(project)
+    project.db_path.write_bytes(b"duckdb")
+
+    progress = layer.step_progress(project)
+
+    assert progress["capture"] and progress["build"]
+    assert not progress["screening"] and not progress["flow"]
+    assert layer.first_unfinished(progress) == "query"
+
+
+def test_step_progress__decisions_and_export__later_steps_done(project: Project) -> None:
+    project.db_path.write_bytes(b"duckdb")
+    _decide(project)
+    (project.root / "exports" / "bundle.zip").write_bytes(b"z")
+
+    progress = layer.step_progress(project)
+
+    assert progress["screening"] and progress["flow"] and progress["export"]
+
+
+def test_step_progress__project_made_by_the_cli__reads_the_same(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app, ["init", "cli", "--actor", "Ada", "--sources", "scopus", "--root", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+
+    opened = layer.open_project("cli", root=tmp_path)
+
+    progress = layer.step_progress(opened)
+    assert progress["source_mode"] and not progress["query"] and not progress["capture"]
+    assert layer.first_unfinished(progress) == "query"
+
+
+# -- errors --------------------------------------------------------------------------------------
+
+CASES: list[tuple[BaseException, ErrorClass, str]] = [
+    (ValidationError("please answer y, n or not sure"), ErrorClass.INPUT, "please answer"),
+    (ConfigError("Project directory x is missing its project.toml"), ErrorClass.PREREQUISITE, "x"),
+    (ConfigError("SCOPUS_API_KEY is not set"), ErrorClass.CREDENTIALS, "key is missing"),
+    (AuthError("HTTP 401"), ErrorClass.CREDENTIALS, "did not accept"),
+    (QuotaExceededError("weekly"), ErrorClass.QUOTA, "quota"),
+    (DailyBudgetExhaustedError("daily"), ErrorClass.QUOTA, "quota"),
+    (httpx.ConnectError("offline"), ErrorClass.NETWORK, "interrupted or is offline"),
+    (RateLimitError("429"), ErrorClass.NETWORK, "interrupted or is offline"),
+    (UpstreamError("503"), ErrorClass.NETWORK, "interrupted or is offline"),
+    (ProjectLockedError("held"), ErrorClass.PROJECT_LOCKED, "Another window"),
+    (StepLockedError("The query is read-only because x."), ErrorClass.STEP_LOCKED, "read-only"),
+    (ProjectVersionError("newer", "2"), ErrorClass.VERSION, "version 2"),
+    (CaptureCancelledError("stop"), ErrorClass.CANCELLED, "Stopped"),
+    (OperationCancelled("stop"), ErrorClass.CANCELLED, "Stopped"),
+    (RuntimeError("boom"), ErrorClass.UNEXPECTED, "unexpected"),
+]
+
+
+@pytest.mark.parametrize(("exc", "kind", "fragment"), CASES, ids=lambda v: type(v).__name__)
+def test_translate__library_error__class_sentence_and_next_step(
+    exc: BaseException, kind: ErrorClass, fragment: str
+) -> None:
+    message = layer.translate(exc)
+
+    assert message.error_class is kind
+    assert fragment in message.sentence
+    assert message.next_step.endswith((".", ")"))
+    assert message.next_step != message.sentence
+
+
+def test_error_classes__every_class__has_a_translation_and_a_test() -> None:
+    assert set(layer.SENTENCES) == set(layer.NEXT_STEPS) == set(ErrorClass)
+    assert {kind for _, kind, _ in CASES} == set(ErrorClass)
+
+
+def test_translate__unexpected_error__no_traceback_and_no_message_in_text_or_log(
+    _user_file: Path,
+) -> None:
+    secret = "sk-FAKE-KEY-123"
+    try:
+        raise RuntimeError(f"Traceback (most recent call last): key={secret}")
+    except RuntimeError as exc:
+        message = layer.translate(exc)
+
+    text = f"{message.sentence} {message.next_step}"
+    log = _user_file.with_name("gui.log")
+    assert "Traceback" not in text and secret not in text
+    assert str(log) in message.sentence
+    assert "RuntimeError" in log.read_text(encoding="utf-8")
+    assert secret not in log.read_text(encoding="utf-8")
+
+
+# -- locks ---------------------------------------------------------------------------------------
+
+
+def test_locks__source_mode__refused_once_a_run_exists(project: Project) -> None:
+    (project.raw_dir / "openalex-search" / "r1").mkdir(parents=True)
+
+    with pytest.raises(StepLockedError, match="Run exists"):
+        layer.set_source_mode(project, "scopus", reviewer="Ada")
+
+    assert project.source_mode == "openalex"
+
+
+def test_locks__source_mode__refused_once_a_decision_exists(project: Project) -> None:
+    _decide(project)
+
+    with pytest.raises(StepLockedError, match="Decision has been logged"):
+        layer.set_source_mode(project, "scopus", reviewer="Ada")
+
+
+def test_locks__query__read_only_once_the_first_run_starts(project: Project) -> None:
+    layer.require_unlocked(project, "query")
+    _seal(project)
+
+    with pytest.raises(StepLockedError, match="query is read-only because a Run"):
+        layer.require_unlocked(project, "query")
+
+
+def test_locks__criteria__read_only_once_the_first_decision_is_logged(project: Project) -> None:
+    _seal(project)
+    layer.require_unlocked(project, "criteria")
+    _decide(project)
+
+    with pytest.raises(StepLockedError, match="Criteria are read-only because a Decision"):
+        layer.require_unlocked(project, "criteria")
+
+
+def test_set_source_mode__unlocked__changes_the_mode(project: Project) -> None:
+    layer.set_source_mode(project, "scopus", reviewer="Ada")
+
+    assert project.source_mode == "scopus"
+
+
+# -- creating and opening ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_create_project__blank_reviewer__refused_and_nothing_written(
+    tmp_path: Path, name: str
+) -> None:
+    with pytest.raises(ValidationError, match="reviewer name"):
+        layer.create_project("x", title="X", root=tmp_path, source_mode="openalex", reviewer=name)
+
+    assert not (tmp_path / "x").exists()
+
+
+def test_create_project__existing_folder__refused_not_overwritten(project: Project) -> None:
+    before = _tree_digest(project.root)
+
+    with pytest.raises(ValidationError, match="already exists"):
+        layer.create_project(
+            "demo", title="Other", root=project.root.parent, source_mode="scopus", reviewer="Bo"
+        )
+
+    assert _tree_digest(project.root) == before
+
+
+def _log_with_version(project: Project, version: str) -> None:
+    project.decisions_path.write_text(f'{{"schema_version": {version}}}\n', encoding="utf-8")
+
+
+def test_open_project__one_version_older__opens(project: Project) -> None:
+    _log_with_version(project, "0")
+
+    assert layer.open_project("demo", root=project.root.parent).slug == "demo"
+
+
+@pytest.mark.parametrize(
+    ("content", "kind", "found"),
+    [
+        ('{"schema_version": 2}\n', "newer", "2"),
+        ('{"schema_version": 7}\n{"schema_version": 1}\n', "newer", "7"),
+        ('{"schema_version": -1}\n', "older", "-1"),
+        ("{not json\n", "unreadable", None),
+        ('{"no_version": 1}\n', "unreadable", None),
+        ('{"schema_version": "1"}\n', "unreadable", None),
+    ],
+)
+def test_open_project__other_version__refused_with_message_and_folder_untouched(
+    project: Project, content: str, kind: str, found: str | None
+) -> None:
+    project.decisions_path.write_text(content, encoding="utf-8")
+    before = _tree_digest(project.root)
+
+    with pytest.raises(ProjectVersionError) as caught:
+        layer.open_project("demo", root=project.root.parent)
+
+    message = layer.translate(caught.value)
+    assert message.error_class is ErrorClass.VERSION
+    assert (found is None) or f"version {found}" in message.sentence
+    assert "has not been changed" in message.sentence
+    assert caught.value.kind == kind
+    assert _tree_digest(project.root) == before
+
+
+# -- no subprocess -------------------------------------------------------------------------------
+
+
+def test_layer__operations__never_start_a_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("subprocess started")
+
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
+
+    made = layer.create_project("p", title="P", root=tmp_path, source_mode="scopus", reviewer="Ada")
+    opened = layer.open_project("p", root=tmp_path)
+    layer.set_source_mode(opened, "scopus+openalex", reviewer="Ada")
+    layer.step_progress(opened)
+    layer.locks(opened)
+    layer.translate(RuntimeError("x"))
+
+    assert made.slug == "p"

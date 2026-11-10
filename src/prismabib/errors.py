@@ -125,3 +125,25 @@ class AnalysisError(PrismabibError):
     naive figure computed by silently dropping the offending input) is
     exactly the "plausible wrong number" BUILD_PLAN §1.4 exists to prevent.
     """
+
+
+class StepLockedError(PrismabibError):
+    """A change to a step that is read-only; the message is the reason, in the researcher's words."""
+
+
+class ProjectLockedError(PrismabibError):
+    """Another window or process holds the Project's write lock."""
+
+
+class ProjectVersionError(PrismabibError):
+    """A Project's format version is not one this version of prismabib opens.
+
+    Attributes:
+        kind: ``older`` (before the previous format), ``newer``, or ``unreadable``.
+        found: The version found, as text, or ``None`` when none could be read.
+    """
+
+    def __init__(self, kind: str, found: str | None, detail: str = "") -> None:
+        super().__init__(f"Project format version {found or 'unknown'} is {kind}. {detail}".strip())
+        self.kind = kind
+        self.found = found
