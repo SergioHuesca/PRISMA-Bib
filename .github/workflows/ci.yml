@@ -306,8 +306,18 @@ jobs:
 
       - name: Both runs produced the same numbers
         run: |
-          cmp "$RUNNER_TEMP/digest-utc.txt" "$RUNNER_TEMP/digest-kathmandu.txt"
-          cmp "$RUNNER_TEMP/digest-utc.txt.chain" "$RUNNER_TEMP/digest-kathmandu.txt.chain"
+          status=0
+          for f in digest-utc.txt digest-utc.txt.chain; do
+            g="${f/utc/kathmandu}"
+            if ! cmp "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g"; then
+              status=1
+              echo "::group::$f versus $g"
+              head -v "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g"
+              diff "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g" || true
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
 
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the

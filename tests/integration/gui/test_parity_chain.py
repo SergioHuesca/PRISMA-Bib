@@ -413,10 +413,12 @@ def test_chain__layer_equals_cli_at_every_stage(chains: Any) -> None:
     assert_chain(runs["layer"], runs["cli"])
     target = os.environ.get("PRISMABIB_PARITY_DIGEST")
     if target:
+        # pytest-randomly shuffles the order, so merge by mode and write sorted, never append
         path = Path(f"{target}.chain")
-        line = f"{mode} {digest(*(runs[k][s] for s in STAGES for k in ('layer', 'cli')))}\n"
-        with path.open("a", encoding="utf-8") as handle:  # one line per mode, in a fixed order
-            handle.write(line)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        mine = digest(*(runs[k][s] for s in STAGES for k in ("layer", "cli")))
+        merged = {line.split()[0]: line for line in lines} | {mode: f"{mode} {mine}"}
+        path.write_text("".join(f"{merged[m]}\n" for m in sorted(merged)), encoding="utf-8")
 
 
 def test_chain__cli_project_continues_in_the_layer__export_equals_the_all_cli_run(
