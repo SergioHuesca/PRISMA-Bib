@@ -323,6 +323,27 @@ def _default_criteria_yaml(source_mode: SourceMode | None = None) -> str:
     return _DEFAULT_CRITERIA_YAML.format(year=datetime.now(UTC).year, **notes)
 
 
+def scaffold_criteria(year: int | None = None) -> Criteria:
+    """The Criteria an untouched ``criteria.yaml`` from :meth:`Project.init` parses to.
+
+    Args:
+        year: The year ``temporal.year_end`` was set to (the year the Project was created);
+            the current UTC year when omitted.
+
+    Returns:
+        The scaffold as a model, so a caller can tell a file nobody has edited from one
+        somebody has, on every field and not only a few.
+    """
+    scaffold = Criteria.model_validate(yaml.safe_load(_default_criteria_yaml()))
+    if year is None:
+        return scaffold
+    return scaffold.model_copy(
+        update={
+            "temporal": TemporalCriteria(year_start=scaffold.temporal.year_start, year_end=year)
+        }
+    )
+
+
 def _default_project_toml(slug: str, title: str, source_mode: SourceMode | None = None) -> str:
     """Render the default ``project.toml`` content written by :meth:`Project.init`.
 

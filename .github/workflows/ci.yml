@@ -268,6 +268,57 @@ jobs:
       - name: Two machines, one numbers.json
         run: python3 scripts/compare_reference_numbers.py exported
 
+  # GUI spec #312 (#320). The layer-versus-CLI parity test, run under two time zones and
+  # locales; the digest of the normalised outputs must be the same in both. Not a required
+  # check: the same precedent as `notebooks`.
+  gui-parity:
+    name: gui-parity
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Generate the de_DE locale
+        run: sudo locale-gen de_DE.UTF-8 en_US.UTF-8
+
+      - name: Parity under UTC and en-US
+        env:
+          TZ: UTC
+          LC_ALL: en_US.UTF-8
+          PRISMABIB_PARITY_DIGEST: ${{ runner.temp }}/digest-utc.txt
+        run: uv run pytest tests/integration/gui/test_parity.py tests/integration/gui/test_parity_chain.py
+
+      - name: Parity under Asia/Kathmandu (UTC+05:45) and de-DE
+        env:
+          TZ: Asia/Kathmandu
+          LC_ALL: de_DE.UTF-8
+          PRISMABIB_PARITY_DIGEST: ${{ runner.temp }}/digest-kathmandu.txt
+        run: uv run pytest tests/integration/gui/test_parity.py tests/integration/gui/test_parity_chain.py
+
+      - name: Both runs produced the same numbers
+        run: |
+          status=0
+          for f in digest-utc.txt digest-utc.txt.chain; do
+            g="${f/utc/kathmandu}"
+            if ! cmp "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g"; then
+              status=1
+              echo "::group::$f versus $g"
+              head -v "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g"
+              diff "$RUNNER_TEMP/$f" "$RUNNER_TEMP/$g" || true
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the
   # branch, so it is promoted only after it has run green on `main`.
@@ -471,7 +522,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install (a peer's minimal install)
-        run: uv sync --extra viz --extra notebook
+        run: uv sync --extra viz --extra notebook --extra gui
 
       - name: prismabib --version
         run: uv run prismabib --version
@@ -481,3 +532,6 @@ jobs:
 
       - name: OpenAlex-only first run, offline
         run: uv run python scripts/clean_install_scenario.py
+
+      - name: gui launch smoke
+        run: uv run python scripts/gui_launch_smoke.py

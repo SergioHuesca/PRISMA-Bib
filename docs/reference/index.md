@@ -664,6 +664,25 @@ that own their data; the four tables here are what Layer 1 and the decision log 
       show_source: true
       members_order: source
 
+## gui
+
+The local app behind `prismabib gui` (needs the `gui` extra). It serves on the loopback address
+only and rejects any request whose Host or Origin is not the local app. Only `gui.launch` can
+be imported without the extra.
+
+::: prismabib.gui
+    options:
+      show_root_heading: true
+      members: false
+
+### gui.launch
+
+::: prismabib.gui.launch
+    options:
+      show_root_heading: true
+      show_source: true
+      members_order: source
+
 ## cli
 
 The `prismabib` console script: `init | search | build | flow`, plus `--root/-r` and

@@ -55,6 +55,7 @@ from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.manual_commands import register_manual_commands
 from prismabib.capture.openalex_search_commands import openalex_search as _openalex_search_command
+from prismabib.capture.progress import CaptureProgress
 from prismabib.capture.registrations import (
     REVERSAL_REASONS,
     MatchRule,
@@ -74,6 +75,14 @@ from prismabib.errors import (
     ValidationError,
 )
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
+from prismabib.gui.launch import register_gui_command
+from prismabib.onboarding import (
+    create_project,
+    next_steps,
+    not_sure_notes,
+    parse_access_answer,
+    source_mode_from_answer,
+)
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
@@ -117,6 +126,7 @@ app.command("openalex")(_openalex_command)
 app.command("openalex-search")(_openalex_search_command)
 register_manual_commands(app)
 register_source_commands(app)
+register_gui_command(app)
 app.add_typer(credentials_app)
 
 _ROOT_OPTION = typer.Option(
@@ -183,7 +193,7 @@ def _fail(exc: PrismabibError) -> NoReturn:
 
 
 @contextmanager
-def _reporting_errors() -> Iterator[None]:
+def reporting_errors() -> Iterator[None]:
     """Turn any :class:`PrismabibError` raised inside into a clean CLI failure.
 
     Yields:
@@ -198,6 +208,10 @@ def _reporting_errors() -> Iterator[None]:
         yield
     except PrismabibError as exc:
         _fail(exc)
+
+
+#: The name the command modules import; ``reporting_errors`` is the public one.
+_reporting_errors = reporting_errors
 
 
 def _version_callback(value: bool) -> None:
@@ -249,41 +263,12 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-_ACCESS_ANSWERS: Final = {
-    "y": "yes",
-    "yes": "yes",
-    "n": "no",
-    "no": "no",
-    "s": "not sure",
-    "not sure": "not sure",
-}
-
-
 def _parse_access_answer(text: str) -> str:
     """Normalise an answer to the access question; anything else makes click ask again."""
-    answer = _ACCESS_ANSWERS.get(" ".join(text.lower().split()))
-    if answer is None:
-        raise typer.BadParameter("please answer y, n or not sure")
-    return answer
-
-
-def _not_sure_notes(slug: str) -> list[str]:
-    """What to print once the "not sure" choice has been recorded."""
-    return [
-        "Mode openalex was recorded: this tool cannot assume you have Scopus access.",
-        (
-            "To check a Scopus key later, run `prismabib credentials set scopus` and then "
-            "`prismabib credentials test scopus` (one request; it needs no project). Only "
-            "`credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` "
-            "need a project in a Scopus mode."
-        ),
-        (
-            f"To switch: `prismabib sources {slug} --set scopus --actor NAME` (or "
-            "`--set scopus+openalex`). It is refused once any OpenAlex search run exists under "
-            "raw/openalex-search/ (whatever its state) or screening decisions exist; then "
-            "create a new project."
-        ),
-    ]
+    try:
+        return parse_access_answer(text)
+    except ValidationError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def _choose_source_mode(sources: _Sources | None) -> tuple[SourceMode, bool]:
@@ -304,10 +289,10 @@ def _choose_source_mode(sources: _Sources | None) -> tuple[SourceMode, bool]:
     access = typer.prompt(
         "Do you have access to Scopus? [y/n/not sure]", value_proc=_parse_access_answer
     )
-    if access in ("no", "not sure"):
-        return "openalex", access == "not sure"
+    if access != "yes":
+        return source_mode_from_answer(access), access == "not sure"
     fill = typer.confirm("Also fill missing fields of Scopus records from OpenAlex?", default=True)
-    return ("scopus+openalex" if fill else "scopus"), False
+    return source_mode_from_answer(access, fill_gaps=fill), False
 
 
 def _choose_actor(actor: str | None) -> str:
@@ -386,9 +371,12 @@ def init(
         else:
             mode, not_sure = _choose_source_mode(sources)
             actor_name = _choose_actor(actor)
-        project = Project.init(
-            slug, title=title, root=projects_root, source_mode=mode, actor=actor_name
-        )
+        if mode is not None:
+            project = create_project(
+                slug, title=title, root=projects_root, source_mode=mode, reviewer=actor_name or ""
+            )
+        else:
+            project = Project.init(slug, title=title, root=projects_root)
 
         _echo(f"{'Reused' if existed else 'Created'} project {slug!r} at {project.root}")
         if mode is not None:
@@ -396,59 +384,16 @@ def init(
                 f"Sources mode: {mode} (recorded by {actor_name}; change it with `prismabib sources`)"
             )
         if not_sure:
-            for note in _not_sure_notes(slug):
+            for note in not_sure_notes(slug):
                 _echo(note)
-        _echo()
-        openalex = project.source_mode == "openalex"
-        if existed:
-            _echo(
-                "project.toml and criteria.yaml were already there and were left exactly "
-                "as they are; any missing directory has been recreated."
-            )
-            _echo()
-            _echo("The two files that define this review are, in the order they are used:")
-        else:
-            command = "openalex-search" if openalex else "search"
-            _echo(
-                f"`prismabib {command}` cannot run until you edit these two files, in this order:"
-            )
-        _echo()
-        _echo(f"  1. {project.root / 'project.toml'}")
-        if openalex:
-            _echo(
-                "     Fill in `search` under [openalex_query] -- the OpenAlex search itself "
-                '(words, "quoted phrases", uppercase AND / OR / NOT). It is scaffolded empty, '
-                "and an empty query is refused rather than sent."
-            )
-        else:
-            _echo(
-                "     Fill in [query] terms / compound_terms -- the Boolean search itself. They "
-                "are scaffolded empty, and an empty query is refused rather than silently run "
-                "against all of Scopus."
-            )
-        _echo(f"  2. {project.root / 'criteria.yaml'}")
-        # An OpenAlex work never carries a language, so that rule cannot exclude anything.
-        restricted = "doc_types.include" if openalex else "doc_types.include and languages"
-        _echo(
-            f"     Set temporal.year_start / year_end, and whichever of {restricted} "
-            "your protocol restricts; every list left empty means no restriction on "
-            "that dimension, which is a real eligibility choice rather than a placeholder. "
-            "Replace the starter exclusion reason codes with the ones your review actually "
-            "distinguishes, and bump `version` whenever you change any of it. The file's own "
-            "comments explain each block."
-        )
-        _echo()
-        _echo("Then, in order:")
-        if openalex:
-            if openalex_key_missing():
-                _echo("  prismabib credentials set openalex   # a free OpenAlex key is required")
-            _echo(f"  prismabib openalex-search {slug} --budget 30 --dry-run   # cost; no request")
-            _echo(f"  prismabib openalex-search {slug} --budget 30   # resumable")
-            _echo(f"  prismabib build {slug} --rebuild")
-        else:
-            _echo(f"  prismabib search {slug}   # spends Scopus quota; resumable")
-            _echo(f"  prismabib build {slug}")
-        _echo(f"  prismabib flow {slug}")
+        for line in next_steps(
+            slug,
+            project.root,
+            mode=project.source_mode,
+            existed=existed,
+            key_missing=openalex_key_missing(),
+        ):
+            _echo(line)
 
 
 # ---------------------------------------------------------------------------
@@ -456,92 +401,74 @@ def init(
 # ---------------------------------------------------------------------------
 
 
-class _CaptureProgress:
-    """Renders ``capture.*`` log events as human progress lines.
+def _render_progress(emit: Callable[[str], None]) -> Callable[[CaptureProgress], None]:
+    """Turn the capture's progress callback into the human progress lines of ``search``.
 
-    :func:`~prismabib.capture.writer.capture_search` already emits a structured
-    event per page written; this turns that stream into progress a person can
-    read, rather than the CLI inventing a second, unrelated progress
-    abstraction (a spinner counting nothing, or a percentage guessed from page
-    size). It is installed as a structlog processor for the duration of one
-    ``search`` and removed afterwards -- see :func:`_capture_progress`.
+    The callback (:class:`~prismabib.capture.progress.CaptureProgress`) is the one source of
+    progress; this only words it.
 
-    The four events it renders are dropped from the normal log stream so the
-    same information is not printed twice; every other event passes through
-    untouched.
+    Args:
+        emit: Where to write each progress line (stderr in practice; a list's ``append`` in tests).
+
+    Returns:
+        The ``on_progress`` callback to pass to ``capture_search``.
     """
 
-    def __init__(self, emit: Callable[[str], None]) -> None:
-        """Args:
-        emit: Where to write each progress line (stderr in practice; a
-            list's ``append`` in tests).
-        """
-        self._emit = emit
-        self._records = 0
-
-    def __call__(
-        self, _logger: WrappedLogger, _method_name: str, event_dict: EventDict
-    ) -> EventDict:
-        """Structlog processor entry point.
-
-        Args:
-            _logger: The wrapped logger; unused (structlog passes all three
-                positionally, so the name is free to say so).
-            _method_name: The log method called; unused.
-            event_dict: The event being logged.
-
-        Returns:
-            ``event_dict`` unchanged, for any event this does not render.
-
-        Raises:
-            structlog.DropEvent: For an event rendered as a progress line, so
-                it is not also printed in raw structured form.
-        """
-        event = event_dict.get("event")
-        if event == "capture.run_started":
-            self._emit(f"Run {event_dict.get('run_id')} started.")
-        elif event == "capture.run_resumed":
-            pages = event_dict.get("pages_already_written", 0)
-            self._emit(
-                f"Resuming run {event_dict.get('run_id')}: {pages} page(s) already in "
+    def render(progress: CaptureProgress) -> None:
+        if progress.event == "started":
+            emit(f"Run {progress.run_id} started.")
+        elif progress.event == "resumed":
+            emit(
+                f"Resuming run {progress.run_id}: {progress.pages_done} page(s) already in "
                 "Layer 0, continuing from the saved cursor -- those pages are not "
                 "re-fetched and cost no quota."
             )
-        elif event == "capture.page_written":
-            self._records += int(event_dict.get("result_count") or 0)
-            total = event_dict.get("total_results")
-            seen = f"{self._records:,}" + (f" of {int(total):,}" if total is not None else "")
-            self._emit(
-                f"  page {int(event_dict.get('page_index', 0)) + 1} written -- "
-                f"{seen} records captured, cursor saved"
-            )
-        elif event == "capture.run_sealed":
-            self._emit(f"Run {event_dict.get('run_id')} sealed; Layer 0 is now immutable.")
+        elif progress.event == "page":
+            total = progress.total_results
+            seen = f"{progress.records_seen:,}" + (f" of {total:,}" if total is not None else "")
+            emit(f"  page {progress.pages_done} written -- {seen} records captured, cursor saved")
         else:
-            return event_dict
+            emit(f"Run {progress.run_id} sealed; Layer 0 is now immutable.")
+
+    return render
+
+
+_PROGRESS_EVENTS = frozenset(
+    {"capture.run_started", "capture.run_resumed", "capture.page_written", "capture.run_sealed"}
+)
+
+
+def _drop_progress_events(
+    _logger: WrappedLogger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Structlog processor: keep the events the progress lines already say out of the log stream.
+
+    Raises:
+        structlog.DropEvent: For one of the four ``capture.*`` progress events.
+    """
+    if event_dict.get("event") in _PROGRESS_EVENTS:
         raise structlog.DropEvent
+    return event_dict
 
 
 @contextmanager
-def _capture_progress(emit: Callable[[str], None]) -> Iterator[None]:
-    """Install :class:`_CaptureProgress` for the duration of the block.
+def _capture_progress(emit: Callable[[str], None]) -> Iterator[Callable[[CaptureProgress], None]]:
+    """Silence the ``capture.*`` log events for the block and yield the progress callback.
 
     Args:
         emit: Where progress lines are written.
 
     Yields:
-        ``None``, with the processor installed ahead of every other configured
-        structlog processor.
+        The ``on_progress`` callback for ``capture_search``.
     """
     previous = list(structlog.get_config()["processors"])
-    structlog.configure(processors=[_CaptureProgress(emit), *previous])
+    structlog.configure(processors=[_drop_progress_events, *previous])
     try:
-        yield
+        yield _render_progress(emit)
     finally:
         # Restored even on failure: structlog's configuration is process-global,
-        # and a CLI that left a stderr-printing processor behind would corrupt
-        # the logging of anything sharing the interpreter (notably a test
-        # session, where the leak would surface as an unrelated failure).
+        # and a CLI that left a processor behind would corrupt the logging of
+        # anything sharing the interpreter (notably a test session).
         structlog.configure(processors=previous)
 
 
@@ -570,8 +497,8 @@ def search(
         _echo_err()
 
         try:
-            with _capture_progress(_echo_err):
-                manifest = capture_search(project)
+            with _capture_progress(_echo_err) as on_progress:
+                manifest = capture_search(project, on_progress=on_progress)
         except KeyboardInterrupt:
             _echo_err()
             _echo_err(

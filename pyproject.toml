@@ -62,6 +62,13 @@ viz = [
     "param>=2.0",
 ]
 
+# The local app (ADR 0043): `uv tool install "prismabib[gui] @ git+..."`. Panel and param only;
+# the plotting libraries stay in `viz` because no v1 screen plots.
+gui = [
+    "panel>=1.3.0",
+    "param>=2.0",              # the Screener imports it directly
+]
+
 docs = [
     # Upper bound is deliberate: MkDocs 2.0 removes the plugin system entirely, which
     # breaks mkdocs-material and mkdocstrings — both mandated by §2.4. Without the
@@ -265,6 +272,22 @@ module = [
   "prismabib.capture.registration_ui",
   "prismabib.capture.manual_ui",
   "prismabib.credentials_ui",
+  "prismabib.gui.app",
+  "prismabib.gui.build",
+  "prismabib.gui.capture",
+  "prismabib.gui.criteria",
+  "prismabib.gui.delete_store",
+  "prismabib.gui.export",
+  "prismabib.gui.flow",
+  "prismabib.gui.home",
+  "prismabib.gui.keys",
+  "prismabib.gui.new_project",
+  "prismabib.gui.query_form",
+  "prismabib.gui.size_check",
+  "prismabib.gui.screening",
+  "prismabib.gui.screening_layer",
+  "prismabib.gui.settings",
+  "prismabib.gui.server",
 ]
 disallow_untyped_calls = false
 

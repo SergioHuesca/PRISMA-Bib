@@ -1,0 +1,139 @@
+{
+ "ask_bad_then_s": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "25f5e966e8ada9cf42105e959f08d21123b077bcccc660091e77ee45f0e60e4c",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "aece0aef165700e7bfd1131f844ad13a4880060ffe92fdab2a81610d375b24e1",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "1bcd58ae1620fb634b73001b8aac4e6292b17396e37998e46e306e0f17561e6f"
+  },
+  "output": "Do you have access to Scopus? [y/n/not sure]: maybe\nError: please answer y, n or not sure\nDo you have access to Scopus? [y/n/not sure]: s\nCreated project 'demo' at <root>/demo\nSources mode: openalex (recorded by Ada; change it with `prismabib sources`)\nMode openalex was recorded: this tool cannot assume you have Scopus access.\nTo check a Scopus key later, run `prismabib credentials set scopus` and then `prismabib credentials test scopus` (one request; it needs no project). Only `credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` need a project in a Scopus mode.\nTo switch: `prismabib sources demo --set scopus --actor NAME` (or `--set scopus+openalex`). It is refused once any OpenAlex search run exists under raw/openalex-search/ (whatever its state) or screening decisions exist; then create a new project.\n\n`prismabib openalex-search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in `search` under [openalex_query] -- the OpenAlex search itself (words, \"quoted phrases\", uppercase AND / OR / NOT). It is scaffolded empty, and an empty query is refused rather than sent.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib openalex-search demo --budget 30 --dry-run   # cost; no request\n  prismabib openalex-search demo --budget 30   # resumable\n  prismabib build demo --rebuild\n  prismabib flow demo\n"
+ },
+ "ask_no": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "25f5e966e8ada9cf42105e959f08d21123b077bcccc660091e77ee45f0e60e4c",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "aece0aef165700e7bfd1131f844ad13a4880060ffe92fdab2a81610d375b24e1",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "1bcd58ae1620fb634b73001b8aac4e6292b17396e37998e46e306e0f17561e6f"
+  },
+  "output": "Do you have access to Scopus? [y/n/not sure]: n\nCreated project 'demo' at <root>/demo\nSources mode: openalex (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib openalex-search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in `search` under [openalex_query] -- the OpenAlex search itself (words, \"quoted phrases\", uppercase AND / OR / NOT). It is scaffolded empty, and an empty query is refused rather than sent.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib credentials set openalex   # a free OpenAlex key is required\n  prismabib openalex-search demo --budget 30 --dry-run   # cost; no request\n  prismabib openalex-search demo --budget 30   # resumable\n  prismabib build demo --rebuild\n  prismabib flow demo\n"
+ },
+ "ask_not_sure": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "25f5e966e8ada9cf42105e959f08d21123b077bcccc660091e77ee45f0e60e4c",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "aece0aef165700e7bfd1131f844ad13a4880060ffe92fdab2a81610d375b24e1",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "1bcd58ae1620fb634b73001b8aac4e6292b17396e37998e46e306e0f17561e6f"
+  },
+  "output": "Do you have access to Scopus? [y/n/not sure]: not  sure\nCreated project 'demo' at <root>/demo\nSources mode: openalex (recorded by Ada; change it with `prismabib sources`)\nMode openalex was recorded: this tool cannot assume you have Scopus access.\nTo check a Scopus key later, run `prismabib credentials set scopus` and then `prismabib credentials test scopus` (one request; it needs no project). Only `credentials test scopus --project <slug>` and `prismabib doctor --check-scopus` need a project in a Scopus mode.\nTo switch: `prismabib sources demo --set scopus --actor NAME` (or `--set scopus+openalex`). It is refused once any OpenAlex search run exists under raw/openalex-search/ (whatever its state) or screening decisions exist; then create a new project.\n\n`prismabib openalex-search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in `search` under [openalex_query] -- the OpenAlex search itself (words, \"quoted phrases\", uppercase AND / OR / NOT). It is scaffolded empty, and an empty query is refused rather than sent.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib openalex-search demo --budget 30 --dry-run   # cost; no request\n  prismabib openalex-search demo --budget 30   # resumable\n  prismabib build demo --rebuild\n  prismabib flow demo\n"
+ },
+ "ask_yes_fill": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "af8195718730f055219c00c0374d8bbc5712c76075282e1b191f6434f93fd603",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "28ca7f6af169a465fd8196aef0732af83db47bb218c451a03444121507c5db36"
+  },
+  "output": "Do you have access to Scopus? [y/n/not sure]: y\nAlso fill missing fields of Scopus records from OpenAlex? [Y/n]: y\nCreated project 'demo' at <root>/demo\nSources mode: scopus+openalex (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in [query] terms / compound_terms -- the Boolean search itself. They are scaffolded empty, and an empty query is refused rather than silently run against all of Scopus.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include and languages your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib search demo   # spends Scopus quota; resumable\n  prismabib build demo\n  prismabib flow demo\n"
+ },
+ "ask_yes_no_fill": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "140e03acab749a42d24060b959a9e875c6a0dd1a1a7fe14bd291ced374b03b7f",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "6f6ba7cd263559c7ec1b39b0e316c3aaf65ced381a0c2559a14950c44a9924bc"
+  },
+  "output": "Do you have access to Scopus? [y/n/not sure]: YES\nAlso fill missing fields of Scopus records from OpenAlex? [Y/n]: n\nCreated project 'demo' at <root>/demo\nSources mode: scopus (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in [query] terms / compound_terms -- the Boolean search itself. They are scaffolded empty, and an empty query is refused rather than silently run against all of Scopus.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include and languages your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib search demo   # spends Scopus quota; resumable\n  prismabib build demo\n  prismabib flow demo\n"
+ },
+ "no_tty_no_sources": {
+  "exit": 1,
+  "files": {},
+  "output": "prismabib: ValidationError\nA new project needs --sources {openalex,scopus,scopus+openalex}: there is no terminal to ask 'Do you have access to Scopus?', and the answer is never defaulted. Nothing was written.\n"
+ },
+ "rerun_existing": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "140e03acab749a42d24060b959a9e875c6a0dd1a1a7fe14bd291ced374b03b7f",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "6f6ba7cd263559c7ec1b39b0e316c3aaf65ced381a0c2559a14950c44a9924bc"
+  },
+  "output": "Reused project 'demo' at <root>/demo\n\nproject.toml and criteria.yaml were already there and were left exactly as they are; any missing directory has been recreated.\n\nThe two files that define this review are, in the order they are used:\n\n  1. <root>/demo/project.toml\n     Fill in [query] terms / compound_terms -- the Boolean search itself. They are scaffolded empty, and an empty query is refused rather than silently run against all of Scopus.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include and languages your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib search demo   # spends Scopus quota; resumable\n  prismabib build demo\n  prismabib flow demo\n"
+ },
+ "rerun_mismatch": {
+  "exit": 1,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "140e03acab749a42d24060b959a9e875c6a0dd1a1a7fe14bd291ced374b03b7f",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "6f6ba7cd263559c7ec1b39b0e316c3aaf65ced381a0c2559a14950c44a9924bc"
+  },
+  "output": "prismabib: ConfigError\nProject 'demo' is in sources mode 'scopus', not 'openalex'. `init` never rewrites a project; to change the mode run `prismabib sources demo --set openalex --actor NAME`.\n"
+ },
+ "sources_both": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "af8195718730f055219c00c0374d8bbc5712c76075282e1b191f6434f93fd603",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "28ca7f6af169a465fd8196aef0732af83db47bb218c451a03444121507c5db36"
+  },
+  "output": "Created project 'demo' at <root>/demo\nSources mode: scopus+openalex (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in [query] terms / compound_terms -- the Boolean search itself. They are scaffolded empty, and an empty query is refused rather than silently run against all of Scopus.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include and languages your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib search demo   # spends Scopus quota; resumable\n  prismabib build demo\n  prismabib flow demo\n"
+ },
+ "sources_openalex_key_missing": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "25f5e966e8ada9cf42105e959f08d21123b077bcccc660091e77ee45f0e60e4c",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "aece0aef165700e7bfd1131f844ad13a4880060ffe92fdab2a81610d375b24e1",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "1bcd58ae1620fb634b73001b8aac4e6292b17396e37998e46e306e0f17561e6f"
+  },
+  "output": "Created project 'demo' at <root>/demo\nSources mode: openalex (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib openalex-search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in `search` under [openalex_query] -- the OpenAlex search itself (words, \"quoted phrases\", uppercase AND / OR / NOT). It is scaffolded empty, and an empty query is refused rather than sent.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib credentials set openalex   # a free OpenAlex key is required\n  prismabib openalex-search demo --budget 30 --dry-run   # cost; no request\n  prismabib openalex-search demo --budget 30   # resumable\n  prismabib build demo --rebuild\n  prismabib flow demo\n"
+ },
+ "sources_openalex_key_present": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "25f5e966e8ada9cf42105e959f08d21123b077bcccc660091e77ee45f0e60e4c",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "aece0aef165700e7bfd1131f844ad13a4880060ffe92fdab2a81610d375b24e1",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "1bcd58ae1620fb634b73001b8aac4e6292b17396e37998e46e306e0f17561e6f"
+  },
+  "output": "Created project 'demo' at <root>/demo\nSources mode: openalex (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib openalex-search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in `search` under [openalex_query] -- the OpenAlex search itself (words, \"quoted phrases\", uppercase AND / OR / NOT). It is scaffolded empty, and an empty query is refused rather than sent.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib openalex-search demo --budget 30 --dry-run   # cost; no request\n  prismabib openalex-search demo --budget 30   # resumable\n  prismabib build demo --rebuild\n  prismabib flow demo\n"
+ },
+ "sources_scopus": {
+  "exit": 0,
+  "files": {
+   "demo/.gitignore": "fb81f65c8e0ae5cf617d395f98437141d560184a939b05a77bac241f8003bd57",
+   "demo/criteria.yaml": "d5568d71a39bdc94820c1775b7e0414cf41e507665c5ae87f101405e54237d92",
+   "demo/decisions/decisions.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "demo/decisions/source_modes.jsonl": "140e03acab749a42d24060b959a9e875c6a0dd1a1a7fe14bd291ced374b03b7f",
+   "demo/decisions/source_modes.jsonl.sha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+   "demo/project.toml": "6f6ba7cd263559c7ec1b39b0e316c3aaf65ced381a0c2559a14950c44a9924bc"
+  },
+  "output": "Created project 'demo' at <root>/demo\nSources mode: scopus (recorded by Ada; change it with `prismabib sources`)\n\n`prismabib search` cannot run until you edit these two files, in this order:\n\n  1. <root>/demo/project.toml\n     Fill in [query] terms / compound_terms -- the Boolean search itself. They are scaffolded empty, and an empty query is refused rather than silently run against all of Scopus.\n  2. <root>/demo/criteria.yaml\n     Set temporal.year_start / year_end, and whichever of doc_types.include and languages your protocol restricts; every list left empty means no restriction on that dimension, which is a real eligibility choice rather than a placeholder. Replace the starter exclusion reason codes with the ones your review actually distinguishes, and bump `version` whenever you change any of it. The file's own comments explain each block.\n\nThen, in order:\n  prismabib search demo   # spends Scopus quota; resumable\n  prismabib build demo\n  prismabib flow demo\n"
+ }
+}

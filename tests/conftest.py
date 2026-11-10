@@ -26,7 +26,10 @@ import pytest
 import time_machine
 from pytest_socket import disable_socket, enable_socket, socket_allow_hosts
 
+from prismabib.gui import path_limit
 from tests import markers
+
+REAL_MAX_PATH_CHARS = path_limit.MAX_PATH_CHARS
 
 # Opt in to the `pytester` fixture (BUILD_PLAN.md §3.7.8's own meta-test uses
 # it to exercise the acceptance-report plugin end to end without mutating
@@ -105,6 +108,32 @@ def _socket_policy(request: pytest.FixtureRequest) -> Iterator[None]:
 
     disable_socket(allow_unix_socket=True)
     yield
+
+
+# ---------------------------------------------------------------------------
+# The GUI's Project path limit must not make the suite depend on the temp folder's length
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _gui_path_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lift the Project path limit (``path_limit.MAX_PATH_CHARS``) for every test.
+
+    A long temp path (a Windows user name, xdist's worker folder) would otherwise make tests pass
+    on one machine and fail on another. The code under test reads the limit when it is called,
+    through ``path_limit``, so this one patch reaches the layer, the New Project preview and the
+    home screen's folder check alike.
+
+    A test of the limit itself asks for the ``real_path_limit`` fixture, which restores it.
+    """
+    monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", 10_000)
+
+
+@pytest.fixture
+def real_path_limit(monkeypatch: pytest.MonkeyPatch) -> int:
+    """Put the real limit back for a test that checks it; returns it."""
+    monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", REAL_MAX_PATH_CHARS)
+    return REAL_MAX_PATH_CHARS
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -54,8 +55,9 @@ from prismabib.capture.openalex import (
     ApiKeyInBodyError,
     _encode_line,  # pyright: ignore[reportPrivateUsage]  # one encoding rule (ADR 0031 Decision 2)
 )
+from prismabib.capture.progress import CaptureProgress
 from prismabib.config import Settings, require_openalex_key
-from prismabib.errors import UpstreamError, ValidationError
+from prismabib.errors import CaptureCancelledError, UpstreamError, ValidationError
 from prismabib.project import Project
 from prismabib.source_mode import require_capability
 from prismabib.sources.openalex import (
@@ -325,6 +327,8 @@ def capture_openalex_search(
     transport: httpx.BaseTransport | None = None,
     rate_limiter: RateLimiter | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    cancel: threading.Event | None = None,
+    on_progress: Callable[[CaptureProgress], None] | None = None,
 ) -> OpenAlexSearchResult:
     """Run, resume or reuse one OpenAlex search under ``raw/openalex-search/``.
 
@@ -337,11 +341,17 @@ def capture_openalex_search(
         transport: An ``httpx`` transport, for tests.
         rate_limiter: An injectable limiter, for tests.
         sleep: How retries wait; replaced in tests.
+        cancel: When set (from any thread), the capture stops before the next page is requested
+            and raises :class:`~prismabib.errors.CaptureCancelledError`; the run stays unsealed
+            and a later call resumes it.
+        on_progress: Called with a :class:`~prismabib.capture.progress.CaptureProgress` at run
+            start or resume, after every page written, and at the seal.
 
     Returns:
         An :class:`OpenAlexSearchResult`.
 
     Raises:
+        CaptureCancelledError: If ``cancel`` was set; the run is resumable.
         ConfigError: If the sources mode does not allow OpenAlex search, or the key is not set.
         ValidationError: If ``query`` is blank or ``budget`` is below 1.
         ApiKeyInBodyError: If a response body contains the key; it is not written.
@@ -350,6 +360,8 @@ def capture_openalex_search(
         RateLimitError: On a per-second 429 that outlasts the retries; the run stays resumable.
     """
     require_capability(project, "openalex_search")
+    notify = on_progress or (lambda _p: None)
+    records_seen = 0
     resolved = settings if settings is not None else Settings()
     key = require_openalex_key(resolved)
     if not query.strip():
@@ -382,12 +394,18 @@ def capture_openalex_search(
         logger.info(
             "openalex_search.run_resumed", run_id=run_dir.name, pages=len(progress.requests)
         )
+        notify(
+            CaptureProgress(
+                "resumed", run_dir.name, len(progress.requests), 0, progress.total_count
+            )
+        )
     else:
         run_dir = search_dir / new_run_id()
         run_dir.mkdir(parents=True)
         progress = plan
         _save(run_dir, progress)
         logger.info("openalex_search.run_started", run_id=run_dir.name)
+        notify(CaptureProgress("started", run_dir.name, 0, 0, None))
 
     secret = key.get_secret_value()
     # Raw, percent-encoded (both spaces as + and as %20) and JSON-escaped: a body may echo the key
@@ -503,6 +521,20 @@ def capture_openalex_search(
                     _discard(run_dir, progress, broken)
                     return result("discarded", f"{broken}: {DISCARD_AND_RESTART}")
                 _save(run_dir, progress)
+                records_seen += count_in_page or 0
+                notify(
+                    CaptureProgress(
+                        "page",
+                        run_dir.name,
+                        len(progress.requests),
+                        records_seen,
+                        progress.total_count,
+                    )
+                )
+                if cancel is not None and cancel.is_set():
+                    raise CaptureCancelledError(
+                        f"capture of run {run_dir.name} cancelled; resume it later."
+                    )
     finally:
         http.close()
 
@@ -516,6 +548,11 @@ def capture_openalex_search(
         return result("discarded", f"{broken}: {DISCARD_AND_RESTART}")
     manifest = _seal(run_dir, progress, criteria_version=project.criteria.version)
     logger.info("openalex_search.run_sealed", run_id=run_dir.name, works=manifest.works_captured)
+    notify(
+        CaptureProgress(
+            "sealed", run_dir.name, len(progress.requests), records_seen, progress.total_count
+        )
+    )
     return result("sealed", "complete", manifest)
 
 
