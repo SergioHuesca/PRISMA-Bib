@@ -471,7 +471,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install (a peer's minimal install)
-        run: uv sync --extra viz --extra notebook
+        run: uv sync --extra viz --extra notebook --extra gui
 
       - name: prismabib --version
         run: uv run prismabib --version
@@ -481,3 +481,6 @@ jobs:
 
       - name: OpenAlex-only first run, offline
         run: uv run python scripts/clean_install_scenario.py
+
+      - name: gui launch smoke
+        run: uv run python scripts/gui_launch_smoke.py

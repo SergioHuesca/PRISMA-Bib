@@ -74,6 +74,7 @@ from prismabib.errors import (
     ValidationError,
 )
 from prismabib.fulltext.run import FullTextRunSummary, run_fulltext_resolution
+from prismabib.gui.launch import register_gui_command
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.prisma.orphans import project_orphaned_decisions
 from prismabib.project import Project
@@ -117,6 +118,7 @@ app.command("openalex")(_openalex_command)
 app.command("openalex-search")(_openalex_search_command)
 register_manual_commands(app)
 register_source_commands(app)
+register_gui_command(app)
 app.add_typer(credentials_app)
 
 _ROOT_OPTION = typer.Option(

@@ -10,6 +10,14 @@ At the end you will have:
 - screening decisions recorded as append-only, checksum-guarded events, and
 - the PRISMA flow counts derived from all of them, with nothing typed by hand.
 
+!!! note "A point-and-click path exists"
+    Besides the command line described below, prismabib has a local app that opens in your
+    browser. Install it with
+    `uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"` and
+    start it with `prismabib gui`. It serves on your own computer only (the loopback address) and
+    calls the same library code as the commands. It is under construction: today it opens an empty
+    page. See [ADR 0043](architecture/adr/0043-local-gui.md) for what it will and will not do.
+
 ## Do you have Scopus access?
 
 Do you have Scopus access (an API key with the COMPLETE view, usually through an institution)?
