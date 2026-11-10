@@ -359,6 +359,7 @@ def capture_search(
     query: str | None = None,
     cancel: threading.Event | None = None,
     on_progress: Callable[[CaptureProgress], None] | None = None,
+    settings: Settings | None = None,
 ) -> RunManifest:
     """Run (or resume) one Scopus acquisition and seal it into a Layer 0 run directory.
 
@@ -381,6 +382,8 @@ def capture_search(
             stays unsealed and the next call resumes it.
         on_progress: Called with a :class:`~prismabib.capture.progress.CaptureProgress` at
             run start or resume, after every page written, and at the seal.
+        settings: The key and limits to use; ``None`` reads them from the environment and the
+            working directory's ``.env`` (the app passes the keys saved in its own files).
 
     Returns:
         The sealed run's :class:`~prismabib.capture.manifest.RunManifest`.
@@ -413,7 +416,7 @@ def capture_search(
     """
     require_capability(project, "scopus_search")
     notify = on_progress or (lambda _p: None)
-    settings = Settings()
+    settings = settings or Settings()
     require_scopus_key(settings)  # before any run directory exists or request is made
     resolved_query = query if query is not None else build_query_for_project(project)
     view = "COMPLETE"

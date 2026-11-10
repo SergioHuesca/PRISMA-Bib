@@ -9,10 +9,10 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer
 from prismabib.gui import new_project_model as npm
+from prismabib.gui.capture import build_capture_step
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.keys import build_keys
 from prismabib.gui.query_form import build_query_form
-from prismabib.gui.size_check import build_size_check
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting, write_user_settings
 
@@ -97,7 +97,7 @@ def build_stepper(project: Project) -> pn.Row:
             *([build_criteria(project)] if row.key == "criteria" else []),
             *([build_keys(project)] if row.key == "source_mode" else []),
             *(
-                [build_size_check(project, on_keys=lambda: show(rows[0]))]
+                [build_capture_step(project, on_keys=lambda: show(rows[0]))]
                 if row.key == "capture"
                 else []
             ),

@@ -12,6 +12,7 @@ import panel as pn  # widget layer only
 from prismabib.errors import PrismabibError
 from prismabib.gui import keys_model as km
 from prismabib.gui import size_check_model as model
+from prismabib.gui.capture_layer import note_size_check
 from prismabib.gui.layer import translate
 from prismabib.project import Project
 from prismabib.query import build_openalex_query_for_project, build_query_for_project
@@ -51,6 +52,7 @@ def build_size_check(
         keys.visible = confirm.visible = False
         confirm.value = False
         state["verdict"] = "block"
+        note_size_check(project, None)
         sync()
         try:
             settings = load_settings(km.project_env_file(project), user_file)
@@ -79,6 +81,8 @@ def build_size_check(
             result.object = f"**{msg.sentence}** {msg.next_step} The saved query is unchanged."
             return
         state["verdict"] = model.verdict(count)
+        if scopus and state["verdict"] != "block":
+            note_size_check(project, build_query_for_project(project))
         result.object = "\n\n".join(lines)
         if state["verdict"] == "block":
             notice.object = f"**{model.BLOCK_TEXT}**"

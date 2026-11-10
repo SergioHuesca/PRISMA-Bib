@@ -280,3 +280,76 @@ def test_parity__saved_criteria__gui_and_cli_projects_leave_identical_files(
         outs.append(normalise(tmp_path / name / "demo"))
     assert "COMP" in outs[0]["criteria.yaml"]
     assert_parity(*outs)
+
+
+def _scopus_project(root: Path) -> project_module.Project:
+    from prismabib.gui.query_form_model import QueryInputs
+
+    project = layer.create_project(
+        "demo", title="Demo", root=root, source_mode="scopus", reviewer="Ada"
+    )
+    with layer.Session(project) as session:
+        layer.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
+    return project
+
+
+def _by_run(project: project_module.Project) -> dict[str, str]:
+    """``normalise`` of Layer 0 with the run folder's own name (it holds a random part) hidden."""
+    (run,) = (p.name for p in project.raw_dir.iterdir() if p.is_dir() and p.name != "_cache")
+    return {k.replace(run, "<run>"): v for k, v in normalise(project.raw_dir).items()}
+
+
+def _sealed_hash(project: project_module.Project) -> str:
+    import json
+
+    (manifest,) = project.raw_dir.glob("*/manifest.json")
+    return str(json.loads(manifest.read_text(encoding="utf-8"))["payload_sha256"])
+
+
+def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #329: a cancelled GUI capture equals an interrupted CLI one; the seals hash alike."""
+    import threading
+
+    import respx
+
+    from prismabib.capture.writer import capture_search
+    from prismabib.errors import CaptureCancelledError
+    from prismabib.gui import capture_layer as cl
+    from prismabib.gui import tasks
+    from prismabib.query import build_query_for_project
+    from tests.integration.gui.test_capture import _URL, Stub
+
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    gui = _scopus_project(tmp_path / "gui")
+    cli = _scopus_project(tmp_path / "cli")
+    stub = Stub()
+    stub.hold = True
+    with respx.mock:
+        route = respx.get(_URL).mock(side_effect=stub)
+        cl.note_size_check(gui, build_query_for_project(gui))
+        with layer.Session(gui) as session:
+            cl.start_capture(session, confirmed=True)
+        assert stub.arrived.wait(10)
+        cl.cancel_capture(gui)
+        stub.release.set()
+        tasks.runner_for(gui).join(10)
+
+        route.side_effect = Stub()
+        flag = threading.Event()
+        with pytest.raises(CaptureCancelledError):  # the CLI stops the same way on Ctrl-C
+            capture_search(cli, cancel=flag, on_progress=lambda p: p.pages_done == 2 and flag.set())
+        assert_parity(_by_run(gui), _by_run(cli))
+
+        stub.hold = False
+        route.side_effect = stub
+        with layer.Session(gui) as session:
+            cl.start_capture(session, confirmed=True)
+        tasks.runner_for(gui).join(10)
+        route.side_effect = Stub()
+        result = CliRunner().invoke(app, ["search", "demo", "--root", str(tmp_path / "cli")])
+        assert result.exit_code == 0, result.output
+    assert _sealed_hash(gui) == _sealed_hash(cli)
+    assert_parity(_by_run(gui), _by_run(cli))
+    tasks.reset_runners()
