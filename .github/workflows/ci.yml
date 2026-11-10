@@ -295,17 +295,19 @@ jobs:
           TZ: UTC
           LC_ALL: en_US.UTF-8
           PRISMABIB_PARITY_DIGEST: ${{ runner.temp }}/digest-utc.txt
-        run: uv run pytest tests/integration/gui/test_parity.py
+        run: uv run pytest tests/integration/gui/test_parity.py tests/integration/gui/test_parity_chain.py
 
       - name: Parity under Asia/Kathmandu (UTC+05:45) and de-DE
         env:
           TZ: Asia/Kathmandu
           LC_ALL: de_DE.UTF-8
           PRISMABIB_PARITY_DIGEST: ${{ runner.temp }}/digest-kathmandu.txt
-        run: uv run pytest tests/integration/gui/test_parity.py
+        run: uv run pytest tests/integration/gui/test_parity.py tests/integration/gui/test_parity_chain.py
 
       - name: Both runs produced the same numbers
-        run: cmp "$RUNNER_TEMP/digest-utc.txt" "$RUNNER_TEMP/digest-kathmandu.txt"
+        run: |
+          cmp "$RUNNER_TEMP/digest-utc.txt" "$RUNNER_TEMP/digest-kathmandu.txt"
+          cmp "$RUNNER_TEMP/digest-utc.txt.chain" "$RUNNER_TEMP/digest-kathmandu.txt.chain"
 
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the
