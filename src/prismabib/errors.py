@@ -101,6 +101,14 @@ class ValidationError(PrismabibError):
     """
 
 
+class OperationCancelled(PrismabibError):
+    """A build or export stopped at a safe point because the caller cancelled it.
+
+    Nothing was changed: a cancelled build keeps the previous store and a cancelled
+    export keeps the previous bundle.
+    """
+
+
 class AnalysisError(PrismabibError):
     """A :mod:`prismabib.bibliometrics` metric is degenerate for its input.
 

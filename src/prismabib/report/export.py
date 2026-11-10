@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from prismabib.prisma.flow import compute_flow_counts_with_orphans
+from prismabib.progress import ProgressEvent, checkpoint
 from prismabib.report.flow_diagram import flow_diagram_svg
 from prismabib.report.numbers import numbers_map
 from prismabib.report.tables import (
@@ -48,7 +49,10 @@ from prismabib.report.tables import (
 from prismabib.store.db import connect
 
 if TYPE_CHECKING:
+    import threading
+
     from prismabib.prisma.flow import FlowCounts
+    from prismabib.progress import ProgressCallback
     from prismabib.project import Project
 
 _log = structlog.get_logger(__name__)
@@ -325,7 +329,18 @@ def _clear_stale_artefacts(root: Path) -> None:
             shutil.rmtree(target)
 
 
-def export_project(project: Project) -> ExportResult:
+#: The export's declared safe points, in order. All lie before the first deletion, so a cancel
+#: leaves the previous ``exports/`` untouched and never a partial bundle. The writes after
+#: ``write`` are quick and are not cancellable (``on_progress`` still hears them).
+EXPORT_SAFE_POINTS = ("start", "counts", "render", "write")
+
+
+def export_project(
+    project: Project,
+    *,
+    cancel: threading.Event | None = None,
+    on_progress: ProgressCallback | None = None,
+) -> ExportResult:
     """Write every citable artefact for ``project`` into ``exports/``.
 
     Args:
@@ -333,6 +348,10 @@ def export_project(project: Project) -> ExportResult:
             rather than accepted as an argument, so an export can never
             report numbers that the current store and decision log do not
             support.
+        cancel: A signal checked at each of :data:`EXPORT_SAFE_POINTS`; when set the export
+            stops with :class:`~prismabib.errors.OperationCancelled` and writes nothing.
+        on_progress: Called with a :class:`~prismabib.progress.ProgressEvent` at each safe
+            point and after each file group is written.
 
     Returns:
         An :class:`ExportResult` describing what was written.
@@ -344,9 +363,11 @@ def export_project(project: Project) -> ExportResult:
             attached.
         StoreError: If no Layer 1 store exists yet.
     """
+    checkpoint(cancel, on_progress, "start")
     # Counts and orphans come from one snapshot (ADR 0033 §3): no second read of the log.
     counts, orphans = compute_flow_counts_with_orphans(project)
     counts.assert_consistent()
+    checkpoint(cancel, on_progress, "counts")
 
     root = project.root / "exports"
     numbers = numbers_map(project, counts=counts, orphans=orphans)
@@ -389,17 +410,22 @@ def export_project(project: Project) -> ExportResult:
         connection.close()
     numbers_text = json.dumps(numbers, indent=2, sort_keys=True) + "\n"
     manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    checkpoint(cancel, on_progress, "render")
 
+    # The last safe point: the first deletion follows, so nothing after it may stop the export.
+    checkpoint(cancel, on_progress, "write")
     _clear_stale_artefacts(root)
     figures: list[Path] = [
         _write(root / "figures" / "prisma_flow.svg", svg),
         _write(root / "figures" / "prisma_flow.csv", flow_csv),
     ]
     tables: list[Path] = []
-    for slug, csv_text, md_text, tex_text in rendered:
+    for done, (slug, csv_text, md_text, tex_text) in enumerate(rendered, start=1):
         tables.append(_write(root / "tables" / f"{slug}.csv", csv_text))
         tables.append(_write(root / "tables" / f"{slug}.md", md_text))
         tables.append(_write(root / "tables" / f"{slug}.tex", tex_text))
+        if on_progress is not None:
+            on_progress(ProgressEvent("tables", done, len(rendered)))
 
     # Overwritten each run, so never stale; kept out of the cleared `tables/` directory.
     _write(root / "records.csv", records_csv)
@@ -424,4 +450,4 @@ def export_project(project: Project) -> ExportResult:
     )
 
 
-__all__ = ["VOLATILE_MANIFEST_KEYS", "ExportResult", "export_project"]
+__all__ = ["EXPORT_SAFE_POINTS", "VOLATILE_MANIFEST_KEYS", "ExportResult", "export_project"]
