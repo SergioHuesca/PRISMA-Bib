@@ -149,6 +149,20 @@ def require_scopus_key(settings: Settings) -> SecretStr:
     return key
 
 
+def require_scopus_key_for_mode(settings: Settings, mode: str) -> SecretStr | None:
+    """The Scopus key a Project in ``mode`` needs; ``None`` (none requested) in mode ``openalex``.
+
+    Raises:
+        ConfigError: If the mode needs a Scopus key and it is unset or blank; the message says so.
+    """
+    if mode == "openalex":
+        return None
+    try:
+        return require_scopus_key(settings)
+    except ConfigError as exc:
+        raise ConfigError(f"A Scopus key is needed in mode {mode!r}. {exc}") from exc
+
+
 def require_openalex_key(settings: Settings) -> SecretStr:
     """Return the OpenAlex key, or fail before any request is made.
 

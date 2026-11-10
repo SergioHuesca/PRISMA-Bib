@@ -100,6 +100,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -118,8 +120,9 @@ from prismabib.capture.layout import (
     new_run_id,
 )
 from prismabib.capture.manifest import RunManifest
+from prismabib.capture.progress import CaptureProgress
 from prismabib.config import Settings, require_scopus_key
-from prismabib.errors import ValidationError
+from prismabib.errors import CaptureCancelledError, ValidationError
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
 from prismabib.source_mode import require_capability
@@ -161,6 +164,9 @@ class _CursorState(BaseModel):
     #: re-fetching", and §5 risk 2 says "never re-fetch what Layer 0 already
     #: holds". ``None`` means the run has no page written yet.
     next_cursor: str | None = None
+
+    #: Set by :func:`prismabib.capture.discard.discard_run`; a discarded run is never resumed.
+    discarded: bool = False
 
 
 def _load_cursor_state(cursor_path: Path) -> _CursorState:
@@ -236,6 +242,8 @@ def _find_resumable_run(raw_dir: Path, *, query: str, view: str, endpoint: str) 
             # An unreadable/corrupt sidecar is not a resume candidate; it is
             # simply left alone (not deleted -- see the "never truncates or
             # deletes" rule this module follows throughout).
+            continue
+        if state.discarded:
             continue
         if state.query == query and state.view == view and state.endpoint == endpoint:
             candidates.append(entry)
@@ -345,7 +353,13 @@ def _entry_count(page: JsonDict) -> int | None:
     return len(entries) if isinstance(entries, list) else None
 
 
-def capture_search(project: Project, *, query: str | None = None) -> RunManifest:
+def capture_search(
+    project: Project,
+    *,
+    query: str | None = None,
+    cancel: threading.Event | None = None,
+    on_progress: Callable[[CaptureProgress], None] | None = None,
+) -> RunManifest:
     """Run (or resume) one Scopus acquisition and seal it into a Layer 0 run directory.
 
     Fetches every page of ``query`` via :class:`~prismabib.sources.scopus.ScopusClient`
@@ -362,6 +376,11 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             (the default), it is built from ``project``'s ``project.toml``
             ``[query]`` table via
             :func:`~prismabib.query.build_query_for_project`.
+        cancel: When set (from any thread), the capture stops before the next page is
+            requested and raises :class:`~prismabib.errors.CaptureCancelledError`; the run
+            stays unsealed and the next call resumes it.
+        on_progress: Called with a :class:`~prismabib.capture.progress.CaptureProgress` at
+            run start or resume, after every page written, and at the seal.
 
     Returns:
         The sealed run's :class:`~prismabib.capture.manifest.RunManifest`.
@@ -382,6 +401,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         EntitlementError: On HTTP 403 for ``view=COMPLETE``; never retried,
             never silently lowered to ``STANDARD`` (BUILD_PLAN §5 risk 1).
             No field-level fallback is implemented in this release.
+        CaptureCancelledError: If ``cancel`` was set; the run is resumable.
         QuotaExceededError: On HTTP 429 indicating the weekly quota is
             exhausted.
         RateLimitError: On HTTP 429 exhausting the retry budget.
@@ -392,6 +412,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             :func:`_find_resumable_run` never selects a sealed directory.
     """
     require_capability(project, "scopus_search")
+    notify = on_progress or (lambda _p: None)
     settings = Settings()
     require_scopus_key(settings)  # before any run directory exists or request is made
     resolved_query = query if query is not None else build_query_for_project(project)
@@ -416,6 +437,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             pages_already_written=len(payload_files),
             resuming_from_cursor=resume_cursor is not None,
         )
+        notify(CaptureProgress("resumed", run_id, len(payload_files), 0, None))
     else:
         run_id = new_run_id()
         run_dir = raw_dir / run_id
@@ -434,10 +456,12 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
             ),
         )
         logger.info("capture.run_started", run_id=run_id, endpoint=endpoint, query=resolved_query)
+        notify(CaptureProgress("started", run_id, 0, 0, None))
 
     resume_from = len(payload_files)
     cache = HttpCache(run_dir / HTTP_CACHE_DIRNAME)
     total_results: int | None = None
+    records_seen = 0
 
     # A persisted cursor resumes AT the first unwritten page, so nothing already
     # in Layer 0 is requested again. Without one (a run interrupted before its
@@ -485,6 +509,10 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
                 result_count=_entry_count(page),
                 total_results=total_results,
             )
+            records_seen += _entry_count(page) or 0
+            notify(CaptureProgress("page", run_id, index + 1, records_seen, total_results))
+            if cancel is not None and cancel.is_set():
+                raise CaptureCancelledError(f"capture of run {run_id} cancelled; resume it later.")
 
     if total_results is None:
         raise ValidationError(
@@ -531,6 +559,7 @@ def capture_search(project: Project, *, query: str | None = None) -> RunManifest
         pages_fetched=len(payload_files),
         payload_sha256=payload_digest,
     )
+    notify(CaptureProgress("sealed", run_id, len(payload_files), records_seen, total_results))
     return manifest
 
 

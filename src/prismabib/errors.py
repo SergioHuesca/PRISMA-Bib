@@ -51,6 +51,13 @@ class ConfigError(PrismabibError):
     """
 
 
+class CaptureCancelledError(PrismabibError):
+    """A capture stopped because the caller asked it to, between two result pages.
+
+    Not a failure and not a discard: the run is left unsealed and a later capture resumes it.
+    """
+
+
 class SourceError(PrismabibError):
     """Base class for failures talking to an external metadata/full-text source."""
 
@@ -98,6 +105,14 @@ class ValidationError(PrismabibError):
 
     See the module docstring for how this relates to, and must be kept
     distinct from, ``pydantic.ValidationError``.
+    """
+
+
+class OperationCancelled(PrismabibError):
+    """A build or export stopped at a safe point because the caller cancelled it.
+
+    Nothing was changed: a cancelled build keeps the previous store and a cancelled
+    export keeps the previous bundle.
     """
 
 

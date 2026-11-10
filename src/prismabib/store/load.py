@@ -163,7 +163,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from hashlib import sha1, sha256
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import duckdb
 import pandas as pd
@@ -222,6 +222,7 @@ from prismabib.models import (
     normalise_doi,
 )
 from prismabib.openalex_map import ClassificationRefusal
+from prismabib.progress import ProgressCallback, checkpoint
 from prismabib.project import CONFLICT_RESOLUTIONS_FILENAME, MANUAL_ENTRIES_FILENAME, Project
 from prismabib.source_mode import checked_mode
 from prismabib.source_mode import keyword_kind as _project_keyword_kind
@@ -238,6 +239,9 @@ from prismabib.store.openalex_search import (
 )
 from prismabib.store.stamp import stamp_path, write_stamp
 from prismabib.titles import normalise_title
+
+if TYPE_CHECKING:
+    import threading
 
 logger = structlog.get_logger(__name__)
 
@@ -3666,7 +3670,42 @@ def _refuse_empty_store_over_populated_raw(project: Project, stats: StoreStats) 
             )
 
 
+#: The build's declared safe points, in order. Each is reported to ``on_progress`` and then
+#: checked against the cancel signal, so a cancel stops the build there with the previous
+#: store untouched. None lies after the store is installed: from then on the build is not
+#: cancellable, because stopping would leave the store and Layer 2 disagreeing.
+BUILD_SAFE_POINTS: Final[tuple[str, ...]] = (
+    "start",
+    "search_runs",
+    "abstract_runs",
+    "openalex_runs",
+    "cascade_runs",
+    "fulltext_runs",
+    "registrations",
+    "write",
+)
+
+
 def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
+    """(Re)build ``project``'s Layer 1 store; see :func:`build_store_cancellable`.
+
+    Args:
+        project: The project to build the store for.
+        rebuild: As in :func:`build_store_cancellable`.
+
+    Returns:
+        The summary counts for the store as it now stands.
+    """
+    return build_store_cancellable(project, rebuild=rebuild)
+
+
+def build_store_cancellable(
+    project: Project,
+    *,
+    rebuild: bool = False,
+    cancel: threading.Event | None = None,
+    on_progress: ProgressCallback | None = None,
+) -> StoreStats:
     """(Re)build ``project``'s Layer 1 DuckDB store from Layer 0 (BUILD_PLAN line 891).
 
     This is the one function BUILD_PLAN §2.2 requires Layer 1 to be
@@ -3707,7 +3746,14 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
         not a cached value that could go stale). Only the *loading itself* is
         skipped, never the reporting.
 
+    Also accepts ``cancel``, a signal checked at each of :data:`BUILD_SAFE_POINTS`: when
+    set, the build stops with :class:`~prismabib.errors.OperationCancelled`, removes its
+    temporary file and leaves the previous store, if any, untouched. ``on_progress`` is
+    called with a :class:`~prismabib.progress.ProgressEvent` at each safe point and after
+    each cascade run, so a caller sees the cascade's progress.
+
     Raises:
+        OperationCancelled: If ``cancel`` was set at a safe point.
         StoreError: If ``project.db_path`` exists, ``rebuild`` is
             ``False``, and it does not look like a Layer 1 store this
             function created (e.g. wrong schema); if an existing store
@@ -3722,6 +3768,9 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             refuses to open the file for any other reason.
     """
     db_path = project.db_path
+
+    def safe_point(phase: str, done: int = 0, total: int | None = None) -> None:
+        checkpoint(cancel, on_progress, phase, done, total)
 
     if not rebuild and db_path.is_file():
         connection = connect(project, read_only=True)
@@ -3747,6 +3796,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
     _remove_build_files(build_path)
     installed = False
     try:
+        safe_point("start")
         try:
             connection = duckdb.connect(str(build_path))
         except duckdb.Error as exc:
@@ -3758,6 +3808,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # kind of search run is reported as present and not loaded.
             scopus_runs = _sealed_run_dirs(project.raw_dir)
             search_runs = _sealed_openalex_search_run_dirs(project.raw_dir)
+            safe_point("search_runs", 0, len(scopus_runs) + len(search_runs))
             if source_mode == "openalex":
                 unused, unused_kind = scopus_runs, "scopus_search"
                 for search_run_dir in search_runs:
@@ -3786,6 +3837,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # the malformed-entry ratio guard above -- that guard exists for
             # a broken *search* capture, and an abstract run identifies no
             # record for it to have an opinion about.
+            safe_point("abstract_runs")
             for abstract_run_dir in _sealed_abstract_run_dirs(project.raw_dir):
                 _load_abstract_run(accumulator, abstract_run_dir)
             _finalise_subject_areas(accumulator)
@@ -3793,12 +3845,16 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # reason as abstract runs; topics are accumulated last so Scopus
             # keywords keep their `term_raw` (ADR 0030 Decision 3).
             openalex_index = _openalex_record_index(accumulator)
+            safe_point("openalex_runs")
             for openalex_run_dir in _sealed_openalex_run_dirs(project.raw_dir):
                 _load_openalex_run(accumulator, openalex_run_dir, openalex_index)
             _finalise_openalex_topics(accumulator)
             # Scopus cascade runs (ADR 0041 Decision 6): affiliations for levels 2 and 3.
-            for cascade_run_dir in _sealed_cascade_run_dirs(project.raw_dir):
+            cascade_run_dirs = _sealed_cascade_run_dirs(project.raw_dir)
+            safe_point("cascade_runs", 0, len(cascade_run_dirs))
+            for done, cascade_run_dir in enumerate(cascade_run_dirs, start=1):
                 _load_cascade_run(accumulator, cascade_run_dir, openalex_index)
+                safe_point("cascade_runs", done, len(cascade_run_dirs))
             if accumulator.unmatched_openalex_identifiers:
                 logger.warning(
                     "store.load.unmatched_openalex_identifiers",
@@ -3812,11 +3868,13 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             # `_load_fulltext_run` to tell "in this corpus" from "unmatched"
             # apart, and section extraction (`_finalise_fulltext_sections`)
             # needs every run's resolved assets collected first.
+            safe_point("fulltext_runs")
             for fulltext_run_dir in sealed_fulltext_run_dirs(project.fulltext_dir):
                 _load_fulltext_run(accumulator, fulltext_run_dir)
             _finalise_fulltext_sections(accumulator)
             # Registrations (ADR 0029/0032): after every Scopus record is known, so a
             # registration a Scopus record now holds is superseded rather than loaded.
+            safe_point("registrations")
             pending_supersedes = _fold_registrations(project, accumulator)
             provenance_report = _apply_provenance(project, accumulator)
             provenance_report["registered_openalex_overlap"] = len(
@@ -3824,6 +3882,7 @@ def build_store(project: Project, *, rebuild: bool = False) -> StoreStats:
             )
             if had_provenance is not None:
                 provenance_report["previous_store_had_provenance"] = int(had_provenance)
+            safe_point("write")  # the last: past it the store is written and installed
             _write_accumulator(connection, accumulator)
             stats = _stats_from_connection(
                 connection,
@@ -4373,4 +4432,10 @@ class Corpus:
         return self._query(f"{select} WHERE ra.record_id = ANY(?) {order}", [sorted(record_ids)])
 
 
-__all__ = ["Corpus", "StoreStats", "build_store"]
+__all__ = [
+    "BUILD_SAFE_POINTS",
+    "Corpus",
+    "StoreStats",
+    "build_store",
+    "build_store_cancellable",
+]

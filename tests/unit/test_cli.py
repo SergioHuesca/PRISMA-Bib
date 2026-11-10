@@ -26,9 +26,11 @@ from typer.testing import CliRunner
 
 import prismabib
 from prismabib.capture.manifest import AbstractRunManifest, AbstractUnavailable
+from prismabib.capture.progress import CaptureProgress
 from prismabib.cli import (
-    _CaptureProgress,
+    _drop_progress_events,
     _print_flow,
+    _render_progress,
     _reporting_errors,
     _warn_if_inconsistent,
     app,
@@ -197,20 +199,9 @@ def test_reporting_errors__unexpected_exception__is_left_to_traceback() -> None:
 @pytest.mark.unit
 def test_capture_progress__page_written__renders_a_progress_line() -> None:
     lines: list[str] = []
-    progress = _CaptureProgress(lines.append)
+    render = _render_progress(lines.append)
 
-    with pytest.raises(structlog.DropEvent):
-        progress(
-            None,
-            "info",
-            {
-                "event": "capture.page_written",
-                "run_id": "20260115T090000Z-abcdef12",
-                "page_index": 0,
-                "result_count": 25,
-                "total_results": 1771,
-            },
-        )
+    render(CaptureProgress("page", "20260115T090000Z-abcdef12", 1, 25, 1771))
 
     assert lines == ["  page 1 written -- 25 of 1,771 records captured, cursor saved"]
 
@@ -218,12 +209,10 @@ def test_capture_progress__page_written__renders_a_progress_line() -> None:
 @pytest.mark.unit
 def test_capture_progress__successive_pages__accumulate_records_captured() -> None:
     lines: list[str] = []
-    progress = _CaptureProgress(lines.append)
-    page = {"event": "capture.page_written", "result_count": 25, "total_results": 1771}
+    render = _render_progress(lines.append)
 
-    for index in range(3):
-        with pytest.raises(structlog.DropEvent):
-            progress(None, "info", {**page, "page_index": index})
+    for done in range(1, 4):
+        render(CaptureProgress("page", "r", done, 25 * done, 1771))
 
     assert lines[-1] == "  page 3 written -- 75 of 1,771 records captured, cursor saved"
 
@@ -231,18 +220,9 @@ def test_capture_progress__successive_pages__accumulate_records_captured() -> No
 @pytest.mark.unit
 def test_capture_progress__resumed_run__says_the_pages_already_held_cost_no_quota() -> None:
     lines: list[str] = []
-    progress = _CaptureProgress(lines.append)
+    render = _render_progress(lines.append)
 
-    with pytest.raises(structlog.DropEvent):
-        progress(
-            None,
-            "info",
-            {
-                "event": "capture.run_resumed",
-                "run_id": "20260115T090000Z-abcdef12",
-                "pages_already_written": 40,
-            },
-        )
+    render(CaptureProgress("resumed", "20260115T090000Z-abcdef12", 40, 0, None))
 
     assert lines == [
         (
@@ -254,13 +234,23 @@ def test_capture_progress__resumed_run__says_the_pages_already_held_cost_no_quot
 
 
 @pytest.mark.unit
-def test_capture_progress__unrelated_event__passes_through_untouched() -> None:
+def test_capture_progress__started_and_sealed__render_their_lines() -> None:
     lines: list[str] = []
-    progress = _CaptureProgress(lines.append)
+    render = _render_progress(lines.append)
+
+    render(CaptureProgress("started", "r1", 0, 0, None))
+    render(CaptureProgress("sealed", "r1", 3, 75, 75))
+
+    assert lines == ["Run r1 started.", "Run r1 sealed; Layer 0 is now immutable."]
+
+
+@pytest.mark.unit
+def test_capture_progress__progress_events__are_dropped_from_the_log_and_others_pass() -> None:
+    with pytest.raises(structlog.DropEvent):
+        _drop_progress_events(None, "info", {"event": "capture.page_written"})
     event = {"event": "scopus.quota", "remaining": 4999}
 
-    assert progress(None, "info", dict(event)) == event
-    assert lines == []
+    assert _drop_progress_events(None, "info", dict(event)) == event
 
 
 # ---------------------------------------------------------------------------
