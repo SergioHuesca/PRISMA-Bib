@@ -93,7 +93,8 @@ def test_build_home__remembered_folder_gone__says_so_and_the_field_can_change_it
 
 def test_build_home__every_control__is_labelled(tmp_path: Path) -> None:
     view = build_home(tmp_path, checks=lambda: PASSING)
-    assert len(view.select(pn.widgets.Widget)) == 4
+    names = {w.name for w in view.select(pn.widgets.Widget)}
+    assert {"Projects folder", "Use this folder", "New Project", "Stop the app"} <= names
     assert unlabelled_controls(view) == []
 
 

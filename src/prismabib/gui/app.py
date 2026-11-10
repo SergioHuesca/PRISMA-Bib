@@ -1,4 +1,4 @@
-"""The app page (ticket #318): home, New Project and the stepper (tickets #322, #324)."""
+"""The app page (ticket #318): Home and Settings tabs (#323); Home routes to New Project (#324)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,16 @@ import panel as pn  # widget layer only
 from prismabib.gui import home_model, layer
 from prismabib.gui.home import build_home
 from prismabib.gui.new_project import build_new_project, build_stepper
+from prismabib.gui.settings import build_settings
 from prismabib.project import Project
 
 
 def build_app(root: Path | None = None) -> pn.viewable.Viewable:
-    """One page per browser session. ``root`` is the Projects folder, else the remembered one."""
+    """One page per browser session. ``root`` is the Projects folder, else the remembered one.
+
+    Home (which carries the Stop the app control) is a tab that routes to New Project and the
+    stepper; Settings is the other tab.
+    """
     page = pn.Column(sizing_mode="stretch_width")
 
     def open_(folder: Path, slug: str) -> None:
@@ -41,4 +46,4 @@ def build_app(root: Path | None = None) -> pn.viewable.Viewable:
         page[:] = [back, build_stepper(project)]
 
     home()
-    return page
+    return pn.Tabs(("Home", page), ("Settings", build_settings()))
