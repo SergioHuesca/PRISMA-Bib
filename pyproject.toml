@@ -275,6 +275,7 @@ module = [
   "prismabib.gui.app",
   "prismabib.gui.home",
   "prismabib.gui.new_project",
+  "prismabib.gui.query_form",
   "prismabib.gui.settings",
   "prismabib.gui.server",
 ]

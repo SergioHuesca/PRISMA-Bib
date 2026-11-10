@@ -12,6 +12,7 @@ import pytest
 from prismabib.errors import ProjectLockedError, ValidationError
 from prismabib.gui import layer
 from prismabib.gui.layer import Session
+from prismabib.gui.query_form_model import QueryInputs
 
 pytestmark = pytest.mark.integration
 
@@ -25,7 +26,10 @@ def root(tmp_path: Path) -> Path:
 
 
 def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
-    return {"set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada")}
+    return {
+        "set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada"),
+        "save_query": lambda: layer.save_query(session, QueryInputs(terms=["a"])),
+    }
 
 
 def test_second_session__open_project__is_read_only_with_a_reason(root: Path) -> None:

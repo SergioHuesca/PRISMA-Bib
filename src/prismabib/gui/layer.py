@@ -36,6 +36,8 @@ from prismabib.errors import (
     UpstreamError,
     ValidationError,
 )
+from prismabib.gui.query_form_model import QueryInputs
+from prismabib.gui.query_form_model import save_query as _save_query
 from prismabib.onboarding import create_project as _create_project
 from prismabib.prisma.events import CURRENT_SCHEMA_VERSION
 from prismabib.project import Project
@@ -345,6 +347,14 @@ def set_source_mode(session: Session, mode: SourceMode, *, reviewer: str) -> Sou
     name = _require_reviewer(reviewer)
     require_unlocked(project, "source_mode")
     return set_mode(project, mode, actor=name)
+
+
+@write_operation
+def save_query(session: Session, inputs: QueryInputs) -> None:
+    """Save the query (terms, years, subject areas) unless read-only or a Run has started."""
+    project = session.require_writable()
+    require_unlocked(project, "query")
+    _save_query(project, inputs)
 
 
 # -- errors, in the researcher's words -----------------------------------------------------------

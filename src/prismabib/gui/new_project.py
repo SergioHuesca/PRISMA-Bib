@@ -9,6 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer
 from prismabib.gui import new_project_model as npm
+from prismabib.gui.query_form import build_query_form
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting, write_user_settings
 
@@ -78,14 +79,16 @@ def build_new_project(root: Path, on_created: Callable[[Project], None] | None =
 def build_stepper(project: Project) -> pn.Row:
     """The sidebar of steps (finished ones marked, read from disk) beside the chosen step."""
     rows = npm.stepper_rows(project)
-    detail = pn.pane.Markdown("")
+    detail = pn.Column(sizing_mode="stretch_width")
     buttons: list[pn.widgets.Button] = []
 
     def show(row: npm.StepRow) -> None:
         text = f"### {row.label}\n\n{row.detail}"
         if row.lock:
             text += f"\n\nRead-only. {row.lock}"
-        detail.object = text
+        detail[:] = [pn.pane.Markdown(text)]
+        if row.key == "query":
+            detail.append(build_query_form(project))
 
     def _shower(row: npm.StepRow) -> Callable[[object], None]:
         return lambda _: show(row)
