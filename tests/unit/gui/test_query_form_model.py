@@ -105,9 +105,12 @@ def test_field_errors__each_wrong_field__is_named_with_the_librarys_message(
     assert "precedes" in errors["years"]
     assert field_errors(project, _inputs(terms=[]))["terms"].startswith("Add at least one")
     assert "year" in field_errors(project, _inputs(year_start=None))["years"]
-    assert "grouping" in field_errors(
-        project, _inputs(terms=["a"], compound_terms=[["b", "c"]])
-    )["compound_terms"]
+    assert (
+        "grouping"
+        in field_errors(project, _inputs(terms=["a"], compound_terms=[["b", "c"]]))[
+            "compound_terms"
+        ]
+    )
 
 
 def test_save_query__invalid__raises_and_writes_nothing(tmp_path: Path) -> None:

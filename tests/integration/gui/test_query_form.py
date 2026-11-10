@@ -63,7 +63,10 @@ def test_form__terms_and_years_entered__saved_without_seeing_the_file(tmp_path: 
     _save(view)
     assert "Query saved" in _text(view)
     reopened = build_query_form(project)
-    assert _w(reopened, pn.widgets.MultiChoice, "Search terms").value == ["carbon capture", "policy"]
+    assert _w(reopened, pn.widgets.MultiChoice, "Search terms").value == [
+        "carbon capture",
+        "policy",
+    ]
     assert _w(reopened, pn.widgets.IntInput, "First year").value == 2015
     assert _w(reopened, pn.widgets.MultiChoice, "Subject areas").value == ["COMP"]
     assert not (project.root / "criteria.yaml.tmp").exists()
@@ -77,8 +80,7 @@ def test_form__invalid_term__message_sits_next_to_its_field_and_nothing_is_writt
     view = build_query_form(project)
     _add(view, "Search terms", "a (b)")
     _save(view)
-    column = view[2]  # the terms chips, then the pane that holds their message
-    assert "parentheses" in str(view[3].object) and column is view[2]
+    assert "parentheses" in str(view[2].object)  # the pane right after the terms chips
     assert "Not saved" in _text(view)
     assert (project.root / "project.toml").read_bytes() == before
 
@@ -124,7 +126,5 @@ def test_form__every_control__has_a_label(tmp_path: Path) -> None:
 def test_stepper__query_step__builds_the_form(tmp_path: Path) -> None:
     project = _make(tmp_path)
     stepper = build_stepper(project)
-    next(
-        b for b in stepper.select(pn.widgets.Button) if b.name.startswith("Query")
-    ).clicks += 1
+    next(b for b in stepper.select(pn.widgets.Button) if b.name.startswith("Query")).clicks += 1
     assert any(w.name == "Save query" for w in stepper.select(pn.widgets.Button))

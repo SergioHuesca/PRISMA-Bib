@@ -179,6 +179,72 @@ def test_parity__scopus_access_answer__gui_and_cli_leave_identical_files(
     assert_parity(layer_out, normalise(tmp_path / "cli" / "demo"))
 
 
+def _init_cli(root: Path, mode: str) -> Path:
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "demo",
+            "--title",
+            "Demo review",
+            "--sources",
+            mode,
+            "--actor",
+            "Ada",
+            "--root",
+            str(root),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    return root / "demo"
+
+
+@pytest.mark.parametrize("mode", ["openalex", "scopus"])
+def test_parity__query_form__equals_the_hand_edit_the_cli_workflow_uses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Ticket #327: the CLI has no query writer, so its path is `init` plus the documented edit."""
+    from prismabib.gui.query_form_model import QueryInputs
+
+    inputs = QueryInputs(terms=["carbon capture", "policy"], year_start=2015, year_end=2024)
+    _inject(monkeypatch)
+    project = layer.create_project(
+        "demo",
+        title="Demo review",
+        root=tmp_path / "layer",
+        source_mode=mode,  # type: ignore[arg-type]
+        reviewer="Ada",
+    )
+    with layer.Session(project) as session:
+        layer.save_query(session, inputs)
+    layer_out = normalise(tmp_path / "layer" / "demo")
+
+    _inject(monkeypatch)
+    folder = _init_cli(tmp_path / "cli", mode)
+    toml = folder / "project.toml"
+    text = toml.read_text(encoding="utf-8")
+    if mode == "openalex":
+        text = text.replace('search = ""', """search = '"carbon capture" OR "policy"'""")
+    else:
+        text = text.replace("terms = []", 'terms = [\n  "carbon capture",\n  "policy",\n]', 1)
+    toml.write_text(text, encoding="utf-8")
+    crit = folder / "criteria.yaml"
+    crit.write_text(
+        crit.read_text(encoding="utf-8")
+        .replace("year_start: 1900", "year_start: 2015")
+        .replace(f"year_end: {FIXED_NOW.year}", "year_end: 2024"),
+        encoding="utf-8",
+    )
+    cli_out = normalise(folder)
+    assert (
+        layer_out["project.toml"] != normalise(_init_cli(tmp_path / "plain", mode))["project.toml"]
+    )
+    assert_parity(layer_out, cli_out)
+    layer_out["project.toml"] += "x"  # liveness: one altered byte must fail
+    with pytest.raises(AssertionError):
+        assert_parity(layer_out, cli_out)
+
+
 def test_parity__one_altered_byte__fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     layer_out = _create_via_layer(tmp_path / "layer", monkeypatch)
     cli_out = _create_via_cli(tmp_path / "cli", monkeypatch)

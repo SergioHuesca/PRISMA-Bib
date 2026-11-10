@@ -125,7 +125,7 @@ def load(project: Project) -> QueryInputs:
 
 def _openalex_search(inputs: QueryInputs) -> str:
     """The search string for chips: terms OR-ed, or one compound group AND-ed (no grouping in v1)."""
-    if inputs.terms and inputs.compound_terms or len(inputs.compound_terms) > 1:
+    if (inputs.terms and inputs.compound_terms) or len(inputs.compound_terms) > 1:
         raise ValidationError(
             "OpenAlex searches have no grouping in this version: use search terms only, "
             "or a single compound term on its own."
@@ -152,7 +152,7 @@ def _criteria_text(project: Project, inputs: QueryInputs, *, with_subjects: bool
         flow = "[" + ", ".join(json.dumps(a) for a in inputs.subject_areas) + "]"
         edits.append((r"^(subject_areas:)[^\n]*\n(?:[ \t]+-[^\n]*\n)*", rf"\g<1> {flow}\n"))
     for pattern, replacement in edits:
-        text, count = re.subn(pattern, lambda m, r=replacement: m.expand(r), text, flags=re.M)
+        text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
         if count != 1:  # a layout this form cannot edit in place: say so, never guess
             raise ConfigError(
                 "criteria.yaml has a layout this form cannot edit; change the years and "
@@ -218,9 +218,7 @@ def _list(items: list[str]) -> str:
 
 
 def _query_body(terms: list[str], groups: list[list[str]], fields: list[str]) -> str:
-    compound = [
-        "{ all = [" + ", ".join(_toml_string(p) for p in g) + "] }" for g in groups
-    ]
+    compound = ["{ all = [" + ", ".join(_toml_string(p) for p in g) + "] }" for g in groups]
     return (
         f"terms = {_list([_toml_string(t) for t in terms])}\n"
         f"compound_terms = {_list(compound)}\n"
@@ -235,16 +233,23 @@ def _search_line(search: str) -> str:
 
 def _replace_table(text: str, name: str, body: str) -> str:
     """Swap the body of ``[name]`` (header to the next header), or append the table."""
-    pattern = re.compile(rf"^\[{re.escape(name)}\][^\n]*\n(?:(?!\[)[^\n]*\n?)*", re.M)
+    pattern = re.compile(rf"^\[{re.escape(name)}\][^\n]*\n(?:(?!\[)[^\n]*\n?)*", re.MULTILINE)
     new = f"[{name}]\n{body}"
     if pattern.search(text):
-        return pattern.sub(lambda _: new, text, count=1)
+        # keep the blank lines that separated this table from the next one
+        return pattern.sub(
+            lambda m: new + "\n" * (len(m.group()) - len(m.group().rstrip("\n")) - 1),
+            text,
+            count=1,
+        )
     return text.rstrip("\n") + "\n\n" + new
 
 
 def _atomic_write(path: Path, text: str) -> None:
+    # The text was read with universal newlines: write it back with the file's own line ending.
+    eol = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(text.encode("utf-8"))
+    tmp.write_bytes(text.replace("\n", eol).encode("utf-8"))
     os.replace(tmp, path)
 
 
@@ -266,8 +271,9 @@ def save_query(project: Project, inputs: QueryInputs) -> None:
     old = path.read_text(encoding="utf-8")
     old_parsed = tomllib.loads(old)
     if project.source_mode == "openalex":
-        name, body = "openalex_query", _search_line(
-            _openalex_search(QueryInputs(terms=terms, compound_terms=groups))
+        name, body = (
+            "openalex_query",
+            _search_line(_openalex_search(QueryInputs(terms=terms, compound_terms=groups))),
         )
     else:
         fields = list(old_parsed.get("query", {}).get("fields", _DEFAULT_FIELDS))

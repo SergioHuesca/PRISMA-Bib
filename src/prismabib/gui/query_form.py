@@ -51,12 +51,13 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
     save = pn.widgets.Button(name="Save query", button_type="primary")
     status = pn.pane.Markdown("")
     errors = {
-        key: pn.pane.Markdown("")
-        for key in ("terms", "compound_terms", "years", "subject_areas")
+        key: pn.pane.Markdown("") for key in ("terms", "compound_terms", "years", "subject_areas")
     }
     notes: list[pn.pane.Markdown] = []
     if inputs.load_problem:
-        notes.append(pn.pane.Markdown(f"**The saved file could not be fully read.** {inputs.load_problem}"))
+        notes.append(
+            pn.pane.Markdown(f"**The saved file could not be fully read.** {inputs.load_problem}")
+        )
     if inputs.unparsed_search:
         notes.append(
             pn.pane.Markdown(
