@@ -353,3 +353,47 @@ def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
     assert _sealed_hash(gui) == _sealed_hash(cli)
     assert_parity(_by_run(gui), _by_run(cli))
     tasks.reset_runners()
+
+
+def test_parity__built_store__gui_build_equals_the_cli_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #331: the same stubbed Layer 0 builds the same tables through the GUI and the CLI."""
+    from prismabib.gui import build_layer as bl
+    from prismabib.gui import tasks
+    from prismabib.store.checksums import table_checksums
+    from prismabib.store.db import connect
+    from tests.prisma_helpers import RUN_ID, RUN_STARTED_AT, CorpusSpec, RecordSpec
+    from tests.store_helpers import write_sealed_run
+
+    monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
+    sums = []
+    for name in ("gui", "cli"):
+        project = layer.create_project(
+            "demo", title="Demo", root=tmp_path / name, source_mode="scopus", reviewer="Ada"
+        )
+        write_sealed_run(
+            project.raw_dir,
+            RUN_ID,
+            [
+                r.to_entry()
+                for r in CorpusSpec(records=[RecordSpec(number=n) for n in (1, 2, 3)]).records
+            ],
+            started_at=RUN_STARTED_AT,
+        )
+        if name == "gui":
+            with layer.Session(project) as session:
+                bl.start_build(session)
+            tasks.runner_for(project).join(30)
+            assert bl.build_status(project).outcome == "done"
+        else:
+            result = CliRunner().invoke(
+                app, ["build", "demo", "--rebuild", "--root", str(tmp_path / name)]
+            )
+            assert result.exit_code == 0, result.output
+        connection = connect(project)
+        sums.append(table_checksums(connection))
+        connection.close()
+    assert sums[0] == sums[1]
+    assert sums[0]["records"] != hashlib.sha256(b"").hexdigest()  # not a compare of empty tables
+    tasks.reset_runners()

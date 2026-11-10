@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from prismabib.errors import ProjectLockedError, ValidationError
+from prismabib.gui import build_layer as bl
 from prismabib.gui import capture_layer as cl
 from prismabib.gui import layer
 from prismabib.gui.layer import Session
@@ -32,6 +33,7 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
         "save_query": lambda: layer.save_query(session, QueryInputs(terms=["a"])),
         "save_criteria": lambda: layer.save_criteria(session, session.project.criteria),
         "start_capture": lambda: cl.start_capture(session, confirmed=True),
+        "start_build": lambda: bl.start_build(session),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
     }
 

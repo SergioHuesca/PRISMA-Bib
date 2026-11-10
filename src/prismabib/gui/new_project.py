@@ -9,6 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer
 from prismabib.gui import new_project_model as npm
+from prismabib.gui.build import build_build
 from prismabib.gui.capture import build_capture_step
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.keys import build_keys
@@ -101,6 +102,7 @@ def build_stepper(project: Project) -> pn.Row:
                 if row.key == "capture"
                 else []
             ),
+            *([build_build(project)] if row.key == "build" else []),
         ]
 
     def _shower(row: npm.StepRow) -> Callable[[object], None]:
