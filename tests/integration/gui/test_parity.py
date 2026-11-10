@@ -353,3 +353,48 @@ def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
     assert _sealed_hash(gui) == _sealed_hash(cli)
     assert_parity(_by_run(gui), _by_run(cli))
     tasks.reset_runners()
+
+
+def test_parity__openalex_capture_and_refresh__sealed_payload_hash_equals_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #330: the GUI capture (key from the app's file) and the CLI seal the same bytes."""
+    import respx
+
+    from prismabib.gui import tasks
+    from prismabib.user_settings import write_user_settings
+    from tests.integration.gui import test_openalex_capture as oa
+
+    monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    write_user_settings({"OPENALEX_API_KEY": "oa-test-key-not-real"}, tmp_path / "settings.env")
+    gui, cli = oa._project(tmp_path, "gui"), oa._project(tmp_path, "cli")
+
+    def hashes(project: project_module.Project) -> list[str]:
+        out = []
+        for run in oa._runs(project):
+            h = hashlib.sha256()
+            for page in sorted(run.glob("response-*.jsonl")):
+                h.update(page.read_bytes())
+            out.append(h.hexdigest())
+        return out
+
+    def run_cli(*extra: str) -> None:
+        result = CliRunner().invoke(
+            app,
+            ["openalex-search", "demo", "--budget", "10", "--root", str(tmp_path / "cli"), *extra],
+            env={"OPENALEX_API_KEY": "oa-test-key-not-real"},
+        )
+        assert result.exit_code == 0, result.output
+
+    with respx.mock:
+        respx.get(oa._URL).mock(side_effect=oa.Stub())
+        oa._start(gui)
+        oa._finish(gui)
+        run_cli()
+        assert hashes(gui) == hashes(cli) and len(hashes(gui)) == 1
+        oa._start(gui, refresh=True)
+        oa._finish(gui)
+        run_cli("--refresh")
+    assert hashes(gui) == hashes(cli) and len(hashes(gui)) == 2
+    tasks.reset_runners()

@@ -9,6 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import capture_layer as cl
 from prismabib.gui import layer
+from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui.size_check import build_size_check
 from prismabib.project import Project
 
@@ -16,7 +17,14 @@ CAPTURE_POLL_MS = 1000
 
 
 def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Column:
-    """The capture controls and the state of the Scopus capture of ``project``."""
+    """The capture controls and the state of the capture of ``project`` (OpenAlex or Scopus)."""
+    openalex = project.source_mode == "openalex"
+    status_of = oal.openalex_status if openalex else cl.capture_status
+    texts = oal.STATE_TEXT if openalex else cl.STATE_TEXT
+    budget = pn.widgets.IntInput(
+        name="Page budget (pages of 100 works)", value=10, start=1, visible=openalex
+    )
+    again = pn.widgets.Button(name="Capture again (a new run)", visible=openalex)
     confirm = pn.widgets.Checkbox(name="I confirm: capture this search now")
     start = pn.widgets.Button(name="Start the capture", button_type="primary")
     cancel = pn.widgets.Button(name="Cancel the capture")
@@ -29,9 +37,9 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
     message = pn.pane.Markdown("")
 
     def show(*_: object) -> None:
-        s = cl.capture_status(project)
+        s = status_of(project)
         active = s.state in (cl.CaptureState.RUNNING, cl.CaptureState.CANCELLING)
-        text = f"**{s.state.value.capitalize()}.** {cl.STATE_TEXT[s.state]}"
+        text = f"**{s.state.value.capitalize()}.** {texts[s.state]}"
         if s.pages_done or s.records_seen:
             of = f" of {s.total_results:,}" if s.total_results is not None else ""
             text += f"\n\nPages done: {s.pages_done}. Records seen: {s.records_seen:,}{of}."
@@ -48,6 +56,7 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
             if s.state in (cl.CaptureState.UNSEALED, cl.CaptureState.NETWORK_STOPPED)
             else "Start the capture"
         )
+        again.disabled = s.state is not cl.CaptureState.SEALED
         cancel.disabled = s.state is not cl.CaptureState.RUNNING
         discard.disabled = s.state is not cl.CaptureState.UNSEALED
         if active:
@@ -57,15 +66,27 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
         msg = layer.translate(exc)
         message.object = f"**{msg.sentence}** {msg.next_step}"
 
-    def on_start(_: object) -> None:
+    def go(new_run: bool) -> None:
         message.object = ""
         try:
             with layer.Session(project) as session:
-                cl.start_capture(session, confirmed=confirm.value, user_file=user_file)
+                if openalex:
+                    oal.start_openalex_capture(
+                        session,
+                        budget=budget.value or 0,
+                        confirmed=confirm.value,
+                        refresh=new_run,
+                        user_file=user_file,
+                    )
+                else:
+                    cl.start_capture(session, confirmed=confirm.value, user_file=user_file)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             fail(exc)
         confirm.value = False  # every start, a resume included, is confirmed again
         show()
+
+    def on_start(_: object) -> None:
+        go(False)
 
     def on_cancel(_: object) -> None:
         cl.cancel_capture(project)
@@ -75,7 +96,7 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
         discard_yes.visible = discard_no.visible = yes
 
     def on_discard(_: object) -> None:
-        run = cl.capture_status(project).run_id
+        run = status_of(project).run_id
         try:
             with layer.Session(project) as session:
                 cl.discard_capture(session, run or "", confirmed=True)
@@ -85,6 +106,7 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
         show()
 
     start.on_click(on_start)
+    again.on_click(lambda _: go(True))
     cancel.on_click(on_cancel)
     refresh.on_click(show)
     discard.on_click(lambda _: ask_discard(True))
@@ -99,7 +121,8 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
         bar,
         message,
         confirm,
-        pn.Row(start, cancel, refresh),
+        budget,
+        pn.Row(start, again, cancel, refresh),
         discard,
         pn.Row(discard_yes, discard_no),
         sizing_mode="stretch_width",
@@ -108,10 +131,9 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
 
 def build_capture_step(project: Project, *, on_keys: Callable[[], None] | None = None) -> pn.Column:
     """The size check, and below it the capture, shown once the researcher continues."""
-    if project.source_mode == "openalex":  # OpenAlex capture is a later ticket
-        return pn.Column(build_size_check(project, on_keys=on_keys))
     panel = build_capture(project)
-    panel.visible = cl.capture_status(project).state is not cl.CaptureState.NOT_STARTED
+    status_of = oal.openalex_status if project.source_mode == "openalex" else cl.capture_status
+    panel.visible = status_of(project).state is not cl.CaptureState.NOT_STARTED
     return pn.Column(
         build_size_check(
             project, on_keys=on_keys, on_continue=lambda: setattr(panel, "visible", True)
