@@ -137,6 +137,48 @@ def test_parity__project_creation__layer_and_cli_leave_identical_files(
         Path(target).write_text(digest(layer_out, cli_out) + "\n", encoding="utf-8")
 
 
+@pytest.mark.parametrize(
+    ("answer", "fill", "cli_args"),
+    [
+        ("Yes", True, ["--sources", "scopus+openalex"]),
+        ("Yes", False, ["--sources", "scopus"]),
+        ("No", True, ["--sources", "openalex"]),
+    ],
+)
+def test_parity__scopus_access_answer__gui_and_cli_leave_identical_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str, fill: bool, cli_args: list[str]
+) -> None:
+    """Ticket #324: the New Project answer, through its mapping, equals the CLI's mode flag."""
+    from prismabib.gui.new_project_model import mode_for_choice
+
+    _inject(monkeypatch)
+    layer.create_project(
+        "demo",
+        title="Demo review",
+        root=tmp_path / "layer",
+        source_mode=mode_for_choice(answer, fill_gaps=fill),
+        reviewer="Ada",
+    )
+    layer_out = normalise(tmp_path / "layer" / "demo")
+    _inject(monkeypatch)
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "demo",
+            "--title",
+            "Demo review",
+            *cli_args,
+            "--actor",
+            "Ada",
+            "--root",
+            str(tmp_path / "cli"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert_parity(layer_out, normalise(tmp_path / "cli" / "demo"))
+
+
 def test_parity__one_altered_byte__fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     layer_out = _create_via_layer(tmp_path / "layer", monkeypatch)
     cli_out = _create_via_cli(tmp_path / "cli", monkeypatch)

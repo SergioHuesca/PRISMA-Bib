@@ -16,6 +16,7 @@ def build_home(
     *,
     checks: Callable[[], Mapping[str, Check]] = hm.default_checks,
     on_new_project: Callable[[], None] | None = None,
+    on_open: Callable[[Path, str], None] | None = None,
 ) -> pn.Column:
     """The home screen. ``root`` is the explicit Projects folder option, when there is one."""
     column = pn.Column(sizing_mode="stretch_width")
@@ -30,12 +31,19 @@ def build_home(
 
     def show_projects(path: Path) -> None:
         entries = hm.list_projects(path)
-        listing[:] = [
-            pn.pane.Markdown(
-                f"- **{e.title}** (`{e.slug}`)" if e.title != e.slug else f"- `{e.slug}`"
-            )
-            for e in entries
-        ] or [pn.pane.Markdown("No Projects in this folder yet.")]
+        listing[:] = [_entry(e, path) for e in entries] or [
+            pn.pane.Markdown("No Projects in this folder yet.")
+        ]
+
+    def _entry(e: hm.ProjectEntry, path: Path) -> pn.viewable.Viewable:
+        text = pn.pane.Markdown(
+            f"- **{e.title}** (`{e.slug}`)" if e.title != e.slug else f"- `{e.slug}`"
+        )
+        if on_open is None:
+            return text
+        open_button = pn.widgets.Button(name=f"Open {e.slug}")
+        open_button.on_click(lambda _: on_open(path, e.slug))
+        return pn.Row(text, open_button)
 
     def choose(create_it: bool) -> None:
         path = Path((folder.value or "").strip() or ".")

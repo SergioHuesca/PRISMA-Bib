@@ -274,6 +274,7 @@ module = [
   "prismabib.credentials_ui",
   "prismabib.gui.app",
   "prismabib.gui.home",
+  "prismabib.gui.new_project",
   "prismabib.gui.server",
 ]
 disallow_untyped_calls = false

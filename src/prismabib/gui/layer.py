@@ -220,9 +220,9 @@ def _require_reviewer(reviewer: str) -> str:
 def create_project(
     slug: str, *, title: str, root: Path, source_mode: SourceMode, reviewer: str
 ) -> Project:
-    """Create a Project; refuses a blank reviewer name or a folder that already holds a Project."""
+    """Create a Project; refuses a blank reviewer name or a folder that already exists."""
     name = _require_reviewer(reviewer)
-    if (root / slug / "project.toml").exists():
+    if (root / slug).exists():
         raise ValidationError(f"A Project named {slug!r} already exists. Choose another name.")
     return _create_project(slug, title=title, root=root, source_mode=source_mode, reviewer=name)
 
