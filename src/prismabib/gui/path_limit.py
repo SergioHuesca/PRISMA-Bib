@@ -13,11 +13,13 @@ from typing import Final
 #: Headroom under the classic 260-character Windows path limit.
 MAX_PATH_CHARS: Final = 240
 
-#: The deepest path the library writes under a Project: the per-run HTTP cache of a search run,
-#: ``raw/openalex-search/<run id>/_http/<2 hex>/<64 hex>.bin`` (a run id is
-#: ``<UTC timestamp>-<8 hex>``, 25 characters).
+#: The deepest path the library writes under a Project: the temporary file of a cache entry in the
+#: per-run HTTP cache of an abstracts run, ``raw/abstracts/<run id>/_http/<2 hex>/<64 hex>.bin.tmp``
+#: (a run id is ``<UTC timestamp>-<8 hex>``, 25 characters). The full-text runs' cache is as long;
+#: every other writer (search pages, assets, exports, store, taxonomy, logs) is shorter, which
+#: ``tests/unit/gui/test_path_limit.py`` checks against the library's own names.
 LONGEST_RELATIVE_PATH: Final = PurePosixPath(
-    "raw", "openalex-search", "20260115T090000Z-3f9a2c11", "_http", "00", "0" * 64 + ".bin"
+    "raw", "abstracts", "20260115T090000Z-3f9a2c11", "_http", "00", "0" * 64 + ".bin.tmp"
 )
 
 
