@@ -55,6 +55,7 @@ from prismabib.capture.enrich import capture_abstracts
 from prismabib.capture.manifest import AbstractRunManifest, RunManifest
 from prismabib.capture.manual_commands import register_manual_commands
 from prismabib.capture.openalex_search_commands import openalex_search as _openalex_search_command
+from prismabib.capture.progress import CaptureProgress
 from prismabib.capture.registrations import (
     REVERSAL_REASONS,
     MatchRule,
@@ -456,92 +457,74 @@ def init(
 # ---------------------------------------------------------------------------
 
 
-class _CaptureProgress:
-    """Renders ``capture.*`` log events as human progress lines.
+def _render_progress(emit: Callable[[str], None]) -> Callable[[CaptureProgress], None]:
+    """Turn the capture's progress callback into the human progress lines of ``search``.
 
-    :func:`~prismabib.capture.writer.capture_search` already emits a structured
-    event per page written; this turns that stream into progress a person can
-    read, rather than the CLI inventing a second, unrelated progress
-    abstraction (a spinner counting nothing, or a percentage guessed from page
-    size). It is installed as a structlog processor for the duration of one
-    ``search`` and removed afterwards -- see :func:`_capture_progress`.
+    The callback (:class:`~prismabib.capture.progress.CaptureProgress`) is the one source of
+    progress; this only words it.
 
-    The four events it renders are dropped from the normal log stream so the
-    same information is not printed twice; every other event passes through
-    untouched.
+    Args:
+        emit: Where to write each progress line (stderr in practice; a list's ``append`` in tests).
+
+    Returns:
+        The ``on_progress`` callback to pass to ``capture_search``.
     """
 
-    def __init__(self, emit: Callable[[str], None]) -> None:
-        """Args:
-        emit: Where to write each progress line (stderr in practice; a
-            list's ``append`` in tests).
-        """
-        self._emit = emit
-        self._records = 0
-
-    def __call__(
-        self, _logger: WrappedLogger, _method_name: str, event_dict: EventDict
-    ) -> EventDict:
-        """Structlog processor entry point.
-
-        Args:
-            _logger: The wrapped logger; unused (structlog passes all three
-                positionally, so the name is free to say so).
-            _method_name: The log method called; unused.
-            event_dict: The event being logged.
-
-        Returns:
-            ``event_dict`` unchanged, for any event this does not render.
-
-        Raises:
-            structlog.DropEvent: For an event rendered as a progress line, so
-                it is not also printed in raw structured form.
-        """
-        event = event_dict.get("event")
-        if event == "capture.run_started":
-            self._emit(f"Run {event_dict.get('run_id')} started.")
-        elif event == "capture.run_resumed":
-            pages = event_dict.get("pages_already_written", 0)
-            self._emit(
-                f"Resuming run {event_dict.get('run_id')}: {pages} page(s) already in "
+    def render(progress: CaptureProgress) -> None:
+        if progress.event == "started":
+            emit(f"Run {progress.run_id} started.")
+        elif progress.event == "resumed":
+            emit(
+                f"Resuming run {progress.run_id}: {progress.pages_done} page(s) already in "
                 "Layer 0, continuing from the saved cursor -- those pages are not "
                 "re-fetched and cost no quota."
             )
-        elif event == "capture.page_written":
-            self._records += int(event_dict.get("result_count") or 0)
-            total = event_dict.get("total_results")
-            seen = f"{self._records:,}" + (f" of {int(total):,}" if total is not None else "")
-            self._emit(
-                f"  page {int(event_dict.get('page_index', 0)) + 1} written -- "
-                f"{seen} records captured, cursor saved"
-            )
-        elif event == "capture.run_sealed":
-            self._emit(f"Run {event_dict.get('run_id')} sealed; Layer 0 is now immutable.")
+        elif progress.event == "page":
+            total = progress.total_results
+            seen = f"{progress.records_seen:,}" + (f" of {total:,}" if total is not None else "")
+            emit(f"  page {progress.pages_done} written -- {seen} records captured, cursor saved")
         else:
-            return event_dict
+            emit(f"Run {progress.run_id} sealed; Layer 0 is now immutable.")
+
+    return render
+
+
+_PROGRESS_EVENTS = frozenset(
+    {"capture.run_started", "capture.run_resumed", "capture.page_written", "capture.run_sealed"}
+)
+
+
+def _drop_progress_events(
+    _logger: WrappedLogger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Structlog processor: keep the events the progress lines already say out of the log stream.
+
+    Raises:
+        structlog.DropEvent: For one of the four ``capture.*`` progress events.
+    """
+    if event_dict.get("event") in _PROGRESS_EVENTS:
         raise structlog.DropEvent
+    return event_dict
 
 
 @contextmanager
-def _capture_progress(emit: Callable[[str], None]) -> Iterator[None]:
-    """Install :class:`_CaptureProgress` for the duration of the block.
+def _capture_progress(emit: Callable[[str], None]) -> Iterator[Callable[[CaptureProgress], None]]:
+    """Silence the ``capture.*`` log events for the block and yield the progress callback.
 
     Args:
         emit: Where progress lines are written.
 
     Yields:
-        ``None``, with the processor installed ahead of every other configured
-        structlog processor.
+        The ``on_progress`` callback for ``capture_search``.
     """
     previous = list(structlog.get_config()["processors"])
-    structlog.configure(processors=[_CaptureProgress(emit), *previous])
+    structlog.configure(processors=[_drop_progress_events, *previous])
     try:
-        yield
+        yield _render_progress(emit)
     finally:
         # Restored even on failure: structlog's configuration is process-global,
-        # and a CLI that left a stderr-printing processor behind would corrupt
-        # the logging of anything sharing the interpreter (notably a test
-        # session, where the leak would surface as an unrelated failure).
+        # and a CLI that left a processor behind would corrupt the logging of
+        # anything sharing the interpreter (notably a test session).
         structlog.configure(processors=previous)
 
 
@@ -570,8 +553,8 @@ def search(
         _echo_err()
 
         try:
-            with _capture_progress(_echo_err):
-                manifest = capture_search(project)
+            with _capture_progress(_echo_err) as on_progress:
+                manifest = capture_search(project, on_progress=on_progress)
         except KeyboardInterrupt:
             _echo_err()
             _echo_err(
