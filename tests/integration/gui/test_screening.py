@@ -13,7 +13,7 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import ProjectLockedError
-from prismabib.gui import layer
+from prismabib.gui import layer, tasks
 from prismabib.gui import screening_layer as sl
 from prismabib.gui.new_project import build_stepper
 from prismabib.gui.screening import build_screening
@@ -176,6 +176,8 @@ def test_smoke__stepper_screening_step__builds_with_labelled_controls(tmp_path: 
     start = next(b for b in view.select(pn.widgets.Button) if b.name == "Start screening")
 
     start.clicks += 1
+    tasks.runner_for(project).join(30)
+    view.poll()
 
     assert not unlabelled_controls(view)
     assert view.select(pn.widgets.TextInput)[0].value == "Ada"
