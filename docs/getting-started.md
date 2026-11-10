@@ -1,7 +1,8 @@
 # Getting Started
 
-This page takes you from a clone of the repository to a PRISMA 2020 flow count. Which steps
-apply depends on one question: do you have Scopus access?
+This page takes you from a clone of the repository to a PRISMA 2020 flow count. You can also get
+there in a browser, with the app: see [The app path](#the-app-path). Which steps apply depends on
+one question: do you have Scopus access?
 
 At the end you will have:
 
@@ -10,13 +11,9 @@ At the end you will have:
 - screening decisions recorded as append-only, checksum-guarded events, and
 - the PRISMA flow counts derived from all of them, with nothing typed by hand.
 
-!!! note "A point-and-click path exists"
-    Besides the command line described below, prismabib has a local app that opens in your
-    browser. Install it with
-    `uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"` and
-    start it with `prismabib gui`. It serves on your own computer only (the loopback address) and
-    calls the same library code as the commands. It is under construction: today it opens an empty
-    page. See [ADR 0043](architecture/adr/0043-local-gui.md) for what it will and will not do.
+!!! note "A browser app covers the same steps"
+
+    The app runs walkthrough steps 1 to 11 in a browser. Install it with one line, then start it with `prismabib gui`: `uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"`. See [The app path](#the-app-path) for each step, and [ADR 0043](architecture/adr/0043-local-gui.md) for its scope.
 
 ## Do you have Scopus access?
 
@@ -67,9 +64,284 @@ exists for that case: it searches OpenAlex with a free key. It returns different
 Scopus, and the methods text says which source you used. Read
 [Limitations](methodology/limitations.md) before you cite its numbers.
 
+## The app path
+
+The app runs the same walkthrough in a browser, so you do not edit TOML or YAML for the review
+itself. It calls the same library code as the command line, so its results are meant to match.
+This path covers walkthrough steps 1 to 11 in every Source mode. Step 12 and the other items under
+[What stays on the command line](#what-stays-on-the-command-line) stay on the command line. The
+design is recorded in [ADR 0043](architecture/adr/0043-local-gui.md).
+
+### Install and start
+
+Install the app with one line:
+
+```bash
+uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"
+```
+
+uv is the only thing this install needs. When the app starts, its first-run check also looks for
+Python 3.11 or newer, git and uv. The Home screen names anything missing and says how to fix it.
+git is the one you may have to install yourself.
+
+Start the app from any folder:
+
+```bash
+prismabib gui
+```
+
+The terminal prints the address, `http://127.0.0.1:5006/` or another port when 5006 is busy, and
+the app opens in your browser. The app listens on this computer only. Keep the terminal open while
+you work. `prismabib gui --no-browser` prints the address without opening the browser.
+
+On Windows:
+
+- The first time the app starts, Windows may ask whether to allow it through the firewall. Choose
+  **Private networks only**, or **Cancel**. The app talks to this computer only, so it works either
+  way.
+- If Smart App Control or Application Control blocks the program, use a Python installed from
+  python.org, not a store or portable build. The Home screen shows this hint.
+
+To stop the app, click **Stop the app** on the Home screen, or press Ctrl+C in the terminal. Closing
+the browser does not stop a running capture. Stopping the app during a capture leaves that capture
+unsealed, and it resumes from the pages already fetched.
+
+### Step 1. Create the Project
+
+1. On first launch, the Home screen shows the **Projects folder**. Pick one with **Use this
+   folder**, or type a new path and click **Create this folder**. The app remembers the choice.
+   Until you choose, it uses a folder named `projects` in the folder you started the app from. The
+   app refuses a folder inside the installed program, a folder it cannot write to, and a path longer
+   than 240 characters. It warns, without blocking, when the folder is in a synced location such as
+   OneDrive, Dropbox, Google Drive, iCloud or Box Sync.
+2. Click **New Project**, then fill in the screen:
+   - **Project name**. The folder name is derived from it and shown under the field. If that folder
+     already exists, choose another name. The app never overwrites a Project.
+   - **Reviewer name**. Every Decision the Project receives carries this name. The app remembers it
+     for the next Project.
+   - **Do you have Scopus access?** Choose **Yes**, **No** or **Not sure**. No and Not sure create a
+     Project in Source mode `openalex`, and no Scopus key is asked for. Yes creates `scopus+openalex`
+     while **Also fill missing fields of Scopus records from OpenAlex** is ticked, which it is by
+     default, and `scopus` when it is not.
+3. Click **Create Project**. The Project opens at its first step that is not done, **Query**. The
+   sidebar lists the steps and marks each one done, next or not done. A step that is locked shows
+   as read-only.
+4. Open **Source mode and keys** in the sidebar. Enter your OpenAlex key in **OpenAlex API key**
+   (it is masked), click **Save OpenAlex key**, then click **Test OpenAlex key**. A real OpenAlex
+   search needs the key. Keys are saved in your per-user settings file, which is outside every
+   Project folder, and the screen shows where that file is. In a Scopus mode the same step also
+   shows the Scopus key, with **Save key** and **Test Scopus key**.
+
+### Step 2. Write the query
+
+Open **Query**.
+
+- **Search terms**: type a phrase and press Enter, or use the add button beside the box. Each one
+  shows as a chip you can remove.
+- **Compound terms**: type the parts that must all appear, joined with ` + `. The example query is
+  one compound term, `baseball + pose estimation + pitcher`. In OpenAlex mode the app saves it as
+  `"baseball" AND "pose estimation" AND "pitcher"`, the same query the command line walkthrough uses.
+- **First year** and **Last year**: 2015 and 2026 for the example. The app saves them to
+  `criteria.yaml`.
+- **Subject areas**: leave them empty for this walkthrough. In a Scopus mode the field is disabled,
+  with the reason: restricting by subject area with Scopus needs Enrichment, which this version does
+  not offer.
+
+Click **Save query**. The app writes the terms to `project.toml` and the years to `criteria.yaml`,
+and says so. The query stays editable until the first capture starts. After that it is read-only,
+and a different search needs a new Project.
+
+### Step 3. Set the Criteria
+
+Open **Criteria**. The form shows the years from step 2 as **Include from year** and **Include up
+to year**, along with the other rules.
+
+- An empty list means no restriction on that rule. Leave the lists empty for this walkthrough.
+- **Reason codes for excluding at abstract screening**: one code per line, or separated by commas.
+  These are the exclusion reasons offered in step 8. The first code is number 1. Edit the starter
+  codes before you screen.
+- **Criteria version (MAJOR.MINOR.PATCH)**: the app does not change it for you. Raise it whenever you
+  change a rule, for example from `0.1.0` to `0.1.1`, as the command line walkthrough does.
+
+Click **Save Criteria**. The Criteria stay editable until the first Decision is logged. After that
+the form is read-only and says why.
+
+### Step 4. Check the size
+
+Open **Size check and capture** and click **Check the size of the OpenAlex search**, or **Check the
+size of the Scopus search** in a Scopus mode. The check shows:
+
+- **Records**: how many Records the saved query matches.
+- In OpenAlex mode: the cost bound, the page budget, the remaining daily allowance, and when the
+  allowance resets, in your local time.
+- In Scopus modes: the quota cost and the remaining weekly allowance. If the capture would need more
+  than the weekly allowance left, the screen says so before you start.
+
+The check captures and writes nothing, and it needs a working key. With more than 2,000 Records the
+app warns and asks you to tick **I understand this is a large set and want to continue**. With more
+than 10,000 Records it stops, and you narrow the query in step 2 and check again.
+
+The example query returned 108 works on 2026-11-05, as the command line walkthrough shows. Your
+count may differ.
+
+Click **Continue to capture** once it is enabled.
+
+### Step 5. Capture
+
+The capture controls appear below the size check.
+
+- **Page budget (pages of 100 works)**, OpenAlex only: the most pages this capture may request. The
+  default is 10, and the example needs 2.
+- Tick **I confirm: capture this search now**, then click **Start the capture**. Every start needs
+  the tick, a resume included.
+- The progress bar and the counts update while it runs. You can close the browser; the capture keeps
+  going while the app runs.
+- **Cancel the capture** stops at the next page boundary. The run stays unsealed, and **Resume the
+  capture** continues from the pages already fetched.
+- When every page has arrived, the state reads **Sealed**. The app never deletes or overwrites a
+  sealed run. In OpenAlex mode, **Capture again (a new run)** runs the search again as a new run, and
+  it spends the daily allowance again. Use it only when you mean to.
+- **Discard the unsealed run** asks you to confirm with **Yes, discard it**. It deletes nothing. A
+  discarded OpenAlex run still blocks a change of Source mode.
+
+When the OpenAlex daily allowance is spent, the screen says when it resets, in your local time.
+
+### Step 6. Build the store
+
+Open **Build** and click **Build the store**, or **Rebuild the store** after the first build. The
+build reads your sealed runs and replaces the store only when it is complete. When it finishes, the
+screen reads **Built.** with the number of Records and the number of duplicates across searches that
+were removed. A rebuild never touches your captured data or the Decision log. **Cancel the build**
+keeps the previous store.
+
+**Delete the built store** is on the same step. It deletes only the store, after a confirmation that
+names what stays. The Project stays listed, and **Build the store** makes the store again.
+
+### Step 7. Print the Flow counts
+
+Open **Flow counts**. The table is worked out from the store and the Decision log each time. A row
+that subtracts shows a minus sign, and an indented row is a breakdown of the row above it. Before any
+screening, every Record is under **Unsure or not yet screened (title and abstract)**.
+
+The labels follow the glossary's terms, so they can be worded differently from the command line's
+output. The numbers come from the same function, so they match.
+
+### Step 8. Screen records
+
+Open **Screening**. The reviewer field, labelled **Reviewer (recorded on every Decision you make
+here)**, starts with the name you gave in step 1. Leave the stage on **Title and abstract**.
+**Blind mode** is on by default, which hides author names, citation counts and other reviewers'
+Decisions. Click **Start screening**. The app loads the Records and then shows the Screener.
+
+If the Criteria or the store are not ready, the step lists what to finish first. The screen also
+shows an Actor line. The library sets it when the Source mode changes. It is not the name on your
+Decisions.
+
+The header shows **Unscreened**, **Unsure** and **Records**. Each Decision is written to the Decision
+log before the next Record appears. You can use the keyboard, or the buttons beside it:
+
+| Key | Button | What it does |
+| --- | --- | --- |
+| `i` | **include (i)** | Includes the Record. |
+| `e`, then a number | One **N: code** button for each reason | Excludes the Record under that reason. The button does it in one click. |
+| `u` | **unsure (u)** | Marks the Record unsure. It stays in the queue. |
+| `n` / `p` | **next (n)** / **prev (p)** | Moves without deciding. |
+| `z` | **undo (z)** | Undoes your Decision on the Record on screen. See the note below. |
+| `?` | **help (?)** | Shows or hides the keyboard help. |
+
+> Undo withdraws your Decision on the Record on screen by adding an Unsure Decision; the Decision log
+> keeps both, and the Record then counts as Unsure, not Unscreened.
+
+Screen about ten Records to see how the keys and buttons behave. The stage choice also offers
+**Full text**. This guide does not cover full-text screening; see
+[What stays on the command line](#what-stays-on-the-command-line).
+
+### Step 9. Print the Flow counts again
+
+Open **Flow counts** and click **Refresh the Flow counts**. Each exclusion moves one Record into
+**Excluded at title and abstract**, and each inclusion moves one into **Sought for full-text
+retrieval**. The automated rows do not change, because screening does not touch them.
+
+### Step 10. Register a Record the search missed (optional)
+
+Registering needs the built store from step 6. On **Flow counts**, use **Register a Record the
+search missed**:
+
+1. Enter the **Reviewer name**. Paste the Records one line each, with the title, the year and the DOI
+   (optional), separated by tabs or commas. Click **Add these as candidates**.
+2. Choose the **Candidate** and a **Match rule**. `doi` is the default and suits a candidate with a
+   DOI. `title_year` suits one without a DOI. `near_confirmed` is for a near match, and it needs the
+   **I confirm this work is this candidate** tick.
+3. Choose the **Captured OpenAlex response** that holds the candidate's work. The app does not capture
+   these. The list shows only OpenAlex responses that the command line's `cascade` step has already
+   captured. If the list is empty, run that step from a clone of the repository on the command line
+   (walkthrough step 10, item 2), then reopen this step.
+4. Click **Register this Record**. The screen names the new registration and says it is counted after
+   the next build. Open **Build** and rebuild the store.
+
+After the rebuild, **Flow counts** shows **Registered records (added by a reviewer)** on its own line.
+**Records identified** does not change.
+
+### Step 11. Export the citable bundle
+
+Open **Export** and click **Export the citable bundle**. Progress is shown, and **Cancel the export**
+leaves the bundle unchanged. When it finishes, the screen names the folder, which is the Project's
+`exports` folder, and counts the figure files, table files and numbers. The files are the ones the
+command line writes; see [step 11 of the walkthrough](#step-11-export-the-citable-bundle).
+
+Before you cite a number, read [The export warning](#the-export-warning).
+
+### Settings, and committing Project files
+
+The **Settings** tab shows the Projects folder and the per-user settings file, and it holds your
+reviewer name. Uninstalling the app removes neither. See [Uninstall the App](how-to/uninstall-the-app.md).
+
+#### Committing Project files
+
+The app never runs `git commit` or `git push`. Committing a Project's `project.toml` and
+`criteria.yaml` is your task, done outside the app, in a git repository you keep for the review. The
+criteria history is read from git, so an uncommitted change cannot be replayed. Do not commit `raw/`,
+`store/` or `fulltext/`. They hold licensed or derived data.
+
+#### The export warning
+
+The export records the git state of the prismabib code that produced the numbers. It does not record
+the state of your Project folder. When a warning applies, the export screen shows it with the word
+**Warning.** in front. These are its three sentences:
+
+> This copy of prismabib is not inside a git repository, so the bundle cannot name a commit.
+> manifest.json records no commit and marks the state as uncommitted. The package version in
+> manifest.json still says which release produced the numbers; cite that.
+
+> The code that made this bundle has uncommitted changes, so the recorded commit does not describe it.
+> manifest.json records this. To fix it, commit your changes outside this app, then export again.
+
+> The recorded commit is on no remote branch, so a reader cannot fetch the code these numbers came
+> from. manifest.json records this. Push the commit outside this app, then export again.
+
+A program installed with the one-line command is not a git clone, so expect the first sentence. Cite
+the package version that `manifest.json` records. The other two sentences are about the clone you run
+from. Commit or push there, outside the app, then export again. The export still writes the bundle,
+but do not cite its numbers while a warning says the recorded state does not match what you can give
+a reader.
+
+### What stays on the command line
+
+These items are not in the app. Use the command line for them.
+
+- **Filling a manuscript** (walkthrough step 12). Use `prismabib fill`. See
+  [step 12](#step-12-fill-a-manuscript).
+- **Amending Criteria after the first Decision.** The Criteria form is read-only from then on. See
+  [Amend Eligibility Criteria](how-to/amend-eligibility-criteria.md).
+- **Scopus enrichment and cascade controls**, including subject-area restriction in Scopus modes. See
+  [Limitations](methodology/limitations.md#subject-areas).
+- **Full-text handling**, including `prismabib fulltext`.
+- **Bibliometrics, taxonomy and visualisation.** Use the command line and the notebooks.
+- **Languages other than English.** The app is in English only.
+
 ## Install
 
-These steps are the same for every mode.
+These steps are the same for every mode, and they are the command-line steps.
 
 ### Clone and check the version
 
@@ -1240,3 +1512,4 @@ These links apply to every path.
 - [Limitations](methodology/limitations.md) — what this tool cannot do today. Read it before you cite a number.
 - [Architecture Overview](architecture/overview.md) — the four-layer model.
 - [Testing](testing.md) — the test taxonomy and how to run each subset.
+- [Uninstall the App](how-to/uninstall-the-app.md) — what removing the program keeps, where it is, and how to delete it by hand.

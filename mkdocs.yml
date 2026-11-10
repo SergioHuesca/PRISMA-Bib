@@ -147,6 +147,7 @@ nav:
       - Merge Train: how-to/merge-train.md
       - Pre-push Check: how-to/pre-push-check.md
       - Stacked Merge Check: how-to/stacked-merge-check.md
+      - Uninstall the App: how-to/uninstall-the-app.md
   - Testing: testing.md
   - Evaluation:
       - Overview: evaluation/index.md
