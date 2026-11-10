@@ -9,6 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.doctor_checks import Check
 from prismabib.gui import home_model as hm
+from prismabib.gui import stop_model
 
 
 def build_home(
@@ -27,6 +28,23 @@ def build_home(
     new = pn.widgets.Button(name="New Project", button_type="success")
     message = pn.pane.Markdown("")
     listing = pn.Column()
+    stop = pn.widgets.Button(name="Stop the app")
+    stop_yes = pn.widgets.Button(name="Yes, stop the app", button_type="danger", visible=False)
+    stop_no = pn.widgets.Button(name="Keep the app running", visible=False)
+    stop_message = pn.pane.Markdown("")
+
+    def ask_stop(confirmed: bool) -> None:
+        request = stop_model.request_stop(confirmed=confirmed)
+        stop_yes.visible = stop_no.visible = request.confirm is not None
+        stop_message.object = request.confirm or "The app has stopped. You can close this tab."
+
+    def keep_running() -> None:
+        stop_yes.visible = stop_no.visible = False
+        stop_message.object = ""
+
+    stop.on_click(lambda _: ask_stop(False))
+    stop_yes.on_click(lambda _: ask_stop(True))
+    stop_no.on_click(lambda _: keep_running())
 
     def show_projects(path: Path) -> None:
         entries = hm.list_projects(path)
@@ -67,5 +85,6 @@ def build_home(
     if first_run:
         parts.append(pn.pane.Markdown(hm.FIREWALL_NOTE))
     parts += [folder, pn.Row(use, create), message, new, pn.pane.Markdown("## Projects"), listing]
+    parts += [pn.Row(stop, stop_yes, stop_no), stop_message]
     column[:] = parts
     return column

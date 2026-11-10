@@ -93,7 +93,7 @@ def test_build_home__remembered_folder_gone__says_so_and_the_field_can_change_it
 
 def test_build_home__every_control__is_labelled(tmp_path: Path) -> None:
     view = build_home(tmp_path, checks=lambda: PASSING)
-    assert len(view.select(pn.widgets.Widget)) == 4
+    assert len(view.select(pn.widgets.Widget)) == 7
     assert unlabelled_controls(view) == []
 
 

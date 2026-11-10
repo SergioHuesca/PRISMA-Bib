@@ -18,6 +18,7 @@ from typing import Annotated, Any, Final
 import typer
 
 from prismabib.errors import ConfigError
+from prismabib.gui import stop_model
 
 LOOPBACK: Final = "127.0.0.1"
 #: Tried first; when it is busy the OS picks a free port.
@@ -101,6 +102,8 @@ def serve(
             'uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"'
         ) from exc
     server = create_server(host, chosen)
+    # "Stop the app": the loop stops, run returns, and serve returns.
+    stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
     url = f"http://{host}:{server.port}/"
     typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
     if not no_browser:
