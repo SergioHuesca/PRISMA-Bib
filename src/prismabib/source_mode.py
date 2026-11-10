@@ -92,6 +92,8 @@ COMMAND_MODES: Final[dict[str, frozenset[str]]] = {
     "sources": _ALL,
     "doctor": _ALL,
     "credentials": _ALL,
+    # The app opens in every mode; each step it offers enforces its own mode rules.
+    "gui": _ALL,
 }
 
 
