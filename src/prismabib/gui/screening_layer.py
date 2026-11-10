@@ -41,7 +41,7 @@ LOAD_TASK_NAME: Final = "Opening the Screener"
 def missing(project: Project) -> list[str]:
     """What screening still needs, as sentences; empty when it can open."""
     out = []
-    if not layer._criteria_written(project):
+    if not layer.criteria_written(project):
         out.append("Criteria are not written yet. Finish the Criteria step.")
     if not project.db_path.is_file():
         out.append("The store is not built yet. Finish the Build step.")

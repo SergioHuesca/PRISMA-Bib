@@ -44,8 +44,8 @@ from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.query_form_model import save_query as _save_query
 from prismabib.onboarding import create_project as _create_project
 from prismabib.prisma.events import CURRENT_SCHEMA_VERSION
-from prismabib.project import Criteria, Project
-from prismabib.source_mode import SourceMode, SourceModeEvent, set_mode
+from prismabib.project import Criteria, Project, scaffold_criteria
+from prismabib.source_mode import SourceMode, SourceModeEvent, load_mode_events, set_mode
 from prismabib.sources.openalex import DailyBudgetExhaustedError
 from prismabib.user_settings import user_settings_path
 
@@ -90,17 +90,30 @@ def _query_written(project: Project) -> bool:
     )
 
 
-def _criteria_written(project: Project) -> bool:
-    """Whether Criteria differ from the scaffold: another version, or any restriction set."""
+def _scaffold_years(project: Project) -> set[int]:
+    """The years the scaffold's ``year_end`` can hold: when the Project was created, or now."""
+    years = {datetime.now(UTC).year}
     try:
-        c = project.criteria
+        events = load_mode_events(project)
+    except (LogError, OSError):
+        events = []
+    if events:  # create_project logs the first Source mode when it writes the scaffold
+        years.add(events[0].ts.year)
+    return years
+
+
+def criteria_written(project: Project) -> bool:
+    """Whether ``criteria.yaml`` differs from the unmodified scaffold on any field.
+
+    ``temporal.year_end`` is the year the scaffold was written, so a Project created in an
+    earlier year still counts as untouched until somebody edits that field to another year.
+    An unreadable file is not written.
+    """
+    try:
+        criteria = project.criteria
     except ConfigError:
         return False
-    return (
-        c.version != "0.1.0"
-        or c.temporal.year_start != 1900
-        or bool(c.subject_areas or c.doc_types.include or c.languages)
-    )
+    return all(criteria != scaffold_criteria(year) for year in _scaffold_years(project))
 
 
 def step_progress(project: Project) -> dict[str, bool]:
@@ -111,7 +124,7 @@ def step_progress(project: Project) -> dict[str, bool]:
     return {
         "source_mode": True,  # a Project always has an effective mode (legacy when no table)
         "query": _query_written(project),
-        "criteria": _criteria_written(project),
+        "criteria": criteria_written(project),
         "capture": any(is_sealed(run) for run in search_runs(project)),
         "build": built,
         "screening": screened,

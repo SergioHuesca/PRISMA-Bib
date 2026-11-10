@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -27,6 +28,7 @@ from prismabib.errors import (
 from prismabib.gui import layer
 from prismabib.gui.layer import ErrorClass
 from prismabib.project import Project
+from prismabib.source_mode import load_mode_events
 from prismabib.sources.openalex import DailyBudgetExhaustedError
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
 
@@ -92,6 +94,59 @@ def test_step_progress__query_and_criteria_saved__marked_done(project: Project) 
 
     assert progress["query"] and progress["criteria"]
     assert layer.first_unfinished(progress) == "capture"
+
+
+def _edit_criteria(project: Project, old: str, new: str) -> None:
+    path = project.root / "criteria.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert old in text, old
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def test_criteria_written__unmodified_scaffold__is_not_written(project: Project) -> None:
+    assert layer.criteria_written(project) is False
+    assert layer.step_progress(project)["criteria"] is False
+
+
+def test_criteria_written__scaffold_made_in_an_earlier_year__is_still_not_written(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    year = datetime.now(UTC).year
+    (first,) = load_mode_events(project)
+    created_last_year = first.model_copy(update={"ts": first.ts.replace(year=year - 1)})
+    monkeypatch.setattr(layer, "load_mode_events", lambda _project: [created_last_year])
+    _edit_criteria(project, f"year_end: {year}", f"year_end: {year - 1}")
+
+    assert layer.criteria_written(project) is False  # year_end is the creation year, untouched
+
+
+@pytest.mark.parametrize(
+    ("field", "old", "new"),
+    [
+        ("version", "version: 0.1.0", "version: 0.2.0"),
+        ("temporal.year_start", "year_start: 1900", "year_start: 1990"),
+        ("temporal.year_end", f"year_end: {datetime.now(UTC).year}", "year_end: 2001"),
+        ("subject_areas", "subject_areas: []", "subject_areas: [COMP]"),
+        ("doc_types.include", "  include: []", "  include: [ar]"),
+        ("doc_types.conference_whitelist", "conference_whitelist: []", "conference_whitelist: [X]"),
+        ("languages", "languages: []", "languages: [English]"),
+        ("manual_abstract", "    - OFF_TOPIC\n", "    - OFF_TOPIC\n    - TOO_OLD\n"),
+        ("manual_fulltext", "    - NO_FULL_TEXT\n", "    - NO_FULL_TEXT\n    - PAYWALL\n"),
+    ],
+)
+def test_criteria_written__one_field_edited_by_hand__is_written(
+    project: Project, field: str, old: str, new: str
+) -> None:
+    _edit_criteria(project, old, new)
+
+    assert layer.criteria_written(project) is True, field
+    assert layer.step_progress(project)["criteria"] is True
+
+
+def test_criteria_written__unreadable_file__is_not_written(project: Project) -> None:
+    (project.root / "criteria.yaml").write_text("version: [", encoding="utf-8")
+
+    assert layer.criteria_written(project) is False
 
 
 def test_step_progress__unsealed_run__capture_not_done_but_locks_hold(project: Project) -> None:
