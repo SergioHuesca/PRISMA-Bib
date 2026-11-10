@@ -485,7 +485,8 @@ def save_query(session: Session, inputs: QueryInputs) -> None:
     _save_query(project, inputs)
 
 
-#: Where the file a save replaced is kept, next to it, the first time the save would lose text.
+#: Where the file a save replaced is kept, next to it. The first backup has this name, the next
+#: ones ``.1``, ``.2``, ...: a backup is never overwritten.
 CRITERIA_BACKUP_NAME: Final = "criteria.yaml.before-app"
 
 
@@ -502,33 +503,56 @@ def _written_by_the_app(current: bytes) -> bool:
     return current == _criteria_text(parsed).encode("utf-8")
 
 
+def criteria_backups(project: Project) -> list[Path]:
+    """The backups of ``criteria.yaml`` the form has made, oldest first."""
+    found = project.root.glob(CRITERIA_BACKUP_NAME + "*")
+    return sorted(found, key=lambda p: int(p.suffix[1:]) if p.suffix[1:].isdigit() else 0)
+
+
 def _keep_original(path: Path) -> None:
-    """Copy a ``criteria.yaml`` the app did not write to its backup name, once, never over one."""
-    backup = path.with_name(CRITERIA_BACKUP_NAME)
+    """Copy a ``criteria.yaml`` the app did not write to the first free backup name."""
     if not path.is_file():
         return
     current = path.read_bytes()
     if _written_by_the_app(current):
         return  # nothing is lost: the save rewrites the same layout
-    try:
-        with backup.open("xb") as handle:  # exclusive: an existing backup is never overwritten
-            handle.write(current)
-    except FileExistsError:
-        pass
+    for number in range(10_000):
+        backup = path.with_name(CRITERIA_BACKUP_NAME + (f".{number}" if number else ""))
+        try:
+            with backup.open("xb") as handle:  # exclusive: an existing backup is never overwritten
+                handle.write(current)
+        except FileExistsError:
+            continue
+        return
 
 
 @write_operation
-def save_criteria(session: Session, criteria: Criteria) -> Path:
+def save_criteria(session: Session, criteria: Criteria, *, loaded: bytes | None = None) -> Path:
     """Write ``criteria.yaml`` unless the session is read-only or a Decision has been logged.
 
     The file stays the hand-editable source of truth; ``criteria`` is already validated by the
     library's own model. Bytes are written with ``\\n`` endings on every platform. A save
-    rewrites the whole file, so the first time it would replace text the app did not write
-    (comments, layout) that text is copied once to ``criteria.yaml.before-app`` next to it.
+    rewrites the whole file, so whenever it would replace text the app did not write (comments,
+    layout) that text is first copied to ``criteria.yaml.before-app``, or the next free
+    ``.1``, ``.2``, ... name.
+
+    Args:
+        session: The window's write lock.
+        criteria: The validated Criteria to write.
+        loaded: The file's bytes when the form was opened. When given and the file on disk has
+            changed since, nothing is written: the save would silently undo that edit.
+
+    Raises:
+        ValidationError: If ``loaded`` no longer matches the file.
     """
     project = session.require_writable()
     require_unlocked(project, "criteria")
     path = project.root / "criteria.yaml"
+    if loaded is not None and path.is_file() and path.read_bytes() != loaded:
+        raise ValidationError(
+            "criteria.yaml has changed since you opened this form, so saving would undo that "
+            "edit. Nothing was written. Reopen the Criteria step to load the file as it is now."
+        )
     text = _criteria_text(criteria)
     _keep_original(path)
     tmp = path.with_name(path.name + ".tmp")

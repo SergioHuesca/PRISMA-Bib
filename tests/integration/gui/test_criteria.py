@@ -11,7 +11,7 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.errors import StepLockedError
+from prismabib.errors import StepLockedError, ValidationError
 from prismabib.gui import layer
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
@@ -93,15 +93,59 @@ def test_form__saving_over_a_hand_edited_file__keeps_the_original_byte_for_byte(
     assert BACKUP in _text(view) and "original" in _text(view)  # the screen says where it is
 
 
-def test_form__second_save__does_not_overwrite_the_backup(project: Project) -> None:
+def test_form__second_hand_edit__is_backed_up_too_and_no_backup_is_overwritten(
+    project: Project,
+) -> None:
     original = _hand_edit(project)
     view = build_criteria(project)
     _w(view, "Save Criteria").clicks += 1
-    _hand_edit(project, HAND_EDITED.replace("my protocol", "my newer protocol"))  # edited again
+    second = _hand_edit(project, HAND_EDITED.replace("my protocol", "my newer protocol"))
+    view = build_criteria(project)
+    _w(view, "Save Criteria").clicks += 1
+    third = _hand_edit(project, HAND_EDITED.replace("my protocol", "my third protocol"))
     view = build_criteria(project)
     _w(view, "Save Criteria").clicks += 1
 
-    assert (project.root / BACKUP).read_bytes() == original
+    assert (project.root / BACKUP).read_bytes() == original  # the first one is never touched
+    assert (project.root / f"{BACKUP}.1").read_bytes() == second
+    assert (project.root / f"{BACKUP}.2").read_bytes() == third
+    assert f"{BACKUP}.2" in _text(view)  # the screen names the backup actually made
+
+
+def test_form__file_edited_while_the_form_is_open__save_is_refused_and_writes_nothing(
+    project: Project,
+) -> None:
+    layer_save = build_criteria(project)  # opened on the scaffold
+    edited = _hand_edit(project)  # a hand edit made while the form is open
+    _w(layer_save, "Include languages").value = "English"
+    _w(layer_save, "Save Criteria").clicks += 1
+
+    assert (project.root / "criteria.yaml").read_bytes() == edited
+    assert not list(project.root.glob("criteria.yaml.before-app*"))
+    assert "changed since" in _text(layer_save) and "reopen" in _text(layer_save).lower()
+
+
+def test_form__saved_twice_without_outside_edits__second_save_is_accepted(
+    project: Project,
+) -> None:
+    view = build_criteria(project)
+    _w(view, "Include languages").value = "English"
+    _w(view, "Save Criteria").clicks += 1
+    _w(view, "Include languages").value = "French"
+    _w(view, "Save Criteria").clicks += 1
+
+    assert project.criteria.languages == ["French"]
+
+
+def test_layer__loaded_bytes_differ_from_the_file__refused(project: Project) -> None:
+    loaded = (project.root / "criteria.yaml").read_bytes()
+    edited = _hand_edit(project)
+    with (
+        layer.open_session("demo", root=project.root.parent) as session,
+        pytest.raises(ValidationError, match="changed since"),
+    ):
+        layer.save_criteria(session, project.criteria, loaded=loaded)
+    assert (project.root / "criteria.yaml").read_bytes() == edited
 
 
 def test_form__saving_over_a_file_the_app_wrote__makes_no_backup(project: Project) -> None:

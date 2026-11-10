@@ -34,6 +34,7 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
         msg = layer.translate(exc)
         status.object = f"**{msg.sentence}** Fix criteria.yaml, then reopen this step."
         return pn.Column(title, status)
+    loaded = [(project.root / "criteria.yaml").read_bytes()]  # what this form was filled from
     lock = layer.locks(project)["criteria"]
     widgets: dict[str, pn.widgets.Widget] = {}
     errors: dict[str, pn.pane.Markdown] = {}
@@ -53,8 +54,11 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
         status.object = ""
         try:
             criteria = cm.criteria_from_form({k: str(w.value or "") for k, w in widgets.items()})
+            before = set(layer.criteria_backups(project))
             with layer.session_for(project, session) as active:
-                layer.save_criteria(active, criteria)
+                path = layer.save_criteria(active, criteria, loaded=loaded[0])
+            loaded[0] = path.read_bytes()  # a second save is checked against this one
+            made = [p for p in layer.criteria_backups(project) if p not in before]
         except cm.CriteriaFormError as exc:
             for key, message in exc.fields.items():
                 (errors.get(key) or status).object = f"**{message}**"
@@ -65,10 +69,10 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
             status.object = f"**{msg.sentence}** {msg.next_step}"
             return
         status.object = f"Criteria version {criteria.version} saved to criteria.yaml."
-        if (project.root / layer.CRITERIA_BACKUP_NAME).is_file():
+        if made:
             status.object += (
                 f" The original file, with its comments and layout, was kept as "
-                f"`{layer.CRITERIA_BACKUP_NAME}` next to it."
+                f"`{made[-1].name}` next to it."
             )
 
     save.on_click(submit)
