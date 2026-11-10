@@ -12,6 +12,7 @@ import pytest
 from prismabib.errors import ProjectLockedError, ValidationError
 from prismabib.gui import build_layer as bl
 from prismabib.gui import capture_layer as cl
+from prismabib.gui import flow_layer as fl
 from prismabib.gui import layer
 from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui.layer import Session
@@ -39,6 +40,10 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
             session, budget=1, confirmed=True
         ),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
+        "add_candidates": lambda: fl.add_candidates(session, "T, 2020", reviewer="Ada"),
+        "register_record": lambda: fl.register_record(
+            session, candidate_id="c", reviewer="Ada", payload_file="p", match_rule="doi"
+        ),
     }
 
 
