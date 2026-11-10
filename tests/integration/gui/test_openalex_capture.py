@@ -70,7 +70,10 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for var in ("OPENALEX_API_KEY", "SCOPUS_API_KEY"):  # only the keys saved in the app count
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)  # a stray ./.env must not be what supplies the key
-    write_user_settings({"OPENALEX_API_KEY": "oa-test-key-not-real"}, tmp_path / "settings.env")
+    write_user_settings(
+        {"OPENALEX_API_KEY": "oa-test-key-not-real"},  # pragma: allowlist secret
+        tmp_path / "settings.env",
+    )
     tasks.reset_runners()
     yield
     tasks.reset_runners()

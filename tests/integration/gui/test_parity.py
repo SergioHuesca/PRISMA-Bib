@@ -499,7 +499,10 @@ def test_parity__openalex_capture_and_refresh__sealed_payload_hash_equals_the_cl
 
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
-    write_user_settings({"OPENALEX_API_KEY": "oa-test-key-not-real"}, tmp_path / "settings.env")
+    write_user_settings(
+        {"OPENALEX_API_KEY": "oa-test-key-not-real"},  # pragma: allowlist secret
+        tmp_path / "settings.env",
+    )
     gui, cli = oa._project(tmp_path, "gui"), oa._project(tmp_path, "cli")
 
     def hashes(project: project_module.Project) -> list[str]:
@@ -515,7 +518,7 @@ def test_parity__openalex_capture_and_refresh__sealed_payload_hash_equals_the_cl
         result = CliRunner().invoke(
             app,
             ["openalex-search", "demo", "--budget", "10", "--root", str(tmp_path / "cli"), *extra],
-            env={"OPENALEX_API_KEY": "oa-test-key-not-real"},
+            env={"OPENALEX_API_KEY": "oa-test-key-not-real"},  # pragma: allowlist secret
         )
         assert result.exit_code == 0, result.output
 

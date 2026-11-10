@@ -234,7 +234,7 @@ def test_error_classes__every_class__has_a_translation_and_a_test() -> None:
 def test_translate__unexpected_error__no_traceback_and_no_message_in_text_or_log(
     _user_file: Path,
 ) -> None:
-    secret = "sk-FAKE-KEY-123"
+    secret = "sk-FAKE-KEY-123"  # pragma: allowlist secret
     try:
         raise RuntimeError(f"Traceback (most recent call last): key={secret}")
     except RuntimeError as exc:

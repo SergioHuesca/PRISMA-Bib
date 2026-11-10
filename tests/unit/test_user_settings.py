@@ -32,7 +32,7 @@ def _key(settings: Settings) -> str | None:
 @pytest.mark.unit
 def test_user_file__no_env_file__key_is_read(tmp_path: Path) -> None:
     user = tmp_path / "cfg" / "settings.env"
-    write_user_settings({"SCOPUS_API_KEY": "fake-user-key"}, user)
+    write_user_settings({"SCOPUS_API_KEY": "fake-user-key"}, user)  # pragma: allowlist secret
 
     assert _key(load_settings(None, user)) == "fake-user-key"
 
@@ -44,8 +44,17 @@ def test_user_file__project_env_defines_key__project_wins_and_cwd_is_irrelevant(
     user = tmp_path / "cfg" / "settings.env"
     project_env = tmp_path / "p" / ".env"
     project_env.parent.mkdir()
-    write_user_settings({"SCOPUS_API_KEY": "fake-user-key", "OPENALEX_API_KEY": "fake-oa"}, user)
-    project_env.write_text("SCOPUS_API_KEY=fake-project-key\n", encoding="utf-8")
+    write_user_settings(
+        {
+            "SCOPUS_API_KEY": "fake-user-key",  # pragma: allowlist secret
+            "OPENALEX_API_KEY": "fake-oa",  # pragma: allowlist secret
+        },
+        user,
+    )
+    project_env.write_text(
+        "SCOPUS_API_KEY=fake-project-key\n",  # pragma: allowlist secret
+        encoding="utf-8",
+    )
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (elsewhere / ".env").write_text("SCOPUS_API_KEY=fake-cwd-key\n", encoding="utf-8")
@@ -80,10 +89,16 @@ def test_user_settings_path__default_and_override__never_inside_a_project(
 
 @pytest.mark.unit
 def test_write__user_file_needs_no_git_check__in_repo_env_still_does(tmp_path: Path) -> None:
-    write_user_settings({"SCOPUS_API_KEY": "fake-user-key"}, tmp_path / "u" / "settings.env")
+    write_user_settings(
+        {"SCOPUS_API_KEY": "fake-user-key"},  # pragma: allowlist secret
+        tmp_path / "u" / "settings.env",
+    )
 
     with pytest.raises(ConfigError, match="Refusing to write"):  # tmp_path is no git repository
-        write_env(tmp_path / ".env", {"SCOPUS_API_KEY": "fake-user-key"})
+        write_env(
+            tmp_path / ".env",
+            {"SCOPUS_API_KEY": "fake-user-key"},  # pragma: allowlist secret
+        )
     assert not (tmp_path / ".env").exists()
 
 

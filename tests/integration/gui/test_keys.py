@@ -25,8 +25,8 @@ from tests.openalex_search_helpers import work, write_search_run
 
 pytestmark = pytest.mark.integration
 
-SECRET = "oa-secret-0123456789"
-SCOPUS_SECRET = "sc-secret-0123456789"
+SECRET = "oa-secret-0123456789"  # pragma: allowlist secret
+SCOPUS_SECRET = "sc-secret-0123456789"  # pragma: allowlist secret
 
 
 @pytest.fixture(autouse=True)
@@ -163,9 +163,12 @@ def test_keys__scopus_panel__saves_to_the_user_file_and_tests(tmp_path: Path) ->
 
 def test_keys__project_file_defines_key__screen_says_it_wins(tmp_path: Path) -> None:
     project = _make(tmp_path / "p")
-    write_user_settings({"OPENALEX_API_KEY": "user-key-0123456789"})
+    write_user_settings({"OPENALEX_API_KEY": "user-key-0123456789"})  # pragma: allowlist secret
     assert "your per-user settings file" in _text(build_keys(project))
-    (project.root / ".env").write_text("OPENALEX_API_KEY=proj-key-0123456789\n", encoding="utf-8")
+    (project.root / ".env").write_text(
+        "OPENALEX_API_KEY=proj-key-0123456789\n",  # pragma: allowlist secret
+        encoding="utf-8",
+    )
     assert "this Project's environment file" in _text(build_keys(project))
 
 
