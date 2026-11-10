@@ -278,6 +278,7 @@ module = [
   "prismabib.gui.keys",
   "prismabib.gui.new_project",
   "prismabib.gui.query_form",
+  "prismabib.gui.size_check",
   "prismabib.gui.settings",
   "prismabib.gui.server",
 ]
