@@ -11,8 +11,11 @@ import http.client
 import re
 import subprocess
 import sys
+import threading
 
 TIMEOUT = 120
+#: The whole smoke, so a hung server cannot hold the job until its own limit.
+OVERALL_TIMEOUT = 300
 
 
 def status(port: int, host: str) -> int:
@@ -31,12 +34,15 @@ def main() -> int:
         stderr=subprocess.STDOUT,
         text=True,
     )
+    watchdog = threading.Timer(OVERALL_TIMEOUT, proc.kill)  # a kill ends the blocking read below
+    watchdog.daemon = True
+    watchdog.start()
     try:
         assert proc.stdout is not None
         line = proc.stdout.readline()  # blocks until the app announces itself, or exits
         found = re.search(r"http://127\.0\.0\.1:(\d+)/", line)
         if not found:
-            print(f"FAIL: no loopback URL announced; got {line!r}")
+            print(f"FAIL: no loopback URL announced within {OVERALL_TIMEOUT}s; got {line!r}")
             return 1
         port = int(found.group(1))
         local, foreign = status(port, f"127.0.0.1:{port}"), status(port, f"evil.example:{port}")
@@ -46,8 +52,12 @@ def main() -> int:
         print(f"PASS: gui served on 127.0.0.1:{port} (local 200, foreign Host 403)")
         return 0
     finally:
+        watchdog.cancel()
         proc.terminate()
-        proc.wait(TIMEOUT)
+        try:
+            proc.wait(TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 if __name__ == "__main__":
