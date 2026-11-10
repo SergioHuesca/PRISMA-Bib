@@ -25,7 +25,10 @@ def root(tmp_path: Path) -> Path:
 
 
 def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
-    return {"set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada")}
+    return {
+        "set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada"),
+        "save_criteria": lambda: layer.save_criteria(session, session.project.criteria),
+    }
 
 
 def test_second_session__open_project__is_read_only_with_a_reason(root: Path) -> None:
