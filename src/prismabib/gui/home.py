@@ -9,7 +9,7 @@ import panel as pn  # widget layer only
 
 from prismabib.doctor_checks import Check
 from prismabib.gui import home_model as hm
-from prismabib.gui import stop_model
+from prismabib.gui import palette, stop_model
 
 
 def build_home(
@@ -26,11 +26,18 @@ def build_home(
     folder = pn.widgets.TextInput(name="Projects folder", value=str(hm.resolve_folder(root).path))
     use = pn.widgets.Button(name="Use this folder", button_type="primary")
     create = pn.widgets.Button(name="Create this folder")
-    new = pn.widgets.Button(name="New Project", button_type="success")
+    new = pn.widgets.Button(
+        name="New Project", button_type="success", stylesheets=[palette.BUTTON_CSS]
+    )
     message = pn.pane.Markdown("")
     listing = pn.Column()
     stop = pn.widgets.Button(name="Stop the app")
-    stop_yes = pn.widgets.Button(name="Yes, stop the app", button_type="danger", visible=False)
+    stop_yes = pn.widgets.Button(
+        name="Yes, stop the app",
+        button_type="danger",
+        visible=False,
+        stylesheets=[palette.BUTTON_CSS],
+    )
     stop_no = pn.widgets.Button(name="Keep the app running", visible=False)
     stop_message = pn.pane.Markdown("")
 

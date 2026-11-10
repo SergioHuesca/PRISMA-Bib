@@ -7,7 +7,7 @@ from collections.abc import Callable
 import panel as pn  # widget layer only
 
 from prismabib.gui import delete_store_layer as dl
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.project import Project
 
 
@@ -25,7 +25,12 @@ def build_delete_store(
 ) -> tuple[pn.Column, Callable[[], None]]:
     """The delete control for ``project`` and its refresh; ``after`` runs once a delete is tried."""
     ask = pn.widgets.Button(name="Delete the built store")
-    yes = pn.widgets.Button(name="Yes, delete the store", button_type="danger", visible=False)
+    yes = pn.widgets.Button(
+        name="Yes, delete the store",
+        button_type="danger",
+        visible=False,
+        stylesheets=[palette.BUTTON_CSS],
+    )
     no = pn.widgets.Button(name="Keep the store", visible=False)
     text = pn.pane.Markdown(confirmation_text(), visible=False)
     message = pn.pane.Markdown("")

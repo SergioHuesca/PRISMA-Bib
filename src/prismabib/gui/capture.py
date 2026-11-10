@@ -8,7 +8,7 @@ from pathlib import Path
 import panel as pn  # widget layer only
 
 from prismabib.gui import capture_layer as cl
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui.size_check import build_size_check
 from prismabib.project import Project
@@ -30,7 +30,12 @@ def build_capture(project: Project, *, user_file: Path | None = None) -> pn.Colu
     cancel = pn.widgets.Button(name="Cancel the capture")
     refresh = pn.widgets.Button(name="Refresh the status")
     discard = pn.widgets.Button(name="Discard the unsealed run")
-    discard_yes = pn.widgets.Button(name="Yes, discard it", button_type="danger", visible=False)
+    discard_yes = pn.widgets.Button(
+        name="Yes, discard it",
+        button_type="danger",
+        visible=False,
+        stylesheets=[palette.BUTTON_CSS],
+    )
     discard_no = pn.widgets.Button(name="Keep it", visible=False)
     bar = pn.indicators.Progress(name="Capture progress", value=0, max=100, visible=False)
     state = pn.pane.Markdown("")

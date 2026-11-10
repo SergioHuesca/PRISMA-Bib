@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.gui import query_form_model as model
 from prismabib.project import Project
 
 
 def _chips(label: str, values: list[str], hint: str) -> tuple[pn.Column, pn.widgets.MultiChoice]:
     """Chips are a MultiChoice (each value shows with a remove button) fed by a text box."""
-    shown = pn.widgets.MultiChoice(name=label, options=list(values), value=list(values))
-    entry = pn.widgets.TextInput(name=f"Add to: {label}", placeholder=hint)
+    shown = pn.widgets.MultiChoice(
+        name=label, options=list(values), value=list(values), stylesheets=[palette.CHIP_CSS]
+    )
+    entry = pn.widgets.TextInput(
+        name=f"Add to: {label}", placeholder=hint, stylesheets=[palette.PLACEHOLDER_CSS]
+    )
     add = pn.widgets.Button(name=f"Add to: {label} (button)")
 
     def push(_: object) -> None:
@@ -47,6 +51,7 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
         options=list(model.SUBJECT_AREA_CHOICES),
         value=[] if scopus else list(inputs.subject_areas),
         disabled=scopus,
+        stylesheets=[palette.CHIP_CSS],
     )
     save = pn.widgets.Button(name="Save query", button_type="primary")
     status = pn.pane.Markdown("")
