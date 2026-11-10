@@ -15,6 +15,13 @@ from pytest_socket import enable_socket, socket_allow_hosts
 pytest.importorskip("panel")
 
 from prismabib.gui.launch import pick_port, serve
+from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+
+
+@pytest.fixture(autouse=True)
+def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The home screen records the first run: never in the real user folder."""
+    monkeypatch.setenv(USER_FILE_OVERRIDE_VAR, str(tmp_path_factory.mktemp("user") / "s.env"))
 
 
 @pytest.fixture(autouse=True)

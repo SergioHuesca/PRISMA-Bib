@@ -62,6 +62,14 @@ def git_check() -> Check:
     return Check("ok", f"git: {path}")
 
 
+def uv_check() -> Check:
+    """``uv`` on PATH (blocking for the app: it is how prismabib is installed and updated)."""
+    path = shutil.which("uv")
+    if path is None:
+        return Check("FAIL", "uv: not found on PATH")
+    return Check("ok", f"uv: {path}")
+
+
 def projects_root_check(root: Path | None) -> Check:
     """The projects root exists, or can be created, and accepts a file; no debris is left."""
     path = (root if root is not None else _resolve_projects_root(None)).resolve()
