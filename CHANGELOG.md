@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture overview, Layer 1.** Authors and affiliations are no longer described as "resolved and deduplicated": the loader keeps one row per source author id and performs no disambiguation. Citations are no longer described as coming from the ScienceDirect API: each snapshot comes from the citation count in the search response. Documentation only; no code or number changes.
 - **The strict docs build now fails on a link to a section that does not exist.** `mkdocs.yml` sets `validation: anchors: warn`; strict mode turns the warning into a failure, so the required `docs` check and the Pages deploy both stop on a broken in-page anchor. Before, mkdocs printed it at INFO level and the build passed. Four headings that links point at now carry fixed ids instead of ids generated from their text: "What is built today" (`#what-is-built-today`), "Subject Areas" and "Terms and Compound Terms" in the query tutorial, and the `subject_areas` section of Limitations (`#subject-areas`). Visible heading text is unchanged. If your own link to the old generated ids stops working, point it at the fixed ids. The docs extra now requires mkdocs 1.6 or later, the first release that has `validation`. (#284, #285)
 
+- **The weekly mutation scope is the prisma package only.** The taxonomy package, and the taxonomy suites in the test selection, are out of `[tool.mutmut]` and the workflow header says the same. `src/prismabib/log.py`, the append-only log moved out of `prisma/` (ADR 0029), stays in. The weekly job was cancelled at its 180-minute limit on every scheduled run since 2026-09-14, after taxonomy joined the scope; the cause is not established. The limit is unchanged, and the weekly summary now lists the count of mutants never checked beside the kill rate. [ADR 0045](docs/architecture/adr/0045-weekly-mutation-scope-is-the-prisma-package.md) supersedes the scope part of ADR 0009; the rest of ADR 0009 stands. The strict docs build now also fails on a page missing from the nav (`validation.nav.omitted_files: warn`), so an ADR nobody listed cannot merge. (#363)
+
+- **The manuscript filler follows the CommonMark fence rule.** A line indented four or more spaces no longer opens or closes a fence (so a fenced block indented that far, including one nested inside a list item, is no longer treated as a fence and the placeholders inside it are filled), a closing fence must be at least as long as the opener, and a backtick fence line whose info string contains a backtick is not a fence. (#357)
+
 ### Fixed
 
 - **Eight links, reported by mkdocs as seven warnings, jumped nowhere.** Five pointed at the Limitations section on `subject_areas`, which had been renamed when abstract runs were loaded into Layer 1 (v0.15.0); the links were in Getting Started, Run a New Review, PRISMA Mapping, and twice in Amend Eligibility Criteria. One on the home page pointed at "what is built today" under its v1.0.0 id; the 1.1.0 release had changed the heading. Two in the query tutorial pointed at section names that did not exist as ids. All now resolve. The four passages on the `subject_areas` restriction (Getting Started, Run a New Review, Amend Eligibility Criteria, PRISMA Mapping) also gain one clause each: run `prismabib enrich` first and the filter works once it has covered every record, it needs a different Scopus entitlement from Search, and Limitations explains the completeness rule. The clauses are about the Scopus modes only. (#284, #285, #287)
@@ -281,12 +285,8 @@ and what it does not, and `docs/methodology/validation.md` records what was actu
 established.
 
 **Three release-checklist items ship unmet and are disclosed here.** First, the mutation kill
-rate for `taxonomy/` has not been measured. The weekly mutation job, which covers `prisma/` and
-`taxonomy/`, has been cancelled at its time limit every week since 2026-09-14. Diagnostic runs
-on 2026-10-20 showed mutant workers for `taxonomy/` idle inside the polars library after the
-process is forked, so their timeouts are counted as caught and cannot be read as a measurement.
-The last measured kill rate, 87.14%, covers `prisma/` only and predates `taxonomy/` joining the
-scope. Second, the human screening-throughput timing (S05-AC5, at least 4 records a minute) has
+rate for `taxonomy/` has not been measured. The weekly mutation job covers `prisma/` only (ADR
+0045). The last measured kill rate, 87.14%, covers `prisma/` only. Second, the human screening-throughput timing (S05-AC5, at least 4 records a minute) has
 not been measured. Third, the `live` nightly's Scopus test is red from GitHub-hosted runners:
 the API key is valid, but the institutional entitlement is bound to campus IP addresses, and a
 runner's is not one of them. The same test passes from an entitled network, but it has not been
@@ -299,8 +299,9 @@ condition of software that depends on a licensed third-party API.
 
 Open issues carried into 1.0.0, each tracked on the issue tracker:
 
-- **#60** — the nightly benchmark's persistence budget (100 ms) has been exceeded intermittently
-  (305 ms on one run); the cause is not yet established.
+- **#60** (closed): the nightly benchmark's persistence budget (100 ms) was exceeded intermittently
+  (305 ms on one run, last on 2026-10-18); it has passed in every nightly since, the cause was
+  never established, and the issue was closed as not reproducible.
 - **#42** — 129 surviving mutants in `src/prismabib/prisma/` are not yet triaged.
 - **#50** — `taxonomy.analysis` sits outside the `AnalysisResult` introspective sweep, so it has
   no bit-identity check (S07-AC5).

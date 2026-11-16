@@ -209,3 +209,46 @@ def test_fill__numbers_json_with_a_nested_value__raises_naming_the_key() -> None
     """A list has no rendering inside a sentence, and ``str()`` would give it one."""
     with pytest.raises(ValidationError, match="non-scalar"):
         fill_manuscript("{{k}}", {"k": [1, 2]})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param(
+            "````\n```\n{{k}}\n````\n",
+            "````\n```\n{{k}}\n````\n",
+            id="short-line-keeps-longer-fence-open",
+        ),
+        pytest.param("    ```\n{{k}}\n", "    ```\nV\n", id="four-space-indent-is-not-a-fence"),
+        pytest.param("```a`b\n{{k}}\n", "```a`b\nV\n", id="backtick-in-backtick-info-string"),
+        pytest.param(
+            "~~~a`b\n{{k}}\n", "~~~a`b\n{{k}}\n", id="backtick-in-tilde-info-string-is-fine"
+        ),
+        pytest.param(
+            "   ```\n{{k}}\n   ```\n{{k}}\n",
+            "   ```\n{{k}}\n   ```\nV\n",
+            id="three-space-indent-opens-and-closes",
+        ),
+        pytest.param(
+            "```\n{{k}}\n``` text\n{{k}}\n",
+            "```\n{{k}}\n``` text\n{{k}}\n",
+            id="closer-with-text-does-not-close",
+        ),
+        pytest.param(
+            "```\n{{k}}\n    ```\n{{k}}\n",
+            "```\n{{k}}\n    ```\n{{k}}\n",
+            id="four-space-closer-does-not-close",
+        ),
+        pytest.param(
+            "````\n{{k}}\n`````\n{{k}}\n", "````\n{{k}}\n`````\nV\n", id="longer-closer-closes"
+        ),
+    ],
+)
+def test_fill__fence_follows_commonmark(body: str, expected: str) -> None:
+    """Fences open and close per CommonMark 4.5: length, indent and info string.
+
+    A leading unfenced placeholder keeps the key cited, so the unused-key check
+    stays out of the way and the output shows exactly which ones were filled.
+    """
+    assert fill_manuscript("{{k}}\n" + body, {"k": "V"}) == "V\n" + expected

@@ -21,6 +21,9 @@ from prismabib.project import Project
 from prismabib.report.numbers import numbers_map
 from prismabib.store.load import build_store
 from tests.prisma_helpers import (
+    CorpusSpec,
+    RecordSpec,
+    build_project,
     copy_reference_project_with_criteria,
     screen_reference_project,
 )
@@ -96,3 +99,34 @@ def test_numbers_json__every_value__is_scalar_and_json_serialisable(tmp_path: Pa
     # "JSON-serialisable" -- `json.dumps` with a default= would hide exactly
     # the types this is meant to reject.
     assert json.loads(json.dumps(numbers)) == numbers
+
+
+@pytest.mark.integration
+def test_numbers_map__a_section_returns_a_list__refuses_naming_key_and_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A list has no rendering inside a sentence: the refusal says which key and which type."""
+    from prismabib.errors import ValidationError
+    from prismabib.report import numbers as numbers_module
+
+    project = build_project(tmp_path, CorpusSpec(records=[RecordSpec(number=1)]))
+    monkeypatch.setattr(
+        numbers_module, "_venue_numbers", lambda _corpus: {"venues.top": ["a", "b"]}
+    )
+
+    with pytest.raises(ValidationError, match=r"'venues\.top'.*\blist\b"):
+        numbers_map(project)
+
+
+@pytest.mark.integration
+def test_numbers_map__no_citation_snapshots__reports_zero_figures(tmp_path: Path) -> None:
+    """A project with no citation snapshots reports zeros and does not raise."""
+    # RecordSpec always writes a citedby-count (so a snapshot); no helper builds a record without one.
+    project = build_project(tmp_path, CorpusSpec(records=[]))
+
+    numbers = numbers_map(project)
+
+    assert numbers["citations.records_with_a_snapshot"] == 0
+    assert numbers["citations.total"] == 0
+    assert numbers["citations.median"] == 0.0
+    assert numbers["citations.max"] == 0
