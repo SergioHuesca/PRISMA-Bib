@@ -16,6 +16,11 @@ on:
     # 2:27 AM UTC, non-round minute to avoid GitHub's heavily contended top-of-hour
     - cron: "27 2 * * *"
   workflow_dispatch:
+    inputs:
+      force_failure:
+        description: "Fail the live job on purpose, to check the issue alert (manual only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -136,6 +141,10 @@ jobs:
       pull-requests: write # open the throwaway PR whose red check must block it
       actions: read # `gh run list` for the docs/Pages deployment check
       deployments: read # `gh api` for the `github-pages` deployment
+      # A job-level block replaces the workflow-level one, so `issues: write`
+      # at the top never reached this job: the failure alert got only `contents`
+      # and `pull-requests` and died with "Resource not accessible (createIssue)".
+      issues: write # open / comment on the live-contract-failure issue
     env:
       SCOPUS_API_KEY: ${{ secrets.SCOPUS_API_KEY }}
       ELSEVIER_SD_API_KEY: ${{ secrets.ELSEVIER_SD_API_KEY }}
@@ -157,6 +166,11 @@ jobs:
 
       - name: Live contract tests (Scopus API shape validation)
         run: uv run pytest -m live
+
+      # Never true on a scheduled run: the input only exists on a manual dispatch.
+      - name: Forced failure (manual dispatch check of the alert)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure
+        run: exit 1
 
       - name: Check for existing open live-contract issue
         if: failure()
