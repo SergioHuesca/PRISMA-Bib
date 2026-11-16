@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.gui import screening_layer as sl
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
@@ -35,11 +35,17 @@ def build_screening(project: Project, session: layer.Session | None = None) -> S
         )
         early.poll = lambda: None
         return early
-    reviewer = pn.widgets.TextInput(name=sl.REVIEWER_LABEL, value=sl.creation_reviewer(project))
+    reviewer = pn.widgets.TextInput(
+        stylesheets=[palette.FIELD_CSS], name=sl.REVIEWER_LABEL, value=sl.creation_reviewer(project)
+    )
     stage = pn.widgets.RadioButtonGroup(
-        name="Stage", options=list(STAGES), value="Title and abstract"
+        stylesheets=[palette.FIELD_CSS],
+        name="Stage",
+        options=list(STAGES),
+        value="Title and abstract",
     )
     blind = pn.widgets.Checkbox(
+        stylesheets=[palette.FIELD_CSS],
         name="Blind mode: hide author names, citation counts and other reviewers' Decisions",
         value=True,
     )

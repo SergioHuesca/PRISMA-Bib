@@ -4,7 +4,8 @@ What this proves: after the start-up step, each Button and the tab row of every 
 has the page CSS (2 px solid ring, gap, default button edge) in the stylesheets of its Bokeh
 model, the step is idempotent, and the kinds of control the screens build are exactly the listed
 ones. A new kind of control, or a button built without the setting, fails here, naming the
-screen and the control. The checks for field controls and the radio group come with #344.
+screen and the control. Every field control and the radio group carries the palette field
+stylesheet (#344).
 
 What this does not prove: that a browser applies the setting over each component's own default,
 that the ring is not clipped, or how anything looks. That is the owner's manual pass (#353).
@@ -46,7 +47,7 @@ from tests.integration.gui.test_screening import make_project
 
 pytestmark = pytest.mark.integration
 
-# Covered here (Button, Tabs) or listed for #344 (the field controls and the radio group).
+# Every kind of control the screens build: page CSS (Button, Tabs) or field CSS (the rest).
 CONTROL_KINDS = {
     "Button",
     "Tabs",
@@ -59,6 +60,7 @@ CONTROL_KINDS = {
     "Checkbox",
     "RadioButtonGroup",
 }
+FIELD_KINDS = CONTROL_KINDS - {"Button", "Tabs"}
 INDICATORS = {"Progress"}  # not controls: nothing to focus
 # Builders that are not a screen of their own, or are built under another screen's name below.
 BUILT_WITH_ANOTHER = {"build_capture"}  # wrapped by build_capture_step
@@ -146,3 +148,19 @@ def test_screens__every_button_and_tab_row__carries_the_page_css(tmp_path: Path)
     ]
     assert missing == [], "controls without the page-level focus setting"
     assert list(screens["build_app"].select(pn.Tabs)), "the app tab row was not found"
+
+
+def test_screens__every_field_control_and_radio_group__carries_the_field_css(
+    tmp_path: Path,
+) -> None:
+    fields = tuple(getattr(pn.widgets, kind) for kind in FIELD_KINDS)
+    screens = _screens(tmp_path)
+    missing = [
+        f"{screen}: {type(c).__name__} {getattr(c, 'name', '') or ''!r}"
+        for screen, view in screens.items()
+        for c in _controls(view)
+        if isinstance(c, fields) and palette.FIELD_CSS not in _looks(c)
+    ]
+    assert missing == [], "controls without the field stylesheet"
+    built = {type(c).__name__ for v in screens.values() for c in _controls(v)}
+    assert {"TextInput", "RadioButtonGroup"} <= built, "the fields were not found"

@@ -16,6 +16,7 @@ import panel as pn  # widget layer only
 
 from prismabib.credentials import ENV_FILENAME, status_lines, write_env
 from prismabib.errors import PrismabibError
+from prismabib.gui import palette
 from prismabib.project import Project
 from prismabib.source_mode import CAPABILITY_MODES, effective_mode
 from prismabib.sources.scopus import register_secret_for_redaction
@@ -40,7 +41,9 @@ class ConnectScopusPanel:
         title = "Connect Scopus (unused in this mode)" if self.unused else "Connect Scopus"
         self.title = pn.pane.Markdown(f"## {title}", name="Title")
         self.status = pn.pane.Markdown(name="Scopus key status")
-        self.key_input = pn.widgets.PasswordInput(label="Scopus API key")
+        self.key_input = pn.widgets.PasswordInput(
+            label="Scopus API key", stylesheets=[palette.FIELD_CSS]
+        )
         self.save_button = pn.widgets.Button(label="Save key")
         self.alert = pn.pane.HTML(name="Alert", sizing_mode="stretch_width")
         self.save_button.on_click(self._on_save)

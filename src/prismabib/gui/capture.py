@@ -27,10 +27,16 @@ def build_capture(
     status_of = oal.openalex_status if openalex else cl.capture_status
     texts = oal.STATE_TEXT if openalex else cl.STATE_TEXT
     budget = pn.widgets.IntInput(
-        name="Page budget (pages of 100 works)", value=10, start=1, visible=openalex
+        stylesheets=[palette.FIELD_CSS],
+        name="Page budget (pages of 100 works)",
+        value=10,
+        start=1,
+        visible=openalex,
     )
     again = pn.widgets.Button(name="Capture again (a new run)", visible=openalex)
-    confirm = pn.widgets.Checkbox(name="I confirm: capture this search now")
+    confirm = pn.widgets.Checkbox(
+        stylesheets=[palette.FIELD_CSS], name="I confirm: capture this search now"
+    )
     start = pn.widgets.Button(name="Start the capture", button_type="primary")
     cancel = pn.widgets.Button(name="Cancel the capture")
     refresh = pn.widgets.Button(name="Refresh the status")

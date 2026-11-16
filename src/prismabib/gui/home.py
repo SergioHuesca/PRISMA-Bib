@@ -23,7 +23,11 @@ def build_home(
     column = pn.Column(sizing_mode="stretch_width")
     first_run = hm.take_first_run()
     report = hm.prerequisite_problems(checks(), first_run=first_run)
-    folder = pn.widgets.TextInput(name="Projects folder", value=str(hm.resolve_folder(root).path))
+    folder = pn.widgets.TextInput(
+        stylesheets=[palette.FIELD_CSS],
+        name="Projects folder",
+        value=str(hm.resolve_folder(root).path),
+    )
     use = pn.widgets.Button(name="Use this folder", button_type="primary")
     create = pn.widgets.Button(name="Create this folder")
     new = pn.widgets.Button(

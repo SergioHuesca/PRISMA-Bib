@@ -27,6 +27,8 @@ PLACEHOLDER = "#6c757d"
 # is 1.11:1. #111111 is about 18:1, #767676 is 4.5:1 (WCAG 2.1 2.4.7, 1.4.11).
 FOCUS_OUTLINE = "#111111"
 DEFAULT_EDGE = "#767676"
+# Bokeh field border (#BBBBBD) is 1.92:1 on white (1.4.11); the same grey as the button edge.
+FIELD_BORDER = "#767676"
 
 BUTTON_CSS = (
     f".bk-btn-success{{background-color:{SUCCESS_FILL};border-color:{SUCCESS_FILL}}}"
@@ -52,4 +54,19 @@ PAGE_CSS = (
     f"--outline-style:{RING_STYLE};--outline-offset:{RING_GAP}}}"
     f".bk-btn:focus,.bk-btn:active{{outline-offset:{RING_GAP}}}"
     f".bk-btn-default{{border-color:{DEFAULT_EDGE}}}"
+)
+
+# Field controls (ticket #344): text, password, text area, number, select, multi-choice, checkbox
+# and the radio buttons. Bokeh declares a focus colour for inputs but no rule reading it was
+# found, so the ring is drawn here: the border and the same outline as PAGE_CSS.
+_RING = f"{RING_WIDTH} {RING_STYLE} {FOCUS_OUTLINE}"
+FIELD_CSS = (
+    f".bk-input{{border-color:{FIELD_BORDER}}}"
+    f".bk-input:focus{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    f".choices__inner{{border-color:{FIELD_BORDER}}}"
+    f".choices:focus-within .choices__inner"
+    f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    f"input[type=checkbox]:focus-visible{{outline:{_RING};outline-offset:{RING_GAP}}}"
+    f".bk-btn-group .bk-btn:focus,.bk-btn-group .bk-btn:active"
+    f"{{outline:{_RING};outline-offset:{RING_GAP}}}"
 )

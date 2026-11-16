@@ -16,7 +16,7 @@ from prismabib.capture.registration_ui import (
 )
 from prismabib.errors import ValidationError
 from prismabib.gui import flow_layer as fl
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.gui.layer import UserMessage
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting
@@ -60,17 +60,24 @@ def build_flow(project: Project, session: layer.Session | None = None) -> pn.Col
     refresh = pn.widgets.Button(name="Refresh the Flow counts")
 
     reviewer = pn.widgets.TextInput(
-        name="Reviewer name", value=read_user_setting(REVIEWER_NAME_KEY) or ""
+        stylesheets=[palette.FIELD_CSS],
+        name="Reviewer name",
+        value=read_user_setting(REVIEWER_NAME_KEY) or "",
     )
     paste = pn.widgets.TextAreaInput(
-        name="Records the search missed: one line each, title then year then DOI (DOI optional)"
+        stylesheets=[palette.FIELD_CSS],
+        name="Records the search missed: one line each, title then year then DOI (DOI optional)",
     )
     add = pn.widgets.Button(name="Add these as candidates")
-    candidate = pn.widgets.Select(name="Candidate")
-    rule = pn.widgets.Select(name="Match rule", options=list(RULES))
-    payload = pn.widgets.Select(name="Captured OpenAlex response")
+    candidate = pn.widgets.Select(stylesheets=[palette.FIELD_CSS], name="Candidate")
+    rule = pn.widgets.Select(
+        stylesheets=[palette.FIELD_CSS], name="Match rule", options=list(RULES)
+    )
+    payload = pn.widgets.Select(stylesheets=[palette.FIELD_CSS], name="Captured OpenAlex response")
     evidence = pn.pane.HTML("", name="Match evidence")
-    near = pn.widgets.Checkbox(name="I confirm this work is this candidate", visible=False)
+    near = pn.widgets.Checkbox(
+        stylesheets=[palette.FIELD_CSS], name="I confirm this work is this candidate", visible=False
+    )
     register = pn.widgets.Button(name="Register this Record", button_type="primary")
     message = pn.pane.Markdown("")
     options: dict[str, ResponseOption] = {}
