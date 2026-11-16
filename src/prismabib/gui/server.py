@@ -69,8 +69,10 @@ class _Guard(httputil.HTTPServerConnectionDelegate):
 def install_page_css() -> None:
     """Add the focus ring and default button edge to ``pn.config.raw_css`` once (ticket #343).
 
-    Process-wide and idempotent. It must run before the app is built: Panel reads the setting
-    when each component's model is created.
+    It assigns the process-wide ``pn.config.raw_css``, and is idempotent. Assumption: it is called
+    once, on the main thread, from ``create_server`` before the server runs, so nothing else
+    writes the setting at the same time; it is not safe to call from request handlers or threads.
+    It must run before the app is built: Panel reads the setting when each model is created.
     """
     if palette.PAGE_CSS not in pn.config.raw_css:
         pn.config.raw_css = [*pn.config.raw_css, palette.PAGE_CSS]

@@ -24,6 +24,7 @@ import panel as pn
 
 from prismabib.gui import palette
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import server as server_module
 from prismabib.gui.app import build_app
 from prismabib.gui.build import build_build
 from prismabib.gui.capture import build_capture_step
@@ -122,6 +123,27 @@ def _looks(control: pn.viewable.Viewable) -> list[str]:
 def test_install_page_css__called_twice__leaves_the_setting_once() -> None:
     install_page_css()
     install_page_css()
+    assert pn.config.raw_css.count(palette.PAGE_CSS) == 1
+
+
+def test_create_server__installs_the_page_css_before_serving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Http:
+        request_callback = object()
+
+    class _Server:
+        _http = _Http()
+
+    seen: list[bool] = []
+
+    def fake_get_server(*_a: object, **_k: object) -> _Server:
+        seen.append(palette.PAGE_CSS in pn.config.raw_css)  # set before the app is built
+        return _Server()
+
+    monkeypatch.setattr(server_module, "get_server", fake_get_server)
+    server_module.create_server("127.0.0.1", 5006)
+    assert seen == [True]
     assert pn.config.raw_css.count(palette.PAGE_CSS) == 1
 
 
