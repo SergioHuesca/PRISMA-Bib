@@ -117,6 +117,26 @@ def test_query_builder__uninterpretable_compound_group__raises_config_error(
 
 
 @pytest.mark.unit
+def test_query_builder__single_mapping_as_compound_terms__names_the_one_group_list() -> None:
+    with pytest.raises(ConfigError) as excinfo:
+        build_query(compound_terms={"all": ["a", "b"]})  # type: ignore[arg-type]
+
+    message = str(excinfo.value)
+    assert message == (
+        "query.compound_terms must be a list of groups, not a single group "
+        "(got {'all': ['a', 'b']}); "
+        "did you mean the one-group list [{'all': ['a', 'b']}]?"
+    )
+    assert "must not be a bare string" not in message
+
+
+@pytest.mark.unit
+def test_query_builder__bare_string_as_compound_terms__says_single_string() -> None:
+    with pytest.raises(ConfigError, match="not a single string"):
+        build_query(compound_terms="abc")  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
 def test_query_builder__empty_fields__raises_validation_error() -> None:
     with pytest.raises(ValidationError):
         build_query(terms=["x"], fields=[])
