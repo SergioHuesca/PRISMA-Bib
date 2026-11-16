@@ -319,6 +319,11 @@ pytest tests/golden/test_figures.py -v
 
 Look for unexpected changes—a snapshot diff that doesn't match the commit message is a sign something is wrong.
 
+### Adding a number to `numbers.json`
+
+Adding a key changes the key-set snapshot, so it is reviewed as a diff. The steps are in
+[Adding a number to `numbers.json`](how-to/run-a-new-review.md#adding-a-number-to-numbersjson).
+
 ## Why the PRISMA engine is tested differently (Stage 4+)
 
 Every other module in this codebase is gated on coverage. `src/prismabib/prisma/` is gated on
