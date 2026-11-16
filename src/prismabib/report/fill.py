@@ -42,8 +42,9 @@ if TYPE_CHECKING:
 #: Jinja constructs that happen to share the braces.
 _PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z][A-Za-z0-9_.]*)\s*\}\}")
 
-#: A fenced code block, ``` or ~~~, with any info string.
-_FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})")
+#: A fence line per CommonMark 4.5: up to three spaces of indent, a run of 3+
+#: backticks or tildes, then the rest of the line (the info string when opening).
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
 class FillError(PrismabibError):
@@ -67,17 +68,24 @@ def _code_block_lines(text: str) -> frozenset[int]:
         of the document, which is how every Markdown renderer treats it.
     """
     inside: set[int] = set()
-    fence: str | None = None
+    fence: str | None = None  # the opening run, e.g. "````"
     for index, line in enumerate(text.splitlines()):
         match = _FENCE.match(line)
-        if fence is None and match is not None:
-            fence = match.group(2)[0]
-            inside.add(index)
+        if fence is None:
+            # A backtick fence's info string may not contain a backtick.
+            if match is not None and not (match.group(1)[0] == "`" and "`" in match.group(2)):
+                fence = match.group(1)
+                inside.add(index)
             continue
-        if fence is not None:
-            inside.add(index)
-            if match is not None and match.group(2)[0] == fence:
-                fence = None
+        inside.add(index)
+        # A closer: same character, at least as long, nothing but spaces after.
+        if (
+            match is not None
+            and match.group(1)[0] == fence[0]
+            and len(match.group(1)) >= len(fence)
+            and not match.group(2).strip(" \t")
+        ):
+            fence = None
     return frozenset(inside)
 
 
