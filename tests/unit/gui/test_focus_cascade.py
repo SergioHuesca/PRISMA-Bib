@@ -1,11 +1,15 @@
 """Cascade guard for the focus ring and the default button edge (spec #351, review fix).
 
 The installed Panel and Bokeh stylesheets are read, the rules that set the same property on the
-same part are found, and CSS specificity is compared with our selector. Ours comes later in the
-cascade (it is the last user stylesheet), so equal specificity is enough to win.
+same part are found, and CSS specificity is compared with our selector. Who wins a tie depends on
+the order of the stylesheets in a component's shadow root (panel/reactive.py): Bokeh's own CSS
+comes first, then ``pn.config.raw_css`` (our PAGE_CSS), then Panel's css files such as
+button.css, then the per-widget stylesheets. So a Bokeh rule must be strictly higher than ours
+to beat it, but a Panel rule wins at EQUAL specificity as well; the two sources are handled
+separately below.
 
 What this proves: on the installed versions no library rule that sets the border of a default
-button outranks ours, and nothing we set makes a tab ring point outwards (where the header's
+button beats ours (strictly higher, or equal for Panel's files), and nothing we set makes a tab ring point outwards (where the header's
 ``overflow:hidden`` would clip it). What it does not prove: anything a browser paints, rules
 the parser below does not model (``!important``, inline styles, rules added by JavaScript), or
 rules in versions other than the installed ones. The owner's manual pass (#353) is the gate.
@@ -93,16 +97,31 @@ def _last_compound(selector: str) -> str:
     return re.split(r"[\s>+~]+", selector.strip())[-1]
 
 
-def _library_default_button_border_rules() -> list[tuple[str, Specificity]]:
-    css = BUTTON_CSS.read_text(encoding="utf-8") + _region(".bk-btn-default")
-    out = []
-    for sel, decls in rules(css):
-        last = _last_compound(sel)
-        sets_border = decls.keys() & {"border", "border-color"}
-        other_kind = re.search(r"\.bk-btn-(?!default|group)", last)
-        applies = (".bk-btn-default" in last or last.startswith(".bk-btn")) and not other_kind
-        if sets_border and applies and ".outline" not in sel and "disabled" not in sel:
-            out.append((sel, specificity(sel)))
+# (selector, specificity, comes_after_ours): Panel's css files come after PAGE_CSS in the shadow
+# root, so they win ties; Bokeh's own CSS comes before it, so it needs a strictly higher one.
+LibraryRule = tuple[str, Specificity, bool]
+
+
+def beating(ours: Specificity, library: list[LibraryRule]) -> list[str]:
+    """The library rules that win over a rule of ours with specificity ``ours``."""
+    return [
+        f"{sel} {spec}" for sel, spec, after in library if spec > ours or (after and spec == ours)
+    ]
+
+
+def _library_default_button_border_rules() -> list[LibraryRule]:
+    out: list[LibraryRule] = []
+    for css, after_ours in (
+        (BUTTON_CSS.read_text(encoding="utf-8"), True),
+        (_region(".bk-btn-default"), False),
+    ):
+        for sel, decls in rules(css):
+            last = _last_compound(sel)
+            sets_border = decls.keys() & {"border", "border-color"}
+            other_kind = re.search(r"\.bk-btn-(?!default|group)", last)
+            applies = (".bk-btn-default" in last or last.startswith(".bk-btn")) and not other_kind
+            if sets_border and applies and ".outline" not in sel and "disabled" not in sel:
+                out.append((sel, specificity(sel), after_ours))
     return out
 
 
@@ -118,10 +137,27 @@ def test_default_button_edge__outranks_every_library_border_rule() -> None:
     ]
     assert ours, "PAGE_CSS has no rule that sets the default button edge"
     library = _library_default_button_border_rules()
-    assert any(".bk-btn" in sel for sel, _ in library), "the library border rule was not found"
+    assert any(after and ".bk-btn" in sel for sel, _, after in library), "Panel's rule not found"
+    assert any(not after for _, _, after in library), "Bokeh's rules were not found"
     ours_spec = min(ours)
-    losing = [f"{sel} {spec}" for sel, spec in library if spec > ours_spec]
+    losing = beating(ours_spec, library)
     assert losing == [], f"our edge {ours_spec} loses to the library rule(s): {losing}"
+
+
+def test_beating__a_tie_loses_only_to_a_rule_that_comes_after_ours() -> None:
+    ours = (0, 4, 0)
+    library: list[LibraryRule] = [
+        ("panel tie", (0, 4, 0), True),
+        ("bokeh tie", (0, 4, 0), False),
+        ("panel lower", (0, 3, 0), True),
+        ("bokeh higher", (0, 5, 0), False),
+        ("panel higher id", (1, 0, 0), True),
+    ]
+    assert beating(ours, library) == [
+        "panel tie (0, 4, 0)",
+        "bokeh higher (0, 5, 0)",
+        "panel higher id (1, 0, 0)",
+    ]
 
 
 def test_tab_ring__is_not_pushed_outside_the_tab() -> None:
