@@ -66,7 +66,7 @@ FIELD_CSS = (
     f".choices__inner{{border-color:{FIELD_BORDER}}}"
     f".choices:focus-within .choices__inner"
     f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
-    f"input[type=checkbox]:focus-visible{{outline:{_RING};outline-offset:{RING_GAP}}}"
+    f"input[type=checkbox]:focus{{outline:{_RING};outline-offset:{RING_GAP}}}"
     f".bk-btn-group .bk-btn:focus,.bk-btn-group .bk-btn:active"
     f"{{outline:{_RING};outline-offset:{RING_GAP}}}"
 )

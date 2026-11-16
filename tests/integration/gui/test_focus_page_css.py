@@ -125,6 +125,11 @@ def test_install_page_css__called_twice__leaves_the_setting_once() -> None:
     assert pn.config.raw_css.count(palette.PAGE_CSS) == 1
 
 
+def test_focus_css__has_no_focus_visible_rule() -> None:
+    # The ring shows after a mouse click as well as by keyboard (spec #351).
+    assert ":focus-visible" not in palette.PAGE_CSS + palette.FIELD_CSS
+
+
 def test_page_css__has_the_ring_width_style_and_default_edge() -> None:
     for token in ("--outline-width:2px", "--outline-style:solid", palette.DEFAULT_EDGE):
         assert token in palette.PAGE_CSS
