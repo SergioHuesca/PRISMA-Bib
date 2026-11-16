@@ -128,6 +128,7 @@ nav:
           - "ADR 0041: field-level provenance and cascade completion": architecture/adr/0041-field-level-provenance-and-cascade-completion.md
           - "ADR 0042: source modes and OpenAlex as a primary source": architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md
           - "ADR 0043: a local GUI": architecture/adr/0043-local-gui.md
+          - "ADR 0045: weekly mutation scope": architecture/adr/0045-weekly-mutation-scope-is-the-prisma-package.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
@@ -164,3 +165,6 @@ strict: true
 # one). Without this, mkdocs reports a missing anchor at INFO level and the build passes.
 validation:
   anchors: warn
+  # A docs page missing from the nav (an ADR nobody listed) fails the strict build.
+  nav:
+    omitted_files: warn
