@@ -414,7 +414,7 @@ def build_query(
     """
     if not fields:
         raise ValidationError("query.fields must not be empty")
-    if isinstance(compound_terms, Mapping | str):
+    if compound_terms and isinstance(compound_terms, Mapping | str):
         # A lone group or string would otherwise be iterated as keys/characters.
         # Not run for every call: that check rejects the bare-list form this accepts.
         _check_project_compound_terms(compound_terms)

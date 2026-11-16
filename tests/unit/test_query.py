@@ -137,6 +137,20 @@ def test_query_builder__bare_string_as_compound_terms__says_single_string() -> N
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("empty", [{}, ""])
+def test_query_builder__empty_mapping_or_string_compound_terms__means_no_compound_terms(
+    empty: object,
+) -> None:
+    rendered = build_query(
+        terms=["x"],
+        compound_terms=empty,  # type: ignore[arg-type]
+        fields=["TITLE-ABS-KEY"],
+    )
+
+    assert rendered == build_query(terms=["x"], fields=["TITLE-ABS-KEY"])
+
+
+@pytest.mark.unit
 def test_query_builder__empty_fields__raises_validation_error() -> None:
     with pytest.raises(ValidationError):
         build_query(terms=["x"], fields=[])
