@@ -537,3 +537,26 @@ def test_export__step_raises__previous_exports_untouched(
         export_project(project)
 
     assert _hash_tree(result.root) == before
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "failure",
+    [FileNotFoundError("git"), subprocess.TimeoutExpired(cmd="git", timeout=1)],
+    ids=["git_missing", "git_too_slow"],
+)
+def test_export__git_missing_or_too_slow__still_exports_and_marks_commit_not_pushed(
+    project: Project, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    """Only the process launch fails; the real `_git` and `_git_provenance` run."""
+    from prismabib.report import export as export_module
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(export_module.subprocess, "run", fail)
+
+    result = export_project(project)
+
+    assert result.manifest["git_commit"] is None
+    assert result.manifest["commit_is_pushed"] is False
