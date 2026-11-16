@@ -165,7 +165,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Live contract tests (Scopus API shape validation)
-        run: uv run pytest -m live
+        run: uv run pytest -m live -rA
 
       # Never true on a scheduled run: the input only exists on a manual dispatch.
       - name: Forced failure (manual dispatch check of the alert)
