@@ -1,7 +1,7 @@
 """Taxonomy analyses recompute byte-identically (S07-AC5).
 
 `test_analysis_result_contract.py`'s sweep leaves `taxonomy.analysis` out (its
-functions need a coding result, not just a corpus), so this file gives them the
+functions need a coding result, not just a loaded project), so this file gives them the
 same check: two separately opened read-only handles, byte-equal serialisation.
 """
 
