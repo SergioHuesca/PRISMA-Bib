@@ -27,6 +27,15 @@ def test_nightly__live_job_can_write_issues() -> None:
     assert job["permissions"].get("issues") == "write"
 
 
+def test_nightly__live_tests_report_every_result_and_select_the_live_marker() -> None:
+    steps = _load()["jobs"]["live"]["steps"]
+    cmds = [s["run"] for s in steps if "pytest" in s.get("run", "")]
+    assert len(cmds) == 1
+    args = cmds[0].split()
+    assert "-rA" in args  # -rA names every test's outcome, passed included, in the log
+    assert args[args.index("-m") + 1] == "live"
+
+
 def test_nightly__issue_steps_run_in_the_live_job() -> None:
     steps = _load()["jobs"]["live"]["steps"]
     issue_runs = [s["run"] for s in steps if "gh issue create" in s.get("run", "")]
