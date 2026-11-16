@@ -297,8 +297,9 @@ condition of software that depends on a licensed third-party API.
 
 Open issues carried into 1.0.0, each tracked on the issue tracker:
 
-- **#60** — the nightly benchmark's persistence budget (100 ms) has been exceeded intermittently
-  (305 ms on one run); the cause is not yet established.
+- **#60** (closed): the nightly benchmark's persistence budget (100 ms) was exceeded intermittently
+  (305 ms on one run, last on 2026-10-18); it has passed in every nightly since, the cause was
+  never established, and the issue was closed as not reproducible.
 - **#42** — 129 surviving mutants in `src/prismabib/prisma/` are not yet triaged.
 - **#50** — `taxonomy.analysis` sits outside the `AnalysisResult` introspective sweep, so it has
   no bit-identity check (S07-AC5).
