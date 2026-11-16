@@ -121,6 +121,7 @@ def test_numbers_map__a_section_returns_a_list__refuses_naming_key_and_type(
 @pytest.mark.integration
 def test_numbers_map__no_citation_snapshots__reports_zero_figures(tmp_path: Path) -> None:
     """A project with no citation snapshots reports zeros and does not raise."""
+    # RecordSpec always writes a citedby-count (so a snapshot); no helper builds a record without one.
     project = build_project(tmp_path, CorpusSpec(records=[]))
 
     numbers = numbers_map(project)
