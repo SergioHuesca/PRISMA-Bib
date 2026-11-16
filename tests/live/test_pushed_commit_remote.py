@@ -26,7 +26,7 @@ pytestmark = pytest.mark.live
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PUBLISHED_TAG = "v0.1.0"
-PUBLISHED_COMMIT = "17dca73879328d9666315af80862ffb2ad330eb1"
+PUBLISHED_COMMIT = "17dca73879328d9666315af80862ffb2ad330eb1"  # pragma: allowlist secret
 
 
 def _git(args: list[str], cwd: Path) -> str:
