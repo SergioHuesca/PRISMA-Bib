@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import panel as pn
 from panel.io.server import get_server
 from tornado import httputil
 
+from prismabib.gui import palette
 from prismabib.gui.app import build_app
 from prismabib.gui.launch import allowed_hosts, is_allowed
 
@@ -64,8 +66,19 @@ class _Guard(httputil.HTTPServerConnectionDelegate):
         return _GuardDelegate(self._app, server_conn, request_conn, self._host, self._port)
 
 
+def install_page_css() -> None:
+    """Add the focus ring and default button edge to ``pn.config.raw_css`` once (ticket #343).
+
+    Process-wide and idempotent. It must run before the app is built: Panel reads the setting
+    when each component's model is created.
+    """
+    if palette.PAGE_CSS not in pn.config.raw_css:
+        pn.config.raw_css = [*pn.config.raw_css, palette.PAGE_CSS]
+
+
 def create_server(host: str, port: int) -> Any:
     """Bind ``host:port`` and return the not-yet-running Panel server."""
+    install_page_css()
     server = get_server(
         build_app,
         port=port,

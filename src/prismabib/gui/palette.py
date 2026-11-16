@@ -3,6 +3,9 @@
 Every other colour the screens paint is a Panel or Bokeh default, and the contrast test reads
 those defaults from the installed packages. A Panel widget renders inside its own shadow DOM, so
 page-level CSS does not reach it: each override is handed to the widget as a stylesheet.
+The exception is ``PAGE_CSS``: Panel injects ``pn.config.raw_css`` into every component's own
+shadow root, so one setting (installed by ``server.install_page_css``) reaches every button and
+tab (ticket #343).
 """
 
 from __future__ import annotations
@@ -20,6 +23,11 @@ CHIP_TEXT = "#0a58ca"
 # Bokeh placeholder grey (#9a9b9d) is 2.8:1 on white.
 PLACEHOLDER = "#6c757d"
 
+# Bokeh focus outline (#BBBBBD, 1px dotted) is 1.92:1 on white; default button edge (#f3f3f3)
+# is 1.11:1. #111111 is about 18:1, #767676 is 4.5:1 (WCAG 2.1 2.4.7, 1.4.11).
+FOCUS_OUTLINE = "#111111"
+DEFAULT_EDGE = "#767676"
+
 BUTTON_CSS = (
     f".bk-btn-success{{background-color:{SUCCESS_FILL};border-color:{SUCCESS_FILL}}}"
     f".bk-btn-success:hover,.bk-active.bk-btn-success"
@@ -35,3 +43,13 @@ CHIP_CSS = (
     f"{{background-color:{CHIP_HIGHLIGHT}}}"
 )
 PLACEHOLDER_CSS = f".bk-input::placeholder{{color:{PLACEHOLDER};opacity:1}}"
+
+# The outline is built from these variables on each component's :host, so they are set there;
+# the gap is also named on the button rule because it is not known that Bokeh's rule reads it.
+RING_WIDTH, RING_STYLE, RING_GAP = "2px", "solid", "2px"
+PAGE_CSS = (
+    f":host{{--outline-color:{FOCUS_OUTLINE};--outline-width:{RING_WIDTH};"
+    f"--outline-style:{RING_STYLE};--outline-offset:{RING_GAP}}}"
+    f".bk-btn:focus,.bk-btn:active{{outline-offset:{RING_GAP}}}"
+    f".bk-btn-default{{border-color:{DEFAULT_EDGE}}}"
+)

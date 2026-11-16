@@ -35,7 +35,7 @@ CHECKBOX_EDGE = "#767676"
 PANEL_TEXT, PANEL_SURFACE, PANEL_ON_SURFACE = "#212529", "#f3f3f3", "#1a1d21"
 PANEL_PRIMARY, PANEL_ON_PRIMARY = "#0072b5", "#ffffff"
 # Bokeh 3.9 default theme (bokeh/server/static/js/bokeh.js).
-BOKEH_TEXT, BOKEH_BORDER, BOKEH_OUTLINE = "#18191D", "#BBBBBD", "#BBBBBD"
+BOKEH_TEXT, BOKEH_BORDER = "#18191D", "#BBBBBD"
 BOKEH_FOCUS = "#65A2CB"
 # Panel progress bar (panel/dist/css/progress.css).
 PROGRESS_FILL, PROGRESS_TRACK = "#4169e1", "#f5f5f5"
@@ -78,11 +78,10 @@ PAIRS: tuple[Pair, ...] = (
     Pair("default button label", PANEL_ON_SURFACE, PANEL_SURFACE, TEXT, "Panel solid default"),
     Pair(
         "default button edge",
-        PANEL_SURFACE,
+        palette.DEFAULT_EDGE,
         WHITE,
         NON_TEXT,
-        "Panel solid default fill",
-        follow_up="F4: default button edge (1.4.11; the label carries the meaning)",
+        "palette override of the Panel default button edge",
     ),
     Pair("success button label", WHITE, palette.SUCCESS_FILL, TEXT, "palette override"),
     Pair("success button label, hover", WHITE, palette.SUCCESS_HOVER, TEXT, "palette override"),
@@ -112,11 +111,10 @@ PAIRS: tuple[Pair, ...] = (
     ),
     Pair(
         "button and tab focus outline",
-        BOKEH_OUTLINE,
+        palette.FOCUS_OUTLINE,
         WHITE,
         NON_TEXT,
-        "Bokeh --outline (dotted 1px)",
-        follow_up="F3: focus indicator on buttons and tabs (2.4.7, 1.4.11)",
+        "palette override of Bokeh --outline",
     ),
     Pair("progress fill", PROGRESS_FILL, PROGRESS_TRACK, NON_TEXT, "Panel progress.css"),
     Pair("checkbox edge", CHECKBOX_EDGE, WHITE, NON_TEXT, "browser default checkbox"),
