@@ -11,6 +11,7 @@ from prismabib.credentials import probe_scopus_key
 from prismabib.credentials_ui import ConnectScopusPanel
 from prismabib.errors import PrismabibError
 from prismabib.gui import keys_model as km
+from prismabib.gui import palette
 from prismabib.gui.layer import translate
 from prismabib.project import Project
 from prismabib.user_settings import load_settings, user_settings_path, write_user_settings
@@ -32,7 +33,7 @@ def build_keys(
         else "\n\nThis Source mode is OpenAlex only: no Scopus key is needed."
     )
     sources = pn.pane.Markdown("")
-    openalex = pn.widgets.PasswordInput(name="OpenAlex API key")
+    openalex = pn.widgets.PasswordInput(stylesheets=[palette.FIELD_CSS], name="OpenAlex API key")
     save = pn.widgets.Button(name="Save OpenAlex key", button_type="primary")
     test = pn.widgets.Button(name="Test OpenAlex key")
     message = pn.pane.Markdown("")

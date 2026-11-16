@@ -7,6 +7,7 @@ from pathlib import Path
 import panel as pn  # widget layer only
 
 from prismabib.errors import PrismabibError
+from prismabib.gui import palette
 from prismabib.gui import settings_model as sm
 from prismabib.gui.layer import translate
 
@@ -14,7 +15,9 @@ from prismabib.gui.layer import translate
 def build_settings(root: Path | None = None) -> pn.Column:
     """The Settings view. ``root`` is the explicit Projects folder option, when there is one."""
     where = sm.locations(root)
-    reviewer = pn.widgets.TextInput(name="Reviewer name", value=sm.reviewer_name())
+    reviewer = pn.widgets.TextInput(
+        stylesheets=[palette.FIELD_CSS], name="Reviewer name", value=sm.reviewer_name()
+    )
     save = pn.widgets.Button(name="Save reviewer name", button_type="primary")
     message = pn.pane.Markdown("")
 

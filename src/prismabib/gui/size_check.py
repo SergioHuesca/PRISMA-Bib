@@ -11,6 +11,7 @@ import panel as pn  # widget layer only
 
 from prismabib.errors import PrismabibError
 from prismabib.gui import keys_model as km
+from prismabib.gui import palette
 from prismabib.gui import size_check_model as model
 from prismabib.gui.capture_layer import note_size_check
 from prismabib.gui.layer import translate
@@ -35,7 +36,9 @@ def build_size_check(
     name = "Scopus" if scopus else "OpenAlex"
     run = pn.widgets.Button(name=f"Check the size of the {name} search", button_type="primary")
     confirm = pn.widgets.Checkbox(
-        name="I understand this is a large set and want to continue", visible=False
+        stylesheets=[palette.FIELD_CSS],
+        name="I understand this is a large set and want to continue",
+        visible=False,
     )
     go = pn.widgets.Button(name="Continue to capture", disabled=True)
     keys = pn.widgets.Button(name="Go to the keys step", visible=False)

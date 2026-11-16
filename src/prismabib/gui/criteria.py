@@ -5,7 +5,7 @@ from __future__ import annotations
 import panel as pn  # widget layer only
 
 from prismabib.gui import criteria_model as cm
-from prismabib.gui import layer
+from prismabib.gui import layer, palette
 from prismabib.project import Project
 
 _LABELS = {
@@ -47,7 +47,12 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
         rows.append(pn.pane.Markdown(f"**Read-only.** {lock}"))
     for key in cm.FIELDS:
         cls = pn.widgets.TextAreaInput if key in cm.LIST_FIELDS else pn.widgets.TextInput
-        widgets[key] = cls(name=_LABELS[key], value=values[key], disabled=bool(lock))
+        widgets[key] = cls(
+            name=_LABELS[key],
+            value=values[key],
+            disabled=bool(lock),
+            stylesheets=[palette.FIELD_CSS],
+        )
         errors[key] = pn.pane.Markdown("")
         rows += [widgets[key], errors[key]]
     save = pn.widgets.Button(name="Save Criteria", button_type="primary", disabled=bool(lock))

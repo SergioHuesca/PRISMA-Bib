@@ -35,8 +35,7 @@ CHECKBOX_EDGE = "#767676"
 PANEL_TEXT, PANEL_SURFACE, PANEL_ON_SURFACE = "#212529", "#f3f3f3", "#1a1d21"
 PANEL_PRIMARY, PANEL_ON_PRIMARY = "#0072b5", "#ffffff"
 # Bokeh 3.9 default theme (bokeh/server/static/js/bokeh.js).
-BOKEH_TEXT, BOKEH_BORDER, BOKEH_OUTLINE = "#18191D", "#BBBBBD", "#BBBBBD"
-BOKEH_FOCUS = "#65A2CB"
+BOKEH_TEXT = "#18191D"
 # Panel progress bar (panel/dist/css/progress.css).
 PROGRESS_FILL, PROGRESS_TRACK = "#4169e1", "#f5f5f5"
 
@@ -66,7 +65,6 @@ class Pair:
     bg: str
     minimum: float
     source: str
-    follow_up: str | None = None  # set while the pair fails: the test is an xfail until fixed
 
 
 PAIRS: tuple[Pair, ...] = (
@@ -78,11 +76,10 @@ PAIRS: tuple[Pair, ...] = (
     Pair("default button label", PANEL_ON_SURFACE, PANEL_SURFACE, TEXT, "Panel solid default"),
     Pair(
         "default button edge",
-        PANEL_SURFACE,
+        palette.DEFAULT_EDGE,
         WHITE,
         NON_TEXT,
-        "Panel solid default fill",
-        follow_up="F4: default button edge (1.4.11; the label carries the meaning)",
+        "palette override of the Panel default button edge",
     ),
     Pair("success button label", WHITE, palette.SUCCESS_FILL, TEXT, "palette override"),
     Pair("success button label, hover", WHITE, palette.SUCCESS_HOVER, TEXT, "palette override"),
@@ -94,29 +91,20 @@ PAIRS: tuple[Pair, ...] = (
     Pair("chip label, highlighted", palette.CHIP_TEXT, palette.CHIP_HIGHLIGHT, TEXT, "palette"),
     Pair("chip edge", palette.CHIP_TEXT, WHITE, NON_TEXT, "palette override"),
     Pair("placeholder text", palette.PLACEHOLDER, WHITE, TEXT, "palette override"),
-    Pair(
-        "input border",
-        BOKEH_BORDER,
-        WHITE,
-        NON_TEXT,
-        "Bokeh --border-color on inputs",
-        follow_up="F1: input borders (1.4.11)",
-    ),
+    Pair("input border", palette.FIELD_BORDER, WHITE, NON_TEXT, "palette override"),
     Pair(
         "input focus border",
-        BOKEH_FOCUS,
+        palette.FOCUS_OUTLINE,
         WHITE,
         NON_TEXT,
-        "Bokeh --input-focus-border-color",
-        follow_up="F2: focus indicator on inputs (2.4.7, 1.4.11)",
+        "palette override of Bokeh --input-focus-border-color",
     ),
     Pair(
         "button and tab focus outline",
-        BOKEH_OUTLINE,
+        palette.FOCUS_OUTLINE,
         WHITE,
         NON_TEXT,
-        "Bokeh --outline (dotted 1px)",
-        follow_up="F3: focus indicator on buttons and tabs (2.4.7, 1.4.11)",
+        "palette override of Bokeh --outline",
     ),
     Pair("progress fill", PROGRESS_FILL, PROGRESS_TRACK, NON_TEXT, "Panel progress.css"),
     Pair("checkbox edge", CHECKBOX_EDGE, WHITE, NON_TEXT, "browser default checkbox"),
@@ -156,17 +144,12 @@ DEFAULT_FILES: tuple[tuple[Path, tuple[str, ...]], ...] = (
 )
 
 
-def _param(pair: Pair) -> object:
-    marks = [pytest.mark.xfail(strict=True, reason=pair.follow_up)] if pair.follow_up else []
-    return pytest.param(pair, id=pair.role, marks=marks)
-
-
 def test_contrast_ratio__known_values() -> None:
     assert contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
     assert contrast_ratio("#767676", "#ffffff") == pytest.approx(4.54, abs=0.01)
 
 
-@pytest.mark.parametrize("pair", [_param(p) for p in PAIRS])
+@pytest.mark.parametrize("pair", PAIRS, ids=lambda p: p.role)
 def test_pair__meets_the_wcag_minimum(pair: Pair) -> None:
     assert contrast_ratio(pair.fg, pair.bg) >= pair.minimum, pair
 

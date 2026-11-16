@@ -24,16 +24,23 @@ from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting, write_
 
 def build_new_project(root: Path, on_created: Callable[[Project], None] | None = None) -> pn.Column:
     """Ask for a name, the reviewer name and the Scopus answer, then create the Project in ``root``."""
-    name = pn.widgets.TextInput(name="Project name")
+    name = pn.widgets.TextInput(stylesheets=[palette.FIELD_CSS], name="Project name")
     folder = pn.pane.Markdown("")
     reviewer = pn.widgets.TextInput(
-        name="Reviewer name", value=read_user_setting(REVIEWER_NAME_KEY) or ""
+        stylesheets=[palette.FIELD_CSS],
+        name="Reviewer name",
+        value=read_user_setting(REVIEWER_NAME_KEY) or "",
     )
     access = pn.widgets.RadioButtonGroup(
-        name="Do you have Scopus access?", options=list(npm.SCOPUS_CHOICES), value=None
+        stylesheets=[palette.FIELD_CSS],
+        name="Do you have Scopus access?",
+        options=list(npm.SCOPUS_CHOICES),
+        value=None,
     )
     fill = pn.widgets.Checkbox(
-        name="Also fill missing fields of Scopus records from OpenAlex", value=True
+        stylesheets=[palette.FIELD_CSS],
+        name="Also fill missing fields of Scopus records from OpenAlex",
+        value=True,
     )
     create = pn.widgets.Button(name="Create Project", button_type="primary")
     message = pn.pane.Markdown("")

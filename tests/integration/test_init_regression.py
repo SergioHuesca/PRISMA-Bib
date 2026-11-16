@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,18 @@ pytestmark = pytest.mark.integration
 
 GOLDEN = Path(__file__).resolve().parents[1] / "golden" / "cli" / "init_cases.json"
 _VOLATILE = re.compile(r'"(event_id|ts)": ?"[^"]*"')
+
+# The golden was made on this day; project.toml and the criteria scaffold embed its date and year,
+# so the clock `init` reads (prismabib.project) is pinned to it. Other clock reads on this path
+# are event timestamps, which _VOLATILE normalises.
+PINNED_NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz: object = None) -> datetime:  # type: ignore[override]
+        return PINNED_NOW
+
 
 # name -> (args, stdin answers, stdin is a tty, openalex key missing, pre-create the project)
 CASES: dict[str, tuple[list[str], str, bool, bool, bool]] = {
@@ -50,6 +63,7 @@ def _disk(root: Path) -> dict[str, str]:
 
 def run_case(name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     args, answers, tty, key_missing, pre = CASES[name]
+    monkeypatch.setattr("prismabib.project.datetime", _FrozenDatetime)
     monkeypatch.setattr("prismabib.cli._stdin_is_tty", lambda: tty)
     monkeypatch.setattr("prismabib.cli.openalex_key_missing", lambda: key_missing)
     base = ["init", "demo", "--actor", "Ada", "--root", str(tmp_path)]
