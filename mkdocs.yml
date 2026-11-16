@@ -163,6 +163,9 @@ strict: true
 
 # A link to a section that does not exist is a build failure (strict mode turns this warning into
 # one). Without this, mkdocs reports a missing anchor at INFO level and the build passes.
+# Local, gitignored output of the graphify tool: not docs pages, so not "omitted from the nav".
+exclude_docs: |
+  graphify-out/
 validation:
   anchors: warn
   # A docs page missing from the nav (an ADR nobody listed) fails the strict build.
