@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The weekly mutation scope is the prisma package only.** The taxonomy package, and the taxonomy suites in the test selection, are out of `[tool.mutmut]` and the workflow header says the same. `src/prismabib/log.py`, the append-only log moved out of `prisma/` (ADR 0029), stays in. The weekly job was cancelled at its 180-minute limit on every scheduled run since 2026-09-14, after taxonomy joined the scope; the cause is not established. The limit is unchanged, and the weekly summary now lists the count of mutants never checked beside the kill rate. [ADR 0045](docs/architecture/adr/0045-weekly-mutation-scope-is-the-prisma-package.md) supersedes the scope part of ADR 0009; the rest of ADR 0009 stands. The strict docs build now also fails on a page missing from the nav (`validation.nav.omitted_files: warn`), so an ADR nobody listed cannot merge. (#363)
 
-- **The manuscript filler follows the CommonMark fence rule.** A line indented four or more spaces no longer opens or closes a fence (so fenced blocks nested inside list items are now recognised and their placeholders filled), a closing fence must be at least as long as the opener, and a backtick fence line whose info string contains a backtick is not a fence. (#357)
+- **The manuscript filler follows the CommonMark fence rule.** A line indented four or more spaces no longer opens or closes a fence (so a fenced block indented that far, including one nested inside a list item, is no longer treated as a fence and the placeholders inside it are filled), a closing fence must be at least as long as the opener, and a backtick fence line whose info string contains a backtick is not a fence. (#357)
 
 ### Fixed
 
