@@ -327,8 +327,14 @@ def test_tab__subject_areas_to_save_query__is_one_step_both_ways(rig: Rig) -> No
 
 
 def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
-    resting = [s.label for s in rig.walk(QUERY) if s.kind == "body"]
+    # Not the measured walk: measuring blurs each chip box, which closes its dropdown and removes
+    # the stop the defect lives in. This walk presses Tab only, waiting for each chip box's
+    # dropdown to be open before the Tab and for focus to settle after it.
+    with rig.session(QUERY) as page:
+        stops = h.tab_stops(page, page, QUERY.name, measure=lambda _kind: False)
+    resting = [s.label for s in stops if s.kind == "body"]
     assert not resting, f"focus rested on the page body: {resting}"
+    assert sum(s.kind == "chip" for s in stops) == 3, "the walk did not pass the three chip boxes"
 
 
 def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:

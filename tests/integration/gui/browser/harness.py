@@ -351,7 +351,12 @@ def tab_stops(
     stops: list[Stop] = []
     page.evaluate(PARK)
     for _ in range(limit):
+        from_chip = bool(stops) and stops[-1].kind == "chip"
+        if from_chip:
+            page.wait_for_function(SETTLED, timeout=_STATE_WAIT)  # its dropdown is open
         page.keyboard.press("Tab")
+        if from_chip:
+            page.wait_for_function(LEFT_CHIPS, timeout=_STATE_WAIT)  # and has closed again
         info = page.evaluate(FOCUS_INFO)
         if info is None:
             break
