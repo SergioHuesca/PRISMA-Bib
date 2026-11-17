@@ -155,7 +155,7 @@ def test_undo__read_only_session__is_refused_and_logs_nothing(tmp_path: Path) ->
     holder.close()
 
 
-def _lines_or_none(project: Project) -> list[str]:
+def _decision_lines(project: Project) -> list[str]:
     return _lines(project) if project.decisions_path.exists() else []
 
 
@@ -171,12 +171,12 @@ def test_undo__after_exclude__restores_decided_and_remaining_counts(tmp_path: Pa
     project = make_project(tmp_path)
     screener = sl.open_screening(project, STAGE, "Ada")
     before = (screener.queue.decided, screener.queue.remaining)
+    assert before == (0, 5)
 
     _decide(screener, "exclude")
     assert (screener.queue.decided, screener.queue.remaining) == (1, 4)
     screener.handlers["undo"]()
 
-    assert before == (0, 5)
     assert (screener.queue.decided, screener.queue.remaining) == before
     events = [json.loads(line) for line in _lines(project)]
     assert [e["decision"] for e in events] == ["exclude", "unsure"]
@@ -244,7 +244,7 @@ def test_undo__unresolved_first_record__appends_nothing_and_moves_nothing(tmp_pa
 
     screener.handlers["undo"]()
 
-    assert _lines_or_none(project) == []
+    assert _decision_lines(project) == []
     assert screener.queue.position == 0 and screener.queue.current == screener.queue.pending[0]
     assert screener.status == "nothing to undo"
 
@@ -273,11 +273,11 @@ def test_undo__previous_record_also_unresolved__moves_back_one_and_appends_nothi
     screener = sl.open_screening(project, STAGE, "Ada")
     screener.handlers["unsure" if previous == "unsure" else "next_record"]()
     assert screener.queue.position == 1
-    before = _lines_or_none(project)
+    before = _decision_lines(project)
 
     screener.handlers["undo"]()
 
-    assert _lines_or_none(project) == before
+    assert _decision_lines(project) == before
     assert screener.queue.position == 0 and screener.queue.current == screener.queue.pending[0]
     assert screener.status == "nothing to undo"
 

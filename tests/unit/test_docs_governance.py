@@ -282,14 +282,20 @@ def test_corpus_check__on_a_small_tree__reports_each_failure_mode(tmp_path: Path
 def _evidence_citations(adr: Path) -> list[tuple[str, str]]:
     """The `(path, test_name)` of each `- claim — path::name` line under `## Evidence`."""
     lines = adr.read_text(encoding="utf-8").splitlines()
-    start = lines.index("## Evidence") + 1
-    section = []
-    for line in lines[start:]:
+    stripped = [line.strip() for line in lines]
+    assert "## Evidence" in stripped, f"{adr.name} has no '## Evidence' heading"
+    citations = []
+    for line in lines[stripped.index("## Evidence") + 1 :]:
         if line.startswith("## "):
             break
-        section.append(line)
-    cited = (line.rsplit(" — ", 1)[-1].strip() for line in section if line.startswith("- "))
-    return [tuple(c.split("::", 1)) for c in cited]  # type: ignore[misc]
+        if not line.startswith("- "):
+            continue
+        cited = line.rsplit(" — ", 1)[-1].strip()
+        rel, sep, name = cited.partition("::")
+        assert sep, f"{adr.name} Evidence line has no 'path::test_name': {line!r}"
+        assert name.startswith("test_"), f"{adr.name} Evidence cites a non-test name: {line!r}"
+        citations.append((rel, name))
+    return citations
 
 
 @pytest.mark.unit
