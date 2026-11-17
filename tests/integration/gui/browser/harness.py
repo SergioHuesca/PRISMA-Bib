@@ -40,8 +40,14 @@ SIDES: Final = ("top", "right", "bottom", "left")
 #: Local preference: the browser the facts were measured with, then the other installed ones.
 CHANNELS: Final = ("msedge", "chrome", "chromium")
 #: name -> (width, height, device scale factor). "200" is the emulated 200% zoom; "short" makes
-#: the chip dropdown flip upward (the Subject areas box sits near the bottom edge).
-VIEWS: Final = {"100": (1280, 900, 1), "200": (640, 450, 2), "short": (1280, 600, 1)}
+#: the chip dropdown flip upward (the Subject areas box sits near the bottom edge); "200tall" is
+#: the same zoom in a window tall enough for the dropdown to open below.
+VIEWS: Final = {
+    "100": (1280, 900, 1),
+    "200": (640, 450, 2),
+    "200tall": (640, 1100, 2),
+    "short": (1280, 600, 1),
+}
 _MARGIN: Final = 10  # CSS px kept around the border box in a screenshot
 _SERVER_WAIT: Final = 120
 _STATE_WAIT: Final = 10_000  # ms; a state that does not arrive fails the run, it is not skipped
@@ -220,7 +226,17 @@ SETTLED = (
 )
 #: True once focus is not inside a chip box (its dropdown closes when focus leaves).
 LEFT_CHIPS = "()=>{" + _DEEP_ACTIVE + "return !deepActive().closest('.choices')}"
-_BLUR = "()=>{" + _DEEP_ACTIVE + "deepActive().blur()}"
+#: Which way the focused chip box's dropdown opened: "below" or "above" the box (or "none").
+DROPDOWN_SIDE = (
+    "()=>{"
+    + _DEEP_ACTIVE
+    + """const c=deepActive().closest('.choices');if(!c)return null;
+ const d=c.querySelector('.choices__list--dropdown'),i=c.querySelector('.choices__inner');
+ if(!d||!i)return null;const a=d.getBoundingClientRect(),b=i.getBoundingClientRect();
+ if(!c.classList.contains('is-open')||a.height===0)return 'none';
+ return a.top>=b.bottom-1?'below':(a.bottom<=b.top+1?'above':'overlap')}"""
+)
+_BLUR ="()=>{" + _DEEP_ACTIVE + "deepActive().blur()}"
 
 _COUNT = """
 async ([focused, blurred, dsf, rect, off, width, ring]) => {
@@ -279,6 +295,8 @@ class Stop:
     info: dict[str, Any]
     #: Empty when nothing was measured. Zero on every side when the control paints no ring.
     coverage: dict[str, float] = field(default_factory=dict)
+    #: For a chip box: which way its open dropdown lies ("below" or "above"), read before measuring.
+    dropdown: str | None = None
 
     @property
     def kind(self) -> str:
@@ -362,6 +380,9 @@ def tab_stops(
             break
         stop = Stop(screen, info)
         stops.append(stop)
+        if stop.kind == "chip":
+            page.wait_for_function(SETTLED, timeout=_STATE_WAIT)
+            stop.dropdown = page.evaluate(DROPDOWN_SIDE)
         if stop.kind != "body" and measure(stop.kind):
             stop.coverage = measure_focused(page, counter, view=view)
         if stop.kind == "tab":

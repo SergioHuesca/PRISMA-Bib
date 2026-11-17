@@ -284,23 +284,29 @@ def test_years__typing_the_keys_and_the_mouse__change_the_value(rig: Rig) -> Non
         )
 
 
-def test_defect_d3__chip_box_with_dropdown_open__has_a_ring_on_every_side(rig: Rig) -> None:
-    subject = measured(rig.walk(QUERY), "chip")[-1]
-    assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
-
-
-def test_defect_d3__chip_box_with_dropdown_flipped__has_a_ring_on_every_side(rig: Rig) -> None:
-    subject = measured(rig.walk(QUERY, "short", frozenset({"chip"})), "chip")[-1]
-    assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
-
 
 def test_ring__number_fields_at_200_percent__cover_every_side_after_tab(rig: Rig) -> None:
     fields = measured(rig.walk(QUERY, "200", frozenset({"number"})), "number")
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
 
-def test_defect_d4b__chip_box_at_200_percent__has_a_ring_on_every_side(rig: Rig) -> None:
-    subject = measured(rig.walk(QUERY, "200", frozenset({"chip"})), "chip")[-1]
+#: view -> which way the Subject areas dropdown must open in it. The dropdown covers the box's
+#: bottom edge when it opens below and its top edge when it flips above.
+DROPDOWN_CASES = [
+    pytest.param("100", "below", id="100%-below"),
+    pytest.param("short", "above", id="100%-flipped"),
+    pytest.param("200tall", "below", id="200%-below"),
+    pytest.param("200", "above", id="200%-flipped"),
+]
+
+
+@pytest.mark.parametrize(("view", "opens"), DROPDOWN_CASES)
+def test_ring__chip_box_with_dropdown_open__covers_every_side(
+    rig: Rig, view: str, opens: str
+) -> None:
+    subject = measured(rig.walk(QUERY, view, frozenset({"chip"})), "chip")[-1]
+    # The state the test claims to cover: a test must not pass on the other side's dropdown.
+    assert subject.dropdown == opens, f"the dropdown opened {subject.dropdown}, not {opens}"
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
