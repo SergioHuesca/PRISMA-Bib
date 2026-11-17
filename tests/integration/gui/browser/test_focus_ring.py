@@ -2,20 +2,20 @@
 
 What this proves: with the real Tab key (and, for some controls, a mouse click) in a headless
 Chromium-family browser, every kind of control on every screen shows a ring that covers at least
-0.98 of each straight side, and a painted chip has the palette colours. The controls that work
-today are plain tests (the regression guard). Each of the six defects of the follow-up is a strict
-expected failure that records the values measured on main at af95bc6; the ticket that fixes a
-defect removes its marker (#373 to #377).
+0.98 of each straight side, at 100% and (for number fields and chip boxes) at an emulated 200%;
+a chip box keeps its ring whichever way its dropdown opens; the Tab order on Query has no stop on
+the page body, no spin arrow and no stop without an accessible name; and a painted chip has the
+palette colours. A failure names the screen, the control and the side.
 
 What this does not prove: anything on another browser, operating system or font set than the one
 running it; real Ctrl+plus zoom (200% is emulated with a 640 by 450 viewport and a device scale
-factor of 2); what a screen reader announces.
+factor of 2); what a screen reader announces; ring thickness (see the harness docstring).
 
 It runs only when ``PRISMABIB_BROWSER_CHECK`` is set (the ``browser-focus`` job does; locally:
 ``PRISMABIB_BROWSER_CHECK=1 pytest tests/integration/gui/browser``). Once set, a missing browser
-fails the run. An expected-failure marker accepts only an ``AssertionError`` about a measured
-value: ``HarnessError`` (no browser, no server, a page that did not load) and Playwright's own
-errors are not assertions, so they fail the build instead of passing as a hidden defect.
+fails the run: ``HarnessError`` (no browser, no server, a page that did not load) is not an
+assertion about a measurement, and nothing in the module turns it into a skip or an expected
+failure.
 """
 
 from __future__ import annotations
@@ -140,8 +140,9 @@ def test_ring__controls_that_work__cover_every_side_after_tab(rig: Rig, screen: 
     assert not too_short(healthy), "ring below 0.98:\n" + "\n".join(too_short(healthy))
 
 
-#: Clicks that make the page change (a new Project has no search terms, so Save refuses): wait for this text before measuring (the message pushes the
-#: button down, and a ring measured at the old place would be measured on nothing).
+#: Clicks that make the page change (a new Project has no search terms, so Save refuses): wait
+#: for this text before measuring. The message pushes the button down, and a ring measured at
+#: the old place would be measured on nothing.
 AFTER_CLICK = {"Save button": "Not saved. Correct the fields marked above."}
 
 #: What to click on each screen: (a description, how to find them). Every match is clicked in
@@ -223,14 +224,10 @@ def test_walk__every_screen__finds_the_controls_the_measure_is_about(
     assert dict(found) == EXPECTED_KINDS[screen.name], screen.name
 
 
-# -- the six defects, strict expected failures at af95bc6 (D5 is fixed by #376 and its marker is gone) ------------------------------------------
-# A marker passes only while the measured value is bad. When the defect is fixed it passes for
-# real, the strict marker turns that into a failure, and the fixing ticket deletes the marker.
-
-ASSERTION_ONLY = {"strict": True, "raises": AssertionError}
+# -- the kinds that needed a fix: rings, Tab order, accessible names and chip colours ---------------
 
 
-def test_defect_d1__text_areas__have_a_ring_on_every_side(rig: Rig) -> None:
+def test_ring__text_areas__cover_every_side_after_tab(rig: Rig) -> None:
     areas = measured(rig.walk(CRITERIA) + rig.walk(FLOW), "textarea")
     assert not too_short(areas), "text area ring below 0.98:\n" + "\n".join(too_short(areas))
 
@@ -282,7 +279,6 @@ def test_years__typing_the_keys_and_the_mouse__change_the_value(rig: Rig) -> Non
         page.wait_for_function(
             "e => e.value === '1951'", arg=first.element_handle(), timeout=10_000
         )
-
 
 
 def test_ring__number_fields_at_200_percent__cover_every_side_after_tab(rig: Rig) -> None:
@@ -351,7 +347,7 @@ def test_tab__every_stop_on_query__has_an_accessible_name(rig: Rig) -> None:
     assert len(stops) >= 20, "the walk found too few stops to mean anything"
 
 
-def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:
+def test_chip__painted__has_the_palette_colours(rig: Rig) -> None:
     with rig.session(QUERY) as page:
         entry = page.get_by_placeholder("a phrase, then Enter").first
         entry.fill("carbon capture")

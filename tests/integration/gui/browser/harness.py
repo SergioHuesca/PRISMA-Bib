@@ -7,7 +7,11 @@ focused and one blurred; the ring is the pixels that are ``rgb(17,17,17)`` when 
 when blurred. Coverage of a side is the share of positions along its straight part (the corners
 are left out) where ring pixels are painted in the band the outline occupies (``offset`` to
 ``offset + width`` outside the border box; inside it for a negative offset), with one pixel of
-slack each way for anti-aliasing. Nothing here reads a clock, a locale or a time zone; every wait
+slack each way for anti-aliasing. It is a presence measure: it does not check how thick the ring
+is, only that ring-coloured pixels appear in the band along the side. The first definition, ring
+pixels divided by the band's area, scored every healthy button side at a fixed 0.98 (a fractional
+side length divided into whole pixels), which is the pass line itself; presence per position
+scores healthy sides 1.0 and a clipped side 0. Nothing here reads a clock, a locale or a time zone; every wait
 is for a state of the page, never for a duration.
 """
 
@@ -56,8 +60,8 @@ _STATE_WAIT: Final = 10_000  # ms; a state that does not arrive fails the run, i
 class HarnessError(Exception):
     """The check itself could not run (no browser, no server, a page that did not load).
 
-    Deliberately not an ``AssertionError``: an expected-failure marker only accepts assertions
-    about a measured value, so a broken harness fails the build instead of passing as a defect.
+    Deliberately not an ``AssertionError``: assertions are about a measured value, and a broken
+    harness must fail the build rather than read as a measurement.
     """
 
 
@@ -236,7 +240,7 @@ DROPDOWN_SIDE = (
  if(!c.classList.contains('is-open')||a.height===0)return 'none';
  return a.top>=b.bottom-1?'below':(a.bottom<=b.top+1?'above':'overlap')}"""
 )
-_BLUR ="()=>{" + _DEEP_ACTIVE + "deepActive().blur()}"
+_BLUR = "()=>{" + _DEEP_ACTIVE + "deepActive().blur()}"
 
 _COUNT = """
 async ([focused, blurred, dsf, rect, off, width, ring]) => {
