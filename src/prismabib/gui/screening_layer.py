@@ -25,10 +25,12 @@ from prismabib.source_mode import load_mode_events
 from prismabib.stage import PrismaStage
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting
 
-#: The two names a screen must keep apart. A Decision carries only the Reviewer; the actor is the
-#: name the library records on Source mode changes.
+#: The two names a screen must keep apart. A Decision carries only the Reviewer; the name the library
+#: records on Source mode changes is shown as "Changed by".
 REVIEWER_LABEL: Final = "Reviewer (recorded on every Decision you make here)"
-ACTOR_LABEL: Final = "Actor (recorded by the library on Source mode changes; a separate field)"
+CHANGED_BY_LABEL: Final = (
+    "Changed by (the library records who changed a Source mode; not a second Reviewer)"
+)
 #: What undo really does: the library appends an Unsure Decision, so an undone Record is Unsure.
 UNDO_NOTE: Final = (
     "Undo withdraws your Decision on the Record on screen by adding an Unsure Decision; "
@@ -140,7 +142,7 @@ def screen_markdown(model: dict[str, Any]) -> str:
     c = model["counts"]
     lines = [
         f"**{REVIEWER_LABEL}:** {model['reviewer']}",
-        f"**{ACTOR_LABEL}:** set by the library, not by you",
+        f"**{CHANGED_BY_LABEL}:** set by the library, not by you",
         f"**Unscreened:** {c['unscreened']} · **Unsure:** {c['unsure']} · **Records:** {c['total']}",
         f"**Blind mode:** {'on' if model['blind'] else 'off'}",
         f"_{UNDO_NOTE}_",

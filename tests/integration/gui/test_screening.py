@@ -87,8 +87,11 @@ def test_decide__through_the_hosted_screener__carries_the_creation_reviewer(tmp_
     assert [e["decision"] for e in events] == ["include", "unsure"]
     assert not any("actor" in e for e in events)
     text = sl.screen_markdown(sl.screen_model(screener.queue, {}, blind=True))
-    assert sl.REVIEWER_LABEL in text and sl.ACTOR_LABEL in text
-    assert sl.REVIEWER_LABEL != sl.ACTOR_LABEL
+    assert sl.REVIEWER_LABEL in text and sl.CHANGED_BY_LABEL in text
+    assert sl.CHANGED_BY_LABEL.startswith("Changed by")
+    assert sl.REVIEWER_LABEL != sl.CHANGED_BY_LABEL
+    assert "Actor" not in text
+    assert "Actor" not in sl.CHANGED_BY_LABEL
 
 
 def test_screener__runs_with_palette_and_progress_inside_the_view(tmp_path: Path) -> None:

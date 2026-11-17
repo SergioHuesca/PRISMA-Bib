@@ -89,7 +89,7 @@ def build_screening(project: Project, session: service.Session | None = None) ->
     step = ScreeningStep(
         pn.pane.Markdown("## Screening"),
         reviewer,
-        pn.pane.Markdown(f"_{sl.ACTOR_LABEL}._"),
+        pn.pane.Markdown(f"_{sl.CHANGED_BY_LABEL}._"),
         stage,
         pn.pane.Markdown(f"_{FULLTEXT_NOTE}._"),
         blind,
