@@ -75,6 +75,13 @@ FIELD_CSS = (
     f".choices:focus-within .choices__inner"
     f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
     f"input[type=checkbox]:focus{{outline:{_RING};outline-offset:{RING_GAP}}}"
+    # Number fields (#374): Bokeh's spin wrapper clips its child (overflow:hidden), which cut the
+    # ring on every side. The spin arrows are unnamed buttons that Tab stopped on; a hidden button
+    # is out of the Tab order, so only the arrow glyph (its :before, visible again) takes the
+    # mouse. A year is changed by typing.
+    f".bk-input-group>.bk-spin-wrapper{{overflow:visible}}"
+    f".bk-spin-wrapper>.bk-spin-btn{{visibility:hidden}}"
+    f".bk-spin-wrapper>.bk-spin-btn:before{{visibility:visible}}"
     # Radio buttons overlap by 1px (margin-left:-1px): the focused one paints above its
     # neighbours so the ring is not covered; position:relative moves nothing.
     f".bk-btn-group .bk-btn:focus,.bk-btn-group .bk-btn:active"
