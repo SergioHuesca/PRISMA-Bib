@@ -37,10 +37,11 @@ def build_new_project(root: Path, on_created: Callable[[Project], None] | None =
         options=list(npm.SCOPUS_CHOICES),
         value=None,
     )
-    fill = pn.widgets.Checkbox(
-        stylesheets=[palette.FIELD_CSS],
-        name="Also fill missing fields of Scopus records from OpenAlex",
-        value=True,
+    # A one-option group, not a Checkbox: Bokeh's Checkbox does not link its label to the input,
+    # so a screen reader hears no name (#383). The group wraps the input in a <label>.
+    fill_label = "Also fill missing fields of Scopus records from OpenAlex"
+    fill = pn.widgets.CheckBoxGroup(
+        stylesheets=[palette.FIELD_CSS], name=fill_label, options=[fill_label], value=[fill_label]
     )
     create = pn.widgets.Button(name="Create Project", button_type="primary")
     message = pn.pane.Markdown("")
@@ -57,7 +58,7 @@ def build_new_project(root: Path, on_created: Callable[[Project], None] | None =
         try:
             title = (name.value or "").strip()
             slug = npm.derive_slug(title)
-            mode = npm.mode_for_choice(access.value, fill_gaps=fill.value)
+            mode = npm.mode_for_choice(access.value, fill_gaps=bool(fill.value))
             project = layer.create_project(
                 slug,
                 title=title,

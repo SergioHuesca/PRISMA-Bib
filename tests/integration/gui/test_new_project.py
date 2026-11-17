@@ -119,9 +119,8 @@ def test_new_project__answer__creates_the_matching_mode(
     created: list[Project] = []
     view = build_new_project(tmp_path, on_created=created.append)
     _fill(view, "One", access=answer)
-    _w(
-        view, pn.widgets.Checkbox, "Also fill missing fields of Scopus records from OpenAlex"
-    ).value = fill
+    label = "Also fill missing fields of Scopus records from OpenAlex"
+    _w(view, pn.widgets.CheckBoxGroup, label).value = [label] if fill else []
     _create(view)
     assert created[0].source_mode == mode
 

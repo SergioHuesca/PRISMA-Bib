@@ -52,6 +52,7 @@ GUI_DIR = Path(layer.__file__).parent
 NATIVE = (
     pn.widgets.Button,
     pn.widgets.Checkbox,
+    pn.widgets.CheckBoxGroup,
     pn.widgets.IntInput,
     pn.widgets.MultiChoice,
     pn.widgets.PasswordInput,
