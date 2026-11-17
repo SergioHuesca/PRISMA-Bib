@@ -152,12 +152,17 @@ CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator], int]]] = {
         ("Add button", lambda p: p.get_by_role("button", name="Add to: Search terms"), 1),
         ("Save button", lambda p: p.get_by_role("button", name="Save query"), 1),
         ("tab", lambda p: p.locator(".bk-tab").first, 1),
+        ("chip box", lambda p: p.locator("input.choices__input--cloned:visible").last, 1),
     ],
-    "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3)],
+    "Criteria": [
+        ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3),
+        ("text areas", lambda p: p.locator("textarea.bk-input:visible"), 6),
+    ],
     "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"), 1)],
     "Flow counts": [
         ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first, 1),
         ("selects", lambda p: p.locator("select.bk-input:visible"), 3),
+        ("text area", lambda p: p.locator("textarea.bk-input:visible"), 1),
     ],
     "New Project": [
         ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 2),
@@ -200,7 +205,7 @@ def test_ring__controls_that_work__cover_every_side_after_a_click(
 # -- what the walk finds: the check must not pass because it found nothing -------------------------
 
 EXPECTED_KINDS = {
-    "Query": {"chip": 3, "number": 2, "spin": 4, "text": 2},
+    "Query": {"chip": 3, "number": 2, "text": 2},
     "Criteria": {"text": 3, "textarea": 6},
     "Source mode": {"password": 1},
     "Screening": {},
@@ -225,70 +230,75 @@ def test_walk__every_screen__finds_the_controls_the_measure_is_about(
 ASSERTION_ONLY = {"strict": True, "raises": AssertionError}
 
 
-@pytest.mark.xfail(
-    reason="D1 at af95bc6: the seven text areas (six on Criteria, one on Flow counts) have "
-    "top 0.99 to 1.0 and left, right and bottom 0 at 100%",
-    **ASSERTION_ONLY,
-)
 def test_defect_d1__text_areas__have_a_ring_on_every_side(rig: Rig) -> None:
     areas = measured(rig.walk(CRITERIA) + rig.walk(FLOW), "textarea")
     assert not too_short(areas), "text area ring below 0.98:\n" + "\n".join(too_short(areas))
 
 
-@pytest.mark.xfail(
-    reason="D2 at af95bc6: First year and Last year have 0 on all four sides at 100%",
-    **ASSERTION_ONLY,
-)
-def test_defect_d2__number_fields__have_a_ring_on_every_side(rig: Rig) -> None:
+def test_ring__number_fields__cover_every_side_after_tab(rig: Rig) -> None:
     fields = measured(rig.walk(QUERY), "number")
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
 
-@pytest.mark.xfail(
-    reason="D2 at af95bc6: the four spin arrows of First year and Last year are Tab stops "
-    "with an empty accessible name",
-    **ASSERTION_ONLY,
-)
-def test_defect_d2__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
+def test_ring__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
     spins = [s.label for s in measured(rig.walk(QUERY), "spin")]
     assert not spins, f"{len(spins)} spin arrows are Tab stops: {spins}"
 
 
-@pytest.mark.xfail(
-    reason="D3 at af95bc6: the Subject areas chip box has bottom 0 with its dropdown open "
-    "(top, left and right 1.0)",
-    **ASSERTION_ONLY,
-)
+def test_ring__number_fields__cover_every_side_after_a_click(rig: Rig) -> None:
+    clicked: list[h.Stop] = []
+    with rig.session(QUERY) as page:
+        counter = page.context.new_page()
+        page.bring_to_front()
+        fields = page.locator(".bk-spin-wrapper input:visible")
+        expect(fields).to_have_count(2, timeout=10_000)
+        for n in range(2):
+            stop = h.click_and_measure(page, counter, fields.nth(n), None, f"year field {n + 1}")
+            stop.screen = QUERY.name
+            clicked.append(stop)
+    assert not too_short(clicked), "ring below 0.98 after a click:\n" + "\n".join(
+        too_short(clicked)
+    )
+
+
+def test_years__typing_the_keys_and_the_mouse__change_the_value(rig: Rig) -> None:
+    """Typing changes a year; Up and Down change it (recorded, #374); a click on an arrow does too."""
+    with rig.session(QUERY) as page:
+        fields = page.locator(".bk-spin-wrapper input:visible")
+        expect(fields).to_have_count(2, timeout=10_000)
+        first = fields.nth(0)
+        first.fill("1950")
+        first.press("Enter")  # Bokeh's spinner commits a typed number on Enter or blur
+        assert first.input_value() == "1950"
+        first.press("ArrowUp")
+        assert first.input_value() == "1951", "ArrowUp no longer changes the year"
+        first.press("ArrowDown")
+        assert first.input_value() == "1950", "ArrowDown no longer changes the year"
+        up = page.locator(".bk-spin-wrapper").first.locator(".bk-spin-btn-up")
+        box = up.bounding_box()
+        assert box is not None
+        # The arrow glyph sits in the middle of the button's upper half.
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_function(
+            "e => e.value === '1951'", arg=first.element_handle(), timeout=10_000
+        )
+
+
 def test_defect_d3__chip_box_with_dropdown_open__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
-@pytest.mark.xfail(
-    reason="D3 at af95bc6: with the dropdown flipped upward the Subject areas chip box has "
-    "top 0.049 (measured at a 1280 by 600 viewport; the fact sheet said 0.04)",
-    **ASSERTION_ONLY,
-)
 def test_defect_d3__chip_box_with_dropdown_flipped__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY, "short", frozenset({"chip"})), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
-@pytest.mark.xfail(
-    reason="D4a at af95bc6: First year and Last year have 0 on all four sides at the "
-    "emulated 200% (640 by 450, device scale factor 2)",
-    **ASSERTION_ONLY,
-)
-def test_defect_d4a__number_fields_at_200_percent__have_a_ring_on_every_side(rig: Rig) -> None:
+def test_ring__number_fields_at_200_percent__cover_every_side_after_tab(rig: Rig) -> None:
     fields = measured(rig.walk(QUERY, "200", frozenset({"number"})), "number")
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
 
-@pytest.mark.xfail(
-    reason="D4b at af95bc6: the Subject areas chip box has top 0.074 and bottom 1.0 at the "
-    "emulated 200% (the dropdown flips in a 450 px viewport)",
-    **ASSERTION_ONLY,
-)
 def test_defect_d4b__chip_box_at_200_percent__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY, "200", frozenset({"chip"})), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
@@ -321,11 +331,6 @@ def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
     assert not resting, f"focus rested on the page body: {resting}"
 
 
-@pytest.mark.xfail(
-    reason="D6 at af95bc6: a painted chip reads background rgb(31, 119, 180) and white text "
-    "(rgb(255, 255, 255)), not #cfe2ff and #0a58ca",
-    **ASSERTION_ONLY,
-)
 def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:
     with rig.session(QUERY) as page:
         entry = page.get_by_placeholder("a phrase, then Enter").first

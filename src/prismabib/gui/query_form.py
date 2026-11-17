@@ -126,7 +126,7 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
         errors["terms"],
         compound_box,
         errors["compound_terms"],
-        pn.Row(first, last),
+        pn.FlexBox(first, last),  # wraps in a narrow window: a Row put Last year on the page edge
         errors["years"],
         subjects,
         errors["subject_areas"],
