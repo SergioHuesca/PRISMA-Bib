@@ -6,6 +6,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer, palette
 from prismabib.gui import query_form_model as model
+from prismabib.gui.chip_tabstop import ChipTabstop
 from prismabib.project import Project
 
 
@@ -131,5 +132,6 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
         errors["subject_areas"],
         save,
         status,
+        ChipTabstop(height=0, margin=0),
         sizing_mode="stretch_width",
     )

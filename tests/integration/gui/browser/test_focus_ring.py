@@ -218,7 +218,7 @@ def test_walk__every_screen__finds_the_controls_the_measure_is_about(
     assert dict(found) == EXPECTED_KINDS[screen.name], screen.name
 
 
-# -- the six defects, strict expected failures at af95bc6 ------------------------------------------
+# -- the six defects, strict expected failures at af95bc6 (D5 is fixed by #376 and its marker is gone) ------------------------------------------
 # A marker passes only while the measured value is bad. When the defect is fixed it passes for
 # real, the strict marker turns that into a failure, and the fixing ticket deletes the marker.
 
@@ -294,12 +294,7 @@ def test_defect_d4b__chip_box_at_200_percent__has_a_ring_on_every_side(rig: Rig)
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
-@pytest.mark.xfail(
-    reason="D5 at af95bc6: on Query one Tab after the Subject areas input leaves focus on the "
-    "page body; the next Tab reaches Save query",
-    **ASSERTION_ONLY,
-)
-def test_defect_d5__tab_after_subject_areas__does_not_land_on_the_body(rig: Rig) -> None:
+def test_tab__subject_areas_to_save_query__is_one_step_both_ways(rig: Rig) -> None:
     with rig.session(QUERY) as page:
         chips = 0
         for _ in range(40):
@@ -314,7 +309,16 @@ def test_defect_d5__tab_after_subject_areas__does_not_land_on_the_body(rig: Rig)
         page.keyboard.press("Tab")
         page.wait_for_function(h.LEFT_CHIPS, timeout=10_000)  # and has closed again
         after = page.evaluate(h.FOCUS_INFO)
+        page.keyboard.press("Shift+Tab")
+        back = page.evaluate(h.FOCUS_INFO)
     assert after and not after["body"], "Tab after the Subject areas input leaves focus on the body"
+    assert after["name"] == "Save query", after["active"]
+    assert back and h.kind(back) == "chip", back and back["active"]
+
+
+def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
+    resting = [s.label for s in rig.walk(QUERY) if s.kind == "body"]
+    assert not resting, f"focus rested on the page body: {resting}"
 
 
 @pytest.mark.xfail(
