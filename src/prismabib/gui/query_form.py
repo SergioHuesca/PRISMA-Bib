@@ -14,6 +14,7 @@ def _chips(label: str, values: list[str], hint: str) -> tuple[pn.Column, pn.widg
     """Chips are a MultiChoice (each value shows with a remove button) fed by a text box."""
     shown = pn.widgets.MultiChoice(
         name=label,
+        placeholder=label,  # unset, Choices names its input "null" (#382)
         options=list(values),
         value=list(values),
         stylesheets=[palette.CHIP_CSS, palette.FIELD_CSS],
@@ -58,6 +59,7 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
     )
     subjects = pn.widgets.MultiChoice(
         name="Subject areas",
+        placeholder="Subject areas",  # unset, Choices names its input "null" (#382)
         options=list(model.SUBJECT_AREA_CHOICES),
         value=[] if scopus else list(inputs.subject_areas),
         disabled=scopus,
