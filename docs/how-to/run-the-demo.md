@@ -344,7 +344,7 @@ Eligibility -- full text, from logged human decisions
       (unsure never resolves to inclusion; it stays in the queue)
 
 Included
-  studies in the final corpus                         18
+  included studies                                    18
 ```
 
 **What to point out to the audience:**
@@ -503,7 +503,7 @@ You'll see the placeholders replaced:
 We identified 1,771 records from the Scopus search.
 After removing duplicates, 1,322 records remained for screening.
 We excluded 150 at title/abstract,
-and included 18 studies in the final corpus.
+and included 18 studies.
 ```
 
 **What to point out:**

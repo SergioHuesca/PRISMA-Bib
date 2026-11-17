@@ -331,6 +331,20 @@ def test_cli_flow__screened_project__prints_the_counts_compute_flow_counts_deriv
 
 
 @pytest.mark.integration
+def test_cli_flow__screened_project__labels_the_included_line_included_studies(
+    tmp_path: Path,
+) -> None:
+    project = _screened_reference(tmp_path)
+    golden = reference_golden()
+
+    result = runner.invoke(app, ["flow", project.slug, "--root", str(tmp_path)])
+
+    included = [line for line in result.stdout.splitlines() if "included studies" in line]
+    assert [line.split()[-1] for line in included] == [f"{golden.included:,}"]
+    assert "final corpus" not in result.stdout
+
+
+@pytest.mark.integration
 def test_cli_flow__screened_project__reports_both_unsure_buckets(tmp_path: Path) -> None:
     project = _screened_reference(tmp_path)
     golden = reference_golden()

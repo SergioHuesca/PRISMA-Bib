@@ -1209,7 +1209,7 @@ def _print_flow(counts: FlowCounts, *, slug: str, mode: SourceMode = "scopus+ope
     _echo("      (unsure never resolves to inclusion; it stays in the queue)")
     _echo()
     _echo("Included")
-    row("studies in the final corpus", f"{counts.included:,}")
+    row("included studies", f"{counts.included:,}")
 
 
 def _warn_if_inconsistent(counts: FlowCounts, *, mode: SourceMode = "scopus+openalex") -> None:
