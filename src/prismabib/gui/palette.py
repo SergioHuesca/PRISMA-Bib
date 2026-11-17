@@ -71,6 +71,8 @@ _RING = f"{RING_WIDTH} {RING_STYLE} {FOCUS_OUTLINE}"
 FIELD_CSS = (
     f".bk-input{{border-color:{FIELD_BORDER}}}"
     f".bk-input:focus{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    # The text area's host has overflow:auto, which clips the ring on the left, right and bottom.
+    f":host(.bk-panel-models-widgets-TextAreaInput){{overflow:visible}}"
     f".choices__inner{{border-color:{FIELD_BORDER}}}"
     f".choices:focus-within .choices__inner"
     f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
