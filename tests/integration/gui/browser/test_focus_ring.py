@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterator
@@ -337,6 +338,32 @@ def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
     resting = [s.label for s in stops if s.kind == "body"]
     assert not resting, f"focus rested on the page body: {resting}"
     assert sum(s.kind == "chip" for s in stops) == 3, "the walk did not pass the three chip boxes"
+
+
+def test_tab__three_visits_to_query__leave_no_extra_observers_and_still_one_step(
+    rig: Rig,
+) -> None:
+    stats = "()=>window.__prismabib_chip_tabstop.stats()"
+    drawn = "input.choices__input--cloned:visible"
+    with rig.session(QUERY) as page:
+        seen = []
+        for visit in range(3):
+            if visit:  # away and back: Query is built again and its script renders again
+                page.get_by_role("button", name="Criteria").first.click()
+                page.get_by_role("heading", name="Criteria").first.wait_for()
+                page.get_by_role("button", name=re.compile(r"^Query")).first.click()
+            expect(page.locator(drawn)).to_have_count(3, timeout=10_000)
+            page.wait_for_function(
+                f"()=>window.__prismabib_chip_tabstop.stats().renders>={visit + 1}", timeout=10_000
+            )
+            seen.append(page.evaluate(stats))
+        stops = h.tab_stops(page, page, QUERY.name, measure=lambda _kind: False)
+    assert [s["renders"] for s in seen] == [1, 2, 3], seen  # each visit really rendered again
+    assert seen[0]["observers"] > 1, seen  # the document and its shadow roots
+    assert seen[1]["observers"] == seen[2]["observers"] == seen[0]["observers"], seen
+    assert not [s for s in stops if s.kind == "body"], "focus rested on the body after 3 visits"
+    chips = [i for i, s in enumerate(stops) if s.kind == "chip"]
+    assert stops[chips[-1] + 1].info["name"] == "Save query", [s.label for s in stops]
 
 
 def test_tab__every_stop_on_query__has_an_accessible_name(rig: Rig) -> None:

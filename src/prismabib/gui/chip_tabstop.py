@@ -20,25 +20,35 @@ from panel.reactive import ReactiveHTML
 # observer, and a change in it sets the attribute on every list in it at once (a timer would
 # lose the race against a quick Tab). ponytail: each mutation re-reads its tree; fine for this
 # app's pages, upgrade if a screen ever mutates thousands of nodes a second.
+#
+# One registry lives on the window for the whole session. Every render disconnects and forgets all
+# observers of the earlier renders (the page keeps no observer of a screen it has left) before it
+# starts its own, so visiting Query again never adds observers. ``stats`` is a read-only view of it.
 _SCRIPT = """
-if (window.__prismabib_chip_tabstop) { window.__prismabib_chip_tabstop.disconnect(); }
-const seen = new WeakSet();
+const registry = window.__prismabib_chip_tabstop || (window.__prismabib_chip_tabstop = {
+  seen: new WeakSet(), observers: [], renders: 0,
+  stats: function () { return {observers: registry.observers.length, renders: registry.renders}; },
+});
+for (const old of registry.observers) { old.disconnect(); }
+registry.observers.length = 0;
+registry.seen = new WeakSet();
+registry.renders += 1;
 const sweep = function (root) {
   for (const list of root.querySelectorAll('.choices__list--dropdown .choices__list')) {
     if (list.getAttribute('tabindex') !== '-1') { list.setAttribute('tabindex', '-1'); }
   }
   for (const node of root.querySelectorAll('*')) {
-    if (node.shadowRoot && !seen.has(node.shadowRoot)) { watch(node.shadowRoot); }
+    if (node.shadowRoot && !registry.seen.has(node.shadowRoot)) { watch(node.shadowRoot); }
   }
 };
 const watch = function (root) {
-  seen.add(root);
+  registry.seen.add(root);
   const observer = new MutationObserver(function () { sweep(root); });
   observer.observe(root, {childList: true, subtree: true});
+  registry.observers.push(observer);
   sweep(root);
-  return observer;
 };
-window.__prismabib_chip_tabstop = watch(document);
+watch(document);
 """
 
 
