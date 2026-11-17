@@ -41,10 +41,12 @@ BUTTON_CSS = (
     f".bk-btn-danger:hover,.bk-active.bk-btn-danger"
     f"{{background-color:{DANGER_HOVER};border-color:{DANGER_HOVER}}}"
 )
+# The library's `.choices__inner .choices__item.solid` (3 classes) paints chips; this has 4.
+_CHIP = ".choices__inner .choices__list--multiple .choices__item.choices__item"
 CHIP_CSS = (
-    ".choices__list--multiple .choices__item"
+    f"{_CHIP}"
     f"{{background-color:{CHIP_FILL};border-color:{CHIP_TEXT};color:{CHIP_TEXT}}}"
-    ".choices__list--multiple .choices__item.is-highlighted"
+    f"{_CHIP}.is-highlighted"
     f"{{background-color:{CHIP_HIGHLIGHT}}}"
 )
 PLACEHOLDER_CSS = f".bk-input::placeholder{{color:{PLACEHOLDER};opacity:1}}"
@@ -71,10 +73,23 @@ _RING = f"{RING_WIDTH} {RING_STYLE} {FOCUS_OUTLINE}"
 FIELD_CSS = (
     f".bk-input{{border-color:{FIELD_BORDER}}}"
     f".bk-input:focus{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    # The text area's host has overflow:auto, which clips the ring on the left, right and bottom.
+    f":host(.bk-panel-models-widgets-TextAreaInput){{overflow:visible}}"
     f".choices__inner{{border-color:{FIELD_BORDER}}}"
     f".choices:focus-within .choices__inner"
-    f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    # The dropdown (z-index 10000 in Panel's stylesheet, below the box or flipped above it) covers
+    # the ring's bottom or top edge: the focused box paints one step above it. position:relative
+    # moves nothing.
+    f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP};"
+    f"position:relative;z-index:10001}}"
     f"input[type=checkbox]:focus{{outline:{_RING};outline-offset:{RING_GAP}}}"
+    # Number fields (#374): Bokeh's spin wrapper clips its child (overflow:hidden), which cut the
+    # ring on every side. The spin arrows are unnamed buttons that Tab stopped on; a hidden button
+    # is out of the Tab order, so only the arrow glyph (its :before, visible again) takes the
+    # mouse. A year is changed by typing.
+    f".bk-input-group>.bk-spin-wrapper{{overflow:visible}}"
+    f".bk-spin-wrapper>.bk-spin-btn{{visibility:hidden}}"
+    f".bk-spin-wrapper>.bk-spin-btn:before{{visibility:visible}}"
     # Radio buttons overlap by 1px (margin-left:-1px): the focused one paints above its
     # neighbours so the ring is not covered; position:relative moves nothing.
     f".bk-btn-group .bk-btn:focus,.bk-btn-group .bk-btn:active"

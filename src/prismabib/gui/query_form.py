@@ -6,6 +6,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import layer, palette
 from prismabib.gui import query_form_model as model
+from prismabib.gui.chip_tabstop import ChipTabstop
 from prismabib.project import Project
 
 
@@ -125,11 +126,12 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
         errors["terms"],
         compound_box,
         errors["compound_terms"],
-        pn.Row(first, last),
+        pn.FlexBox(first, last),  # wraps in a narrow window: a Row put Last year on the page edge
         errors["years"],
         subjects,
         errors["subject_areas"],
         save,
         status,
+        ChipTabstop(height=0, margin=0),
         sizing_mode="stretch_width",
     )

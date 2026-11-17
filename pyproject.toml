@@ -101,6 +101,7 @@ dev = [
     "nbstripout>=0.7.0",       # §2.4 notebook hygiene
     "pre-commit>=3.5.0",
     "detect-secrets>=1.4.0",   # §2.5 secret guard
+    "playwright>=1.64.1,<2",   # #372 real-browser focus check (drives the runner's own browser)
 ]
 
 [project.urls]

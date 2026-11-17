@@ -340,6 +340,7 @@ NON_SCREEN_MODULES = {
     "__init__",
     "build_layer",
     "capture_layer",
+    "chip_tabstop",
     "criteria_model",
     "delete_store_layer",
     "export_layer",
