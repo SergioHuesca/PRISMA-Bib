@@ -205,7 +205,7 @@ def test_ring__controls_that_work__cover_every_side_after_a_click(
 # -- what the walk finds: the check must not pass because it found nothing -------------------------
 
 EXPECTED_KINDS = {
-    "Query": {"chip": 3, "number": 2, "spin": 4, "text": 2},
+    "Query": {"chip": 3, "number": 2, "text": 2},
     "Criteria": {"text": 3, "textarea": 6},
     "Source mode": {"password": 1},
     "Screening": {},
@@ -235,23 +235,53 @@ def test_defect_d1__text_areas__have_a_ring_on_every_side(rig: Rig) -> None:
     assert not too_short(areas), "text area ring below 0.98:\n" + "\n".join(too_short(areas))
 
 
-@pytest.mark.xfail(
-    reason="D2 at af95bc6: First year and Last year have 0 on all four sides at 100%",
-    **ASSERTION_ONLY,
-)
-def test_defect_d2__number_fields__have_a_ring_on_every_side(rig: Rig) -> None:
+def test_ring__number_fields__cover_every_side_after_tab(rig: Rig) -> None:
     fields = measured(rig.walk(QUERY), "number")
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
 
-@pytest.mark.xfail(
-    reason="D2 at af95bc6: the four spin arrows of First year and Last year are Tab stops "
-    "with an empty accessible name",
-    **ASSERTION_ONLY,
-)
-def test_defect_d2__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
+def test_ring__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
     spins = [s.label for s in measured(rig.walk(QUERY), "spin")]
     assert not spins, f"{len(spins)} spin arrows are Tab stops: {spins}"
+
+
+def test_ring__number_fields__cover_every_side_after_a_click(rig: Rig) -> None:
+    clicked: list[h.Stop] = []
+    with rig.session(QUERY) as page:
+        counter = page.context.new_page()
+        page.bring_to_front()
+        fields = page.locator(".bk-spin-wrapper input:visible")
+        expect(fields).to_have_count(2, timeout=10_000)
+        for n in range(2):
+            stop = h.click_and_measure(page, counter, fields.nth(n), None, f"year field {n + 1}")
+            stop.screen = QUERY.name
+            clicked.append(stop)
+    assert not too_short(clicked), "ring below 0.98 after a click:\n" + "\n".join(
+        too_short(clicked)
+    )
+
+
+def test_years__typing_the_keys_and_the_mouse__change_the_value(rig: Rig) -> None:
+    """Typing changes a year; Up and Down change it (recorded, #374); a click on an arrow does too."""
+    with rig.session(QUERY) as page:
+        fields = page.locator(".bk-spin-wrapper input:visible")
+        expect(fields).to_have_count(2, timeout=10_000)
+        first = fields.nth(0)
+        first.fill("1950")
+        first.press("Enter")  # Bokeh's spinner commits a typed number on Enter or blur
+        assert first.input_value() == "1950"
+        first.press("ArrowUp")
+        assert first.input_value() == "1951", "ArrowUp no longer changes the year"
+        first.press("ArrowDown")
+        assert first.input_value() == "1950", "ArrowDown no longer changes the year"
+        up = page.locator(".bk-spin-wrapper").first.locator(".bk-spin-btn-up")
+        box = up.bounding_box()
+        assert box is not None
+        # The arrow glyph sits in the middle of the button's upper half.
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_function(
+            "e => e.value === '1951'", arg=first.element_handle(), timeout=10_000
+        )
 
 
 def test_defect_d3__chip_box_with_dropdown_open__has_a_ring_on_every_side(rig: Rig) -> None:
@@ -264,12 +294,7 @@ def test_defect_d3__chip_box_with_dropdown_flipped__has_a_ring_on_every_side(rig
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
-@pytest.mark.xfail(
-    reason="D4a at af95bc6: First year and Last year have 0 on all four sides at the "
-    "emulated 200% (640 by 450, device scale factor 2)",
-    **ASSERTION_ONLY,
-)
-def test_defect_d4a__number_fields_at_200_percent__have_a_ring_on_every_side(rig: Rig) -> None:
+def test_ring__number_fields_at_200_percent__cover_every_side_after_tab(rig: Rig) -> None:
     fields = measured(rig.walk(QUERY, "200", frozenset({"number"})), "number")
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
