@@ -41,13 +41,13 @@ pytestmark = [
     ),
 ]
 
-QUERY = h.Screen("Query")
-CRITERIA = h.Screen("Criteria", "Criteria", "Criteria")
-SOURCE_MODE = h.Screen("Source mode", "Source mode and keys", "Source mode and keys")
+QUERY = h.Screen("Query", fields=7)
+CRITERIA = h.Screen("Criteria", "Criteria", "Criteria", fields=9)
+SOURCE_MODE = h.Screen("Source mode", "Source mode and keys", "Source mode and keys", fields=1)
 SCREENING = h.Screen("Screening", "Screening", "Screening")
-FLOW = h.Screen("Flow counts", "Flow counts", "Flow counts")
-NEW_PROJECT = h.Screen("New Project", where="new_project")
-SETTINGS = h.Screen("Settings", where="settings")
+FLOW = h.Screen("Flow counts", "Flow counts", "Flow counts", fields=5)
+NEW_PROJECT = h.Screen("New Project", where="new_project", fields=3)
+SETTINGS = h.Screen("Settings", where="settings", fields=1)
 SCREENS = [QUERY, CRITERIA, SOURCE_MODE, SCREENING, FLOW, NEW_PROJECT, SETTINGS]
 
 #: Kinds that work today: ring on every side. The radio group is the Yes/No/Not sure buttons of

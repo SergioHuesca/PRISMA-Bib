@@ -29,7 +29,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from playwright.sync_api import Browser, BrowserContext, Error, Locator, Page, Playwright
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    Error,
+    Locator,
+    Page,
+    Playwright,
+    expect,
+)
 
 import prismabib
 from prismabib.gui import layer
@@ -55,6 +63,7 @@ VIEWS: Final = {
 _MARGIN: Final = 10  # CSS px kept around the border box in a screenshot
 _SERVER_WAIT: Final = 120
 _STATE_WAIT: Final = 10_000  # ms; a state that does not arrive fails the run, it is not skipped
+_FIELDS: Final = "input:visible, select:visible, textarea:visible"
 
 
 class HarnessError(Exception):
@@ -148,6 +157,8 @@ class Screen:
     heading: str | None = None
     #: "project" (a loaded Project), "new_project" (the form on the start page) or "settings".
     where: str = "project"
+    #: How many inputs, selects and text areas the screen shows once it is drawn (0: not waited).
+    fields: int = 0
 
 
 #: Where Tab starts from: the top of the page (otherwise the browser continues from the last click).
@@ -183,6 +194,8 @@ def session(app: App, browser: Browser, screen: Screen, view: str = "100") -> It
             if screen.button and screen.heading:
                 page.get_by_role("button", name=screen.button).first.click()
                 page.get_by_role("heading", name=screen.heading).first.wait_for()
+        if screen.fields:  # the heading shows before the controls are all drawn
+            expect(page.locator(_FIELDS)).to_have_count(screen.fields, timeout=_STATE_WAIT)
         page.evaluate(PARK)
         yield page
     finally:
