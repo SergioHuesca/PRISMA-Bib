@@ -20,19 +20,17 @@ failure.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
-import sys
 from collections import Counter
-from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager
+from collections.abc import Callable
 
 import pytest
-from playwright.sync_api import Browser, Locator, Page, Playwright, expect, sync_playwright
+from playwright.sync_api import Locator, Page, expect
 from pytest_socket import enable_socket
 
 from tests.integration.gui.browser import harness as h
+from tests.integration.gui.browser.harness import Rig
 
 pytestmark = [
     pytest.mark.integration,
@@ -59,62 +57,6 @@ HEALTHY = {"button", "tab", "text", "password", "select", "checkbox"}
 def _loopback() -> None:
     """The suite bans sockets; the browser driver and the app need a loopback."""
     enable_socket()
-
-
-class Rig:
-    """The app and the browser, plus every Tab walk already made (a walk is slow, its reading free)."""
-
-    def __init__(self, app: h.App, browser: Browser) -> None:
-        self.app, self.browser = app, browser
-        self._walks: dict[tuple[str, str, frozenset[str] | None], list[h.Stop]] = {}
-
-    def walk(
-        self, screen: h.Screen, view: str = "100", only: frozenset[str] | None = None
-    ) -> list[h.Stop]:
-        """Tab through ``screen`` on a fresh Project; measure every control (or just ``only`` kinds)."""
-        key = (screen.name, view, only)
-        if key not in self._walks:
-            with h.session(self.app, self.browser, screen, view) as page:
-                counter = page.context.new_page()
-                page.bring_to_front()
-                self._walks[key] = h.tab_stops(
-                    page,
-                    counter,
-                    screen.name,
-                    view=view,
-                    measure=lambda kind: only is None or kind in only,
-                )
-        return self._walks[key]
-
-    def session(self, screen: h.Screen = QUERY, view: str = "100") -> AbstractContextManager[Page]:
-        return h.session(self.app, self.browser, screen, view)
-
-
-@pytest.fixture(scope="module")
-def rig(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Rig]:
-    enable_socket()
-    # Importing the GUI makes tornado select the selector event loop on Windows, which cannot
-    # start Playwright's driver process. Its loop is created at start, so the policy is only
-    # swapped for that call and put back: it is process-global state.
-    policy = asyncio.get_event_loop_policy()
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    try:
-        playwright: Playwright = sync_playwright().start()
-    finally:
-        asyncio.set_event_loop_policy(policy)
-    app: h.App | None = None
-    browser: Browser | None = None
-    try:
-        browser = h.launch_browser(playwright)
-        app = h.App(tmp_path_factory.mktemp("focus-app"))
-        yield Rig(app, browser)
-    finally:
-        if browser:
-            browser.close()
-        if app:
-            app.stop()
-        playwright.stop()
 
 
 def measured(stops: list[h.Stop], *kinds: str) -> list[h.Stop]:

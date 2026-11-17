@@ -24,7 +24,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -455,3 +455,32 @@ def click_and_measure(
 def short_of(coverage: dict[str, float]) -> dict[str, float]:
     """The sides below the pass line (all four when nothing was measured)."""
     return {s: coverage.get(s, 0.0) for s in SIDES if coverage.get(s, 0.0) < PASS_LINE}
+
+
+class Rig:
+    """The app and the browser, plus every Tab walk already made (a walk is slow, its reading free)."""
+
+    def __init__(self, app: App, browser: Browser) -> None:
+        self.app, self.browser = app, browser
+        self._walks: dict[tuple[str, str, frozenset[str] | None], list[Stop]] = {}
+
+    def walk(
+        self, screen: Screen, view: str = "100", only: frozenset[str] | None = None
+    ) -> list[Stop]:
+        """Tab through ``screen`` on a fresh Project; measure every control (or just ``only`` kinds)."""
+        key = (screen.name, view, only)
+        if key not in self._walks:
+            with session(self.app, self.browser, screen, view) as page:
+                counter = page.context.new_page()
+                page.bring_to_front()
+                self._walks[key] = tab_stops(
+                    page,
+                    counter,
+                    screen.name,
+                    view=view,
+                    measure=lambda kind: only is None or kind in only,
+                )
+        return self._walks[key]
+
+    def session(self, screen: Screen, view: str = "100") -> AbstractContextManager[Page]:
+        return session(self.app, self.browser, screen, view)

@@ -59,6 +59,7 @@ CONTROL_KINDS = {
     "Select",
     "MultiChoice",
     "Checkbox",
+    "CheckBoxGroup",  # New Project's one-option "Also fill..." box (#383)
     "RadioButtonGroup",
 }
 FIELD_KINDS = CONTROL_KINDS - {"Button", "Tabs"}
