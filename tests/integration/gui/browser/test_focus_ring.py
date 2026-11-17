@@ -317,11 +317,6 @@ def test_defect_d5__tab_after_subject_areas__does_not_land_on_the_body(rig: Rig)
     assert after and not after["body"], "Tab after the Subject areas input leaves focus on the body"
 
 
-@pytest.mark.xfail(
-    reason="D6 at af95bc6: a painted chip reads background rgb(31, 119, 180) and white text "
-    "(rgb(255, 255, 255)), not #cfe2ff and #0a58ca",
-    **ASSERTION_ONLY,
-)
 def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:
     with rig.session(QUERY) as page:
         entry = page.get_by_placeholder("a phrase, then Enter").first

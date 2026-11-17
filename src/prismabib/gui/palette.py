@@ -41,10 +41,12 @@ BUTTON_CSS = (
     f".bk-btn-danger:hover,.bk-active.bk-btn-danger"
     f"{{background-color:{DANGER_HOVER};border-color:{DANGER_HOVER}}}"
 )
+# The library's `.choices__inner .choices__item.solid` (3 classes) paints chips; this has 4.
+_CHIP = ".choices__inner .choices__list--multiple .choices__item.choices__item"
 CHIP_CSS = (
-    ".choices__list--multiple .choices__item"
+    f"{_CHIP}"
     f"{{background-color:{CHIP_FILL};border-color:{CHIP_TEXT};color:{CHIP_TEXT}}}"
-    ".choices__list--multiple .choices__item.is-highlighted"
+    f"{_CHIP}.is-highlighted"
     f"{{background-color:{CHIP_HIGHLIGHT}}}"
 )
 PLACEHOLDER_CSS = f".bk-input::placeholder{{color:{PLACEHOLDER};opacity:1}}"
