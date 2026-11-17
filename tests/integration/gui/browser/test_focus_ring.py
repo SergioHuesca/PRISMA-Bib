@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 
 import pytest
-from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwright
+from playwright.sync_api import Browser, Locator, Page, Playwright, expect, sync_playwright
 from pytest_socket import enable_socket
 
 from tests.integration.gui.browser import harness as h
@@ -146,25 +146,25 @@ AFTER_CLICK = {"Save button": "Not saved. Correct the fields marked above."}
 
 #: What to click on each screen: (a description, how to find them). Every match is clicked in
 #: turn. Only controls whose click is harmless (no network, no navigation away from the screen).
-CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator]]]] = {
+CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator], int]]] = {
     "Query": [
-        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first),
-        ("Add button", lambda p: p.get_by_role("button", name="Add to: Search terms")),
-        ("Save button", lambda p: p.get_by_role("button", name="Save query")),
-        ("tab", lambda p: p.locator(".bk-tab").first),
+        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first, 1),
+        ("Add button", lambda p: p.get_by_role("button", name="Add to: Search terms"), 1),
+        ("Save button", lambda p: p.get_by_role("button", name="Save query"), 1),
+        ("tab", lambda p: p.locator(".bk-tab").first, 1),
     ],
-    "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"))],
-    "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"))],
+    "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3)],
+    "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"), 1)],
     "Flow counts": [
-        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first),
-        ("selects", lambda p: p.locator("select.bk-input:visible")),
+        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first, 1),
+        ("selects", lambda p: p.locator("select.bk-input:visible"), 3),
     ],
     "New Project": [
-        ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible")),
-        ("radio group", lambda p: p.get_by_role("button", name="No", exact=True)),
-        ("checkbox", lambda p: p.locator("input[type=checkbox]:visible")),
+        ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 2),
+        ("radio group", lambda p: p.get_by_role("button", name="No", exact=True), 1),
+        ("checkbox", lambda p: p.locator("input[type=checkbox]:visible"), 1),
     ],
-    "Settings": [("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first)],
+    "Settings": [("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first, 1)],
 }
 
 
@@ -176,16 +176,20 @@ def test_ring__controls_that_work__cover_every_side_after_a_click(
     with rig.session(screen) as page:
         counter = page.context.new_page()
         page.bring_to_front()
-        for what, find in CLICKS[screen.name]:
+        for what, find, count in CLICKS[screen.name]:
             targets = find(page)
-            targets.first.wait_for(state="visible")  # a timeout here fails the run
-            count = targets.count()
-            if not count:
-                raise h.HarnessError(f"{screen.name}: no {what} to click")
+            # Ready state: the screen has drawn all of its controls of this kind (it keeps
+            # drawing after its heading shows). A miss fails the run, naming the screen.
+            try:
+                expect(targets).to_have_count(count, timeout=10_000)
+            except AssertionError as exc:
+                raise h.HarnessError(f"{screen.name}: expected {count} {what}: {exc}") from exc
             message = AFTER_CLICK.get(what)
             settled = (lambda m=message: page.get_by_text(m).wait_for()) if message else None
             for n in range(count):
-                stop = h.click_and_measure(page, counter, targets.nth(n), settled)
+                stop = h.click_and_measure(
+                    page, counter, targets.nth(n), settled, f"{screen.name}: {what} {n + 1}"
+                )
                 stop.screen = screen.name
                 clicked.append(stop)
     assert not too_short(clicked), "ring below 0.98 after a click:\n" + "\n".join(

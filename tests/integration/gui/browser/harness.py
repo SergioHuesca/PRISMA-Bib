@@ -367,14 +367,21 @@ def tab_stops(
 
 
 def click_and_measure(
-    page: Page, counter: Page, target: Locator, settled: Callable[[], None] | None = None
+    page: Page,
+    counter: Page,
+    target: Locator,
+    settled: Callable[[], None] | None = None,
+    what: str = "control",
 ) -> Stop:
     """Click ``target`` with the mouse and measure the ring it then shows.
 
     ``settled`` waits for the page to stop changing when the click makes it change (a message
     that pushes the control down); the measure is taken after it.
     """
-    target.click()
+    try:
+        target.click(timeout=10_000)  # a stuck click fails fast and says which control
+    except Error as exc:
+        raise HarnessError(f"{what}: the click did not go through: {exc}") from exc
     if settled:
         settled()
     info = page.evaluate(FOCUS_INFO)
