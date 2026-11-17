@@ -126,7 +126,6 @@ app.command("openalex")(_openalex_command)
 app.command("openalex-search")(_openalex_search_command)
 register_manual_commands(app)
 register_source_commands(app)
-register_gui_command(app)
 app.add_typer(credentials_app)
 
 _ROOT_OPTION = typer.Option(
@@ -138,6 +137,7 @@ _ROOT_OPTION = typer.Option(
     ),
     show_default=False,
 )
+register_gui_command(app, _ROOT_OPTION)  # after the option: the gui command reuses it
 
 
 def _echo(line: str = "") -> None:

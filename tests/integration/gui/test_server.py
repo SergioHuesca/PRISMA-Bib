@@ -7,6 +7,7 @@ import http.client
 import socket
 import threading
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,8 +15,10 @@ from pytest_socket import enable_socket, socket_allow_hosts
 
 pytest.importorskip("panel")
 
+from prismabib.gui import server as server_module
 from prismabib.gui.launch import pick_port, serve
-from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
+from prismabib.user_settings import PROJECTS_FOLDER_KEY, USER_FILE_OVERRIDE_VAR, write_user_settings
+from tests.integration.gui.helpers import text
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +129,35 @@ def test_server__request_not_from_the_local_app__is_rejected(running: _Running, 
     }[which]
 
     assert running.get(headers) == 403
+
+
+@pytest.mark.integration
+def test_serve__root_given__home_shows_that_folder_and_not_the_saved_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    chosen, saved = tmp_path / "chosen-projects", tmp_path / "saved-projects"
+    chosen.mkdir()
+    saved.mkdir()
+    write_user_settings({PROJECTS_FOLDER_KEY: str(saved)})
+    built: list[Any] = []
+    real_build_app = server_module.build_app
+
+    def recording_build_app(root: Path | None = None) -> Any:
+        built.append(real_build_app(root))  # the screen the server serves
+        return built[-1]
+
+    # The served page only names the app's models: the screen reaches the browser over a
+    # websocket. So read the screen the server built for a page request.
+    monkeypatch.setattr(server_module, "build_app", recording_build_app)
+    r = _Running(no_browser=True, root=chosen)
+    try:
+        assert r.get() == 200
+    finally:
+        r.stop()
+
+    shown = text(built[-1])
+    assert f"Projects folder in use: `{chosen}`" in shown
+    assert str(saved) not in shown
 
 
 @pytest.mark.integration
