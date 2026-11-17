@@ -297,6 +297,14 @@ class Stop:
     coverage: dict[str, float] = field(default_factory=dict)
     #: For a chip box: which way its open dropdown lies ("below" or "above"), read before measuring.
     dropdown: str | None = None
+    #: With ``names``: the accessibility snapshot of the focused control (its role and name).
+    snapshot: str = ""
+
+    @property
+    def has_name(self) -> bool:
+        """Whether the snapshot gives the control a non-empty accessible name."""
+        first = self.snapshot.splitlines()[0] if self.snapshot else ""
+        return bool(re.search(r'"[^"]+"', first) or re.match(r"- text: \S", first))
 
     @property
     def kind(self) -> str:
@@ -358,6 +366,7 @@ def tab_stops(
     *,
     view: str = "100",
     measure: Callable[[str], bool] = lambda _kind: True,
+    names: bool = False,
     limit: int = 40,
 ) -> list[Stop]:
     """Press Tab from the top of the page until focus reaches the tab row.
@@ -380,6 +389,8 @@ def tab_stops(
             break
         stop = Stop(screen, info)
         stops.append(stop)
+        if names and stop.kind != "body":
+            stop.snapshot = page.locator(":focus").last.aria_snapshot()
         if stop.kind == "chip":
             page.wait_for_function(SETTLED, timeout=_STATE_WAIT)
             stop.dropdown = page.evaluate(DROPDOWN_SIDE)

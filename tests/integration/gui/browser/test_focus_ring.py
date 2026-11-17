@@ -343,6 +343,14 @@ def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
     assert sum(s.kind == "chip" for s in stops) == 3, "the walk did not pass the three chip boxes"
 
 
+def test_tab__every_stop_on_query__has_an_accessible_name(rig: Rig) -> None:
+    with rig.session(QUERY) as page:
+        stops = h.tab_stops(page, page, QUERY.name, measure=lambda _kind: False, names=True)
+    unnamed = [f"{s.label}: {s.snapshot!r}" for s in stops if s.kind != "body" and not s.has_name]
+    assert not unnamed, "Tab stops with an empty accessible name:\n" + "\n".join(unnamed)
+    assert len(stops) >= 20, "the walk found too few stops to mean anything"
+
+
 def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:
     with rig.session(QUERY) as page:
         entry = page.get_by_placeholder("a phrase, then Enter").first
