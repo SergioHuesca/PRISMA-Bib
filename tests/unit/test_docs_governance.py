@@ -12,6 +12,7 @@ plain bracketed text.
 
 from __future__ import annotations
 
+import ast
 import re
 from itertools import pairwise
 from pathlib import Path
@@ -276,3 +277,46 @@ def test_corpus_check__on_a_small_tree__reports_each_failure_mode(tmp_path: Path
         "docs/open.md: unclosed code fence '~~~'",
         "stale allow-list entry: ('README.md', 'gone')",
     ]
+
+
+def _evidence_citations(adr: Path) -> list[tuple[str, str]]:
+    """The `(path, test_name)` of each `- claim — path::name` line under `## Evidence`."""
+    lines = adr.read_text(encoding="utf-8").splitlines()
+    stripped = [line.strip() for line in lines]
+    assert "## Evidence" in stripped, f"{adr.name} has no '## Evidence' heading"
+    citations = []
+    for line in lines[stripped.index("## Evidence") + 1 :]:
+        if line.startswith("## "):
+            break
+        if not line.startswith("- "):
+            continue
+        cited = line.rsplit(" — ", 1)[-1].strip()
+        rel, sep, name = cited.partition("::")
+        assert sep, f"{adr.name} Evidence line has no 'path::test_name': {line!r}"
+        assert name.startswith("test_"), f"{adr.name} Evidence cites a non-test name: {line!r}"
+        citations.append((rel, name))
+    return citations
+
+
+@pytest.mark.unit
+def test_adr_0046__every_evidence_test__exists() -> None:
+    """Each test ADR 0046 cites as evidence is defined where the ADR says it is."""
+    adr = ADR_DIR / "0046-undo-and-cancel-rules.md"
+    citations = _evidence_citations(adr)
+    assert citations, "ADR 0046 has an empty Evidence list"
+
+    missing = []
+    for rel, name in citations:
+        path = REPO_ROOT / rel
+        defined = (
+            {
+                n.name
+                for n in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+            }
+            if path.is_file()
+            else set()
+        )
+        if name not in defined:
+            missing.append(f"{rel}::{name}")
+    assert not missing, "ADR 0046 cites tests that do not exist:\n" + "\n".join(missing)

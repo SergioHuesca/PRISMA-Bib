@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The values marked "proposed" in spec #312 are listed once under "Values for owner confirmation" and stand as written unless the owner overrules them before the merge. ADRs 0001 to 0042 are not edited.
+Accepted. The values marked "proposed" in spec #312 are listed once under "Values for owner confirmation" and stand as written unless the owner overrules them before the merge. ADRs 0001 to 0042 are not edited. Partly superseded by ADR 0046.
 
 ## Context
 

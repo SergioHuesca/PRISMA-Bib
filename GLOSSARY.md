@@ -78,6 +78,9 @@ _Avoid_: stage on its own, phase
 One of the numbered units (0 to 11) in which the tool itself is built and released. Unrelated to a screening stage.
 _Avoid_: stage on its own
 
+**Undo**:
+Withdrawing your own latest decision on the record on screen. It is logged as a new unsure decision that supersedes the earlier one, so the record counts as unsure, not unscreened. Both decisions stay in the decision log. Undo never withdraws another reviewer's decision.
+
 **Unsure**:
 A logged decision that keeps the record in the queue. It never counts as inclusion.
 
