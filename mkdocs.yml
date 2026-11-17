@@ -129,6 +129,7 @@ nav:
           - "ADR 0042: source modes and OpenAlex as a primary source": architecture/adr/0042-source-modes-and-openalex-as-a-primary-source.md
           - "ADR 0043: a local GUI": architecture/adr/0043-local-gui.md
           - "ADR 0045: weekly mutation scope": architecture/adr/0045-weekly-mutation-scope-is-the-prisma-package.md
+          - "ADR 0046: undo and cancel rules": architecture/adr/0046-undo-and-cancel-rules.md
   - Methodology:
       - PRISMA Mapping: methodology/prisma-mapping.md
       - Metric Definitions: methodology/metric-definitions.md
