@@ -13,8 +13,8 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import ProjectLockedError
-from prismabib.gui import layer, tasks
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import service, tasks
 from prismabib.gui.new_project import build_stepper
 from prismabib.gui.screening import build_screening
 from prismabib.prisma.log import DecisionLog
@@ -47,7 +47,7 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 def make_project(root: Path, *, built: bool = True, criteria: bool = True) -> Project:
     """A Project created through the layer (Reviewer Ada), with five authored Records."""
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=root, source_mode="scopus", reviewer="Ada"
     )
     if criteria:
@@ -148,7 +148,7 @@ def test_blind_mode__second_reviewer__nothing_leaks_into_the_view_model(tmp_path
 def test_read_only_window__decision__is_refused_and_logged_nothing(tmp_path: Path) -> None:
     project = make_project(tmp_path)
     screener = sl.open_screening(project, STAGE, "Ada")
-    holder = layer.Session(project)  # another window holds the write lock
+    holder = service.Session(project)  # another window holds the write lock
 
     with pytest.raises(ProjectLockedError):
         screener.queue.decide("include")
@@ -165,8 +165,8 @@ def test_open__criteria_saved_unchanged_with_the_defaults__screening_is_not_bloc
     project = make_project(tmp_path, criteria=False)  # the init scaffold, store built
     assert any("Criteria are not written" in gap for gap in sl.missing(project))
 
-    with layer.open_session("demo", root=tmp_path) as session:
-        layer.save_criteria(session, project.criteria)  # unrestricted, by choice
+    with service.open_session("demo", root=tmp_path) as session:
+        service.save_criteria(session, project.criteria)  # unrestricted, by choice
 
     assert sl.missing(project) == []
 
@@ -178,7 +178,7 @@ def test_open_early__says_what_is_missing(tmp_path: Path) -> None:
 
     text = " ".join(str(p.object) for p in view.select(pn.pane.Markdown))
     assert "Criteria are not written" in text and "store is not built" in text
-    with pytest.raises(layer.ValidationError):
+    with pytest.raises(service.ValidationError):
         sl.open_screening(project, STAGE, "Ada")
 
 

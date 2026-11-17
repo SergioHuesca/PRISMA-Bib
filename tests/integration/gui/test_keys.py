@@ -12,7 +12,7 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.keys import build_keys
 from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
@@ -37,7 +37,9 @@ def _clean_env(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 def _make(tmp_path: Path, mode: str = "openalex") -> Project:
-    return layer.create_project("demo", title="Demo", root=tmp_path, source_mode=mode, reviewer="A")  # type: ignore[arg-type]
+    return service.create_project(
+        "demo", title="Demo", root=tmp_path, source_mode=mode, reviewer="A"
+    )  # type: ignore[arg-type]
 
 
 def _client(status: int) -> httpx.Client:
@@ -136,7 +138,7 @@ def test_keys__openalex_only__no_scopus_key_asked_and_project_reaches_export(
     write_search_run(project, "20261103T100000Z-aaaaaaaa", "carbon capture", [[work(1), work(2)]])
     build_store(project, rebuild=True)
     export_project(project)  # no Scopus key anywhere in the environment
-    assert layer.step_progress(project)["export"]
+    assert service.step_progress(project)["export"]
 
 
 @pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])

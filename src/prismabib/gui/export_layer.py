@@ -15,7 +15,7 @@ from typing import Any, Final
 
 from prismabib.errors import ValidationError
 from prismabib.gui import tasks
-from prismabib.gui.layer import Session, write_operation
+from prismabib.gui.service import Session, write_operation
 from prismabib.progress import ProgressEvent
 from prismabib.project import Project
 from prismabib.report import export as export_module

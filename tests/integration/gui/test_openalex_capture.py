@@ -18,8 +18,8 @@ import panel as pn
 from prismabib.capture.layout import OPENALEX_SEARCH_DIRNAME, is_sealed
 from prismabib.errors import ConfigError, StepLockedError, ValidationError
 from prismabib.gui import capture_layer as cl
-from prismabib.gui import layer, stop_model, tasks
 from prismabib.gui import openalex_capture_layer as oal
+from prismabib.gui import service, stop_model, tasks
 from prismabib.gui.capture import build_capture, build_capture_step
 from prismabib.gui.capture_layer import CaptureState as S
 from prismabib.gui.query_form_model import QueryInputs
@@ -80,11 +80,11 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=tmp_path / name, source_mode="openalex", reviewer="A"
     )
-    with layer.Session(project) as session:
-        layer.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
+    with service.Session(project) as session:
+        service.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
     return project
 
 
@@ -92,7 +92,7 @@ def _start(
     project: Project, *, budget: int = 10, refresh: bool = False, confirmed: bool = True
 ) -> None:
     cl.note_size_check(project, build_openalex_query_for_project(project))
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         oal.start_openalex_capture(session, budget=budget, confirmed=confirmed, refresh=refresh)
 
 
@@ -116,7 +116,7 @@ def test_start__without_confirmation_size_check_or_budget__is_refused(tmp_path: 
         with pytest.raises(ValidationError, match="Confirm"):
             _start(project, confirmed=False)
         cl.note_size_check(project, None)
-        with layer.Session(project) as session, pytest.raises(ValidationError, match="size"):
+        with service.Session(project) as session, pytest.raises(ValidationError, match="size"):
             oal.start_openalex_capture(session, budget=5, confirmed=True)
         with pytest.raises(ValidationError, match="at least 1"):
             _start(project, budget=0)
@@ -167,7 +167,7 @@ def test_discard__confirmed__marks_the_run_and_still_blocks_a_source_mode_change
         _finish(project)
     (run,) = _runs(project)
     pages = {p.name: p.read_bytes() for p in run.glob("response-*.jsonl")}
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         with pytest.raises(ValidationError, match="Confirm"):
             cl.discard_capture(session, run.name, confirmed=False)
         assert oal.openalex_status(project).state is S.UNSEALED
@@ -176,8 +176,8 @@ def test_discard__confirmed__marks_the_run_and_still_blocks_a_source_mode_change
     assert status.state is S.DISCARDED
     assert "Source mode" in _text(build_capture(project))
     assert {p.name: p.read_bytes() for p in run.glob("response-*.jsonl")} == pages
-    with layer.Session(project) as session, pytest.raises((ConfigError, StepLockedError)):
-        layer.set_source_mode(session, "scopus", reviewer="A")
+    with service.Session(project) as session, pytest.raises((ConfigError, StepLockedError)):
+        service.set_source_mode(session, "scopus", reviewer="A")
 
 
 def test_daily_allowance__runs_out__says_when_it_resets_and_keeps_the_pages(

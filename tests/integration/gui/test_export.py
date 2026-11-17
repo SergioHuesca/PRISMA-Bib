@@ -17,7 +17,7 @@ import panel as pn
 
 from prismabib.errors import ConfigError, ProjectLockedError, ValidationError
 from prismabib.gui import export_layer as xl
-from prismabib.gui import layer, tasks
+from prismabib.gui import service, tasks
 from prismabib.gui.export import build_export
 from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
@@ -57,7 +57,7 @@ def _tree(root: Path) -> dict[str, str]:
 
 
 def _start(project: Project) -> None:
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         xl.start_export(session)
 
 
@@ -88,7 +88,7 @@ def test_export__button__writes_the_bundle_and_the_summary_names_the_folder(
 
 def test_export__no_store__is_refused_with_the_next_step(tmp_path: Path) -> None:
     empty = make_project(tmp_path, built=False)
-    with layer.Session(empty) as session, pytest.raises(ValidationError, match="Build"):
+    with service.Session(empty) as session, pytest.raises(ValidationError, match="Build"):
         xl.start_export(session)
 
 
@@ -195,7 +195,7 @@ def test_export__failure__says_what_happened_and_what_to_do(
     assert xl.export_status(project).outcome == "failed"
     text = _text(build_export(project))
     err = ConfigError("A setting is missing.")
-    assert "The export failed." in text and layer.translate(err).next_step in text
+    assert "The export failed." in text and service.translate(err).next_step in text
 
 
 def test_export_screen__every_control_is_labelled_and_the_stepper_offers_it(
@@ -207,7 +207,7 @@ def test_export_screen__every_control_is_labelled_and_the_stepper_offers_it(
 
 
 def test_export_screen__read_only_session__shows_the_sentence(project: Project) -> None:
-    holder = layer.open_session(project.slug, root=project.root.parent)
+    holder = service.open_session(project.slug, root=project.root.parent)
     try:
         view = build_export(project)
         _button(view, "Export the citable bundle").clicks += 1

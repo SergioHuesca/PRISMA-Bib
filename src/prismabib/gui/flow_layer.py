@@ -28,7 +28,7 @@ from prismabib.capture.registrations import (
     register_candidate,
 )
 from prismabib.errors import ValidationError
-from prismabib.gui.layer import Session, write_operation
+from prismabib.gui.service import Session, write_operation
 from prismabib.openalex_map import ClassificationRefusal
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project

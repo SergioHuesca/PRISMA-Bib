@@ -9,7 +9,7 @@ import panel as pn  # widget layer only
 from prismabib.errors import PrismabibError
 from prismabib.gui import palette
 from prismabib.gui import settings_model as sm
-from prismabib.gui.layer import translate
+from prismabib.gui.service import translate
 
 
 def build_settings(root: Path | None = None) -> pn.Column:

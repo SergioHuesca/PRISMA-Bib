@@ -8,8 +8,8 @@ from pathlib import Path
 import panel as pn  # widget layer only
 
 from prismabib.gui import capture_layer as cl
-from prismabib.gui import layer, palette
 from prismabib.gui import openalex_capture_layer as oal
+from prismabib.gui import palette, service
 from prismabib.gui.size_check import build_size_check
 from prismabib.project import Project
 
@@ -17,7 +17,7 @@ CAPTURE_POLL_MS = 1000
 
 
 def build_capture(
-    project: Project, session: layer.Session | None = None, *, user_file: Path | None = None
+    project: Project, session: service.Session | None = None, *, user_file: Path | None = None
 ) -> pn.Column:
     """The capture controls and the state of the capture of ``project`` (OpenAlex or Scopus).
 
@@ -79,13 +79,13 @@ def build_capture(
             discard_yes.visible = discard_no.visible = False
 
     def fail(exc: Exception) -> None:
-        msg = layer.translate(exc)
+        msg = service.translate(exc)
         message.object = f"**{msg.sentence}** {msg.next_step}"
 
     def go(new_run: bool) -> None:
         message.object = ""
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 if openalex:
                     oal.start_openalex_capture(
                         active,
@@ -114,7 +114,7 @@ def build_capture(
     def on_discard(_: object) -> None:
         run = status_of(project).run_id
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 cl.discard_capture(active, run or "", confirmed=True)
         except Exception as exc:  # noqa: BLE001
             fail(exc)
@@ -147,7 +147,7 @@ def build_capture(
 
 def build_capture_step(
     project: Project,
-    session: layer.Session | None = None,
+    session: service.Session | None = None,
     *,
     on_keys: Callable[[], None] | None = None,
 ) -> pn.Column:

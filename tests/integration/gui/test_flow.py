@@ -17,7 +17,7 @@ from prismabib.capture.registrations import load_registration_events
 from prismabib.cli import app
 from prismabib.errors import ConfigError, ProjectLockedError, ValidationError
 from prismabib.gui import flow_layer as fl
-from prismabib.gui import layer, tasks
+from prismabib.gui import service, tasks
 from prismabib.gui.flow import build_flow
 from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
@@ -65,13 +65,13 @@ def make_project(root: Path, *, built: bool = True) -> Project:
 
 
 def _add(project: Project, text: str) -> str:
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         fl.add_candidates(session, text, reviewer="Ada")
     return fl.candidates(project)[-1].event.candidate_id
 
 
 def _register(project: Project, cid: str, rule: str = "doi", *, near: bool = False) -> str:
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         event = fl.register_record(
             session,
             candidate_id=cid,
@@ -200,7 +200,7 @@ def test_register__no_built_store__refused_with_the_next_step(tmp_path: Path) ->
 
 
 def test_register__scopus_only_mode__refused_as_on_the_cli(tmp_path: Path) -> None:
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="scopus", reviewer="Ada"
     )
     project.db_path.write_bytes(b"x")  # only the mode may refuse here, not the missing store
@@ -213,7 +213,7 @@ def test_register__scopus_only_mode__refused_as_on_the_cli(tmp_path: Path) -> No
 
 def test_add_candidates__blank_reviewer_or_no_rows__refused(tmp_path: Path) -> None:
     project = make_project(tmp_path)
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         with pytest.raises(ValidationError):
             fl.add_candidates(session, EXACT, reviewer=" ")
         with pytest.raises(ValidationError):
@@ -224,8 +224,8 @@ def test_add_candidates__blank_reviewer_or_no_rows__refused(tmp_path: Path) -> N
 def test_read_only_session__register__refused(tmp_path: Path) -> None:
     project = make_project(tmp_path)
     cid = _add(project, EXACT)
-    held = layer.Session(project)
-    second = layer.Session(project)
+    held = service.Session(project)
+    second = service.Session(project)
 
     with pytest.raises(ProjectLockedError):
         fl.register_record(

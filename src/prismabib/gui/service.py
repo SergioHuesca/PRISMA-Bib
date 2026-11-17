@@ -1,4 +1,4 @@
-"""The layer every screen calls.
+"""The service every screen calls.
 
 Plain functions over library code: no widgets, no subprocess, no terminal text. Screens call an
 operation, and on failure pass the exception to :func:`translate`, which returns a sentence and the
@@ -275,7 +275,7 @@ def create_project(
 
 LOCK_NAME: Final = ".prismabib.lock"
 _F = TypeVar("_F", bound=Callable[..., object])
-#: Names of the layer functions that change a Project; each refuses a read-only session.
+#: Names of the service functions that change a Project; each refuses a read-only session.
 WRITE_OPERATIONS: Final[list[str]] = []
 #: Sessions that hold a lock right now, so the launcher can release them all when the app stops.
 _held: set[Session] = set()

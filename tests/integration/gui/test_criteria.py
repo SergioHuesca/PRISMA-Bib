@@ -12,7 +12,7 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import StepLockedError, ValidationError
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
 from prismabib.gui.new_project import build_stepper
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
 
@@ -36,7 +36,7 @@ def _w(view: pn.Column, label: str) -> pn.widgets.Widget:
 
 def _log_decision(project: Project) -> None:
     project.decisions_path.parent.mkdir(exist_ok=True)
-    line = json.dumps({"schema_version": layer.CURRENT_PROJECT_VERSION}) + "\n"
+    line = json.dumps({"schema_version": service.CURRENT_PROJECT_VERSION}) + "\n"
     project.decisions_path.write_text(line, encoding="utf-8")
 
 
@@ -115,15 +115,15 @@ def test_form__second_hand_edit__is_backed_up_too_and_no_backup_is_overwritten(
 def test_layer__every_backup_name_taken__refuses_instead_of_overwriting(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(layer, "_BACKUP_LIMIT", 2)
+    monkeypatch.setattr(service, "_BACKUP_LIMIT", 2)
     edited = _hand_edit(project)
     (project.root / BACKUP).write_bytes(b"first")
     (project.root / f"{BACKUP}.1").write_bytes(b"second")
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(ValidationError, match="backup"),
     ):
-        layer.save_criteria(session, project.criteria)
+        service.save_criteria(session, project.criteria)
 
     assert (project.root / "criteria.yaml").read_bytes() == edited  # nothing was written
     assert (project.root / BACKUP).read_bytes() == b"first"
@@ -177,10 +177,10 @@ def test_layer__loaded_bytes_differ_from_the_file__refused(project: Project) -> 
     loaded = (project.root / "criteria.yaml").read_bytes()
     edited = _hand_edit(project)
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(ValidationError, match="changed since"),
     ):
-        layer.save_criteria(session, project.criteria, loaded=loaded)
+        service.save_criteria(session, project.criteria, loaded=loaded)
     assert (project.root / "criteria.yaml").read_bytes() == edited
 
 
@@ -199,8 +199,8 @@ def test_form__saving_over_a_file_the_app_wrote__makes_no_backup(project: Projec
 
 def test_layer__saving_an_unreadable_hand_edit__keeps_it_too(project: Project) -> None:
     broken = _hand_edit(project, "version: [")
-    with layer.open_session("demo", root=project.root.parent) as session:
-        layer.save_criteria(session, criteria_from_form(form_from_criteria(scaffold_criteria())))
+    with service.open_session("demo", root=project.root.parent) as session:
+        service.save_criteria(session, criteria_from_form(form_from_criteria(scaffold_criteria())))
 
     assert (project.root / BACKUP).read_bytes() == broken
 
@@ -259,15 +259,15 @@ def test_layer__decision_logged__refuses_a_save(project: Project) -> None:
     _log_decision(project)
     before = (project.root / "criteria.yaml").read_bytes()
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(StepLockedError, match="Decision"),
     ):
-        layer.save_criteria(session, project.criteria)
+        service.save_criteria(session, project.criteria)
     assert (project.root / "criteria.yaml").read_bytes() == before
 
 
 def test_form__another_window_holds_the_lock__save_says_so(project: Project) -> None:
-    other = layer.Session(project)
+    other = service.Session(project)
     view = build_criteria(project)
     _w(view, "Save Criteria").clicks += 1
     assert "Another window" in _text(view)

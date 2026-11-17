@@ -16,8 +16,8 @@ from prismabib.capture.registration_ui import (
 )
 from prismabib.errors import ValidationError
 from prismabib.gui import flow_layer as fl
-from prismabib.gui import layer, palette
-from prismabib.gui.layer import UserMessage
+from prismabib.gui import palette, service
+from prismabib.gui.service import UserMessage
 from prismabib.project import Project
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting
 
@@ -32,7 +32,7 @@ REBUILD_NOTE = (
 
 
 def _sentence(exc: Exception) -> str:
-    msg: UserMessage = layer.translate(exc)
+    msg: UserMessage = service.translate(exc)
     return f"{msg.sentence} {msg.next_step}"
 
 
@@ -50,7 +50,7 @@ def _table(project: Project) -> str:
     return text
 
 
-def build_flow(project: Project, session: layer.Session | None = None) -> pn.Column:
+def build_flow(project: Project, session: service.Session | None = None) -> pn.Column:
     """The Flow counts of ``project`` and the Register form, in reading order.
 
     ``session`` is the window's held write lock; a bare screen takes one per click.
@@ -138,7 +138,7 @@ def build_flow(project: Project, session: layer.Session | None = None) -> pn.Col
 
     def on_add(_: object) -> None:
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 done = fl.add_candidates(active, paste.value or "", reviewer=reviewer.value or "")
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             message.object = f"**{_sentence(exc)}**"
@@ -155,7 +155,7 @@ def build_flow(project: Project, session: layer.Session | None = None) -> pn.Col
             if sel is None:
                 raise ValidationError("Choose a candidate and a captured response first.")
             confirmed = NearConfirmation().select(sel).tick(bool(near.value)).confirmed_near
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 event = fl.register_record(
                     active,
                     candidate_id=sel[0],
