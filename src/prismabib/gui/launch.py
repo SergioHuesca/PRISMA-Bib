@@ -13,7 +13,9 @@ running task, waits a bounded time for them, and releases the Project locks it h
 from __future__ import annotations
 
 import ipaddress
+import signal
 import socket
+import threading
 import webbrowser
 from collections.abc import Callable
 from functools import partial
@@ -145,6 +147,36 @@ def _shut_down(wait: float) -> None:
         typer.echo("prismabib has stopped. Nothing running was left behind.")
 
 
+def install_signal_handlers() -> Callable[[], None]:
+    """Make SIGTERM (and SIGHUP where it exists) stop the app like Ctrl+C; return the undo.
+
+    Python refuses a handler off the main thread, so there this installs nothing.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+    stopping = False
+
+    def handler(_signum: int, _frame: object) -> None:
+        nonlocal stopping
+        if not stopping:  # a second signal during the shutdown must not interrupt it
+            stopping = True
+            raise KeyboardInterrupt
+
+    # SIGHUP is not defined on Windows. Panel sets its own SIGINT handler when the server is
+    # created, so SIGINT is saved here too and put back with the rest.
+    names = ("SIGINT", "SIGTERM", "SIGHUP")
+    found = {s: signal.getsignal(s) for n in names if (s := getattr(signal, n, None))}
+    for sig in found:
+        if sig != signal.SIGINT:
+            signal.signal(sig, handler)
+
+    def restore() -> None:
+        for sig, previous in found.items():
+            signal.signal(sig, previous if previous is not None else signal.SIG_DFL)
+
+    return restore
+
+
 def serve(
     host: str = LOOPBACK,
     port: int = PREFERRED_PORT,
@@ -175,19 +207,23 @@ def serve(
             "The app needs the `gui` extra. Install it with: "
             'uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"'
         ) from exc
-    server = _create_server(partial(create_server, root=root), host, port, bind)
-    # "Stop the app": the loop stops, run returns, and serve returns.
-    stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
-    url = f"http://{host}:{server.port}/"
-    typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
+    restore = install_signal_handlers()  # before the server: it sets a SIGINT handler of its own
     try:
-        if not no_browser:
-            open_browser(url)
-        run(server)
-    except KeyboardInterrupt:  # Ctrl+C is a normal way to stop
-        pass
+        server = _create_server(partial(create_server, root=root), host, port, bind)
+        # "Stop the app": the loop stops, run returns, and serve returns.
+        stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
+        url = f"http://{host}:{server.port}/"
+        typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
+        try:
+            if not no_browser:
+                open_browser(url)
+            run(server)
+        except KeyboardInterrupt:  # Ctrl+C or a system stop is a normal way to stop
+            pass
+        finally:
+            _shut_down(shutdown_wait)
     finally:
-        _shut_down(shutdown_wait)
+        restore()
     return url
 
 
