@@ -17,7 +17,8 @@ import pytest
 from playwright.sync_api import Locator, Page, expect
 
 from tests.integration.gui.browser import harness as h
-from tests.integration.gui.browser.test_focus_ring import QUERY, Rig, rig  # noqa: F401  (fixture)
+from tests.integration.gui.browser.harness import Rig
+from tests.integration.gui.browser.test_focus_ring import QUERY
 
 pytestmark = [
     pytest.mark.integration,
@@ -53,26 +54,26 @@ def add_chip(page: Page, label: str) -> None:
 
 
 @pytest.mark.parametrize("label", LABELS)
-def test_chip_input__accessible_name__is_the_visible_label(rig: Rig, label: str) -> None:  # noqa: F811
+def test_chip_input__accessible_name__is_the_visible_label(rig: Rig, label: str) -> None:
     with rig.session(QUERY) as page:
         expect(box(page, label).locator("label")).to_be_visible()
         expect(search_input(page, label)).to_have_accessible_name(label, timeout=_WAIT)
 
 
 @pytest.mark.parametrize("label", LABELS)
-def test_chip_input__accessible_name__survives_adding_a_chip(rig: Rig, label: str) -> None:  # noqa: F811
+def test_chip_input__accessible_name__survives_adding_a_chip(rig: Rig, label: str) -> None:
     with rig.session(QUERY) as page:
         add_chip(page, label)
         expect(search_input(page, label)).to_have_accessible_name(label, timeout=_WAIT)
 
 
 @pytest.mark.parametrize("label", LABELS)
-def test_chip_input__empty_box__shows_the_label_as_hint(rig: Rig, label: str) -> None:  # noqa: F811
+def test_chip_input__empty_box__shows_the_label_as_hint(rig: Rig, label: str) -> None:
     with rig.session(QUERY) as page:
         expect(search_input(page, label)).to_have_attribute("placeholder", label, timeout=_WAIT)
 
 
-def test_chip_input__hint_after_chip_and_after_typing__is_recorded(rig: Rig) -> None:  # noqa: F811
+def test_chip_input__hint_after_chip_and_after_typing__is_recorded(rig: Rig) -> None:
     """What the hint does (measured): the attribute stays; the box width shows whether it is visible."""
     width = "e=>e.getBoundingClientRect().width"
     seen: dict[str, dict[str, object]] = {}

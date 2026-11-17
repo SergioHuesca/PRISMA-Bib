@@ -10,13 +10,10 @@ Opt-in like the rest of the browser check: ``PRISMABIB_BROWSER_CHECK=1``.
 
 from __future__ import annotations
 
-import asyncio
 import os
-import sys
-from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Browser, Playwright, expect, sync_playwright
+from playwright.sync_api import expect
 from pytest_socket import enable_socket
 
 from tests.integration.gui.browser import harness as h
@@ -40,36 +37,10 @@ def _loopback() -> None:
     enable_socket()
 
 
-@pytest.fixture(scope="module")
-def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[h.App, Browser]]:
-    enable_socket()
-    # Same swap as test_focus_ring: the selector loop cannot start Playwright's driver on Windows.
-    policy = asyncio.get_event_loop_policy()
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    try:
-        playwright: Playwright = sync_playwright().start()
-    finally:
-        asyncio.set_event_loop_policy(policy)
-    app: h.App | None = None
-    browser: Browser | None = None
-    try:
-        browser = h.launch_browser(playwright)
-        app = h.App(tmp_path_factory.mktemp("checkbox-app"))
-        yield app, browser
-    finally:
-        if browser:
-            browser.close()
-        if app:
-            app.stop()
-        playwright.stop()
-
-
 def test_checkbox__new_project__accessible_name_is_the_visible_label(
-    stack: tuple[h.App, Browser],
+    rig: h.Rig,
 ) -> None:
-    app, browser = stack
-    with h.session(app, browser, NEW_PROJECT) as page:
+    with rig.session(NEW_PROJECT) as page:
         box = page.get_by_role("checkbox")
         expect(box).to_have_count(1, timeout=10_000)
         expect(box).to_have_accessible_name(LABEL)
@@ -77,10 +48,9 @@ def test_checkbox__new_project__accessible_name_is_the_visible_label(
 
 
 def test_checkbox__new_project__tab_order_and_ring_are_unchanged(
-    stack: tuple[h.App, Browser],
+    rig: h.Rig,
 ) -> None:
-    app, browser = stack
-    with h.session(app, browser, NEW_PROJECT) as page:
+    with rig.session(NEW_PROJECT) as page:
         counter = page.context.new_page()
         page.bring_to_front()
         stops = h.tab_stops(page, counter, NEW_PROJECT.name, names=True)

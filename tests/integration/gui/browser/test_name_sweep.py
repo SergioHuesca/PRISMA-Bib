@@ -24,11 +24,8 @@ import pytest
 from playwright.sync_api import Page
 
 from tests.integration.gui.browser import harness as h
-from tests.integration.gui.browser.test_focus_ring import (  # noqa: F401  (rig is a fixture)
-    SCREENS,
-    Rig,
-    rig,
-)
+from tests.integration.gui.browser.harness import Rig
+from tests.integration.gui.browser.test_focus_ring import SCREENS
 
 pytestmark = [
     pytest.mark.integration,
@@ -119,7 +116,7 @@ def violations(controls: list[Control], exceptions: list[Exception_]) -> list[st
 
 @pytest.mark.parametrize("screen", SCREENS, ids=lambda s: s.name)
 def test_sweep__every_screen__no_control_has_an_empty_null_or_undefined_name(
-    rig: Rig,  # noqa: F811
+    rig: Rig,
     screen: h.Screen,
 ) -> None:
     with rig.session(screen) as page:
