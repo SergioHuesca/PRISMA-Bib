@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import layer, palette
+from prismabib.gui import palette, service
 from prismabib.gui import query_form_model as model
 from prismabib.gui.chip_tabstop import ChipTabstop
 from prismabib.project import Project
@@ -38,11 +38,11 @@ def _chips(label: str, values: list[str], hint: str) -> tuple[pn.Column, pn.widg
     return pn.Column(shown, pn.Row(entry, add)), shown
 
 
-def build_query_form(project: Project, session: layer.Session | None = None) -> pn.Column:
+def build_query_form(project: Project, session: service.Session | None = None) -> pn.Column:
     """The form for ``project``; ``session`` is the window's write lock, else one is taken per save."""
     inputs = model.load(project)
     mode = project.source_mode
-    lock = layer.locks(project)["query"]
+    lock = service.locks(project)["query"]
     scopus = mode != "openalex"
 
     terms_box, terms = _chips("Search terms", inputs.terms, "a phrase, then Enter")
@@ -112,10 +112,10 @@ def build_query_form(project: Project, session: layer.Session | None = None) -> 
             status.object = "Not saved. Correct the fields marked above."
             return
         try:
-            with layer.session_for(project, session) as active:
-                layer.save_query(active, form)
+            with service.session_for(project, session) as active:
+                service.save_query(active, form)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             status.object = f"**{msg.sentence}** {msg.next_step}"
             return
         status.object = "Query saved to project.toml and criteria.yaml."

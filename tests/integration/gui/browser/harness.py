@@ -40,7 +40,7 @@ from playwright.sync_api import (
 )
 
 import prismabib
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
 
 #: The check runs only when this is set, so the five required jobs never need a browser. When it
@@ -135,7 +135,7 @@ class App:
         """A fresh Project (never opened by an earlier session, so never read-only)."""
         self._count += 1
         slug = f"demo-{self._count}"
-        layer.create_project(
+        service.create_project(
             slug, title="Demo", root=self.root, source_mode="openalex", reviewer="Ada"
         )
         return slug

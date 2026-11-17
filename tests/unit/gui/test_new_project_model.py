@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from prismabib.errors import ValidationError
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.new_project_model import (
     derive_slug,
     folder_refusal,
@@ -67,10 +67,10 @@ def test_mode_for_choice__no_answer__refused() -> None:
 
 
 def test_stepper_rows__new_project__resumes_at_the_query(tmp_path: Path) -> None:
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
     rows = stepper_rows(project)
-    assert [r.key for r in rows] == list(layer.STEPS)
+    assert [r.key for r in rows] == list(service.STEPS)
     assert [r.key for r in rows if r.current] == ["query"]
     assert [r.key for r in rows if r.done] == ["source_mode"]

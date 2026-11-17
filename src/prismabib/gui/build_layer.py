@@ -16,7 +16,7 @@ from typing import Any, Final
 from prismabib.capture.layout import is_sealed
 from prismabib.errors import ValidationError
 from prismabib.gui import tasks
-from prismabib.gui.layer import Session, search_runs, write_operation
+from prismabib.gui.service import Session, search_runs, write_operation
 from prismabib.progress import ProgressEvent
 from prismabib.project import Project
 from prismabib.store.db import connect

@@ -20,7 +20,7 @@ from prismabib.capture.layout import SealedRunError, is_sealed
 from prismabib.capture.writer import capture_search
 from prismabib.errors import ProjectLockedError, ValidationError
 from prismabib.gui import capture_layer as cl
-from prismabib.gui import layer, stop_model, tasks
+from prismabib.gui import service, stop_model, tasks
 from prismabib.gui.capture import build_capture, build_capture_step
 from prismabib.gui.capture_layer import CaptureState as S
 from prismabib.gui.query_form_model import QueryInputs
@@ -81,18 +81,18 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def _project(tmp_path: Path) -> Project:
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=tmp_path / "p", source_mode="scopus", reviewer="A"
     )
-    with layer.Session(project) as session:
-        layer.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
+    with service.Session(project) as session:
+        service.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
     return project
 
 
 def _start(project: Project, *, checked: bool = True, confirmed: bool = True) -> None:
     if checked:
         cl.note_size_check(project, build_query_for_project(project))
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         cl.start_capture(session, confirmed=confirmed)
 
 
@@ -138,8 +138,8 @@ def test_start__without_confirmation_or_size_check__is_refused(tmp_path: Path) -
 def test_start__read_only_session__is_refused(tmp_path: Path) -> None:
     project = _project(tmp_path)
     cl.note_size_check(project, build_query_for_project(project))
-    layer.Session(project)  # the first window holds the lock
-    with layer.Session(project) as second, pytest.raises(ProjectLockedError):
+    service.Session(project)  # the first window holds the lock
+    with service.Session(project) as second, pytest.raises(ProjectLockedError):
         cl.start_capture(second, confirmed=True)
 
 
@@ -322,7 +322,7 @@ def test_discard__needs_confirmation_and_changes_nothing_else(tmp_path: Path) ->
     before = _tree(project.raw_dir, lambda p: p == unsealed / "cursor.json")
     sealed_before = _tree(sealed_dir)
 
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         with pytest.raises(ValidationError, match="Confirm"):
             cl.discard_capture(session, unsealed.name, confirmed=False)
         assert cl.capture_status(project).state is S.UNSEALED
@@ -344,14 +344,14 @@ def test_discard__only_unsealed_run__state_is_discarded(tmp_path: Path) -> None:
         with pytest.raises(Exception, match="cancelled"):
             capture_search(project, query=build_query_for_project(project), cancel=flag)
     (run,) = _runs(project)
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         cl.discard_capture(session, run.name, confirmed=True)
     assert cl.capture_status(project).state is S.DISCARDED
 
 
 def test_operations_and_controls__none_deletes_or_overwrites_a_sealed_run(tmp_path: Path) -> None:
     project = _project(tmp_path)
-    ops = set(layer.WRITE_OPERATIONS) | {n for n in dir(cl) if not n.startswith("_")}
+    ops = set(service.WRITE_OPERATIONS) | {n for n in dir(cl) if not n.startswith("_")}
     # delete_store (#337) removes only the built store; its own tests hash everything else
     ops -= {"delete_store"}
     assert not [n for n in ops if any(w in n for w in ("delete", "remove", "overwrite", "erase"))]
@@ -396,7 +396,7 @@ def test_screen__each_of_the_eight_states__has_its_own_text(tmp_path: Path) -> N
         respx.get(_URL).mock(side_effect=Stub())
         with pytest.raises(Exception, match="cancelled"):
             capture_search(other, query="TITLE-ABS-KEY(x)", cancel=flag)
-    with layer.Session(other) as session:
+    with service.Session(other) as session:
         cl.discard_capture(session, _runs(other)[0].name, confirmed=True)
     shown[cl.capture_status(other).state] = _text(build_capture(other))
     net = _project(tmp_path / "n")

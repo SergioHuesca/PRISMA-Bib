@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Final
 
 from prismabib.errors import ConfigError, ValidationError
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.path_limit import path_refusal
 from prismabib.onboarding import source_mode_from_answer
 from prismabib.project import Project
@@ -86,7 +86,7 @@ def _toml(project: Project) -> dict[str, dict[str, object]]:
 
 
 def _has_discarded_openalex_run(project: Project) -> bool:
-    for run in layer.search_runs(project):
+    for run in service.search_runs(project):
         try:
             if json.loads((run / "progress.json").read_text(encoding="utf-8")).get("discarded"):
                 return True
@@ -117,9 +117,9 @@ def _detail(project: Project, key: str, done: bool) -> str:
 
 def stepper_rows(project: Project) -> list[StepRow]:
     """Every step in order, a function of the Project on disk only."""
-    progress = layer.step_progress(project)
-    current = layer.first_unfinished(progress)
-    locks = layer.locks(project)
+    progress = service.step_progress(project)
+    current = service.first_unfinished(progress)
+    locks = service.locks(project)
     return [
         StepRow(
             key,

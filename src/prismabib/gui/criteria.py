@@ -5,7 +5,7 @@ from __future__ import annotations
 import panel as pn  # widget layer only
 
 from prismabib.gui import criteria_model as cm
-from prismabib.gui import layer, palette
+from prismabib.gui import palette, service
 from prismabib.project import Project
 
 _LABELS = {
@@ -21,7 +21,7 @@ _LABELS = {
 }
 
 
-def build_criteria(project: Project, session: layer.Session | None = None) -> pn.Column:
+def build_criteria(project: Project, session: service.Session | None = None) -> pn.Column:
     """Edit the Project's Criteria; read-only with the reason once a Decision is logged.
 
     ``session`` is the window's held write lock; a bare screen takes one per save.
@@ -31,7 +31,7 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
     try:
         values = cm.form_from_criteria(project.criteria)
     except Exception as exc:  # noqa: BLE001 - a hand edit gone wrong is shown as a sentence
-        msg = layer.translate(exc)
+        msg = service.translate(exc)
         status.object = f"**{msg.sentence}** Fix criteria.yaml, then reopen this step."
         return pn.Column(title, status)
     try:
@@ -39,7 +39,7 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
     except OSError:
         status.object = "**criteria.yaml could not be read.** Check that no other program has it open, then reopen this step."
         return pn.Column(title, status)
-    lock = layer.locks(project)["criteria"]
+    lock = service.locks(project)["criteria"]
     widgets: dict[str, pn.widgets.Widget] = {}
     errors: dict[str, pn.pane.Markdown] = {}
     rows: list[pn.viewable.Viewable] = [title]
@@ -63,18 +63,18 @@ def build_criteria(project: Project, session: layer.Session | None = None) -> pn
         status.object = ""
         try:
             criteria = cm.criteria_from_form({k: str(w.value or "") for k, w in widgets.items()})
-            before = set(layer.criteria_backups(project))
-            with layer.session_for(project, session) as active:
-                path = layer.save_criteria(active, criteria, loaded=loaded[0])
+            before = set(service.criteria_backups(project))
+            with service.session_for(project, session) as active:
+                path = service.save_criteria(active, criteria, loaded=loaded[0])
             loaded[0] = path.read_bytes()  # a second save is checked against this one
-            made = [p for p in layer.criteria_backups(project) if p not in before]
+            made = [p for p in service.criteria_backups(project) if p not in before]
         except cm.CriteriaFormError as exc:
             for key, message in exc.fields.items():
                 (errors.get(key) or status).object = f"**{message}**"
             status.object = status.object or "**Some entries need correcting.**"
             return
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             status.object = f"**{msg.sentence}** {msg.next_step}"
             return
         status.object = f"Criteria version {criteria.version} saved to criteria.yaml."

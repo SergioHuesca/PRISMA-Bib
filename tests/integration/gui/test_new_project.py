@@ -14,7 +14,7 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.cli import app as cli_app
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.app import build_app
 from prismabib.gui.new_project import build_new_project, build_stepper
 from prismabib.project import Project
@@ -65,7 +65,9 @@ def _stepper(project: Project) -> pn.Row:
 
 
 def _make(tmp_path: Path, mode: str = "openalex") -> Project:
-    return layer.create_project("demo", title="Demo", root=tmp_path, source_mode=mode, reviewer="A")  # type: ignore[arg-type]
+    return service.create_project(
+        "demo", title="Demo", root=tmp_path, source_mode=mode, reviewer="A"
+    )  # type: ignore[arg-type]
 
 
 # -- New Project ---------------------------------------------------------------------------------
@@ -188,7 +190,7 @@ def test_stepper__source_mode_lock__shows_read_only_with_the_reason(tmp_path: Pa
     button = next(b for n, b in _steps(view).items() if n.startswith("Source mode"))
     assert "read-only" in button.name
     button.clicks += 1
-    assert "Read-only. " + str(layer.locks(project)["source_mode"]) in _text(view)
+    assert "Read-only. " + str(service.locks(project)["source_mode"]) in _text(view)
 
 
 def test_stepper__query_lock__shows_read_only_with_the_reason(tmp_path: Path) -> None:

@@ -22,8 +22,8 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer, palette
 from prismabib.gui import new_project_model as npm
+from prismabib.gui import palette, service
 from prismabib.gui import screening_layer as sl
 from prismabib.gui.app import build_app
 from prismabib.gui.build import build_build
@@ -48,7 +48,7 @@ from tests.integration.gui.test_screening import make_project
 
 pytestmark = pytest.mark.integration
 
-GUI_DIR = Path(layer.__file__).parent
+GUI_DIR = Path(service.__file__).parent
 NATIVE = (
     pn.widgets.Button,
     pn.widgets.Checkbox,
@@ -349,7 +349,7 @@ NON_SCREEN_MODULES = {
     "home_model",
     "keys_model",
     "launch",
-    "layer",
+    "service",
     "new_project_model",
     "openalex_capture_layer",
     "path_limit",

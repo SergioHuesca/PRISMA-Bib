@@ -8,8 +8,8 @@ from typing import Any
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import layer, palette
 from prismabib.gui import new_project_model as npm
+from prismabib.gui import palette, service
 from prismabib.gui.build import build_build
 from prismabib.gui.capture import build_capture_step
 from prismabib.gui.criteria import build_criteria
@@ -59,7 +59,7 @@ def build_new_project(root: Path, on_created: Callable[[Project], None] | None =
             title = (name.value or "").strip()
             slug = npm.derive_slug(title)
             mode = npm.mode_for_choice(access.value, fill_gaps=bool(fill.value))
-            project = layer.create_project(
+            project = service.create_project(
                 slug,
                 title=title,
                 root=root,
@@ -67,7 +67,7 @@ def build_new_project(root: Path, on_created: Callable[[Project], None] | None =
                 reviewer=reviewer.value or "",
             )
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
             return
         who = (reviewer.value or "").strip()
@@ -114,7 +114,7 @@ def _freeze(view: pn.viewable.Viewable) -> None:
             widget.param.watch(hold, "disabled")
 
 
-def _lock_banner(session: layer.Session, on_taken: Callable[[], None]) -> pn.Column:
+def _lock_banner(session: service.Session, on_taken: Callable[[], None]) -> pn.Column:
     """Why this window is read-only and, for a crashed window's lock, a confirmed take-over."""
     text = pn.pane.Markdown("")
     note = pn.pane.Markdown(TAKE_OVER_TEXT, visible=False)
@@ -141,7 +141,7 @@ def _lock_banner(session: layer.Session, on_taken: Callable[[], None]) -> pn.Col
         try:
             session.take_over(confirmed=True)
         except Exception as exc:  # noqa: BLE001 - shown as a sentence, never a traceback
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             text.object = f"**{msg.sentence}** {msg.next_step}"
             confirming(False)
             return
@@ -157,7 +157,7 @@ def _lock_banner(session: layer.Session, on_taken: Callable[[], None]) -> pn.Col
     return column
 
 
-def build_stepper(project: Project, session: layer.Session | None = None) -> pn.Row:
+def build_stepper(project: Project, session: service.Session | None = None) -> pn.Row:
     """The sidebar of steps (finished ones marked, read from disk) beside the chosen step.
 
     ``session`` is this window's hold on the Project. Every screen writes through it; when it is

@@ -14,8 +14,8 @@ from typing import Any, Final
 import panel as pn  # the hosted Screener repaints an extra pane
 
 from prismabib.errors import ValidationError
-from prismabib.gui import layer, tasks
-from prismabib.gui.layer import Session, write_operation
+from prismabib.gui import service, tasks
+from prismabib.gui.service import Session, write_operation
 from prismabib.prisma.events import Decision, DecisionEvent
 from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
@@ -41,7 +41,7 @@ LOAD_TASK_NAME: Final = "Opening the Screener"
 def missing(project: Project) -> list[str]:
     """What screening still needs, as sentences; empty when it can open."""
     out = []
-    if not layer.criteria_written(project):
+    if not service.criteria_written(project):
         out.append("Criteria are not written yet. Finish the Criteria step.")
     if not project.db_path.is_file():
         out.append("The store is not built yet. Finish the Build step.")
@@ -65,11 +65,11 @@ class LockedQueue(ScreeningQueue):
     def decide(
         self, decision: Decision, *, reason_code: str | None = None, note: str = ""
     ) -> DecisionEvent:
-        with layer.session_for(self.project, self.session) as active:
+        with service.session_for(self.project, self.session) as active:
             return decide(active, self, decision, reason_code=reason_code, note=note)
 
     def undo(self) -> DecisionEvent | None:
-        with layer.session_for(self.project, self.session) as active:
+        with service.session_for(self.project, self.session) as active:
             return undo(active, self)
 
 

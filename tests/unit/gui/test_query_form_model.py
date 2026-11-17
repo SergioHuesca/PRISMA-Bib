@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from prismabib.errors import StepLockedError, ValidationError
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.query_form_model import (
     ENRICHMENT_REASON,
     QueryInputs,
@@ -27,7 +27,7 @@ def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 def _make(tmp_path: Path, mode: str) -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo",
         title="Demo",
         root=tmp_path,
@@ -171,7 +171,7 @@ def test_save_query__unindented_block_list__is_edited_in_place(tmp_path: Path) -
 def test_layer_save_query__after_a_run_started__is_refused(tmp_path: Path) -> None:
     project = _make(tmp_path, "openalex")
     (project.raw_dir / "openalex_search" / "run1").mkdir(parents=True)
-    with layer.Session(project) as session, pytest.raises(StepLockedError) as caught:
-        layer.save_query(session, _inputs())
+    with service.Session(project) as session, pytest.raises(StepLockedError) as caught:
+        service.save_query(session, _inputs())
     assert "A different search needs a new Project" in str(caught.value)
     assert 'search = ""' in (project.root / "project.toml").read_text(encoding="utf-8")

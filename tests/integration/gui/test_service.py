@@ -1,4 +1,4 @@
-"""The layer every screen calls: progress, errors, locks, opening (ticket #319)."""
+"""The service every screen calls: progress, errors, locks, opening (ticket #319)."""
 
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ from prismabib.errors import (
     UpstreamError,
     ValidationError,
 )
-from prismabib.gui import layer, path_limit
 from prismabib.gui import new_project_model as npm
-from prismabib.gui.layer import ErrorClass
+from prismabib.gui import path_limit, service
+from prismabib.gui.service import ErrorClass
 from prismabib.project import Project, scaffold_criteria
 from prismabib.source_mode import load_mode_events
 from prismabib.sources.openalex import DailyBudgetExhaustedError
@@ -45,7 +45,7 @@ def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
 
@@ -72,11 +72,11 @@ def _tree_digest(root: Path) -> str:
 
 
 def test_step_progress__new_project__only_source_mode_done(project: Project) -> None:
-    progress = layer.step_progress(project)
+    progress = service.step_progress(project)
 
-    assert list(progress) == list(layer.STEPS)
+    assert list(progress) == list(service.STEPS)
     assert [s for s, done in progress.items() if done] == ["source_mode"]
-    assert layer.first_unfinished(progress) == "query"
+    assert service.first_unfinished(progress) == "query"
 
 
 def test_step_progress__query_and_criteria_saved__marked_done(project: Project) -> None:
@@ -91,10 +91,10 @@ def test_step_progress__query_and_criteria_saved__marked_done(project: Project) 
         encoding="utf-8",
     )
 
-    progress = layer.step_progress(project)
+    progress = service.step_progress(project)
 
     assert progress["query"] and progress["criteria"]
-    assert layer.first_unfinished(progress) == "capture"
+    assert service.first_unfinished(progress) == "capture"
 
 
 def _edit_criteria(project: Project, old: str, new: str) -> None:
@@ -105,8 +105,8 @@ def _edit_criteria(project: Project, old: str, new: str) -> None:
 
 
 def test_criteria_written__unmodified_scaffold__is_not_written(project: Project) -> None:
-    assert layer.criteria_written(project) is False
-    assert layer.step_progress(project)["criteria"] is False
+    assert service.criteria_written(project) is False
+    assert service.step_progress(project)["criteria"] is False
 
 
 def test_criteria_written__scaffold_made_in_an_earlier_year__is_still_not_written(
@@ -115,10 +115,10 @@ def test_criteria_written__scaffold_made_in_an_earlier_year__is_still_not_writte
     year = datetime.now(UTC).year
     (first,) = load_mode_events(project)
     created_last_year = first.model_copy(update={"ts": first.ts.replace(year=year - 1)})
-    monkeypatch.setattr(layer, "load_mode_events", lambda _project: [created_last_year])
+    monkeypatch.setattr(service, "load_mode_events", lambda _project: [created_last_year])
     _edit_criteria(project, f"year_end: {year}", f"year_end: {year - 1}")
 
-    assert layer.criteria_written(project) is False  # year_end is the creation year, untouched
+    assert service.criteria_written(project) is False  # year_end is the creation year, untouched
 
 
 @pytest.mark.parametrize(
@@ -140,41 +140,41 @@ def test_criteria_written__one_field_edited_by_hand__is_written(
 ) -> None:
     _edit_criteria(project, old, new)
 
-    assert layer.criteria_written(project) is True, field
-    assert layer.step_progress(project)["criteria"] is True
+    assert service.criteria_written(project) is True, field
+    assert service.step_progress(project)["criteria"] is True
 
 
 def test_criteria_written__unreadable_file__is_not_written(project: Project) -> None:
     (project.root / "criteria.yaml").write_text("version: [", encoding="utf-8")
 
-    assert layer.criteria_written(project) is False
+    assert service.criteria_written(project) is False
 
 
 def test_criteria_written__defaults_saved_unchanged__is_written(project: Project) -> None:
     """A researcher who wants no restriction saves the form as it is: that is a decision."""
-    with layer.open_session("demo", root=project.root.parent) as session:
-        layer.save_criteria(session, project.criteria)
+    with service.open_session("demo", root=project.root.parent) as session:
+        service.save_criteria(session, project.criteria)
 
     assert project.criteria == scaffold_criteria()  # nothing differs from the scaffold's data
-    assert layer.criteria_written(project) is True
-    assert layer.step_progress(project)["criteria"] is True
+    assert service.criteria_written(project) is True
+    assert service.step_progress(project)["criteria"] is True
 
 
 def test_criteria_written__saved_by_the_app_then_hand_edited_keeping_the_header__is_written(
     project: Project,
 ) -> None:
-    with layer.open_session("demo", root=project.root.parent) as session:
-        layer.save_criteria(session, project.criteria)
+    with service.open_session("demo", root=project.root.parent) as session:
+        service.save_criteria(session, project.criteria)
     _edit_criteria(project, "version: 0.1.0", "version: 0.1.1")
 
-    assert layer.criteria_written(project) is True
+    assert service.criteria_written(project) is True
 
 
 def test_step_progress__unsealed_run__capture_not_done_but_locks_hold(project: Project) -> None:
     (project.raw_dir / "openalex-search" / "r1").mkdir(parents=True)
 
-    assert layer.step_progress(project)["capture"] is False
-    assert layer.locks(project)["query"] is not None
+    assert service.step_progress(project)["capture"] is False
+    assert service.locks(project)["query"] is not None
 
 
 def test_step_progress__sealed_run_and_built_store__capture_and_build_done(
@@ -183,11 +183,11 @@ def test_step_progress__sealed_run_and_built_store__capture_and_build_done(
     _seal(project)
     project.db_path.write_bytes(b"duckdb")
 
-    progress = layer.step_progress(project)
+    progress = service.step_progress(project)
 
     assert progress["capture"] and progress["build"]
     assert not progress["screening"] and not progress["flow"]
-    assert layer.first_unfinished(progress) == "query"
+    assert service.first_unfinished(progress) == "query"
 
 
 def test_step_progress__decisions_and_export__later_steps_done(project: Project) -> None:
@@ -195,7 +195,7 @@ def test_step_progress__decisions_and_export__later_steps_done(project: Project)
     _decide(project)
     (project.root / "exports" / "bundle.zip").write_bytes(b"z")
 
-    progress = layer.step_progress(project)
+    progress = service.step_progress(project)
 
     assert progress["screening"] and progress["flow"] and progress["export"]
 
@@ -206,11 +206,11 @@ def test_step_progress__project_made_by_the_cli__reads_the_same(tmp_path: Path) 
     )
     assert result.exit_code == 0, result.output
 
-    opened = layer.open_project("cli", root=tmp_path)
+    opened = service.open_project("cli", root=tmp_path)
 
-    progress = layer.step_progress(opened)
+    progress = service.step_progress(opened)
     assert progress["source_mode"] and not progress["query"] and not progress["capture"]
-    assert layer.first_unfinished(progress) == "query"
+    assert service.first_unfinished(progress) == "query"
 
 
 # -- errors --------------------------------------------------------------------------------------
@@ -238,7 +238,7 @@ CASES: list[tuple[BaseException, ErrorClass, str]] = [
 def test_translate__library_error__class_sentence_and_next_step(
     exc: BaseException, kind: ErrorClass, fragment: str
 ) -> None:
-    message = layer.translate(exc)
+    message = service.translate(exc)
 
     assert message.error_class is kind
     assert fragment in message.sentence
@@ -247,7 +247,7 @@ def test_translate__library_error__class_sentence_and_next_step(
 
 
 def test_error_classes__every_class__has_a_translation_and_a_test() -> None:
-    assert set(layer.SENTENCES) == set(layer.NEXT_STEPS) == set(ErrorClass)
+    assert set(service.SENTENCES) == set(service.NEXT_STEPS) == set(ErrorClass)
     assert {kind for _, kind, _ in CASES} == set(ErrorClass)
 
 
@@ -258,7 +258,7 @@ def test_translate__unexpected_error__no_traceback_and_no_message_in_text_or_log
     try:
         raise RuntimeError(f"Traceback (most recent call last): key={secret}")
     except RuntimeError as exc:
-        message = layer.translate(exc)
+        message = service.translate(exc)
 
     text = f"{message.sentence} {message.next_step}"
     log = _user_file.with_name("gui.log")
@@ -275,7 +275,7 @@ def test_locks__source_mode__refused_once_a_run_exists(project: Project) -> None
     (project.raw_dir / "openalex-search" / "r1").mkdir(parents=True)
 
     with pytest.raises(StepLockedError, match="Run exists"):
-        layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
+        service.set_source_mode(service.Session(project), "scopus", reviewer="Ada")
 
     assert project.source_mode == "openalex"
 
@@ -284,28 +284,28 @@ def test_locks__source_mode__refused_once_a_decision_exists(project: Project) ->
     _decide(project)
 
     with pytest.raises(StepLockedError, match="Decision has been logged"):
-        layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
+        service.set_source_mode(service.Session(project), "scopus", reviewer="Ada")
 
 
 def test_locks__query__read_only_once_the_first_run_starts(project: Project) -> None:
-    layer.require_unlocked(project, "query")
+    service.require_unlocked(project, "query")
     _seal(project)
 
     with pytest.raises(StepLockedError, match="query is read-only because a Run"):
-        layer.require_unlocked(project, "query")
+        service.require_unlocked(project, "query")
 
 
 def test_locks__criteria__read_only_once_the_first_decision_is_logged(project: Project) -> None:
     _seal(project)
-    layer.require_unlocked(project, "criteria")
+    service.require_unlocked(project, "criteria")
     _decide(project)
 
     with pytest.raises(StepLockedError, match="Criteria are read-only because a Decision"):
-        layer.require_unlocked(project, "criteria")
+        service.require_unlocked(project, "criteria")
 
 
 def test_set_source_mode__unlocked__changes_the_mode(project: Project) -> None:
-    layer.set_source_mode(layer.Session(project), "scopus", reviewer="Ada")
+    service.set_source_mode(service.Session(project), "scopus", reviewer="Ada")
 
     assert project.source_mode == "scopus"
 
@@ -318,7 +318,7 @@ def test_create_project__blank_reviewer__refused_and_nothing_written(
     tmp_path: Path, name: str
 ) -> None:
     with pytest.raises(ValidationError, match="reviewer name"):
-        layer.create_project("x", title="X", root=tmp_path, source_mode="openalex", reviewer=name)
+        service.create_project("x", title="X", root=tmp_path, source_mode="openalex", reviewer=name)
 
     assert not (tmp_path / "x").exists()
 
@@ -327,7 +327,7 @@ def test_create_project__existing_folder__refused_not_overwritten(project: Proje
     before = _tree_digest(project.root)
 
     with pytest.raises(ValidationError, match="already exists"):
-        layer.create_project(
+        service.create_project(
             "demo", title="Other", root=project.root.parent, source_mode="scopus", reviewer="Bo"
         )
 
@@ -349,7 +349,7 @@ def test_create_project__deepest_path_of_240_characters__is_created(
 ) -> None:
     root = _root_for_total(tmp_path, "demo", 240)
 
-    layer.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
+    service.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
 
     assert (root / "demo" / "project.toml").is_file()
 
@@ -360,7 +360,7 @@ def test_create_project__deepest_path_of_241_characters__refused_before_writing_
     root = _root_for_total(tmp_path, "demo", 241)
 
     with pytest.raises(ValidationError, match="240") as caught:
-        layer.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
+        service.create_project("demo", title="D", root=root, source_mode="openalex", reviewer="Ada")
 
     assert "241" in str(caught.value)  # it says how long the path would be, and the limit
     assert not root.exists()  # not even the Projects folder was made
@@ -375,7 +375,7 @@ def test_create_project__limit_measured_on_this_machine__boundary_is_inclusive(
     monkeypatch.setattr(path_limit, "MAX_PATH_CHARS", deepest + slack)
 
     def create() -> None:
-        layer.create_project(
+        service.create_project(
             "demo", title="D", root=tmp_path / "root", source_mode="openalex", reviewer="Ada"
         )
 
@@ -392,7 +392,7 @@ def test_create_project__very_long_name__refused_with_the_same_sentence(
     tmp_path: Path, real_path_limit: int
 ) -> None:
     with pytest.raises(ValidationError, match="240"):
-        layer.create_project(
+        service.create_project(
             "a" * 200, title="D", root=tmp_path, source_mode="openalex", reviewer="Ada"
         )
 
@@ -414,7 +414,7 @@ def _log_with_version(project: Project, version: str) -> None:
 def test_open_project__one_version_older__opens(project: Project) -> None:
     _log_with_version(project, "0")
 
-    assert layer.open_project("demo", root=project.root.parent).slug == "demo"
+    assert service.open_project("demo", root=project.root.parent).slug == "demo"
 
 
 @pytest.mark.parametrize(
@@ -435,9 +435,9 @@ def test_open_project__other_version__refused_with_message_and_folder_untouched(
     before = _tree_digest(project.root)
 
     with pytest.raises(ProjectVersionError) as caught:
-        layer.open_project("demo", root=project.root.parent)
+        service.open_project("demo", root=project.root.parent)
 
-    message = layer.translate(caught.value)
+    message = service.translate(caught.value)
     assert message.error_class is ErrorClass.VERSION
     assert (found is None) or f"version {found}" in message.sentence
     assert "has not been changed" in message.sentence
@@ -457,11 +457,13 @@ def test_layer__operations__never_start_a_subprocess(
     monkeypatch.setattr(subprocess, "Popen", boom)
     monkeypatch.setattr(subprocess, "run", boom)
 
-    made = layer.create_project("p", title="P", root=tmp_path, source_mode="scopus", reviewer="Ada")
-    opened = layer.open_project("p", root=tmp_path)
-    layer.set_source_mode(layer.Session(opened), "scopus+openalex", reviewer="Ada")
-    layer.step_progress(opened)
-    layer.locks(opened)
-    layer.translate(RuntimeError("x"))
+    made = service.create_project(
+        "p", title="P", root=tmp_path, source_mode="scopus", reviewer="Ada"
+    )
+    opened = service.open_project("p", root=tmp_path)
+    service.set_source_mode(service.Session(opened), "scopus+openalex", reviewer="Ada")
+    service.step_progress(opened)
+    service.locks(opened)
+    service.translate(RuntimeError("x"))
 
     assert made.slug == "p"
