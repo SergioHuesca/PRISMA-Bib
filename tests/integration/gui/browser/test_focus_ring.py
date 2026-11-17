@@ -152,6 +152,7 @@ CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator], int]]] = {
         ("Add button", lambda p: p.get_by_role("button", name="Add to: Search terms"), 1),
         ("Save button", lambda p: p.get_by_role("button", name="Save query"), 1),
         ("tab", lambda p: p.locator(".bk-tab").first, 1),
+        ("chip box", lambda p: p.locator("input.choices__input--cloned:visible").last, 1),
     ],
     "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3)],
     "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"), 1)],
@@ -254,21 +255,11 @@ def test_defect_d2__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
     assert not spins, f"{len(spins)} spin arrows are Tab stops: {spins}"
 
 
-@pytest.mark.xfail(
-    reason="D3 at af95bc6: the Subject areas chip box has bottom 0 with its dropdown open "
-    "(top, left and right 1.0)",
-    **ASSERTION_ONLY,
-)
 def test_defect_d3__chip_box_with_dropdown_open__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
 
 
-@pytest.mark.xfail(
-    reason="D3 at af95bc6: with the dropdown flipped upward the Subject areas chip box has "
-    "top 0.049 (measured at a 1280 by 600 viewport; the fact sheet said 0.04)",
-    **ASSERTION_ONLY,
-)
 def test_defect_d3__chip_box_with_dropdown_flipped__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY, "short", frozenset({"chip"})), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
@@ -284,11 +275,6 @@ def test_defect_d4a__number_fields_at_200_percent__have_a_ring_on_every_side(rig
     assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
 
 
-@pytest.mark.xfail(
-    reason="D4b at af95bc6: the Subject areas chip box has top 0.074 and bottom 1.0 at the "
-    "emulated 200% (the dropdown flips in a 450 px viewport)",
-    **ASSERTION_ONLY,
-)
 def test_defect_d4b__chip_box_at_200_percent__has_a_ring_on_every_side(rig: Rig) -> None:
     subject = measured(rig.walk(QUERY, "200", frozenset({"chip"})), "chip")[-1]
     assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))

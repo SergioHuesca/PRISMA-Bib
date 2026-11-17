@@ -73,7 +73,11 @@ FIELD_CSS = (
     f".bk-input:focus{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
     f".choices__inner{{border-color:{FIELD_BORDER}}}"
     f".choices:focus-within .choices__inner"
-    f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP}}}"
+    # The dropdown (z-index 10000 in Panel's stylesheet, below the box or flipped above it) covers
+    # the ring's bottom or top edge: the focused box paints one step above it. position:relative
+    # moves nothing.
+    f"{{border-color:{FOCUS_OUTLINE};outline:{_RING};outline-offset:{RING_GAP};"
+    f"position:relative;z-index:10001}}"
     f"input[type=checkbox]:focus{{outline:{_RING};outline-offset:{RING_GAP}}}"
     # Radio buttons overlap by 1px (margin-left:-1px): the focused one paints above its
     # neighbours so the ring is not covered; position:relative moves nothing.
