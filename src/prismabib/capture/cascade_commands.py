@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -244,16 +245,14 @@ def _write_back_dois(
     return results
 
 
-def _write_back(project: Project, targets: list[_Target]) -> None:
+def _write_back(project: Project, targets: list[_Target], emit: Callable[[str], None]) -> None:
     """Write back the OpenAlex-found DOIs of the DOI-less candidates among ``targets``."""
-    from prismabib.cli import _echo
-
     bare = [t for t in targets if t.candidate_id and not t.doi]
     found = _found_dois(project, {_title_key(t.title, t.year) for t in bare})
     log = CandidateLog(project.root / "decisions" / "candidates.jsonl")
     counts = Counter(_write_back_dois(log, bare, found))
     if counts:
-        _echo("candidate DOIs from OpenAlex: " + ", ".join(f"{k} {n}" for k, n in counts.items()))
+        emit("candidate DOIs from OpenAlex: " + ", ".join(f"{k} {n}" for k, n in counts.items()))
 
 
 def _field_report(project: Project) -> list[str]:
@@ -330,6 +329,84 @@ def _report(project: Project, targets: list[_Target]) -> list[str]:
     ]
 
 
+def run_cascade(
+    project: Project,
+    *,
+    opt_in: bool = False,
+    scopus_budget: int | None = None,
+    refresh: bool = False,
+    dry_run: bool = False,
+    emit: Callable[[str], None],
+) -> list[str]:
+    """Run the cascade over ``project``, passing each report line to ``emit`` as it is produced.
+
+    The CLI passes its echo, so the lines interleave with the log output as they always did; a
+    failure part way keeps the lines already emitted. The lines are also returned. The caller
+    has validated the flags (``--opt-in`` needs a budget of at least 1, and a budget needs
+    ``--opt-in``). A real run ends by rebuilding the store, then adds the per-field tables;
+    ``dry_run`` makes no HTTP call and no write.
+    """
+    lines: list[str] = []
+
+    def out(line: str) -> None:
+        lines.append(line)
+        emit(line)
+
+    mode = require_command(project, "cascade")
+    if mode == "openalex" and (opt_in or scopus_budget is not None):
+        raise ConfigError(
+            "--opt-in and --scopus-budget ask Scopus for fields, and sources mode 'openalex' "
+            "has no Scopus records; run `prismabib cascade` without them."
+        )
+    targets = _targets(project)
+
+    if dry_run:
+        dois, ids = _plan(project, targets) if opt_in else ([], [])
+        oa_dois, oa_titles = _openalex_inputs(project, targets, refresh)
+        out(f"level 2: {len(dois)} DOIs planned" if opt_in else "level 2: skipped (no --opt-in)")
+        out(f"level 3: up to {len(ids)} Scopus ids planned" if opt_in else "level 3: skipped")
+        out(f"openalex: {len(oa_dois)} DOIs, {len(oa_titles)} titles planned")
+        out("note: DOIs that OpenAlex finds for DOI-less candidates are not counted above")
+        return lines
+
+    # Decision 9: DOI-less targets go to OpenAlex first, so a DOI it finds reaches Scopus.
+    _, oa_titles = _openalex_inputs(project, targets, refresh)
+    capture_openalex(
+        project, caller="cascade", titles=oa_titles, fallback_opt_in=opt_in, refresh=refresh
+    )
+    _write_back(project, targets, out)
+    targets = _targets(project)
+
+    dois, ids = _plan(project, targets) if opt_in else ([], [])
+    quoted = [d for d in dict.fromkeys(dois) if '"' in d]
+    for d in quoted:  # capture_scopus_cascade rejects the whole batch for one such DOI
+        out(f"level 2: skipped DOI {d!r} (contains a double quote)")
+    dois = [d for d in dois if d not in quoted]
+    left = scopus_budget or 0
+    if opt_in and dois:
+        m2 = capture_scopus_cascade(project, dois=dois, fallback_opt_in=True, budget_requests=left)
+        left -= m2.requests_made if m2 else 0
+        quota = bool(m2 and m2.stop_reason == "quota")
+    else:
+        quota = False
+    if opt_in and not quota and left >= 1:
+        ids = _plan(project, targets)[1]  # level 2 may have answered some records' DOIs
+        if ids:
+            capture_scopus_cascade(
+                project, scopus_ids=ids, fallback_opt_in=True, budget_requests=left
+            )
+    oa_dois, _ = _openalex_inputs(project, targets, refresh)
+    capture_openalex(
+        project, caller="cascade", dois=oa_dois, fallback_opt_in=opt_in, refresh=refresh
+    )
+    for line in _report(project, targets):
+        out(line)
+    build_store(project, rebuild=True)
+    for line in _field_report(project):
+        out(line)
+    return lines
+
+
 def cascade(
     slug: Annotated[str, typer.Argument(help="Project slug.")],
     opt_in: Annotated[
@@ -374,62 +451,14 @@ def cascade(
         if scopus_budget is not None and scopus_budget < 1:
             raise ValidationError("--scopus-budget must be at least 1.")
         project = Project.open(slug, root=root)
-        mode = require_command(project, "cascade")
-        if mode == "openalex" and (opt_in or scopus_budget is not None):
-            raise ConfigError(
-                "--opt-in and --scopus-budget ask Scopus for fields, and sources mode 'openalex' "
-                "has no Scopus records; run `prismabib cascade` without them."
-            )
-        targets = _targets(project)
-
-        if dry_run:
-            dois, ids = _plan(project, targets) if opt_in else ([], [])
-            oa_dois, oa_titles = _openalex_inputs(project, targets, refresh)
-            _echo(
-                f"level 2: {len(dois)} DOIs planned" if opt_in else "level 2: skipped (no --opt-in)"
-            )
-            _echo(f"level 3: up to {len(ids)} Scopus ids planned" if opt_in else "level 3: skipped")
-            _echo(f"openalex: {len(oa_dois)} DOIs, {len(oa_titles)} titles planned")
-            _echo("note: DOIs that OpenAlex finds for DOI-less candidates are not counted above")
-            return
-
-        # Decision 9: DOI-less targets go to OpenAlex first, so a DOI it finds reaches Scopus.
-        _, oa_titles = _openalex_inputs(project, targets, refresh)
-        capture_openalex(
-            project, caller="cascade", titles=oa_titles, fallback_opt_in=opt_in, refresh=refresh
+        run_cascade(
+            project,
+            opt_in=opt_in,
+            scopus_budget=scopus_budget,
+            refresh=refresh,
+            dry_run=dry_run,
+            emit=_echo,
         )
-        _write_back(project, targets)
-        targets = _targets(project)
-
-        dois, ids = _plan(project, targets) if opt_in else ([], [])
-        quoted = [d for d in dict.fromkeys(dois) if '"' in d]
-        for d in quoted:  # capture_scopus_cascade rejects the whole batch for one such DOI
-            _echo(f"level 2: skipped DOI {d!r} (contains a double quote)")
-        dois = [d for d in dois if d not in quoted]
-        left = scopus_budget or 0
-        if opt_in and dois:
-            m2 = capture_scopus_cascade(
-                project, dois=dois, fallback_opt_in=True, budget_requests=left
-            )
-            left -= m2.requests_made if m2 else 0
-            quota = bool(m2 and m2.stop_reason == "quota")
-        else:
-            quota = False
-        if opt_in and not quota and left >= 1:
-            ids = _plan(project, targets)[1]  # level 2 may have answered some records' DOIs
-            if ids:
-                capture_scopus_cascade(
-                    project, scopus_ids=ids, fallback_opt_in=True, budget_requests=left
-                )
-        oa_dois, _ = _openalex_inputs(project, targets, refresh)
-        capture_openalex(
-            project, caller="cascade", dois=oa_dois, fallback_opt_in=opt_in, refresh=refresh
-        )
-        for line in _report(project, targets):
-            _echo(line)
-        build_store(project, rebuild=True)
-        for line in _field_report(project):
-            _echo(line)
 
 
 def openalex(
@@ -472,7 +501,7 @@ def openalex(
             fallback_opt_in=opt_in,
             refresh=refresh,
         )
-        _write_back(project, targets)  # also for a title search sealed by an earlier, died run
+        _write_back(project, targets, _echo)  # also for a search sealed by a died run
         if manifest is None:
             _echo("openalex: nothing to request; no run created")
             return
@@ -491,4 +520,4 @@ def openalex(
         _echo(f"run {manifest.run_id} sealed. Run `prismabib build {slug} --rebuild` to load it.")
 
 
-__all__ = ["cascade", "openalex"]
+__all__ = ["cascade", "openalex", "run_cascade"]

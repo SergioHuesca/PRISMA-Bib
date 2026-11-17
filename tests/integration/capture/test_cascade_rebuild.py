@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -248,6 +249,124 @@ def test_cascade_rebuild__second_run__makes_no_request_and_prints_the_same_table
     assert code == 0, second
     assert (len(fakes["scopus"].requests), len(fakes["openalex"].requests)) == counts
     assert _table_in(second) == _table_in(first) == _store_table(project)
+
+
+def _normalised(out: str) -> list[str]:
+    """The command's stdout, line for line, minus the clock, the run ids and log padding.
+
+    The log redacts the fake API key "x" wherever it appears, including inside "openalex", but
+    only once a Scopus request has registered it, so which lines are redacted depends on what
+    ran earlier in the process; the redaction also shifts the log column padding.
+    """
+    out = out.replace("openale***REDACTED***", "openalex")
+    out = re.sub(r"(?m)^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d ", "<ts> ", out)
+    out = re.sub(r"\d{8}T\d{6}Z-[0-9a-f]{8}", "<run>", out)
+    return re.sub(r" {2,}", " ", out).splitlines()
+
+
+# Captured from the command on main (8ac9713), before the cascade body moved into `run_cascade`
+# (#392). The log lines sit between the report lines, so this pins the order.
+GOLDEN_OUTPUT = [
+    "<ts> [info     ] openalex.capture.run_started   run_id=<run>",
+    "<ts> [info     ] openalex.works                 cache=miss",
+    "<ts> [info     ] openalex.works                 cache=miss",
+    "<ts> [info     ] openalex.capture.run_sealed    responses=2 run_id=<run>",
+    "candidate DOIs from OpenAlex: enriched 1",
+    "<ts> [info     ] scopus_cascade.capture.run_started run_id=<run>",
+    (
+        "<ts> [info     ] scopus.request                 cache=miss cursor=None "
+        "endpoint=https://api.elsevier.com/content/search/scopus remaining_quota=None "
+        "result_count=2"
+    ),
+    (
+        "<ts> [info     ] scopus_cascade.capture.run_sealed responses=1 run_id=<run> "
+        "stop_reason=complete"
+    ),
+    "<ts> [info     ] scopus_cascade.capture.run_started run_id=<run>",
+    (
+        "<ts> [info     ] scopus.request                 cache=miss cursor=None "
+        "endpoint=https://api.elsevier.com/content/abstract/eid/2-s2.0-800000000003 "
+        "remaining_quota=None result_count=None"
+    ),
+    (
+        "<ts> [info     ] scopus_cascade.capture.run_sealed responses=1 run_id=<run> "
+        "stop_reason=complete"
+    ),
+    "<ts> [info     ] openalex.capture.run_started run_id=<run>",
+    "<ts> [info     ] openalex.works    cache=miss",
+    ("<ts> [info     ] openalex.capture.run_sealed responses=1 run_id=<run>"),
+    "level 2: value 2, absent 0, not_found 0, refused 0",
+    "level 3: value 1, absent 0, not_found 0, refused 0",
+    "openalex: value 3, not_found 1, refused 0",
+    "remaining unavailable: 0",
+    ("<ts> [warning  ] store.load.unmatched_openalex_identifiers count=2"),
+    (
+        "<ts> [info     ] store.build_store.complete     abstract_runs_loaded=0 "
+        "affiliations_loaded=3 authors_loaded=1 citation_snapshots_loaded=3 "
+        "duplicate_doi_groups=0 duplicate_records=0 fulltext_assets_loaded=0 "
+        "fulltext_runs_loaded=0 fulltext_sections_loaded=0 keywords_loaded=2 "
+        "malformed_entries_skipped_count=0 rebuilt=True record_keyword_links_loaded=2 "
+        "record_subject_area_coverage_loaded=0 records_loaded=3 runs_loaded=1 "
+        "subject_area_links_loaded=0 unmapped_country_values=() "
+        "unmatched_abstract_record_ids_count=0 unmatched_fulltext_record_ids_count=0 "
+        "venues_loaded=1"
+    ),
+    "per field, Scopus records (from the store):",
+    (
+        "abstract: level 1 1, level 2 0, level 3 0, level 4 1, manual 0, unavailable "
+        "1, conflicts open 0, resolved 0"
+    ),
+    (
+        "authors: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2, "
+        "conflicts open 0, resolved 0"
+    ),
+    (
+        "affiliations: level 1 1, level 2 1, level 3 1, level 4 0, manual 0, "
+        "unavailable 0, conflicts open 0, resolved 0"
+    ),
+    (
+        "keywords: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable "
+        "2, conflicts open 0, resolved 0"
+    ),
+    "per field, registered OpenAlex records (from the store):",
+    "abstract: level 4 0, unavailable 0",
+    "authors: level 4 0, unavailable 0",
+    "affiliations: level 4 0, unavailable 0",
+    "keywords: level 4 0, unavailable 0",
+    "per field, OpenAlex-primary records (from the store):",
+    "abstract: level 4 0, manual 0, unavailable 0",
+    "authors: level 4 0, manual 0, unavailable 0",
+    "affiliations: level 4 0, manual 0, unavailable 0",
+    "keywords: level 4 0, manual 0, unavailable 0",
+]
+
+
+@pytest.mark.integration
+def test_cascade_cli__full_output__is_unchanged(project: Project, fakes: dict[str, Fake]) -> None:
+    code, out = _cascade(project.root.parent, *_ARGS)
+
+    assert code == 0, out
+    assert _normalised(out) == _normalised("\n".join(GOLDEN_OUTPUT))
+
+
+@pytest.mark.integration
+def test_cascade_cli__late_failure__keeps_the_lines_already_printed(
+    project: Project, fakes: dict[str, Fake], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*args: object, **kwargs: object) -> None:
+        raise StoreError("rebuild exploded")
+
+    monkeypatch.setattr(cascade_commands, "build_store", boom)
+
+    code, out = _cascade(project.root.parent, *_ARGS)
+
+    lines = _normalised(out)
+    golden = _normalised("\n".join(GOLDEN_OUTPUT))
+    assert code != 0
+    assert lines[:-2] == golden[: golden.index("remaining unavailable: 0") + 1]
+    assert lines[-2] == "prismabib: StoreError"
+    assert "rebuild exploded" in lines[-1]
+    assert "Traceback" not in out
 
 
 @pytest.mark.integration
