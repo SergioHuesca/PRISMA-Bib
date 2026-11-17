@@ -319,6 +319,36 @@ jobs:
           done
           exit $status
 
+  # GUI spec #371 (#372). The real-browser focus check: the built app in a headless browser, the
+  # real Tab key, the ring measured pixel by pixel (tests/integration/gui/browser). Not a
+  # required check: the same precedent as `gui-parity`; the branch protection list is unchanged.
+  #
+  # The browser is the runner's own: the ubuntu image lists Google Chrome 157 and Microsoft Edge
+  # 157 (runner-images, Ubuntu2404-Readme.md), and the check drives whichever Playwright finds
+  # (`msedge`, then `chrome`, then `chromium`), so no browser is downloaded. UNVERIFIED until this
+  # job has run: the image was read from its README, not from a run, and every number in the
+  # check was measured on Windows. A run with no browser fails (the opt-in variable is set).
+  browser-focus:
+    name: browser-focus
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Focus ring in a real browser
+        env:
+          PRISMABIB_BROWSER_CHECK: "1"
+        run: uv run pytest tests/integration/gui/browser -n auto -rxX
+
   # Stage 5. Deliberately NOT in the required-check set yet: the same precedent as
   # `e2e` and `full-windows` -- a required check that has never passed can wedge the
   # branch, so it is promoted only after it has run green on `main`.

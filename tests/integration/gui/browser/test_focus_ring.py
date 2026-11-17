@@ -1,0 +1,331 @@
+"""The focus ring of the built app, measured in a real browser (ticket #372, spec #371).
+
+What this proves: with the real Tab key (and, for some controls, a mouse click) in a headless
+Chromium-family browser, every kind of control on every screen shows a ring that covers at least
+0.98 of each straight side, and a painted chip has the palette colours. The controls that work
+today are plain tests (the regression guard). Each of the six defects of the follow-up is a strict
+expected failure that records the values measured on main at af95bc6; the ticket that fixes a
+defect removes its marker (#373 to #377).
+
+What this does not prove: anything on another browser, operating system or font set than the one
+running it; real Ctrl+plus zoom (200% is emulated with a 640 by 450 viewport and a device scale
+factor of 2); what a screen reader announces.
+
+It runs only when ``PRISMABIB_BROWSER_CHECK`` is set (the ``browser-focus`` job does; locally:
+``PRISMABIB_BROWSER_CHECK=1 pytest tests/integration/gui/browser``). Once set, a missing browser
+fails the run. An expected-failure marker accepts only an ``AssertionError`` about a measured
+value: ``HarnessError`` (no browser, no server, a page that did not load) and Playwright's own
+errors are not assertions, so they fail the build instead of passing as a hidden defect.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from collections import Counter
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager
+
+import pytest
+from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwright
+from pytest_socket import enable_socket
+
+from tests.integration.gui.browser import harness as h
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.environ.get(h.OPT_IN_VAR), reason=f"the browser check is opt-in: {h.OPT_IN_VAR}=1"
+    ),
+]
+
+QUERY = h.Screen("Query")
+CRITERIA = h.Screen("Criteria", "Criteria", "Criteria")
+SOURCE_MODE = h.Screen("Source mode", "Source mode and keys", "Source mode and keys")
+SCREENING = h.Screen("Screening", "Screening", "Screening")
+FLOW = h.Screen("Flow counts", "Flow counts", "Flow counts")
+NEW_PROJECT = h.Screen("New Project", where="new_project")
+SETTINGS = h.Screen("Settings", where="settings")
+SCREENS = [QUERY, CRITERIA, SOURCE_MODE, SCREENING, FLOW, NEW_PROJECT, SETTINGS]
+
+#: Kinds that work today: ring on every side. The radio group is the Yes/No/Not sure buttons of
+#: New Project, so it is covered as buttons there.
+HEALTHY = {"button", "tab", "text", "password", "select", "checkbox"}
+
+
+@pytest.fixture(autouse=True)
+def _loopback() -> None:
+    """The suite bans sockets; the browser driver and the app need a loopback."""
+    enable_socket()
+
+
+class Rig:
+    """The app and the browser, plus every Tab walk already made (a walk is slow, its reading free)."""
+
+    def __init__(self, app: h.App, browser: Browser) -> None:
+        self.app, self.browser = app, browser
+        self._walks: dict[tuple[str, str, frozenset[str] | None], list[h.Stop]] = {}
+
+    def walk(
+        self, screen: h.Screen, view: str = "100", only: frozenset[str] | None = None
+    ) -> list[h.Stop]:
+        """Tab through ``screen`` on a fresh Project; measure every control (or just ``only`` kinds)."""
+        key = (screen.name, view, only)
+        if key not in self._walks:
+            with h.session(self.app, self.browser, screen, view) as page:
+                counter = page.context.new_page()
+                page.bring_to_front()
+                self._walks[key] = h.tab_stops(
+                    page,
+                    counter,
+                    screen.name,
+                    view=view,
+                    measure=lambda kind: only is None or kind in only,
+                )
+        return self._walks[key]
+
+    def session(self, screen: h.Screen = QUERY, view: str = "100") -> AbstractContextManager[Page]:
+        return h.session(self.app, self.browser, screen, view)
+
+
+@pytest.fixture(scope="module")
+def rig(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Rig]:
+    enable_socket()
+    # Importing the GUI makes tornado select the selector event loop on Windows, which cannot
+    # start Playwright's driver process. Its loop is created at start, so the policy is only
+    # swapped for that call and put back: it is process-global state.
+    policy = asyncio.get_event_loop_policy()
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    try:
+        playwright: Playwright = sync_playwright().start()
+    finally:
+        asyncio.set_event_loop_policy(policy)
+    app: h.App | None = None
+    browser: Browser | None = None
+    try:
+        browser = h.launch_browser(playwright)
+        app = h.App(tmp_path_factory.mktemp("focus-app"))
+        yield Rig(app, browser)
+    finally:
+        if browser:
+            browser.close()
+        if app:
+            app.stop()
+        playwright.stop()
+
+
+def measured(stops: list[h.Stop], *kinds: str) -> list[h.Stop]:
+    return [s for s in stops if s.kind in kinds]
+
+
+def too_short(stops: list[h.Stop]) -> list[str]:
+    """One line per side below the pass line, naming the screen, the control and the side."""
+    return [
+        f"{s.screen}: {s.label}: {side} {value}"
+        for s in stops
+        for side, value in h.short_of(s.coverage).items()
+    ]
+
+
+# -- the controls that work today: the regression guard --------------------------------------------
+
+
+@pytest.mark.parametrize("screen", SCREENS, ids=lambda s: s.name)
+def test_ring__controls_that_work__cover_every_side_after_tab(rig: Rig, screen: h.Screen) -> None:
+    stops = rig.walk(screen)
+    healthy = measured(stops, *HEALTHY)
+    assert measured(stops, "tab"), f"{screen.name}: the walk never reached the tab row"
+    assert not too_short(healthy), "ring below 0.98:\n" + "\n".join(too_short(healthy))
+
+
+#: Clicks that make the page change (a new Project has no search terms, so Save refuses): wait for this text before measuring (the message pushes the
+#: button down, and a ring measured at the old place would be measured on nothing).
+AFTER_CLICK = {"Save button": "Not saved. Correct the fields marked above."}
+
+#: What to click on each screen: (a description, how to find them). Every match is clicked in
+#: turn. Only controls whose click is harmless (no network, no navigation away from the screen).
+CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator]]]] = {
+    "Query": [
+        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first),
+        ("Add button", lambda p: p.get_by_role("button", name="Add to: Search terms")),
+        ("Save button", lambda p: p.get_by_role("button", name="Save query")),
+        ("tab", lambda p: p.locator(".bk-tab").first),
+    ],
+    "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"))],
+    "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"))],
+    "Flow counts": [
+        ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first),
+        ("selects", lambda p: p.locator("select.bk-input:visible")),
+    ],
+    "New Project": [
+        ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible")),
+        ("radio group", lambda p: p.get_by_role("button", name="No", exact=True)),
+        ("checkbox", lambda p: p.locator("input[type=checkbox]:visible")),
+    ],
+    "Settings": [("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first)],
+}
+
+
+@pytest.mark.parametrize("screen", [s for s in SCREENS if s.name in CLICKS], ids=lambda s: s.name)
+def test_ring__controls_that_work__cover_every_side_after_a_click(
+    rig: Rig, screen: h.Screen
+) -> None:
+    clicked: list[h.Stop] = []
+    with rig.session(screen) as page:
+        counter = page.context.new_page()
+        page.bring_to_front()
+        for what, find in CLICKS[screen.name]:
+            targets = find(page)
+            targets.first.wait_for(state="visible")  # a timeout here fails the run
+            count = targets.count()
+            if not count:
+                raise h.HarnessError(f"{screen.name}: no {what} to click")
+            message = AFTER_CLICK.get(what)
+            settled = (lambda m=message: page.get_by_text(m).wait_for()) if message else None
+            for n in range(count):
+                stop = h.click_and_measure(page, counter, targets.nth(n), settled)
+                stop.screen = screen.name
+                clicked.append(stop)
+    assert not too_short(clicked), "ring below 0.98 after a click:\n" + "\n".join(
+        too_short(clicked)
+    )
+
+
+# -- what the walk finds: the check must not pass because it found nothing -------------------------
+
+EXPECTED_KINDS = {
+    "Query": {"chip": 3, "number": 2, "spin": 4, "text": 2},
+    "Criteria": {"text": 3, "textarea": 6},
+    "Source mode": {"password": 1},
+    "Screening": {},
+    "Flow counts": {"text": 1, "textarea": 1, "select": 3},
+    "New Project": {"text": 2, "checkbox": 1},
+    "Settings": {"text": 1},
+}
+
+
+@pytest.mark.parametrize("screen", SCREENS, ids=lambda s: s.name)
+def test_walk__every_screen__finds_the_controls_the_measure_is_about(
+    rig: Rig, screen: h.Screen
+) -> None:
+    found = Counter(s.kind for s in rig.walk(screen) if s.kind not in {"button", "tab", "body"})
+    assert dict(found) == EXPECTED_KINDS[screen.name], screen.name
+
+
+# -- the six defects, strict expected failures at af95bc6 ------------------------------------------
+# A marker passes only while the measured value is bad. When the defect is fixed it passes for
+# real, the strict marker turns that into a failure, and the fixing ticket deletes the marker.
+
+ASSERTION_ONLY = {"strict": True, "raises": AssertionError}
+
+
+@pytest.mark.xfail(
+    reason="D1 at af95bc6: the seven text areas (six on Criteria, one on Flow counts) have "
+    "top 0.99 to 1.0 and left, right and bottom 0 at 100%",
+    **ASSERTION_ONLY,
+)
+def test_defect_d1__text_areas__have_a_ring_on_every_side(rig: Rig) -> None:
+    areas = measured(rig.walk(CRITERIA) + rig.walk(FLOW), "textarea")
+    assert not too_short(areas), "text area ring below 0.98:\n" + "\n".join(too_short(areas))
+
+
+@pytest.mark.xfail(
+    reason="D2 at af95bc6: First year and Last year have 0 on all four sides at 100%",
+    **ASSERTION_ONLY,
+)
+def test_defect_d2__number_fields__have_a_ring_on_every_side(rig: Rig) -> None:
+    fields = measured(rig.walk(QUERY), "number")
+    assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
+
+
+@pytest.mark.xfail(
+    reason="D2 at af95bc6: the four spin arrows of First year and Last year are Tab stops "
+    "with an empty accessible name",
+    **ASSERTION_ONLY,
+)
+def test_defect_d2__spin_arrows__are_not_tab_stops(rig: Rig) -> None:
+    spins = [s.label for s in measured(rig.walk(QUERY), "spin")]
+    assert not spins, f"{len(spins)} spin arrows are Tab stops: {spins}"
+
+
+@pytest.mark.xfail(
+    reason="D3 at af95bc6: the Subject areas chip box has bottom 0 with its dropdown open "
+    "(top, left and right 1.0)",
+    **ASSERTION_ONLY,
+)
+def test_defect_d3__chip_box_with_dropdown_open__has_a_ring_on_every_side(rig: Rig) -> None:
+    subject = measured(rig.walk(QUERY), "chip")[-1]
+    assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
+
+
+@pytest.mark.xfail(
+    reason="D3 at af95bc6: with the dropdown flipped upward the Subject areas chip box has "
+    "top 0.049 (measured at a 1280 by 600 viewport; the fact sheet said 0.04)",
+    **ASSERTION_ONLY,
+)
+def test_defect_d3__chip_box_with_dropdown_flipped__has_a_ring_on_every_side(rig: Rig) -> None:
+    subject = measured(rig.walk(QUERY, "short", frozenset({"chip"})), "chip")[-1]
+    assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
+
+
+@pytest.mark.xfail(
+    reason="D4a at af95bc6: First year and Last year have 0 on all four sides at the "
+    "emulated 200% (640 by 450, device scale factor 2)",
+    **ASSERTION_ONLY,
+)
+def test_defect_d4a__number_fields_at_200_percent__have_a_ring_on_every_side(rig: Rig) -> None:
+    fields = measured(rig.walk(QUERY, "200", frozenset({"number"})), "number")
+    assert not too_short(fields), "number field ring below 0.98:\n" + "\n".join(too_short(fields))
+
+
+@pytest.mark.xfail(
+    reason="D4b at af95bc6: the Subject areas chip box has top 0.074 and bottom 1.0 at the "
+    "emulated 200% (the dropdown flips in a 450 px viewport)",
+    **ASSERTION_ONLY,
+)
+def test_defect_d4b__chip_box_at_200_percent__has_a_ring_on_every_side(rig: Rig) -> None:
+    subject = measured(rig.walk(QUERY, "200", frozenset({"chip"})), "chip")[-1]
+    assert not too_short([subject]), "chip box ring below 0.98:\n" + "\n".join(too_short([subject]))
+
+
+@pytest.mark.xfail(
+    reason="D5 at af95bc6: on Query one Tab after the Subject areas input leaves focus on the "
+    "page body; the next Tab reaches Save query",
+    **ASSERTION_ONLY,
+)
+def test_defect_d5__tab_after_subject_areas__does_not_land_on_the_body(rig: Rig) -> None:
+    with rig.session(QUERY) as page:
+        chips = 0
+        for _ in range(40):
+            page.keyboard.press("Tab")
+            info = page.evaluate(h.FOCUS_INFO)
+            chips += bool(info) and h.kind(info) == "chip" and not info["body"]
+            if chips == 3:
+                break
+        else:
+            raise h.HarnessError("the Subject areas input was not reached")
+        page.wait_for_function(h.SETTLED, timeout=10_000)  # its dropdown has opened
+        page.keyboard.press("Tab")
+        page.wait_for_function(h.LEFT_CHIPS, timeout=10_000)  # and has closed again
+        after = page.evaluate(h.FOCUS_INFO)
+    assert after and not after["body"], "Tab after the Subject areas input leaves focus on the body"
+
+
+@pytest.mark.xfail(
+    reason="D6 at af95bc6: a painted chip reads background rgb(31, 119, 180) and white text "
+    "(rgb(255, 255, 255)), not #cfe2ff and #0a58ca",
+    **ASSERTION_ONLY,
+)
+def test_defect_d6__painted_chip__has_the_palette_colours(rig: Rig) -> None:
+    with rig.session(QUERY) as page:
+        entry = page.get_by_placeholder("a phrase, then Enter").first
+        entry.fill("carbon capture")
+        entry.press("Enter")
+        chip = page.locator(".choices__list--multiple .choices__item").first
+        chip.wait_for()
+        painted = chip.evaluate(
+            "e=>{const c=getComputedStyle(e);return {background:c.backgroundColor,color:c.color}}"
+        )
+    assert painted == {"background": "rgb(207, 226, 255)", "color": "rgb(10, 88, 202)"}, painted
