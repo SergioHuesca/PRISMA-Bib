@@ -154,11 +154,15 @@ CLICKS: dict[str, list[tuple[str, Callable[[Page], Locator], int]]] = {
         ("tab", lambda p: p.locator(".bk-tab").first, 1),
         ("chip box", lambda p: p.locator("input.choices__input--cloned:visible").last, 1),
     ],
-    "Criteria": [("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3)],
+    "Criteria": [
+        ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 3),
+        ("text areas", lambda p: p.locator("textarea.bk-input:visible"), 6),
+    ],
     "Source mode": [("password field", lambda p: p.locator("input[type=password]:visible"), 1)],
     "Flow counts": [
         ("text input", lambda p: p.locator("input.bk-input[type=text]:visible").first, 1),
         ("selects", lambda p: p.locator("select.bk-input:visible"), 3),
+        ("text area", lambda p: p.locator("textarea.bk-input:visible"), 1),
     ],
     "New Project": [
         ("text inputs", lambda p: p.locator("input.bk-input[type=text]:visible"), 2),
@@ -226,11 +230,6 @@ def test_walk__every_screen__finds_the_controls_the_measure_is_about(
 ASSERTION_ONLY = {"strict": True, "raises": AssertionError}
 
 
-@pytest.mark.xfail(
-    reason="D1 at af95bc6: the seven text areas (six on Criteria, one on Flow counts) have "
-    "top 0.99 to 1.0 and left, right and bottom 0 at 100%",
-    **ASSERTION_ONLY,
-)
 def test_defect_d1__text_areas__have_a_ring_on_every_side(rig: Rig) -> None:
     areas = measured(rig.walk(CRITERIA) + rig.walk(FLOW), "textarea")
     assert not too_short(areas), "text area ring below 0.98:\n" + "\n".join(too_short(areas))
