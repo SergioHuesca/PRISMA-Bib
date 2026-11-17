@@ -340,10 +340,23 @@ def test_tab__walk_of_query__never_rests_on_the_page_body(rig: Rig) -> None:
     assert sum(s.kind == "chip" for s in stops) == 3, "the walk did not pass the three chip boxes"
 
 
+STABLE_STATS = """async () => {
+  const read = () => JSON.stringify(window.__prismabib_chip_tabstop.stats());
+  const end = performance.now() + 10000;
+  let last = read();
+  while (performance.now() < end) {
+    await new Promise((r) => setTimeout(r, 100));
+    const now = read();
+    if (now === last) { return JSON.parse(now); }
+    last = now;
+  }
+  return null;
+}"""
+
+
 def test_tab__three_visits_to_query__leave_no_extra_observers_and_still_one_step(
     rig: Rig,
 ) -> None:
-    stats = "()=>window.__prismabib_chip_tabstop.stats()"
     drawn = "input.choices__input--cloned:visible"
     with rig.session(QUERY) as page:
         seen = []
@@ -356,7 +369,11 @@ def test_tab__three_visits_to_query__leave_no_extra_observers_and_still_one_step
             page.wait_for_function(
                 f"()=>window.__prismabib_chip_tabstop.stats().renders>={visit + 1}", timeout=10_000
             )
-            seen.append(page.evaluate(stats))
+            # Shadow roots found late by mutation callbacks raise the count: read it only once two
+            # consecutive reads (100 ms apart in the page) agree.
+            settled = page.evaluate(STABLE_STATS)
+            assert settled, f"visit {visit + 1}: the observer count never settled in 10 s"
+            seen.append(settled)
         stops = h.tab_stops(page, page, QUERY.name, measure=lambda _kind: False)
     assert [s["renders"] for s in seen] == [1, 2, 3], seen  # each visit really rendered again
     assert seen[0]["observers"] > 1, seen  # the document and its shadow roots

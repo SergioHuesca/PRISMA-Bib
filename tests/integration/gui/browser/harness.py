@@ -195,7 +195,13 @@ def session(app: App, browser: Browser, screen: Screen, view: str = "100") -> It
                 page.get_by_role("button", name=screen.button).first.click()
                 page.get_by_role("heading", name=screen.heading).first.wait_for()
         if screen.fields:  # the heading shows before the controls are all drawn
-            expect(page.locator(_FIELDS)).to_have_count(screen.fields, timeout=_STATE_WAIT)
+            try:
+                expect(page.locator(_FIELDS)).to_have_count(screen.fields, timeout=_STATE_WAIT)
+            except AssertionError as exc:
+                actual = page.locator(_FIELDS).count()
+                raise HarnessError(
+                    f"{screen.name}: expected {screen.fields} fields drawn, found {actual}"
+                ) from exc
         page.evaluate(PARK)
         yield page
     finally:
