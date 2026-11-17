@@ -155,6 +155,133 @@ def test_undo__read_only_session__is_refused_and_logs_nothing(tmp_path: Path) ->
     holder.close()
 
 
+def _lines_or_none(project: Project) -> list[str]:
+    return _lines(project) if project.decisions_path.exists() else []
+
+
+def _decide(screener: sl.HostedScreener, decision: str) -> None:
+    if decision == "exclude":
+        screener.handlers["begin_exclude"]()
+        screener.handlers["reason_1"]()
+    else:
+        screener.handlers[decision]()
+
+
+def test_undo__after_exclude__restores_decided_and_remaining_counts(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+    before = (screener.queue.decided, screener.queue.remaining)
+
+    _decide(screener, "exclude")
+    assert (screener.queue.decided, screener.queue.remaining) == (1, 4)
+    screener.handlers["undo"]()
+
+    assert before == (0, 5)
+    assert (screener.queue.decided, screener.queue.remaining) == before
+    events = [json.loads(line) for line in _lines(project)]
+    assert [e["decision"] for e in events] == ["exclude", "unsure"]
+    assert screener.queue.current == screener.queue.pending[0]
+
+
+def test_undo__on_a_record_on_screen_with_own_exclude__withdraws_it_and_stays(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+    record = screener.queue.pending[0]
+    _decide(screener, "exclude")
+    screener.handlers["previous_record"]()  # back on the excluded Record
+    assert screener.queue.current == record
+
+    screener.handlers["undo"]()
+
+    events = [json.loads(line) for line in _lines(project)]
+    assert [e["decision"] for e in events] == ["exclude", "unsure"]
+    assert events[1]["record_id"] == record and events[1]["reviewer"] == "Ada"
+    assert events[0]["event_id"] in events[1]["note"]
+    assert screener.queue.decision_for(record) == "unsure"
+    assert screener.queue.current == record and screener.queue.position == 0
+    assert (screener.queue.decided, screener.queue.remaining) == (0, 5)
+
+
+@pytest.mark.parametrize("decision", ["include", "exclude"])
+@pytest.mark.parametrize("cursor", ["unscreened", "unsure", "past_last"])
+def test_undo__cursor_not_on_a_decided_record__withdraws_the_previous_one_and_moves_to_it(
+    tmp_path: Path, cursor: str, decision: str
+) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+    pending = screener.queue.pending
+    if cursor == "past_last":
+        for _ in pending[:-1]:
+            screener.handlers["include"]()
+        _decide(screener, decision)  # the last Record carries the Decision under test
+        assert screener.queue.current is None
+        target = pending[-1]
+    else:
+        _decide(screener, decision)
+        if cursor == "unsure":
+            screener.handlers["unsure"]()
+            screener.handlers["previous_record"]()  # on screen: the Unsure Record
+        target = pending[0]
+        assert screener.queue.current == pending[1]
+    count = len(_lines(project))
+
+    screener.handlers["undo"]()
+
+    events = [json.loads(line) for line in _lines(project)]
+    assert len(events) == count + 1
+    assert events[-1]["record_id"] == target and events[-1]["decision"] == "unsure"
+    assert events[-1]["reviewer"] == "Ada"
+    assert screener.queue.decision_for(target) == "unsure"
+    assert screener.queue.current == target
+    assert screener.queue.position == pending.index(target)
+
+
+def test_undo__unresolved_first_record__appends_nothing_and_moves_nothing(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+
+    screener.handlers["undo"]()
+
+    assert _lines_or_none(project) == []
+    assert screener.queue.position == 0 and screener.queue.current == screener.queue.pending[0]
+    assert screener.status == "nothing to undo"
+
+
+def test_undo__unsure_first_record_on_screen__appends_nothing_and_moves_nothing(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+    screener.handlers["unsure"]()
+    screener.handlers["previous_record"]()
+    before = _lines(project)
+
+    screener.handlers["undo"]()
+
+    assert _lines(project) == before
+    assert screener.queue.position == 0 and screener.queue.current == screener.queue.pending[0]
+    assert screener.status == "nothing to undo"
+
+
+@pytest.mark.parametrize("previous", ["unscreened", "unsure"])
+def test_undo__previous_record_also_unresolved__moves_back_one_and_appends_nothing(
+    tmp_path: Path, previous: str
+) -> None:
+    project = make_project(tmp_path)
+    screener = sl.open_screening(project, STAGE, "Ada")
+    screener.handlers["unsure" if previous == "unsure" else "next_record"]()
+    assert screener.queue.position == 1
+    before = _lines_or_none(project)
+
+    screener.handlers["undo"]()
+
+    assert _lines_or_none(project) == before
+    assert screener.queue.position == 0 and screener.queue.current == screener.queue.pending[0]
+    assert screener.status == "nothing to undo"
+
+
 def _open_and_time(project: Project) -> tuple[float, sl.HostedScreener]:
     start = time.perf_counter()
     step = build_screening(project)
