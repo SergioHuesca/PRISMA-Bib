@@ -3,7 +3,7 @@
 What this proves: in a headless Chromium-family browser, the search input of each chip box (Search
 terms, Compound terms, Subject areas) has the visible label as accessible name, also once a chip
 is added; the hint shown in the empty box is that label; and what the hint does once a chip is
-added or text is typed is recorded by the last test. What this does not prove: what a screen reader
+added or text is typed is asserted by the last test: the entry is empty after a chip, so the hint shows. What this does not prove: what a screen reader
 announces, or any other browser.
 
 Opt-in like the rest of the folder: ``PRISMABIB_BROWSER_CHECK=1``.
@@ -73,24 +73,16 @@ def test_chip_input__empty_box__shows_the_label_as_hint(rig: Rig, label: str) ->
         expect(search_input(page, label)).to_have_attribute("placeholder", label, timeout=_WAIT)
 
 
-def test_chip_input__hint_after_chip_and_after_typing__is_recorded(rig: Rig) -> None:
-    """What the hint does (measured): the attribute stays; the box width shows whether it is visible."""
-    width = "e=>e.getBoundingClientRect().width"
-    seen: dict[str, dict[str, object]] = {}
+@pytest.mark.parametrize("label", LABELS)
+def test_chip_input__after_a_chip_and_while_typing__the_hint_is_the_label(
+    rig: Rig, label: str
+) -> None:
+    """The entry is empty after a chip (so the browser shows the hint) and holds what is typed."""
     with rig.session(QUERY) as page:
-        for label in LABELS:
-            field = search_input(page, label)
-            empty = field.evaluate(width)
-            field.fill("x")
-            typed = (field.get_attribute("placeholder"), field.input_value())
-            field.fill("")
-            add_chip(page, label)
-            seen[label] = {
-                "width_empty": empty,
-                "width_after_chip": field.evaluate(width),
-                "placeholder_after_chip": field.get_attribute("placeholder"),
-                "placeholder_and_value_while_typing": typed,
-            }
-    for label, got in seen.items():
-        assert got["placeholder_after_chip"] == label, (label, got)
-        assert got["placeholder_and_value_while_typing"] == (label, "x"), (label, got)
+        field = search_input(page, label)
+        add_chip(page, label)
+        expect(field).to_have_value("", timeout=_WAIT)
+        expect(field).to_have_attribute("placeholder", label, timeout=_WAIT)
+        field.fill("x")
+        expect(field).to_have_value("x", timeout=_WAIT)
+        expect(field).to_have_attribute("placeholder", label, timeout=_WAIT)
