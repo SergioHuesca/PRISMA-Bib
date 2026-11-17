@@ -103,8 +103,16 @@ def sweep(page: Page, screen: str) -> list[Control]:
 def violations(controls: list[Control], exceptions: list[Exception_]) -> list[str]:
     """Bad names not excused by an exception, and exceptions that excuse nothing."""
     bad = [c for c in controls if c.name in BAD_NAMES]
-    excused = {(e.screen, e.role, e.label) for e in exceptions}
-    out = [str(c) for c in bad if (c.screen, c.role, c.label) not in excused]
+    # An empty label identifies nothing, so no exception can excuse it (nor hide another control).
+    excused = {(e.screen, e.role, e.label) for e in exceptions if e.label}
+    out = [
+        str(c) if c.label else f"{c.screen}: {c.role} with no visible label has name {c.name!r}"
+        for c in bad
+        if not c.label or (c.screen, c.role, c.label) not in excused
+    ]
+    out += [
+        f"{e.screen}: exception for {e.role} has an empty label" for e in exceptions if not e.label
+    ]
     seen = {(c.screen, c.role, c.label) for c in bad}
     out += [
         f"{e.screen}: exception for {e.role} {e.label!r} matches no control with a bad name"
