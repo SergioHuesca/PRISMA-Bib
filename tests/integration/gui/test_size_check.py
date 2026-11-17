@@ -13,7 +13,7 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.size_check import build_size_check
 from prismabib.gui.size_check_model import verdict
@@ -35,15 +35,15 @@ def _no_ambient_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _make(tmp_path: Path, mode: str) -> Project:
-    project = layer.create_project(
+    project = service.create_project(
         "demo",
         title="Demo",
         root=tmp_path / "p",
         source_mode=mode,  # type: ignore[arg-type]
         reviewer="A",
     )
-    with layer.Session(project) as session:
-        layer.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
+    with service.Session(project) as session:
+        service.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
     return project
 
 

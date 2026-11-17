@@ -14,7 +14,7 @@ from typing import Final
 
 from prismabib.errors import ValidationError
 from prismabib.gui import tasks
-from prismabib.gui.layer import Session, write_operation
+from prismabib.gui.service import Session, write_operation
 from prismabib.project import Project
 from prismabib.store.stamp import stamp_path
 

@@ -14,7 +14,7 @@ from prismabib.gui import keys_model as km
 from prismabib.gui import palette
 from prismabib.gui import size_check_model as model
 from prismabib.gui.capture_layer import note_size_check
-from prismabib.gui.layer import translate
+from prismabib.gui.service import translate
 from prismabib.project import Project
 from prismabib.query import build_openalex_query_for_project, build_query_for_project
 from prismabib.sizecheck import check_openalex_size, check_scopus_size

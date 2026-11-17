@@ -26,7 +26,7 @@ from prismabib.gui import capture_layer as cl
 from prismabib.gui import keys_model as km
 from prismabib.gui import tasks
 from prismabib.gui.capture_layer import CaptureState, CaptureStatus
-from prismabib.gui.layer import ErrorClass, Session, translate, write_operation
+from prismabib.gui.service import ErrorClass, Session, translate, write_operation
 from prismabib.gui.size_check_model import local_reset
 from prismabib.project import Project
 from prismabib.query import build_openalex_query_for_project

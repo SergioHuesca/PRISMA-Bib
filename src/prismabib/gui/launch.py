@@ -109,7 +109,7 @@ def _shut_down(wait: float) -> None:
 
     A lock whose task is still running is released the moment that task ends, never earlier.
     """
-    from prismabib.gui import layer, tasks
+    from prismabib.gui import service, tasks
 
     running = stop_model.running_names()
     if running:
@@ -119,7 +119,7 @@ def _shut_down(wait: float) -> None:
             f"{wait:g} seconds)."
         )
     late = tasks.stop_all(wait)
-    for session in layer.held_sessions():
+    for session in service.held_sessions():
         tasks.runner_for(session.project).when_idle(session.close)
     if late:
         typer.echo(

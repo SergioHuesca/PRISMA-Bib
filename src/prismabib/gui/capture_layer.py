@@ -26,7 +26,7 @@ from prismabib.capture.writer import (  # pyright: ignore[reportPrivateUsage]
 from prismabib.errors import ValidationError
 from prismabib.gui import keys_model as km
 from prismabib.gui import tasks
-from prismabib.gui.layer import ErrorClass, Session, translate, write_operation
+from prismabib.gui.service import ErrorClass, Session, translate, write_operation
 from prismabib.project import Project
 from prismabib.query import build_query_for_project
 from prismabib.user_settings import load_settings

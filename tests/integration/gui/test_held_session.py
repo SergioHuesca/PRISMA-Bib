@@ -14,7 +14,7 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer, tasks
+from prismabib.gui import service, tasks
 from prismabib.gui.app import build_app
 from prismabib.gui.new_project import build_stepper
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
@@ -28,20 +28,20 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv(USER_FILE_OVERRIDE_VAR, str(tmp_path / "settings.env"))
     tasks.reset_runners()
     yield
-    layer.release_all()
+    service.release_all()
     tasks.reset_runners()
 
 
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
-    layer.create_project(
+    service.create_project(
         "demo", title="Demo", root=tmp_path / "p", source_mode="openalex", reviewer="Ada"
     )
     return tmp_path / "p"
 
 
 def _lock(root: Path) -> Path:
-    return root / "demo" / layer.LOCK_NAME
+    return root / "demo" / service.LOCK_NAME
 
 
 def _open(tabs: pn.Tabs) -> pn.Column:
@@ -87,9 +87,9 @@ def test_app__two_windows_one_project__the_second_is_read_only_with_the_reason(
 
 
 def test_read_only_window__build_step__start_is_disabled_and_stays_disabled(root: Path) -> None:
-    layer.open_session("demo", root=root)  # another window holds the lock
-    project = layer.open_project("demo", root=root)
-    stepper = build_stepper(project, layer.open_session("demo", root=root))
+    service.open_session("demo", root=root)  # another window holds the lock
+    project = service.open_project("demo", root=root)
+    stepper = build_stepper(project, service.open_session("demo", root=root))
     build_row = next(b for b in stepper.select(pn.widgets.Button) if b.name.startswith("Build"))
     build_row.clicks += 1
 
@@ -103,14 +103,14 @@ def test_app__stop__releases_every_held_lock(root: Path) -> None:
     _open(build_app(root))
     assert _lock(root).exists()
 
-    layer.release_all()  # what the launcher does when the server returns
+    service.release_all()  # what the launcher does when the server returns
 
     assert not _lock(root).exists()
 
 
 def test_screens__held_session__are_used_instead_of_opening_their_own(root: Path) -> None:
-    project = layer.open_project("demo", root=root)
-    held = layer.open_session("demo", root=root)
+    project = service.open_project("demo", root=root)
+    held = service.open_session("demo", root=root)
     stepper = build_stepper(project, held)
     _button(stepper, _name(stepper, "Criteria")).clicks += 1
     _button(stepper, "Save Criteria").clicks += 1
@@ -126,7 +126,7 @@ def _name(view: pn.viewable.Viewable, prefix: str) -> str:
 
 def test_back_to_projects__task_running__lock_stays_until_the_task_ends(root: Path) -> None:
     page = _open(build_app(root))
-    project = layer.open_project("demo", root=root)
+    project = service.open_project("demo", root=root)
     release = threading.Event()
 
     def work(cancel: threading.Event, report: Any) -> None:
@@ -150,7 +150,7 @@ def test_stale_lock__window_offers_a_confirmed_take_over(root: Path) -> None:
     ask = _button(page, "Take over this Project")
     ask.clicks += 1
     assert "removes the lock" in _text(page)  # names what it does before it does it
-    assert layer.open_session("demo", root=root).read_only  # nothing changed yet
+    assert service.open_session("demo", root=root).read_only  # nothing changed yet
     _button(page, "Yes, take over this Project").clicks += 1
 
     assert "closed unexpectedly" not in _text(page)

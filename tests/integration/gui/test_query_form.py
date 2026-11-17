@@ -10,7 +10,7 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.new_project import build_stepper
 from prismabib.gui.query_form import build_query_form
 from prismabib.gui.query_form_model import ENRICHMENT_REASON
@@ -28,7 +28,7 @@ def _user_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 def _make(tmp_path: Path, mode: str = "openalex") -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo",
         title="Demo",
         root=tmp_path,
@@ -108,7 +108,7 @@ def test_form__after_the_first_run__is_read_only_with_a_reason_and_save_does_not
 
 def test_form__held_by_another_window__shows_the_lock_sentence(tmp_path: Path) -> None:
     project = _make(tmp_path)
-    layer.Session(project)  # this window holds the lock
+    service.Session(project)  # this window holds the lock
     view = build_query_form(project)
     _add(view, "Search terms", "carbon")
     _save(view)

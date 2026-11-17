@@ -5,7 +5,7 @@ from __future__ import annotations
 import panel as pn  # widget layer only
 
 from prismabib.gui import build_layer as bl
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.delete_store import build_delete_store
 from prismabib.project import Project
 
@@ -16,7 +16,7 @@ NOTE = (
 )
 
 
-def build_build(project: Project, session: layer.Session | None = None) -> pn.Column:
+def build_build(project: Project, session: service.Session | None = None) -> pn.Column:
     """The build button and the state of the build of ``project``.
 
     ``session`` is the window's held write lock; a bare screen takes one per click.
@@ -47,16 +47,16 @@ def build_build(project: Project, session: layer.Session | None = None) -> pn.Co
         elif s.outcome == "cancelled":
             state.object = "**Stopped as you asked.** The previous store was kept."
         elif s.outcome == "failed" and s.error is not None:
-            msg = layer.translate(s.error)
+            msg = service.translate(s.error)
             state.object = f"**The build failed.** {msg.sentence} {msg.next_step}"
 
     def on_start(_: object) -> None:
         message.object = ""
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 bl.start_build(active)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
         show()
 

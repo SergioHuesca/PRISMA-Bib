@@ -1,7 +1,7 @@
 """The app page: the tabs (Home, Settings) and the one Project this window has open.
 
 Home routes to New Project and to the stepper. Opening a Project in the stepper takes its write
-lock for this window (one :class:`~prismabib.gui.layer.Session`); the lock is released on "Back to
+lock for this window (one :class:`~prismabib.gui.service.Session`); the lock is released on "Back to
 Projects" and when the browser page goes away, but not while a task started here is still running
 on the Project, and every lock is released when the app stops.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import home_model, layer, tasks
+from prismabib.gui import home_model, service, tasks
 from prismabib.gui.home import build_home
 from prismabib.gui.new_project import build_new_project, build_stepper
 from prismabib.gui.settings import build_settings
@@ -26,7 +26,7 @@ def build_app(root: Path | None = None) -> pn.viewable.Viewable:
     stepper; Settings is the other tab.
     """
     page = pn.Column(sizing_mode="stretch_width")
-    held: list[layer.Session] = []  # this window's hold on the Project open in the stepper
+    held: list[service.Session] = []  # this window's hold on the Project open in the stepper
 
     def release() -> str | None:
         """Let go of the open Project's lock; a running task keeps it until the task ends.
@@ -48,9 +48,9 @@ def build_app(root: Path | None = None) -> pn.viewable.Viewable:
 
     def open_(folder: Path, slug: str) -> None:
         try:
-            project = layer.open_project(slug, root=folder)
+            project = service.open_project(slug, root=folder)
         except Exception as exc:  # noqa: BLE001 - shown as a sentence, never a traceback
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             page.insert(0, pn.pane.Markdown(f"**{msg.sentence}** {msg.next_step}"))
             return
         stepper(project)
@@ -73,7 +73,7 @@ def build_app(root: Path | None = None) -> pn.viewable.Viewable:
 
     def stepper(project: Project) -> None:
         release()
-        session = layer.Session(project)
+        session = service.Session(project)
         held.append(session)
         back = pn.widgets.Button(name="Back to Projects")
         back.on_click(lambda _: leave())

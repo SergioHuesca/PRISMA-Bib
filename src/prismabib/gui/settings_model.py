@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from prismabib.gui import home_model
-from prismabib.gui.layer import require_reviewer
+from prismabib.gui.service import require_reviewer
 from prismabib.user_settings import (
     REVIEWER_NAME_KEY,
     read_user_setting,

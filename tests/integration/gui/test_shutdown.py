@@ -14,7 +14,7 @@ from pytest_socket import enable_socket, socket_allow_hosts
 pytest.importorskip("panel")
 
 from prismabib.errors import OperationCancelled
-from prismabib.gui import layer, stop_model, tasks
+from prismabib.gui import service, stop_model, tasks
 from prismabib.gui.launch import serve
 from prismabib.project import Project
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
@@ -30,14 +30,14 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     tasks.reset_runners()
     stop_model.install_stopper(None)
     yield
-    layer.release_all()
+    service.release_all()
     tasks.reset_runners()
     stop_model.install_stopper(None)
 
 
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo", title="Demo", root=tmp_path / "p", source_mode="scopus", reviewer="A"
     )
 
@@ -87,7 +87,7 @@ def _interrupt(_server: Any) -> None:
 def test_serve__ctrl_c_with_a_capture_running__cancels_it_waits_and_releases_the_lock(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    held = layer.open_session("demo", root=project.root.parent)
+    held = service.open_session("demo", root=project.root.parent)
     capture = _Capture(project)
 
     thread, urls, errors = _serve(_interrupt)
@@ -97,7 +97,7 @@ def test_serve__ctrl_c_with_a_capture_running__cancels_it_waits_and_releases_the
     assert urls and urls[0].startswith("http://127.0.0.1:")  # Ctrl+C is a normal way to stop
     assert capture.saw_cancel.is_set()  # the cancel flag was set, not left running
     assert tasks.runner_for(project).status().running is False  # and the worker was joined
-    assert not (project.root / layer.LOCK_NAME).exists()
+    assert not (project.root / service.LOCK_NAME).exists()
     assert held.read_only
     out = capsys.readouterr().out
     assert "The Scopus capture" in out and "pages already fetched" in out
@@ -106,7 +106,7 @@ def test_serve__ctrl_c_with_a_capture_running__cancels_it_waits_and_releases_the
 def test_serve__stop_button_path__loop_stops_and_everything_is_cleaned_up(
     project: Project,
 ) -> None:
-    layer.open_session("demo", root=project.root.parent)
+    service.open_session("demo", root=project.root.parent)
     capture = _Capture(project)
     server_box: list[Any] = []
     ready = threading.Event()
@@ -124,13 +124,13 @@ def test_serve__stop_button_path__loop_stops_and_everything_is_cleaned_up(
     thread.join(60)
 
     assert not errors and capture.saw_cancel.is_set()
-    assert not (project.root / layer.LOCK_NAME).exists()
+    assert not (project.root / service.LOCK_NAME).exists()
 
 
 def test_serve__a_task_that_does_not_stop_in_time__is_named_and_its_lock_kept_until_it_ends(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    layer.open_session("demo", root=project.root.parent)
+    service.open_session("demo", root=project.root.parent)
     capture = _Capture(project, stubborn=30)
 
     thread, _urls, errors = _serve(_interrupt, shutdown_wait=0.2)
@@ -139,20 +139,20 @@ def test_serve__a_task_that_does_not_stop_in_time__is_named_and_its_lock_kept_un
     out = capsys.readouterr().out
     assert not errors and capture.saw_cancel.is_set()
     assert "did not stop" in out and "The Scopus capture" in out
-    assert (project.root / layer.LOCK_NAME).exists()  # still writing: the lock stays
+    assert (project.root / service.LOCK_NAME).exists()  # still writing: the lock stays
     capture.finish.set()
     tasks.runner_for(project).join(10)
-    assert not (project.root / layer.LOCK_NAME).exists()  # released the moment it ended
+    assert not (project.root / service.LOCK_NAME).exists()  # released the moment it ended
 
 
 def test_serve__nothing_running__says_it_stopped_and_frees_the_lock(
     project: Project, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    layer.open_session("demo", root=project.root.parent)
+    service.open_session("demo", root=project.root.parent)
 
     thread, _urls, errors = _serve(_interrupt)
     thread.join(60)
 
     assert not errors
-    assert not (project.root / layer.LOCK_NAME).exists()
+    assert not (project.root / service.LOCK_NAME).exists()
     assert "stopped" in capsys.readouterr().out.lower()

@@ -200,9 +200,9 @@ def test_use_folder__refused_path__is_not_remembered(tmp_path: Path, real_path_l
 
 
 def test_list_projects__finds_only_project_folders(tmp_path: Path) -> None:
-    from prismabib.gui import layer
+    from prismabib.gui import service
 
-    layer.create_project(
+    service.create_project(
         "demo", title="Demo title", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
     (tmp_path / "not-a-project").mkdir()

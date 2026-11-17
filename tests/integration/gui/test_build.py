@@ -15,7 +15,7 @@ import panel as pn
 
 from prismabib.errors import ConfigError, ProjectLockedError, ValidationError
 from prismabib.gui import build_layer as bl
-from prismabib.gui import layer, tasks
+from prismabib.gui import service, tasks
 from prismabib.gui.build import build_build
 from prismabib.gui.new_project import build_stepper
 from prismabib.project import Project
@@ -49,7 +49,7 @@ def project(tmp_path: Path) -> Project:
         started_at=RUN_STARTED_AT.replace(day=2),
         query='TITLE-ABS-KEY("another query")',  # a duplicate only counts across different queries
     )
-    line = f'{{"schema_version": {layer.CURRENT_PROJECT_VERSION}, "decision": "kept"}}\n'
+    line = f'{{"schema_version": {service.CURRENT_PROJECT_VERSION}, "decision": "kept"}}\n'
     built.decisions_path.write_bytes(line.encode())
     return built
 
@@ -63,7 +63,7 @@ def _tree(root: Path) -> dict[str, str]:
 
 
 def _start(project: Project) -> None:
-    with layer.Session(project) as session:
+    with service.Session(project) as session:
         bl.start_build(session)
 
 
@@ -93,10 +93,10 @@ def test_build__finished__summary_states_records_and_cross_search_duplicates(
 
 
 def test_build__no_capture__is_refused_with_the_next_step(tmp_path: Path) -> None:
-    empty = layer.create_project(
+    empty = service.create_project(
         "demo", title="Demo", root=tmp_path / "p", source_mode="scopus", reviewer="A"
     )
-    with layer.Session(empty) as session, pytest.raises(ValidationError, match="capture"):
+    with service.Session(empty) as session, pytest.raises(ValidationError, match="capture"):
         bl.start_build(session)
 
 
@@ -153,7 +153,7 @@ def test_build__interrupted_or_failed__keeps_the_previous_store_and_says_what_to
     assert _tree(project.db_path.parent) == before
     assert build_store(project).records_loaded == 5
     text = _text(build_build(project))
-    assert "The build failed." in text and layer.translate(error).next_step in text
+    assert "The build failed." in text and service.translate(error).next_step in text
 
 
 def test_rebuild__sealed_runs_and_decision_log__stay_byte_identical(project: Project) -> None:
@@ -193,7 +193,7 @@ def test_build_screen__button_click__runs_the_build_and_shows_the_summary(
 
 
 def test_build_screen__read_only_session__shows_the_sentence(project: Project) -> None:
-    holder = layer.open_session(project.slug, root=project.root.parent)
+    holder = service.open_session(project.slug, root=project.root.parent)
     try:
         view = build_build(project)
         _button(view, "Rebuild the store").clicks += 1

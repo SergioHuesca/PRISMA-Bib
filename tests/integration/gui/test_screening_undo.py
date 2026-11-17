@@ -21,8 +21,8 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import ProjectLockedError
-from prismabib.gui import layer, tasks
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import service, tasks
 from prismabib.gui.screening import build_screening
 from prismabib.prisma import engine
 from prismabib.project import Project
@@ -54,7 +54,7 @@ def big_project(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Project]:
     patch = pytest.MonkeyPatch()
     root = tmp_path_factory.mktemp("big")
     patch.setenv(USER_FILE_OVERRIDE_VAR, str(root / "settings.env"))
-    project = layer.create_project(
+    project = service.create_project(
         "big", title="Big", root=root, source_mode="scopus", reviewer="Ada"
     )
     write_criteria(project, CriteriaSpec())
@@ -145,7 +145,7 @@ def test_undo__read_only_session__is_refused_and_logs_nothing(tmp_path: Path) ->
     screener = sl.open_screening(project, STAGE, "Ada")
     screener.handlers["include"]()
     count = len(_lines(project))
-    holder = layer.Session(project)  # another window holds the write lock
+    holder = service.Session(project)  # another window holds the write lock
 
     with pytest.raises(ProjectLockedError):
         screener.queue.undo()

@@ -38,8 +38,8 @@ from typer.testing import CliRunner
 from prismabib import project as project_module
 from prismabib import source_mode
 from prismabib.cli import app
-from prismabib.gui import layer
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import service
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
 from tests.conftest import SeededIdFactory
 
@@ -99,7 +99,7 @@ def _user_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _create_via_layer(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     _inject(monkeypatch)
-    layer.create_project(
+    service.create_project(
         "demo", title="Demo review", root=root, source_mode="openalex", reviewer="Ada"
     )
     return normalise(root / "demo")
@@ -153,7 +153,7 @@ def test_parity__scopus_access_answer__gui_and_cli_leave_identical_files(
     from prismabib.gui.new_project_model import mode_for_choice
 
     _inject(monkeypatch)
-    layer.create_project(
+    service.create_project(
         "demo",
         title="Demo review",
         root=tmp_path / "layer",
@@ -198,7 +198,7 @@ def _screening_log(
         project, stage, "Ada", log=DecisionLog(project, id_factory=SeededIdFactory(0, "id"))
     )
     if via_layer:
-        with layer.Session(project) as session:
+        with service.Session(project) as session:
             sl.decide(session, queue, "include")
             sl.decide(session, queue, "exclude", reason_code="OFF_TOPIC")
             sl.decide(session, queue, "unsure")
@@ -254,15 +254,15 @@ def test_parity__query_form__equals_the_hand_edit_the_cli_workflow_uses(
 
     inputs = QueryInputs(terms=["carbon capture", "policy"], year_start=2015, year_end=2024)
     _inject(monkeypatch)
-    project = layer.create_project(
+    project = service.create_project(
         "demo",
         title="Demo review",
         root=tmp_path / "layer",
         source_mode=mode,  # type: ignore[arg-type]
         reviewer="Ada",
     )
-    with layer.Session(project) as session:
-        layer.save_query(session, inputs)
+    with service.Session(project) as session:
+        service.save_query(session, inputs)
     layer_out = normalise(tmp_path / "layer" / "demo")
 
     _inject(monkeypatch)
@@ -318,10 +318,10 @@ def test_parity__saved_criteria__gui_and_cli_projects_leave_identical_files(
     _create_via_cli(tmp_path / "cli", monkeypatch)
     outs = []
     for name in ("layer", "cli"):
-        session = layer.open_session("demo", root=tmp_path / name)
+        session = service.open_session("demo", root=tmp_path / name)
         form = form_from_criteria(session.project.criteria)
         form |= {"version": "1.2.0", "languages": "English", "subject_areas": "COMP, MATH"}
-        layer.save_criteria(session, criteria_from_form(form))
+        service.save_criteria(session, criteria_from_form(form))
         session.close()
         outs.append(normalise(tmp_path / name / "demo"))
     assert "COMP" in outs[0]["criteria.yaml"]
@@ -331,11 +331,11 @@ def test_parity__saved_criteria__gui_and_cli_projects_leave_identical_files(
 def _scopus_project(root: Path) -> project_module.Project:
     from prismabib.gui.query_form_model import QueryInputs
 
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=root, source_mode="scopus", reviewer="Ada"
     )
-    with layer.Session(project) as session:
-        layer.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
+    with service.Session(project) as session:
+        service.save_query(session, QueryInputs(terms=["carbon"], year_start=2015, year_end=2024))
     return project
 
 
@@ -375,7 +375,7 @@ def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
     with respx.mock:
         route = respx.get(_URL).mock(side_effect=stub)
         cl.note_size_check(gui, build_query_for_project(gui))
-        with layer.Session(gui) as session:
+        with service.Session(gui) as session:
             cl.start_capture(session, confirmed=True)
         assert stub.arrived.wait(10)
         cl.cancel_capture(gui)
@@ -390,7 +390,7 @@ def test_parity__scopus_capture__cancelled_run_and_sealed_hash_equal_the_cli(
 
         stub.hold = False
         route.side_effect = stub
-        with layer.Session(gui) as session:
+        with service.Session(gui) as session:
             cl.start_capture(session, confirmed=True)
         tasks.runner_for(gui).join(10)
         route.side_effect = Stub()
@@ -424,7 +424,7 @@ def test_parity__export__numbers_and_sealed_hash_exact_rest_of_bundle_normalised
 
     gui = make_project(tmp_path / "gui")
     cli = make_project(tmp_path / "cli")
-    with layer.Session(gui) as session:
+    with service.Session(gui) as session:
         xl.start_export(session)
     tasks.runner_for(gui).join(30)
     assert xl.export_status(gui).outcome == "done"
@@ -457,7 +457,7 @@ def test_parity__built_store__gui_build_equals_the_cli_build(
     monkeypatch.setenv("SCOPUS_API_KEY", "test-api-key")
     sums = []
     for name in ("gui", "cli"):
-        project = layer.create_project(
+        project = service.create_project(
             "demo", title="Demo", root=tmp_path / name, source_mode="scopus", reviewer="Ada"
         )
         write_sealed_run(
@@ -470,7 +470,7 @@ def test_parity__built_store__gui_build_equals_the_cli_build(
             started_at=RUN_STARTED_AT,
         )
         if name == "gui":
-            with layer.Session(project) as session:
+            with service.Session(project) as session:
                 bl.start_build(session)
             tasks.runner_for(project).join(30)
             assert bl.build_status(project).outcome == "done"
