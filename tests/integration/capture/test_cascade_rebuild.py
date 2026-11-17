@@ -251,6 +251,48 @@ def test_cascade_rebuild__second_run__makes_no_request_and_prints_the_same_table
 
 
 @pytest.mark.integration
+def test_cascade_cli__full_output__is_unchanged(project: Project, fakes: dict[str, Fake]) -> None:
+    code, out = _cascade(project.root.parent, *_ARGS)
+    assert code == 0, out
+    # structlog lines (timestamp, run id) are not the command's report; the report lines are.
+    report = [ln for ln in out.splitlines() if not ln.startswith("20")]
+    assert report == [
+        "candidate DOIs from OpenAlex: enriched 1",
+        "level 2: value 2, absent 0, not_found 0, refused 0",
+        "level 3: value 1, absent 0, not_found 0, refused 0",
+        "openalex: value 3, not_found 1, refused 0",
+        "remaining unavailable: 0",
+        "per field, Scopus records (from the store):",
+        (
+            "abstract: level 1 1, level 2 0, level 3 0, level 4 1, manual 0, unavailable 1, "
+            "conflicts open 0, resolved 0"
+        ),
+        (
+            "authors: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2, "
+            "conflicts open 0, resolved 0"
+        ),
+        (
+            "affiliations: level 1 1, level 2 1, level 3 1, level 4 0, manual 0, unavailable 0, "
+            "conflicts open 0, resolved 0"
+        ),
+        (
+            "keywords: level 1 1, level 2 0, level 3 0, level 4 0, manual 0, unavailable 2, "
+            "conflicts open 0, resolved 0"
+        ),
+        "per field, registered OpenAlex records (from the store):",
+        "abstract: level 4 0, unavailable 0",
+        "authors: level 4 0, unavailable 0",
+        "affiliations: level 4 0, unavailable 0",
+        "keywords: level 4 0, unavailable 0",
+        "per field, OpenAlex-primary records (from the store):",
+        "abstract: level 4 0, manual 0, unavailable 0",
+        "authors: level 4 0, manual 0, unavailable 0",
+        "affiliations: level 4 0, manual 0, unavailable 0",
+        "keywords: level 4 0, manual 0, unavailable 0",
+    ]
+
+
+@pytest.mark.integration
 def test_cascade_rebuild__failing_rebuild__exits_non_zero_with_the_message(
     project: Project, fakes: dict[str, Fake], monkeypatch: pytest.MonkeyPatch
 ) -> None:
