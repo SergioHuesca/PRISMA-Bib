@@ -26,7 +26,7 @@ def build_export(project: Project, session: service.Session | None = None) -> pn
     message = pn.pane.Markdown("")
     warning = pn.pane.Markdown("")
     bar = pn.indicators.Progress(name="Export progress", active=True, visible=False)
-    git_text = el.current_git_warnings()  # read once: git is not asked on every poll
+    git_text = el.project_git_warnings(project)  # read once: git is not asked on every poll
 
     def show(*_: object) -> None:
         s = el.export_status(project)

@@ -96,7 +96,10 @@ def build_home(
         message.object = check.refusal or check.warning or ""
         show_projects(state.path)
 
-    parts: list[pn.viewable.Viewable] = [pn.pane.Markdown("# prismabib")]
+    parts: list[pn.viewable.Viewable] = [
+        pn.pane.Markdown("# prismabib"),
+        pn.pane.Markdown(f"Projects folder in use: `{state.path}`"),
+    ]
     for problem in report.problems:
         parts.append(pn.pane.Markdown(f"**{problem.sentence}** {problem.fix}"))
     if report.app_control_hint:

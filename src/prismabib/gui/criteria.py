@@ -6,6 +6,7 @@ import panel as pn  # widget layer only
 
 from prismabib.gui import criteria_model as cm
 from prismabib.gui import palette, service
+from prismabib.gui.query_form_model import ENRICHMENT_REASON
 from prismabib.project import Project
 
 _LABELS = {
@@ -45,21 +46,23 @@ def build_criteria(project: Project, session: service.Session | None = None) -> 
     rows: list[pn.viewable.Viewable] = [title]
     if lock:
         rows.append(pn.pane.Markdown(f"**Read-only.** {lock}"))
+    # As on the Query screen, Scopus modes leave Subject areas out; the file's value is kept on save.
+    notes = {"subject_areas": ENRICHMENT_REASON} if project.source_mode != "openalex" else {}
     for key in cm.FIELDS:
         cls = pn.widgets.TextAreaInput if key in cm.LIST_FIELDS else pn.widgets.TextInput
         widgets[key] = cls(
             name=_LABELS[key],
             value=values[key],
-            disabled=bool(lock),
+            disabled=bool(lock) or key in notes,
             stylesheets=[palette.FIELD_CSS],
         )
-        errors[key] = pn.pane.Markdown("")
+        errors[key] = pn.pane.Markdown(notes.get(key, ""))
         rows += [widgets[key], errors[key]]
     save = pn.widgets.Button(name="Save Criteria", button_type="primary", disabled=bool(lock))
 
     def submit(_: object) -> None:
-        for pane in errors.values():
-            pane.object = ""
+        for key, pane in errors.items():
+            pane.object = notes.get(key, "")
         status.object = ""
         try:
             criteria = cm.criteria_from_form({k: str(w.value or "") for k, w in widgets.items()})

@@ -195,3 +195,46 @@ def test_smoke__stepper_screening_step__builds_with_labelled_controls(tmp_path: 
     assert view.select(pn.widgets.TextInput)[0].value == "Ada"
     assert any("Unscreened" in str(p.object) for p in view.select(pn.pane.Markdown))
     assert build_stepper(project) is not None
+
+
+FULLTEXT_NOTE = "Full text screening (not in this version)"
+
+
+def _stage_radio(view: pn.Column) -> pn.widgets.RadioButtonGroup:
+    return next(r for r in view.select(pn.widgets.RadioButtonGroup) if r.name == "Stage")
+
+
+def test_stage_choice__offers_only_title_and_abstract__with_the_full_text_note(
+    tmp_path: Path,
+) -> None:
+    view = build_screening(make_project(tmp_path))
+
+    notes = [str(p.object) for p in view.select(pn.pane.Markdown)]
+    assert list(_stage_radio(view).options) == ["Title and abstract"]
+    assert any(FULLTEXT_NOTE in n for n in notes)
+
+
+def test_start_screening__every_offered_stage__records_title_and_abstract_at_the_loader_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[PrismaStage] = []
+    monkeypatch.setattr(sl, "start_loading", lambda _p, stage, *_a, **_k: started.append(stage))
+    view = build_screening(make_project(tmp_path))
+    start = next(b for b in view.select(pn.widgets.Button) if b.name == "Start screening")
+    stage = _stage_radio(view)
+
+    for option in list(stage.options):  # on main this includes "Full text"
+        stage.value = option
+        start.clicks += 1
+
+    assert started
+    assert set(started) == {PrismaStage.TITLE_ABSTRACT}
+
+
+def test_stage_choice__title_and_abstract_is_selected_when_the_screen_opens(
+    tmp_path: Path,
+) -> None:
+    """Guard: passes on main too."""
+    view = build_screening(make_project(tmp_path))
+
+    assert _stage_radio(view).value == "Title and abstract"

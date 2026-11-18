@@ -86,4 +86,4 @@ def build_app(root: Path | None = None) -> pn.viewable.Viewable:
             release()
 
         pn.state.on_session_destroyed(page_closed)
-    return pn.Tabs(("Home", page), ("Settings", build_settings()))
+    return pn.Tabs(("Home", page), ("Settings", build_settings(root)))

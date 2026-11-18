@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -27,6 +28,7 @@ from tests.integration.gui.helpers import hold_at
 from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.integration.gui.test_screening import make_project
+from tests.prisma_helpers import run_git
 
 pytestmark = pytest.mark.integration
 
@@ -83,7 +85,6 @@ def test_export__button__writes_the_bundle_and_the_summary_names_the_folder(
     assert status.outcome == "done"
     assert (project.root / "exports" / "numbers.json").is_file()
     assert str(project.root / "exports") in _text(build_export(project))
-    assert status.result.warnings == ()
 
 
 def test_export__no_store__is_refused_with_the_next_step(tmp_path: Path) -> None:
@@ -106,39 +107,141 @@ def test_status__while_exporting__shows_progress_in_words(
     assert "Preparing the figures and tables." in text
 
 
-@pytest.mark.parametrize(
-    ("state", "expected"),
-    [
-        ({"commit": None, "dirty": True, "commit_is_pushed": False}, "not inside a git repository"),
-        ({**CLEAN, "dirty": True}, "uncommitted changes"),
-        ({**CLEAN, "commit_is_pushed": False}, "on no remote branch"),
-    ],
-    ids=["no-git", "uncommitted", "unpushed"],
-)
-def test_git_state__each_kind__shows_its_warning_before_and_after_the_export(
-    project: Project, monkeypatch: pytest.MonkeyPatch, state: dict[str, Any], expected: str
-) -> None:
-    monkeypatch.setattr(export_module, "_git_provenance", lambda cwd: dict(state))
-    assert expected in _text(build_export(project))
+def _own_repo(folder: Path, *, pushed: bool, dirty: bool) -> None:
+    """Make ``folder`` its own repository; everything in it is ignored but the .gitignore.
 
+    ``run_git`` ignores the developer's git config (gpgsign, hooksPath, defaultBranch).
+    """
+    run_git(folder, "init", "-b", "main")
+    (folder / ".gitignore").write_text("*\n", encoding="utf-8")
+    run_git(folder, "add", "-f", ".gitignore")
+    run_git(folder, "-c", "commit.gpgsign=false", "commit", "--no-verify", "-m", "x")
+    if pushed:
+        run_git(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
+    if dirty:
+        (folder / ".gitignore").write_text("*\n# edit\n", encoding="utf-8")
+
+
+def _real_for_the_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real git for the Project folder; the installed code stays reported as CLEAN."""
+    code = export_module._code_root()
+    monkeypatch.setattr(
+        export_module,
+        "_git_provenance",
+        lambda cwd: dict(CLEAN) if cwd == code else REAL_PROVENANCE(cwd),
+    )
+
+
+def _after_export(project: Project) -> tuple[str, ...]:
     _start(project)
-    tasks.runner_for(project).join(30)
+    tasks.runner_for(project).join(300)  # generous: a loaded machine, and git runs per call
+    return xl.export_status(project).result.warnings
 
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"pushed": True, "dirty": True}, "uncommitted changes"),
+        ({"pushed": False, "dirty": False}, "on no remote branch"),
+    ],
+    ids=["uncommitted", "unpushed"],
+)
+def test_git_state__project_repository__shows_its_warning_before_and_after_the_export(
+    project: Project, monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, bool], expected: str
+) -> None:
+    _own_repo(project.root, **kwargs)
+    _real_for_the_project(monkeypatch)
+    assert "your project folder" in _text(build_export(project)).lower()
     assert expected in _text(build_export(project))
-    assert expected in " ".join(xl.export_status(project).result.warnings)
+
+    warnings = _after_export(project)
+
+    assert expected in " ".join(warnings)
+    assert expected in _text(build_export(project))
 
 
-def test_git_state__clean__shows_no_warning(project: Project) -> None:
+def test_git_state__unpushed__says_it_reads_only_the_last_fetch(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _own_repo(project.root, pushed=False, dirty=False)
+    _real_for_the_project(monkeypatch)
+
+    text = _text(build_export(project))
+
+    assert "As far as the last fetch shows" in text and "cannot fetch that state" in text
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["no-git", "nested-in-other-repo"])
+def test_git_state__project_not_its_own_repository__cannot_name_its_state(
+    project: Project, monkeypatch: pytest.MonkeyPatch, nested: bool
+) -> None:
+    if nested:  # a clean, pushed repository around the Project folder must not be adopted
+        _own_repo(project.root.parent, pushed=True, dirty=False)
+    _real_for_the_project(monkeypatch)
+    expected = "cannot name the state of your Project folder"
+    assert expected in _text(build_export(project))
+
+    assert expected in " ".join(_after_export(project))
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"pushed": True, "dirty": True}, {"pushed": False, "dirty": False}, None],
+    ids=["uncommitted", "unpushed", "no-git"],
+)
+@pytest.mark.parametrize(
+    "code_state",
+    [{"dirty": True, "commit_is_pushed": False}, {"dirty": False, "commit_is_pushed": True}],
+    ids=["code-dirty-unpushed", "code-clean-pushed"],
+)
+def test_git_state__each_warning__says_what_the_manifest_records(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, bool] | None,
+    code_state: dict[str, bool],
+) -> None:
+    if kwargs is not None:
+        _own_repo(project.root, **kwargs)
+    code = export_module._code_root()  # the installed code, stubbed to ``code_state``
+    monkeypatch.setattr(
+        export_module,
+        "_git_provenance",
+        lambda cwd: {**CLEAN, **code_state} if cwd == code else REAL_PROVENANCE(cwd),
+    )
+    warnings = _after_export(project)
+    manifest = json.loads((project.root / "exports" / "manifest.json").read_text("utf-8"))
+
+    assert manifest["dirty"] is code_state["dirty"]
+    assert manifest["commit_is_pushed"] is code_state["commit_is_pushed"]
+    assert warnings
+    for w in warnings:
+        assert f"commit {manifest['git_commit'][:12]}" in w
+        assert ("with" if manifest["dirty"] else "without") + " uncommitted changes" in w
+        assert (
+            "on a remote branch" if manifest["commit_is_pushed"] else "on no remote branch"
+        ) in w
+
+
+def test_git_state__clean__shows_no_warning(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _own_repo(project.root, pushed=True, dirty=False)
+    _real_for_the_project(monkeypatch)
+
     assert "Warning" not in _text(build_export(project))
+    assert _after_export(project) == ()
 
 
 def test_export__gui__performs_no_commit_or_push(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Guard (passes on main too): no git command that changes a repository is run."""
+    _own_repo(project.root, pushed=False, dirty=True)  # real git, run before the guard is set
     real = subprocess.run
+    forbidden = {"commit", "push", "add", "tag", "reset", "checkout"}
 
     def guarded(cmd: Any, *a: Any, **k: Any) -> Any:
-        if cmd[:1] == ["git"] and cmd[1:2] and cmd[1] in {"commit", "push", "add", "tag"}:
+        if cmd[:1] == ["git"] and cmd[1:2] and cmd[1] in forbidden:
             raise AssertionError(f"the GUI ran git {cmd[1]}")
         return real(cmd, *a, **k)
 
