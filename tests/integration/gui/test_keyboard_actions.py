@@ -265,6 +265,8 @@ def test_flow__every_action__is_native_and_labelled(tmp_path: Path) -> None:
         build_flow(project),
         {
             "Refresh the Flow counts",
+            "Run the cascade",
+            "Cancel the cascade",
             "Reviewer name",
             "Records the search missed: one line each, title then year then DOI (DOI optional)",
             "Add these as candidates",

@@ -25,13 +25,19 @@ NOTE = (
     "These numbers are worked out again from the store and the Decision log each time. "
     "A Registered record has its own line and is never added to Identified."
 )
+CASCADE_POLL_MS = 1000
+CASCADE_NOTE = (
+    "A Record the search missed needs a captured OpenAlex response before you can register it. "
+    "This step asks OpenAlex for the candidates below, then rebuilds the store. "
+    "It asks Scopus for nothing. Registering never starts it."
+)
 REBUILD_NOTE = (
     "It is counted after the next build: open the Build step and rebuild the store. "
     "Registering starts nothing else."
 )
 
 
-def _sentence(exc: Exception) -> str:
+def _sentence(exc: BaseException) -> str:
     msg: UserMessage = service.translate(exc)
     return f"{msg.sentence} {msg.next_step}"
 
@@ -171,6 +177,53 @@ def build_flow(project: Project, session: service.Session | None = None) -> pn.C
         refresh_candidates()
         show_counts()
 
+    cascade_refusal = fl.cascade_refusal(project)
+    run = pn.widgets.Button(name="Run the cascade", disabled=cascade_refusal is not None)
+    stop = pn.widgets.Button(name="Cancel the cascade", disabled=True)
+    cascade_state = pn.pane.Markdown("")
+    bar = pn.indicators.Progress(name="Cascade progress", active=True, visible=False)
+    summary: list[str | None] = [None]  # the summary is read from disk once per finished run
+
+    def show_cascade(*_: object) -> None:
+        if cascade_refusal is not None:
+            cascade_state.object = f"**{cascade_refusal}**"
+            return
+        s = fl.cascade_status(project)
+        run.disabled = s.running
+        stop.disabled = not s.running or s.cancelling
+        bar.visible = s.running
+        if s.running:
+            summary[0] = None
+            head = "Stopping the cascade" if s.cancelling else "Running the cascade"
+            cascade_state.object = f"**{head}.** {s.progress or ''}"
+        elif s.outcome == "done":
+            if summary[0] is None:
+                summary[0] = fl.cascade_summary(project)
+                refresh_candidates()
+                show_counts()
+            cascade_state.object = summary[0]
+        elif s.outcome == "cancelled":
+            cascade_state.object = (
+                "**Stopped as you asked.** Responses already captured were kept. "
+                "The store may not have been rebuilt: open the Build step and rebuild it "
+                "before you register."
+            )
+        elif s.outcome == "failed" and s.error is not None:
+            cascade_state.object = f"**The cascade failed.** {_sentence(s.error)}"
+
+    def on_cascade(_: object) -> None:
+        try:
+            with service.session_for(project, session) as active:
+                fl.start_cascade(active)
+        except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
+            cascade_state.object = f"**{_sentence(exc)}**"
+            return
+        show_cascade()
+
+    def on_cancel_cascade(_: object) -> None:
+        fl.cancel_cascade(project)
+        show_cascade()
+
     refusal = fl.registration_refusal(project)
     if refusal:
         message.object = f"**{refusal}**"
@@ -181,14 +234,24 @@ def build_flow(project: Project, session: service.Session | None = None) -> pn.C
     refresh.on_click(show_counts)
     add.on_click(on_add)
     register.on_click(on_register)
+    run.on_click(on_cascade)
+    stop.on_click(on_cancel_cascade)
     show_counts()
     refresh_candidates()
+    show_cascade()
+    if pn.state.curdoc is not None:  # a served page polls; a headless screen has no event loop
+        pn.state.add_periodic_callback(show_cascade, period=CASCADE_POLL_MS)
     return pn.Column(
         pn.pane.Markdown("## Flow counts"),
         pn.pane.Markdown(NOTE),
         counts_message,
         counts_pane,
         refresh,
+        pn.pane.Markdown("## Get the OpenAlex responses for your candidates"),
+        pn.pane.Markdown(CASCADE_NOTE),
+        cascade_state,
+        bar,
+        pn.Row(run, stop),
         pn.pane.Markdown("## Register a Record the search missed"),
         reviewer,
         paste,
