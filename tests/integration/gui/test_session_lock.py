@@ -45,6 +45,7 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
         "start_openalex_capture": lambda: oal.start_openalex_capture(
             session, budget=1, confirmed=True
         ),
+        "start_cascade": lambda: fl.start_cascade(session),
         "delete_store": lambda: dsl.delete_store(session, confirmed=True),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
         "add_candidates": lambda: fl.add_candidates(session, "T, 2020", reviewer="Ada"),
