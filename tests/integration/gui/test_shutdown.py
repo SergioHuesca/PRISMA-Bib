@@ -301,9 +301,9 @@ def test_serve__signal_while_the_server_is_created__still_shuts_down_and_restore
     def create_then_signal(*_args: Any) -> Any:
         signal.raise_signal(signal.SIGTERM)
 
-    def spy(wait: float) -> None:
+    def spy(wait: float, **kwargs: Any) -> None:
         shut_down.append(wait)
-        real_shut_down(wait)
+        real_shut_down(wait, **kwargs)
 
     monkeypatch.setattr(launch, "_create_server", create_then_signal)
     monkeypatch.setattr(launch, "_shut_down", spy)
@@ -312,6 +312,26 @@ def test_serve__signal_while_the_server_is_created__still_shuts_down_and_restore
 
     assert escaped is None and len(shut_down) == 1
     assert not (project.root / service.LOCK_NAME).exists()
+    assert _handlers() == before
+
+
+def test_serve__server_creation_fails__no_stopped_line_and_the_error_propagates(
+    project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from prismabib.errors import ConfigError
+    from prismabib.gui import launch
+
+    before = _handlers()
+
+    def no_port(*_args: Any) -> Any:
+        raise ConfigError("No free port on 127.0.0.1.")
+
+    monkeypatch.setattr(launch, "_create_server", no_port)
+
+    escaped = _serve_here(run=lambda _server: None)
+
+    assert isinstance(escaped, ConfigError)
+    assert "has stopped" not in capsys.readouterr().out
     assert _handlers() == before
 
 
