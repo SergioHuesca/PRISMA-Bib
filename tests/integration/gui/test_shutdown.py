@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import queue
+import signal
+import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -156,3 +161,189 @@ def test_serve__nothing_running__says_it_stopped_and_frees_the_lock(
     assert not errors
     assert not (project.root / service.LOCK_NAME).exists()
     assert "stopped" in capsys.readouterr().out.lower()
+
+
+# --- a system stop (SIGTERM, SIGHUP) takes the same road as Ctrl+C --------------------------------
+
+_CHILD = """
+import asyncio, sys, threading
+from pathlib import Path
+from prismabib.errors import OperationCancelled
+from prismabib.gui import service, tasks
+from prismabib.gui.launch import serve
+
+root, capture = Path(sys.argv[1]), sys.argv[2] == "capture"
+project = service.open_session("demo", root=root).project
+if capture:
+    started = threading.Event()
+
+    def work(cancel, report):
+        started.set()
+        cancel.wait(30)
+        raise OperationCancelled("stopped")
+
+    tasks.runner_for(project).start("The Scopus capture", work)
+    assert started.wait(10)
+asyncio.set_event_loop(asyncio.new_event_loop())
+serve(port=0, no_browser=True)
+"""
+
+
+def _stop_child(project: Project, sig: int, *, capture: bool) -> tuple[int | None, str]:
+    """Run the launcher in a child on its main thread, send ``sig``; return (exit code, output)."""
+    mode = "capture" if capture else "idle"
+    child = subprocess.Popen(
+        [sys.executable, "-u", "-c", _CHILD, str(project.root.parent), mode],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    lines: queue.Queue[str] = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(x) for x in child.stdout or ()], daemon=True).start()
+    seen = ""
+    try:
+        while "is running at" not in seen:  # a hung child fails here, it does not hang the run
+            seen += lines.get(timeout=120)
+        os.kill(child.pid, sig)
+        child.wait(timeout=120)
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(30)
+    while not lines.empty():
+        seen += lines.get()
+    return child.returncode, seen
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="os.kill(SIGTERM) ends the process on Windows")
+@pytest.mark.parametrize("capture", [True, False])
+def test_serve__sigterm__frees_the_lock_and_says_it_stopped(
+    project: Project, capture: bool
+) -> None:
+    code, out = _stop_child(project, signal.SIGTERM, capture=capture)
+
+    assert code == 0, out
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert "prismabib has stopped" in out
+    assert ("pages already fetched" in out) is capture
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="no SIGHUP on this platform")
+def test_serve__sighup__frees_the_lock_and_says_it_stopped(project: Project) -> None:
+    code, out = _stop_child(project, signal.SIGHUP, capture=True)  # type: ignore[attr-defined,unused-ignore]
+
+    assert code == 0, out
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert "prismabib has stopped" in out
+
+
+def _handlers() -> dict[signal.Signals, Any]:
+    return {s: signal.getsignal(s) for s in signal.valid_signals()}
+
+
+def test_serve__on_the_main_thread__handlers_are_installed_during_and_restored_after(
+    project: Project,
+) -> None:
+    before = _handlers()
+    during: list[Any] = []
+
+    def run(_server: Any) -> None:
+        during.append(signal.getsignal(signal.SIGTERM))
+        raise KeyboardInterrupt
+
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    serve(port=0, no_browser=True, run=run)
+
+    assert during[0] is not before[signal.SIGTERM]  # installed on every platform
+    assert _handlers() == before
+
+
+def _serve_here(**kwargs: Any) -> BaseException | None:
+    """``serve`` on this (main) thread; return what escaped it, so a stray interrupt fails the test."""
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    try:
+        serve(port=0, no_browser=True, **kwargs)
+    except BaseException as exc:  # noqa: BLE001 - the test asserts on it
+        return exc
+    return None
+
+
+def test_serve__signal_during_the_shutdown__does_not_interrupt_it_and_the_lock_is_freed(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service.open_session("demo", root=project.root.parent)
+    before = _handlers()
+    real_stop_all = tasks.stop_all
+
+    def stubborn_stop_all(wait: float) -> list[str]:
+        signal.raise_signal(signal.SIGTERM)  # runs the Python handler synchronously
+        return real_stop_all(wait)
+
+    monkeypatch.setattr(tasks, "stop_all", stubborn_stop_all)
+
+    escaped = _serve_here(run=lambda _server: None)  # the Stop button: run returns normally
+
+    assert escaped is None
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert _handlers() == before
+
+
+def test_serve__signal_while_the_server_is_created__still_shuts_down_and_restores_handlers(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.gui import launch
+
+    service.open_session("demo", root=project.root.parent)
+    before = _handlers()
+    shut_down: list[float] = []
+    real_shut_down = launch._shut_down
+
+    def create_then_signal(*_args: Any) -> Any:
+        signal.raise_signal(signal.SIGTERM)
+
+    def spy(wait: float, **kwargs: Any) -> None:
+        shut_down.append(wait)
+        real_shut_down(wait, **kwargs)
+
+    monkeypatch.setattr(launch, "_create_server", create_then_signal)
+    monkeypatch.setattr(launch, "_shut_down", spy)
+
+    escaped = _serve_here(run=lambda _server: None)
+
+    assert escaped is None and len(shut_down) == 1
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert _handlers() == before
+
+
+def test_serve__server_creation_fails__no_stopped_line_and_the_error_propagates(
+    project: Project, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from prismabib.errors import ConfigError
+    from prismabib.gui import launch
+
+    before = _handlers()
+
+    def no_port(*_args: Any) -> Any:
+        raise ConfigError("No free port on 127.0.0.1.")
+
+    monkeypatch.setattr(launch, "_create_server", no_port)
+
+    escaped = _serve_here(run=lambda _server: None)
+
+    assert isinstance(escaped, ConfigError)
+    assert "has stopped" not in capsys.readouterr().out
+    assert _handlers() == before
+
+
+def test_serve__on_a_worker_thread__installs_no_handler(project: Project) -> None:
+    before = _handlers()
+    during: list[Any] = []
+
+    def run(_server: Any) -> None:
+        during.append(_handlers())
+        raise KeyboardInterrupt
+
+    thread, _urls, errors = _serve(run)
+    thread.join(60)
+
+    assert not errors and during == [before]

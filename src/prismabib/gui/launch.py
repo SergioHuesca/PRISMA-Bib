@@ -13,7 +13,9 @@ running task, waits a bounded time for them, and releases the Project locks it h
 from __future__ import annotations
 
 import ipaddress
+import signal
 import socket
+import threading
 import webbrowser
 from collections.abc import Callable
 from functools import partial
@@ -119,10 +121,11 @@ def _create_server(
     raise ConfigError(f"No free port on {host}. Close a program that holds ports and try again.")
 
 
-def _shut_down(wait: float) -> None:
+def _shut_down(wait: float, *, say_stopped: bool = True) -> None:
     """Ask running tasks to stop, wait for them, and release the Project locks, saying what happens.
 
     A lock whose task is still running is released the moment that task ends, never earlier.
+    ``say_stopped=False`` leaves out the success line (the app failed to start; the error says so).
     """
     from prismabib.gui import service, tasks
 
@@ -141,8 +144,52 @@ def _shut_down(wait: float) -> None:
             f"{', '.join(late)} did not stop within {wait:g} seconds. The app exits when it "
             "does, and its Project stays locked until then."
         )
-    else:
+    elif say_stopped:
         typer.echo("prismabib has stopped. Nothing running was left behind.")
+
+
+def _no_op() -> None:
+    """Stand-in for ``restore``/``mute`` until the handlers are installed."""
+
+
+def install_signal_handlers() -> tuple[Callable[[], None], Callable[[], None]]:
+    """Make SIGTERM (and SIGHUP where it exists) stop the app like Ctrl+C; return (undo, mute).
+
+    ``mute`` makes only the SIGTERM and SIGHUP handlers do nothing: ``serve`` calls it when the
+    shutdown begins, so one of those signals arriving then (after Stop, say) cannot interrupt
+    it. Ctrl+C (SIGINT) is deliberately left alone, so a second Ctrl+C can still force-quit a
+    stuck shutdown; the Project lock may then stay until the next window takes over. Python
+    refuses a handler off the main thread, so there this installs nothing.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return (lambda: None), (lambda: None)
+    stopping = False
+
+    def handler(_signum: int, _frame: object) -> None:
+        nonlocal stopping
+        # Only SIGTERM and SIGHUP are muted once the shutdown begins; SIGINT is not ours, so a
+        # second Ctrl+C still interrupts (the escape hatch).
+        if not stopping:
+            stopping = True
+            raise KeyboardInterrupt
+
+    def mute() -> None:
+        nonlocal stopping
+        stopping = True
+
+    # SIGHUP is not defined on Windows. Panel sets its own SIGINT handler when the server is
+    # created, so SIGINT is saved here too and put back with the rest.
+    names = ("SIGINT", "SIGTERM", "SIGHUP")
+    found = {s: signal.getsignal(s) for n in names if (s := getattr(signal, n, None))}
+    for sig in found:
+        if sig != signal.SIGINT:
+            signal.signal(sig, handler)
+
+    def restore() -> None:
+        for sig, previous in found.items():
+            signal.signal(sig, previous if previous is not None else signal.SIG_DFL)
+
+    return restore, mute
 
 
 def serve(
@@ -163,7 +210,9 @@ def serve(
 
     When ``run`` returns (the Stop button, Ctrl+C or a closed terminal) every running task is
     asked to stop, joined for up to ``shutdown_wait`` seconds, and the Project locks are released.
-    ``open_browser``, ``bind`` and ``run`` are seams for tests. Returns the URL it served.
+    Once the shutdown begins only SIGTERM and SIGHUP are muted; Ctrl+C is deliberately left
+    alone, so a second Ctrl+C can force-quit a stuck shutdown (the lock may then stay until the
+    next window takes over). ``open_browser``, ``bind`` and ``run`` are seams for tests. Returns the URL it served.
     """
     host = require_loopback(host)
     if root is not None:
@@ -175,19 +224,31 @@ def serve(
             "The app needs the `gui` extra. Install it with: "
             'uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"'
         ) from exc
-    server = _create_server(partial(create_server, root=root), host, port, bind)
-    # "Stop the app": the loop stops, run returns, and serve returns.
-    stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
-    url = f"http://{host}:{server.port}/"
-    typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
+    # Before the server: it sets a SIGINT handler of its own.
+    restore = mute = _no_op
+    url = ""  # stays empty when a stop arrives before the server exists
+    failed = False
     try:
-        if not no_browser:
-            open_browser(url)
-        run(server)
-    except KeyboardInterrupt:  # Ctrl+C is a normal way to stop
-        pass
+        restore, mute = install_signal_handlers()  # inside the try: restore runs on any exit
+        try:
+            server = _create_server(partial(create_server, root=root), host, port, bind)
+            # "Stop the app": the loop stops, run returns, and serve returns.
+            stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
+            url = f"http://{host}:{server.port}/"
+            typer.echo(f"prismabib is running at {url} (Ctrl+C to stop)")
+            if not no_browser:
+                open_browser(url)
+            run(server)
+        except KeyboardInterrupt:  # Ctrl+C or a system stop is a normal way to stop
+            pass
+        except ConfigError:  # e.g. no free port: still release locks, but do not claim a stop
+            failed = True
+            raise
+        finally:
+            mute()  # SIGTERM/SIGHUP now must not interrupt the shutdown, which frees the locks
+            _shut_down(shutdown_wait, say_stopped=not failed)
     finally:
-        _shut_down(shutdown_wait)
+        restore()
     return url
 
 
