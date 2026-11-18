@@ -258,6 +258,63 @@ def test_serve__on_the_main_thread__handlers_are_installed_during_and_restored_a
     assert _handlers() == before
 
 
+def _serve_here(**kwargs: Any) -> BaseException | None:
+    """``serve`` on this (main) thread; return what escaped it, so a stray interrupt fails the test."""
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    try:
+        serve(port=0, no_browser=True, **kwargs)
+    except BaseException as exc:  # noqa: BLE001 - the test asserts on it
+        return exc
+    return None
+
+
+def test_serve__signal_during_the_shutdown__does_not_interrupt_it_and_the_lock_is_freed(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service.open_session("demo", root=project.root.parent)
+    before = _handlers()
+    real_stop_all = tasks.stop_all
+
+    def stubborn_stop_all(wait: float) -> list[str]:
+        signal.raise_signal(signal.SIGTERM)  # runs the Python handler synchronously
+        return real_stop_all(wait)
+
+    monkeypatch.setattr(tasks, "stop_all", stubborn_stop_all)
+
+    escaped = _serve_here(run=lambda _server: None)  # the Stop button: run returns normally
+
+    assert escaped is None
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert _handlers() == before
+
+
+def test_serve__signal_while_the_server_is_created__still_shuts_down_and_restores_handlers(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prismabib.gui import launch
+
+    service.open_session("demo", root=project.root.parent)
+    before = _handlers()
+    shut_down: list[float] = []
+    real_shut_down = launch._shut_down
+
+    def create_then_signal(*_args: Any) -> Any:
+        signal.raise_signal(signal.SIGTERM)
+
+    def spy(wait: float) -> None:
+        shut_down.append(wait)
+        real_shut_down(wait)
+
+    monkeypatch.setattr(launch, "_create_server", create_then_signal)
+    monkeypatch.setattr(launch, "_shut_down", spy)
+
+    escaped = _serve_here(run=lambda _server: None)
+
+    assert escaped is None and len(shut_down) == 1
+    assert not (project.root / service.LOCK_NAME).exists()
+    assert _handlers() == before
+
+
 def test_serve__on_a_worker_thread__installs_no_handler(project: Project) -> None:
     before = _handlers()
     during: list[Any] = []
