@@ -28,6 +28,7 @@ from tests.integration.gui.helpers import hold_at
 from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
 from tests.integration.gui.test_screening import make_project
+from tests.prisma_helpers import run_git
 
 pytestmark = pytest.mark.integration
 
@@ -106,23 +107,17 @@ def test_status__while_exporting__shows_progress_in_words(
     assert "Preparing the figures and tables." in text
 
 
-def _git(folder: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", *args],
-        cwd=folder,
-        check=True,
-        capture_output=True,
-    )
-
-
 def _own_repo(folder: Path, *, pushed: bool, dirty: bool) -> None:
-    """Make ``folder`` its own repository; everything in it is ignored but the .gitignore."""
-    _git(folder, "init")
+    """Make ``folder`` its own repository; everything in it is ignored but the .gitignore.
+
+    ``run_git`` ignores the developer's git config (gpgsign, hooksPath, defaultBranch).
+    """
+    run_git(folder, "init", "-b", "main")
     (folder / ".gitignore").write_text("*\n", encoding="utf-8")
-    _git(folder, "add", "-f", ".gitignore")
-    _git(folder, "commit", "-m", "x")
+    run_git(folder, "add", "-f", ".gitignore")
+    run_git(folder, "-c", "commit.gpgsign=false", "commit", "--no-verify", "-m", "x")
     if pushed:
-        _git(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
+        run_git(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
     if dirty:
         (folder / ".gitignore").write_text("*\n# edit\n", encoding="utf-8")
 
@@ -194,29 +189,37 @@ def test_git_state__project_not_its_own_repository__cannot_name_its_state(
     [{"pushed": True, "dirty": True}, {"pushed": False, "dirty": False}, None],
     ids=["uncommitted", "unpushed", "no-git"],
 )
+@pytest.mark.parametrize(
+    "code_state",
+    [{"dirty": True, "commit_is_pushed": False}, {"dirty": False, "commit_is_pushed": True}],
+    ids=["code-dirty-unpushed", "code-clean-pushed"],
+)
 def test_git_state__each_warning__says_what_the_manifest_records(
-    project: Project, monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, bool] | None
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, bool] | None,
+    code_state: dict[str, bool],
 ) -> None:
     if kwargs is not None:
         _own_repo(project.root, **kwargs)
-    code = export_module._code_root()  # the installed code: dirty and unpushed
+    code = export_module._code_root()  # the installed code, stubbed to ``code_state``
     monkeypatch.setattr(
         export_module,
         "_git_provenance",
-        lambda cwd: (
-            {**CLEAN, "dirty": True, "commit_is_pushed": False}
-            if cwd == code
-            else REAL_PROVENANCE(cwd)
-        ),
+        lambda cwd: {**CLEAN, **code_state} if cwd == code else REAL_PROVENANCE(cwd),
     )
     warnings = _after_export(project)
     manifest = json.loads((project.root / "exports" / "manifest.json").read_text("utf-8"))
 
+    assert manifest["dirty"] is code_state["dirty"]
+    assert manifest["commit_is_pushed"] is code_state["commit_is_pushed"]
     assert warnings
     for w in warnings:
         assert f"commit {manifest['git_commit'][:12]}" in w
         assert ("with" if manifest["dirty"] else "without") + " uncommitted changes" in w
-        assert "on no remote branch" in w and not manifest["commit_is_pushed"]
+        assert (
+            "on a remote branch" if manifest["commit_is_pushed"] else "on no remote branch"
+        ) in w
 
 
 def test_git_state__clean__shows_no_warning(
