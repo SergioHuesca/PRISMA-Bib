@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import panel as pn
@@ -78,11 +79,18 @@ def install_page_css() -> None:
         pn.config.raw_css = [*pn.config.raw_css, palette.PAGE_CSS]
 
 
-def create_server(host: str, port: int) -> Any:
-    """Bind ``host:port`` and return the not-yet-running Panel server."""
+def create_server(host: str, port: int, root: Path | None = None) -> Any:
+    """Bind ``host:port`` and return the not-yet-running Panel server.
+
+    ``root`` is the Projects folder for this run; ``None`` means the saved one.
+    """
     install_page_css()
+
+    def app() -> Any:  # a plain function: Panel calls only functions, not a functools.partial
+        return build_app(root)
+
     server = get_server(
-        build_app,
+        app,
         port=port,
         address=host,
         websocket_origin=sorted(allowed_hosts(host, port)),

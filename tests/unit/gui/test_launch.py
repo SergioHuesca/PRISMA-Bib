@@ -6,12 +6,16 @@ import re
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from prismabib.cli import app
+from prismabib.doctor_checks import Check
 from prismabib.errors import ConfigError
+from prismabib.gui import launch
 from prismabib.gui.launch import (
     _create_server,  # pyright: ignore[reportPrivateUsage]
     is_allowed,
@@ -19,6 +23,7 @@ from prismabib.gui.launch import (
     require_loopback,
     serve,
 )
+from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
 
 runner = CliRunner()
 #: Help and error text is drawn by rich, which colours it and wraps it to the terminal width on
@@ -195,3 +200,113 @@ def test_gui_command__extra_not_installed__says_how_to_install_it() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=False, timeout=120
     )
     assert done.returncode == 0, done.stderr
+
+
+# -- --root (ticket #394) -----------------------------------------------------------------------
+
+
+class _FakeServer:
+    """Enough of a Panel server for ``serve`` to run to its end without binding anything."""
+
+    port = 4321
+    io_loop = SimpleNamespace(add_callback=lambda *_a: None, stop=lambda: None)
+
+    def run_until_shutdown(self) -> None:
+        """Return at once, as if the researcher had stopped the app."""
+
+
+@pytest.fixture
+def served(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[list[Path | None], Path]:
+    """Run ``prismabib gui`` with no real server; return the roots the app was built with."""
+    roots: list[Path | None] = []
+
+    def create_server(_host: str, _port: int, root: Path | None = None) -> _FakeServer:
+        roots.append(root)
+        return _FakeServer()
+
+    settings = tmp_path / "user" / "settings.env"
+    settings.parent.mkdir()
+    settings.write_text("PRISMABIB_FIRST_RUN_SEEN=1\n", encoding="utf-8")
+    monkeypatch.setenv(USER_FILE_OVERRIDE_VAR, str(settings))
+    monkeypatch.setitem(
+        sys.modules, "prismabib.gui.server", SimpleNamespace(create_server=create_server)
+    )
+    monkeypatch.setattr(launch, "pick_port", lambda _h, p, _b=None: p)
+    return roots, settings
+
+
+@pytest.mark.unit
+def test_gui_command__root_given__the_app_opens_that_projects_folder(
+    served: tuple[list[Path | None], Path], tmp_path: Path
+) -> None:
+    roots, _ = served
+    folder = tmp_path / "mine"
+    folder.mkdir()
+
+    result = runner.invoke(app, ["gui", "--no-browser", "--root", str(folder)], env=_PLAIN_ENV)
+
+    assert result.exit_code == 0, result.output
+    assert roots == [folder]
+
+
+@pytest.mark.unit
+def test_gui_command__root_given__the_settings_file_is_unchanged(
+    served: tuple[list[Path | None], Path], tmp_path: Path
+) -> None:
+    _, settings = served
+    before = settings.read_bytes()
+    folder = tmp_path / "mine"
+    folder.mkdir()
+
+    result = runner.invoke(app, ["gui", "--no-browser", "--root", str(folder)], env=_PLAIN_ENV)
+
+    assert result.exit_code == 0, result.output
+    assert settings.read_bytes() == before
+
+
+@pytest.mark.unit
+def test_gui_command__no_root__the_app_gets_none_so_the_saved_folder_applies(
+    served: tuple[list[Path | None], Path],
+) -> None:
+    roots, _ = served
+
+    result = runner.invoke(app, ["gui", "--no-browser"], env=_PLAIN_ENV)
+
+    assert result.exit_code == 0, result.output
+    assert roots == [None]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("problem", ["missing", "unwritable"])
+def test_gui_command__root_unusable__one_sentence_refusal_and_no_server(
+    served: tuple[list[Path | None], Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    problem: str,
+) -> None:
+    roots, _ = served
+    folder = tmp_path / "gone"
+    if problem == "unwritable":
+        folder.mkdir()
+        monkeypatch.setattr(
+            launch, "projects_root_check", lambda _root: Check("FAIL", "not writable")
+        )
+
+    result = runner.invoke(app, ["gui", "--no-browser", "--root", str(folder)], env=_PLAIN_ENV)
+
+    assert result.exit_code != 0
+    message = " ".join(_plain(result.output).replace("│", " ").split())
+    assert folder.name in message
+    assert message.count(". ") == 0 and message.endswith(".")  # one sentence
+    assert roots == []  # no server was created
+
+
+@pytest.mark.unit
+def test_gui_command__help__root_is_described_with_the_words_the_other_commands_use() -> None:
+    from prismabib.cli import _ROOT_OPTION  # pyright: ignore[reportPrivateUsage]
+
+    text = _plain(runner.invoke(app, ["gui", "--help"], env=_PLAIN_ENV).output)
+    words = " ".join(text.replace("│", " ").split())
+
+    assert "--root" in text
+    assert " ".join(str(_ROOT_OPTION.help).split()) in words

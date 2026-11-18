@@ -16,10 +16,13 @@ import ipaddress
 import socket
 import webbrowser
 from collections.abc import Callable
+from functools import partial
+from pathlib import Path
 from typing import Annotated, Any, Final
 
 import typer
 
+from prismabib.doctor_checks import projects_root_check
 from prismabib.errors import ConfigError
 from prismabib.gui import stop_model
 
@@ -76,6 +79,18 @@ def pick_port(host: str, preferred: int, bind: Callable[[str, int], int] = _try_
         except OSError:
             continue
     raise ConfigError(f"No free port on {host}. Close a program that holds ports and try again.")
+
+
+def require_usable_root(root: Path) -> Path:
+    """Return ``root`` as an absolute path, or refuse (one sentence) a folder the app cannot use."""
+    root = root.expanduser().absolute()
+    if not root.is_dir():
+        raise ConfigError(f"The Projects folder {root} does not exist; choose a folder that does.")
+    if projects_root_check(root).level == "FAIL":
+        raise ConfigError(
+            f"prismabib cannot write to the Projects folder {root}; choose a folder you can write to."
+        )
+    return root
 
 
 def _run_forever(server: Any) -> None:
@@ -135,6 +150,7 @@ def serve(
     port: int = PREFERRED_PORT,
     *,
     no_browser: bool = False,
+    root: Path | None = None,
     open_browser: Callable[[str], object] = webbrowser.open,
     bind: Callable[[str, int], int] = _try_bind,
     run: Callable[[Any], None] = _run_forever,
@@ -142,11 +158,16 @@ def serve(
 ) -> str:
     """Start the app on a loopback address, open the browser unless told not to, and block.
 
+    ``root`` is the Projects folder for this run: it wins over the saved folder, is never saved,
+    and is refused (before any server exists) when it is missing or not writable.
+
     When ``run`` returns (the Stop button, Ctrl+C or a closed terminal) every running task is
     asked to stop, joined for up to ``shutdown_wait`` seconds, and the Project locks are released.
     ``open_browser``, ``bind`` and ``run`` are seams for tests. Returns the URL it served.
     """
     host = require_loopback(host)
+    if root is not None:
+        root = require_usable_root(root)
     try:
         from prismabib.gui.server import create_server
     except ImportError as exc:
@@ -154,7 +175,7 @@ def serve(
             "The app needs the `gui` extra. Install it with: "
             'uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"'
         ) from exc
-    server = _create_server(create_server, host, port, bind)
+    server = _create_server(partial(create_server, root=root), host, port, bind)
     # "Stop the app": the loop stops, run returns, and serve returns.
     stop_model.install_stopper(lambda: server.io_loop.add_callback(server.io_loop.stop))
     url = f"http://{host}:{server.port}/"
@@ -170,8 +191,8 @@ def serve(
     return url
 
 
-def register_gui_command(app: typer.Typer) -> None:
-    """Add ``gui`` to ``app`` (called once from ``cli.py``)."""
+def register_gui_command(app: typer.Typer, root_option: Any) -> None:
+    """Add ``gui`` to ``app`` (called once from ``cli.py``), with the shared ``--root`` option."""
 
     @app.command("gui")
     def gui(
@@ -182,10 +203,15 @@ def register_gui_command(app: typer.Typer) -> None:
             int,
             typer.Option(help="Preferred port. A free one is chosen when it is busy."),
         ] = PREFERRED_PORT,
+        root: Path | None = None,
     ) -> None:
         """Open the local app in your browser. It serves on 127.0.0.1 only."""
         # Imported here: cli.py imports this module while it is still being defined.
         from prismabib.cli import reporting_errors
 
         with reporting_errors():
-            serve(port=port, no_browser=no_browser)
+            serve(port=port, no_browser=no_browser, root=root)
+
+    # The annotations are strings (``from __future__``) and the option is a parameter, so attach
+    # the shared definition directly; typer reads ``__annotations__`` when the command is built.
+    gui.__annotations__["root"] = Annotated[Path | None, root_option]
