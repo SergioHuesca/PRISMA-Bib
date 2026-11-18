@@ -12,7 +12,9 @@ from prismabib.project import Project
 from prismabib.stage import PrismaStage
 
 POLL_MS = 250
-STAGES = {"Title and abstract": PrismaStage.TITLE_ABSTRACT, "Full text": PrismaStage.FULLTEXT}
+# Panel 1.9.4 cannot disable one radio option, so full text is not offered (#390 item 5).
+STAGES = {"Title and abstract": PrismaStage.TITLE_ABSTRACT}
+FULLTEXT_NOTE = "Full text screening (not in this version)"
 
 
 class ScreeningStep(pn.Column):
@@ -89,6 +91,7 @@ def build_screening(project: Project, session: service.Session | None = None) ->
         reviewer,
         pn.pane.Markdown(f"_{sl.ACTOR_LABEL}._"),
         stage,
+        pn.pane.Markdown(f"_{FULLTEXT_NOTE}._"),
         blind,
         start,
         message,
