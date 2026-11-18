@@ -220,7 +220,8 @@ def start_cascade(session: Session) -> None:
     def work(cancel: threading.Event, report: Any) -> list[str]:
         def emit(line: str) -> None:
             report(line)
-            # ponytail: the library has no cancel hook, so a report line is the only stop point.
+            # ponytail: no cancel hook in the library; a report line is the only (coarse) stop
+            # point, so a stop may land before or after the store rebuild. The GUI text says so.
             if cancel.is_set():
                 raise CaptureCancelledError("The cascade was stopped.")
 
@@ -244,11 +245,13 @@ def cascade_summary(project: Project) -> str:
             sentences.append(
                 f"{label} now has the OpenAlex response it needs. You can register it."
             )
-        else:
+        elif response_options(project.raw_dir, view, "near_confirmed").options:
             sentences.append(
-                f"{label} still has no OpenAlex response that matches it exactly. "
-                "It cannot be registered yet."
+                f"{label} has a close match in the OpenAlex responses, not an exact one. "
+                "Open Register and confirm the match yourself if it is the same work."
             )
+        else:
+            sentences.append(f"{label} still has no OpenAlex response that matches it.")
     return " ".join(sentences)
 
 

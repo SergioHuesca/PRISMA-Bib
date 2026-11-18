@@ -360,11 +360,16 @@ def test_cascade_control__running__shows_progress_and_cancel_stops_it(
     assert not _button(build_flow(project), CANCEL).disabled
 
     fl.cancel_cascade(project)
+    stopping = returns_while_held(lambda: _text(build_flow(project)), release)
+    assert "Stopping the cascade" in stopping and "Running the cascade" not in stopping
     release.set()
     tasks.runner_for(project).join(30)
 
     assert fl.cascade_status(project).outcome == "cancelled"
-    assert "Stopped as you asked" in _text(build_flow(project))
+    text = _text(build_flow(project))
+    assert "Stopped as you asked" in text
+    assert "Responses already captured were kept" in text
+    assert "store may not have been rebuilt" in text and "Build step" in text
 
 
 def test_cascade_control__failure__is_a_sentence_with_the_next_step(
@@ -408,3 +413,16 @@ def test_cascade_summary__after_a_run__says_in_sentences_who_has_the_response(
     assert f"{TITLE_ONE} (2021) now has the OpenAlex response it needs" in text
     assert "Nobody Wrote This (1999) still has no OpenAlex response" in text
     assert [b for b in BANNED if b in text.lower()] == []
+
+
+def test_cascade_summary__near_match_only__points_to_register_not_cannot(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)  # the sealed response is TITLE_ONE, 2021
+    _add(project, NEAR)  # same title, year off by one: only the near rule matches
+
+    text = fl.cascade_summary(project)
+
+    assert f"{TITLE_ONE} (2022) has a close match" in text
+    assert "Open Register and confirm" in text
+    assert "cannot be registered" not in text and "now has the OpenAlex response" not in text

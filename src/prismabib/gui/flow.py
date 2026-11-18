@@ -194,7 +194,8 @@ def build_flow(project: Project, session: service.Session | None = None) -> pn.C
         bar.visible = s.running
         if s.running:
             summary[0] = None
-            cascade_state.object = f"**Running the cascade.** {s.progress or ''}"
+            head = "Stopping the cascade" if s.cancelling else "Running the cascade"
+            cascade_state.object = f"**{head}.** {s.progress or ''}"
         elif s.outcome == "done":
             if summary[0] is None:
                 summary[0] = fl.cascade_summary(project)
@@ -202,7 +203,11 @@ def build_flow(project: Project, session: service.Session | None = None) -> pn.C
                 show_counts()
             cascade_state.object = summary[0]
         elif s.outcome == "cancelled":
-            cascade_state.object = "**Stopped as you asked.** Responses already captured were kept."
+            cascade_state.object = (
+                "**Stopped as you asked.** Responses already captured were kept. "
+                "The store may not have been rebuilt: open the Build step and rebuild it "
+                "before you register."
+            )
         elif s.outcome == "failed" and s.error is not None:
             cascade_state.object = f"**The cascade failed.** {_sentence(s.error)}"
 
