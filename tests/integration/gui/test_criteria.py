@@ -16,6 +16,7 @@ from prismabib.gui import service
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
 from prismabib.gui.new_project import build_stepper
+from prismabib.gui.query_form_model import ENRICHMENT_REASON
 from prismabib.project import Project, scaffold_criteria
 from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
@@ -283,3 +284,44 @@ def test_stepper__criteria_step__shows_the_form(project: Project) -> None:
     button = next(b for b in view.select(pn.widgets.Button) if b.name.startswith("Criteria"))
     button.clicks += 1
     assert any(w.name == "Save Criteria" for w in view.select(pn.widgets.Button))
+
+
+def _scopus_project(tmp_path: Path, mode: str) -> Project:
+    return service.create_project(
+        "scopus-demo",
+        title="Demo",
+        root=tmp_path,
+        source_mode=mode,  # type: ignore[arg-type]
+        reviewer="Ada",
+    )
+
+
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_form__scopus_mode__subject_areas_is_disabled_with_the_query_screens_reason(
+    tmp_path: Path, mode: str
+) -> None:
+    view = build_criteria(_scopus_project(tmp_path, mode))
+    assert _w(view, "Include subject areas").disabled
+    assert ENRICHMENT_REASON in _text(view)
+
+
+def test_form__openalex_mode__subject_areas_stays_enabled(project: Project) -> None:  # guard
+    view = build_criteria(project)
+    assert not _w(view, "Include subject areas").disabled
+    assert ENRICHMENT_REASON not in _text(view)
+
+
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_form__scopus_mode_save__keeps_the_files_subject_areas(tmp_path: Path, mode: str) -> None:
+    project = _scopus_project(tmp_path, mode)
+    path = project.root / "criteria.yaml"
+    text = path.read_text(encoding="utf-8").replace(
+        "subject_areas: []", "subject_areas: [MEDI, PSYC]"
+    )
+    path.write_text(text, encoding="utf-8")
+    assert project.criteria.subject_areas == ["MEDI", "PSYC"]
+    view = build_criteria(project)
+    _w(view, "Include languages").value = "English"
+    _w(view, "Save Criteria").clicks += 1
+    assert project.criteria.languages == ["English"]
+    assert project.criteria.subject_areas == ["MEDI", "PSYC"]  # new check: no equivalent on main
