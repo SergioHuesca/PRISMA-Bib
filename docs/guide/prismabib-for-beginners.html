@@ -464,7 +464,85 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <h3>Tasks that stay on the command line</h3>
 <p>Some tasks are not in the app and are not walked through here. They are filling a manuscript, full-text screening and enrichment. Amending the Criteria after screening starts is also a command-line task: the app locks the Criteria once a Decision has been logged. When you reach one of these tasks, leave the app and use the command line. Getting Started has the command-line walkthrough.</p>
 </section>
-<section id="closing-en"></section>
+<section id="closing-en">
+<h2>Part 4: Problems, terms and what to keep</h2>
+<p>This part collects the problems you are most likely to meet, the words the app uses, links to the detailed pages, how to remove the app, and where your results are. You can come back to it at any time.</p>
+
+<h3>If something goes wrong</h3>
+<p>Find your problem in the first column. The second column says what to do. Each fix is a step you can take on your own.</p>
+<table>
+<thead><tr><th>Problem</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>The browser does not open after <code>prismabib gui</code>.</td><td>Copy the address that the terminal printed, paste it into your browser's address bar, and keep the terminal window open. The app runs in that window.</td></tr>
+<tr><td>The key test fails: <strong>Test OpenAlex key</strong> shows an error, or says that no key is set.</td><td>Fix the key, not the install. Copy the key again from your OpenAlex account, paste it into <strong>OpenAlex API key</strong>, press <strong>Save OpenAlex key</strong>, and then press <strong>Test OpenAlex key</strong> again.</td></tr>
+<tr><td>A capture stops before the last page.</td><td>Check your internet connection, or wait until the reset time that the screen gives for OpenAlex's daily allowance. Then press <strong>Resume the capture</strong>. The pages already fetched are kept, so you do not start again.</td></tr>
+<tr><td>The store is missing, or it is out of date after new captures.</td><td>Press <strong>Build the store</strong>, or <strong>Rebuild the store</strong> if a store already exists. A rebuild keeps your captured searches and your Decisions.</td></tr>
+</tbody>
+</table>
+
+<h3>Words the app uses</h3>
+<p>These seven terms appear on the app's screens. Each definition follows the project's glossary.</p>
+<dl>
+<dt>Project</dt>
+<dd>One systematic review, with its query, eligibility criteria, captured data and Decisions.</dd>
+<dt>Record</dt>
+<dd>As in PRISMA 2020: the title or abstract (or both) of a report indexed in a database. In the app, each Record is one such item, with a stable id.</dd>
+<dt>Decision</dt>
+<dd>One reviewer's include, exclude or unsure judgement on one Record at one screening stage. It is stored as an event that cannot be changed.</dd>
+<dt>Criteria</dt>
+<dd>The versioned, machine-readable eligibility rules of a Project. Every amendment gets a new version.</dd>
+<dt>Flow counts</dt>
+<dd>The full set of numbers in the PRISMA 2020 diagram. The app recomputes them from stored data each time, and they must satisfy the diagram's consistency equations.</dd>
+<dt>Sealed run</dt>
+<dd>A run that finished completely and whose manifest is written. A sealed run is never modified.</dd>
+<dt>Source mode</dt>
+<dd>Which databases a Project searches: OpenAlex only, Scopus only, or Scopus plus OpenAlex filling gaps. It is recorded for each Project and is fixed once a search or a Decision exists.</dd>
+</dl>
+
+<h3>Go further</h3>
+<p>These pages give more detail. Their links are relative, so they work on the documentation site. If you open this file alone from disk, the links do not work, so each page is also named in the text.</p>
+<ul>
+<li>The page named Build a Scopus Query: <a href="../how-to/build-a-query/">Build a Scopus Query</a>. It explains the query and the criteria for a Scopus project, and why each rule sits where it does.</li>
+<li>The page named Build an OpenAlex Query: <a href="../how-to/build-an-openalex-query/">Build an OpenAlex Query</a>. It is for a project with no Scopus access, and it describes the command-line route to an OpenAlex search.</li>
+<li>The page named Limitations: <a href="../methodology/limitations/">Limitations</a>. It lists what prismabib cannot do today.</li>
+<li>The page named Uninstall the App: <a href="../how-to/uninstall-the-app/">Uninstall the App</a>. It explains what stays behind when you remove the program.</li>
+</ul>
+
+<h3>Remove the app</h3>
+<p>Removing the app has two steps: stop it, then remove the program. Removing the program does not remove your Projects or your per-user settings file. Before you start, open the <strong>Settings</strong> tab and write down the Projects folder and the location of the per-user settings file. The tab shows both, and it is gone once the program is removed.</p>
+<ol>
+<li>Click <strong>Stop the app</strong> on the Home screen, or press Ctrl+C in the terminal where <code>prismabib gui</code> is running.</li>
+<li>In a terminal, type the command below and press Enter. It removes the program that the one-line install added: the <code>prismabib</code> command and the app.</li>
+</ol>
+<pre class="cmd">uv tool uninstall prismabib</pre>
+<pre class="out">[a message from uv, then the prompt]</pre>
+
+<h4>If something goes wrong</h4>
+<ul>
+<li><code>uv</code> is not recognized: open a new terminal and type the command again. If it still fails, go back to step 2 of Part 1 and check uv.</li>
+<li>The message from uv reports an error: copy the message and ask the project's maintainer on the project's GitHub Issues page.</li>
+</ul>
+
+<h3>What stays behind</h3>
+<ul>
+<li><em>Your Projects.</em> The Projects folder stays, with every Project in it: the files <code>project.toml</code> and <code>criteria.yaml</code>, the captured searches, the Decisions and the exports.</li>
+<li><em>Your per-user settings file.</em> It is a file named <code>settings.env</code>, in a folder named <code>prismabib</code> inside your user configuration folder. It holds your saved OpenAlex key, the Projects folder you chose and your reviewer name. A log file named <code>gui.log</code> sits in the same folder.</li>
+</ul>
+<p>Deleting these is your choice, and it cannot be undone. Deleting the Projects folder removes every Project in it. Deleting the settings file removes your saved keys, but a key still works at its service until you revoke it on that service's account page.</p>
+
+<h3>Where your results are, and what to keep</h3>
+<p>The citable bundle is written to the <code>exports</code> folder inside each Project folder. It holds the figures and tables, with <code>numbers.json</code> and <code>manifest.json</code> beside them.</p>
+<p>Before you delete anything, copy these to a place of your own:</p>
+<ul>
+<li>The <code>raw</code> and <code>decisions</code> folders of each Project. They hold your captured searches, including every sealed run, and your Decision log. Only the <code>store</code> folder can be rebuilt from the others, so deleting these two folders loses your captured searches and your Decisions.</li>
+<li><code>project.toml</code> and <code>criteria.yaml</code>, which hold the query and the eligibility rules, including any change you made by hand.</li>
+<li>The <code>exports</code> folder, with your citable numbers and any manuscript you keep in it.</li>
+</ul>
+<p>You do not need to back up the <code>store</code> folder, because the app can build it again. The settings file holds your keys, so keep a copy only somewhere private, or leave it out and enter the key again when you need it.</p>
+
+<h3>A dated note about the example</h3>
+<p>The worked example in Part 2 returned 108 Records on 2026-11-05, the date the repository documents. That count may differ now, because OpenAlex's counts change over time. To judge your own search, use the count from the size check in Part 3, not this note.</p>
+</section>
 </div>
 <div lang="es" id="es-blocks">
 <section id="part1-es"><h2>Parte 1: Instalar la aplicación en Windows</h2>
@@ -904,7 +982,85 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <h3>Tareas que quedan en la línea de comandos</h3>
 <p>Algunas tareas no están en la app y no se recorren aquí. Son rellenar un manuscrito, la revisión de texto completo (full-text screening) y el enriquecimiento (enrichment). Modificar los Criteria después de empezar la revisión también es una tarea de la línea de comandos: la app bloquea los Criteria en cuanto se registra una Decision. Cuando llegues a una de estas tareas, sal de la app y usa la línea de comandos. Getting Started tiene el recorrido por la línea de comandos.</p>
 </section>
-<section id="closing-es"></section>
+<section id="closing-es">
+<h2>Parte 4: Problemas, términos y qué guardar</h2>
+<p>Esta parte reúne los problemas que es más probable que encuentres, las palabras que usa la aplicación, los enlaces a las páginas con más detalle, cómo quitar la aplicación y dónde están tus resultados. Puedes volver a ella en cualquier momento.</p>
+
+<h3>Si algo sale mal</h3>
+<p>Busca tu problema en la primera columna. La segunda columna indica qué hacer. Cada solución es un paso que puedes dar por tu cuenta.</p>
+<table>
+<thead><tr><th>Problema</th><th>Solución</th></tr></thead>
+<tbody>
+<tr><td>El navegador no se abre después de <code>prismabib gui</code>.</td><td>Copia la dirección que mostró la terminal, pégala en la barra de direcciones de tu navegador y mantén abierta la ventana de la terminal. La aplicación se ejecuta en esa ventana.</td></tr>
+<tr><td>La prueba de la clave falla: <strong>Test OpenAlex key</strong> muestra un error o dice que no hay ninguna clave.</td><td>Corrige la clave, no la instalación. Copia la clave otra vez desde tu cuenta de OpenAlex, pégala en <strong>OpenAlex API key</strong>, pulsa <strong>Save OpenAlex key</strong> y después pulsa <strong>Test OpenAlex key</strong> de nuevo.</td></tr>
+<tr><td>Una captura se detiene antes de la última página.</td><td>Revisa tu conexión a internet, o espera hasta la hora de restablecimiento que muestra la pantalla para la cuota diaria de OpenAlex. Después pulsa <strong>Resume the capture</strong>. Las páginas ya traídas se conservan, así que no empiezas de nuevo.</td></tr>
+<tr><td>El almacén no existe, o está desactualizado después de nuevas capturas.</td><td>Pulsa <strong>Build the store</strong>, o <strong>Rebuild the store</strong> si ya existe un almacén. Reconstruir conserva tus búsquedas capturadas y tus Decisions.</td></tr>
+</tbody>
+</table>
+
+<h3>Palabras que usa la aplicación</h3>
+<p>Estos siete términos aparecen en las pantallas de la aplicación. Cada definición sigue el glosario del proyecto.</p>
+<dl>
+<dt>Project</dt>
+<dd>Una revisión sistemática, con su búsqueda, sus criterios de elegibilidad, sus datos capturados y sus Decisions.</dd>
+<dt>Record</dt>
+<dd>Como en PRISMA 2020: el título o el resumen (o ambos) de un informe indexado en una base de datos. En la aplicación, cada Record es uno de esos elementos y tiene un id estable.</dd>
+<dt>Decision</dt>
+<dd>El juicio de un revisor, que puede ser incluir, excluir o dudar, sobre un Record en una etapa de cribado. Se guarda como un evento que no se puede cambiar.</dd>
+<dt>Criteria</dt>
+<dd>Las reglas de elegibilidad de un Project, con versión y en un formato que la máquina puede leer. Cada cambio recibe una versión nueva.</dd>
+<dt>Flow counts</dt>
+<dd>El conjunto completo de números del diagrama PRISMA 2020. La aplicación los calcula de nuevo cada vez a partir de los datos guardados, y deben cumplir las ecuaciones de coherencia del diagrama.</dd>
+<dt>Sealed run</dt>
+<dd>Una ejecución que terminó por completo y cuyo manifiesto está escrito. Una Sealed run nunca se modifica.</dd>
+<dt>Source mode</dt>
+<dd>Qué bases de datos busca un Project: solo OpenAlex, solo Scopus, o Scopus más OpenAlex para completar los huecos. Se registra en cada Project y queda fijo una vez que existe una búsqueda o una Decision.</dd>
+</dl>
+
+<h3>Para seguir leyendo</h3>
+<p>Estas páginas dan más detalle. Sus enlaces son relativos, así que funcionan dentro del sitio de documentación. Si abres este archivo solo desde el disco, los enlaces no funcionan, por eso cada página también aparece nombrada en el texto.</p>
+<ul>
+<li>La página titulada Build a Scopus Query: <a href="../how-to/build-a-query/">Build a Scopus Query</a>. Explica la búsqueda y los criterios en un Project de Scopus, y por qué cada regla está donde está.</li>
+<li>La página titulada Build an OpenAlex Query: <a href="../how-to/build-an-openalex-query/">Build an OpenAlex Query</a>. Es para un Project sin acceso a Scopus, y describe la ruta de línea de comandos para una búsqueda en OpenAlex.</li>
+<li>La página titulada Limitations: <a href="../methodology/limitations/">Limitations</a>. Enumera lo que prismabib no puede hacer hoy.</li>
+<li>La página titulada Uninstall the App: <a href="../how-to/uninstall-the-app/">Uninstall the App</a>. Explica qué queda cuando quitas el programa.</li>
+</ul>
+
+<h3>Quitar la aplicación</h3>
+<p>Quitar la aplicación tiene dos pasos: detenerla y quitar el programa. Quitar el programa no borra tus Projects ni tu archivo de configuración personal. Antes de empezar, abre la pestaña <strong>Settings</strong> y anota la carpeta de Projects y la ubicación del archivo de configuración personal. La pestaña muestra las dos cosas, y desaparece cuando se quita el programa.</p>
+<ol>
+<li>Pulsa <strong>Stop the app</strong> en la pantalla Home, o pulsa Ctrl+C en la terminal donde se ejecuta <code>prismabib gui</code>.</li>
+<li>En una terminal, escribe el comando siguiente y pulsa Enter. Este comando quita el programa que instaló la línea de instalación de una sola línea: el comando <code>prismabib</code> y la aplicación.</li>
+</ol>
+<pre class="cmd">uv tool uninstall prismabib</pre>
+<pre class="out">[mensaje de uv, y después el indicador]</pre>
+
+<h4>Si algo sale mal</h4>
+<ul>
+<li><code>uv</code> no se reconoce: abre una terminal nueva y escribe el comando otra vez. Si sigue fallando, vuelve al paso 2 de la Parte 1 y comprueba uv.</li>
+<li>El mensaje de uv indica un error: copia el mensaje y pregunta al responsable del proyecto en la página de Issues de GitHub del proyecto.</li>
+</ul>
+
+<h3>Lo que queda</h3>
+<ul>
+<li><em>Tus Projects.</em> La carpeta de Projects se queda, con todos los Projects que contiene: los archivos <code>project.toml</code> y <code>criteria.yaml</code>, las búsquedas capturadas, las Decisions y las exportaciones.</li>
+<li><em>Tu archivo de configuración personal.</em> Es un archivo llamado <code>settings.env</code>, dentro de una carpeta llamada <code>prismabib</code> que está en la carpeta de configuración de tu usuario. Guarda tu clave de OpenAlex, la carpeta de Projects que elegiste y tu nombre de revisor. Un archivo de registro llamado <code>gui.log</code> queda en la misma carpeta.</li>
+</ul>
+<p>Borrar estos elementos depende de ti, y no se puede deshacer. Borrar la carpeta de Projects elimina todos los Projects que contiene. Borrar el archivo de configuración elimina tus claves guardadas, pero una clave sigue funcionando en su servicio hasta que la revoques en la página de la cuenta de ese servicio.</p>
+
+<h3>Dónde están tus resultados, y qué guardar</h3>
+<p>El paquete citable se escribe en la carpeta <code>exports</code> dentro de cada carpeta de Project. Contiene las figuras y las tablas, y junto a ellas <code>numbers.json</code> y <code>manifest.json</code>.</p>
+<p>Antes de borrar nada, copia estos elementos a un lugar propio:</p>
+<ul>
+<li>Las carpetas <code>raw</code> y <code>decisions</code> de cada Project. Guardan tus búsquedas capturadas, incluida cada Sealed run, y tu Decision log. Solo la carpeta <code>store</code> se puede reconstruir a partir de las demás, así que borrar estas dos carpetas pierde tus búsquedas capturadas y tus Decisions.</li>
+<li><code>project.toml</code> y <code>criteria.yaml</code>, que guardan la búsqueda y las reglas de elegibilidad, incluido cualquier cambio que hayas hecho a mano.</li>
+<li>La carpeta <code>exports</code>, con tus números citables y cualquier manuscrito que guardes en ella.</li>
+</ul>
+<p>No necesitas copiar la carpeta <code>store</code>, porque la aplicación puede construirla de nuevo. El archivo de configuración guarda tus claves, así que guarda una copia solo en un lugar privado, o déjala fuera y vuelve a introducir la clave cuando la necesites.</p>
+
+<h3>Una nota con fecha sobre el ejemplo</h3>
+<p>El ejemplo de la Parte 2 devolvió 108 Records el 2026-11-05, la fecha que documenta el repositorio. Ese recuento puede ser distinto ahora, porque los recuentos de OpenAlex cambian con el tiempo. Para juzgar tu propia búsqueda, usa el recuento de la comprobación de tamaño de la Parte 3, no esta nota.</p>
+</section>
 </div>
 <figure>
 <img id="img-1" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==">
