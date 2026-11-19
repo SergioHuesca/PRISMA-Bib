@@ -34,7 +34,92 @@ html.es body [lang="es"] { display: revert; }
 <pre class="cmd">prismabib gui</pre>
 </section>
 <section id="part2-en"></section>
-<section id="part3a-setup-en"></section>
+<section id="part3a-setup-en"><h2>Part 3a: Start the app and set it up</h2>
+<p>In this part you start the app, choose the folder where your Projects are kept, create a Project, and save a free OpenAlex key. No search runs in this part.</p>
+
+<h3>Start the app</h3>
+<p>In the terminal, run the command below. The app starts on your computer and opens in your browser. Keep the terminal window open while you use the app. Closing that window also stops the app.</p>
+<pre class="cmd">prismabib gui</pre>
+<p>The terminal then shows a line like this:</p>
+<p class="output"><samp>prismabib is running at http://127.0.0.1:5006/ (Ctrl+C to stop)</samp></p>
+<p>The address points to your own computer: 127.0.0.1 is the local address. The number 5006 is the usual port. If that port is busy, the app picks another one and prints its address instead.</p>
+<p>If the browser does not open by itself, copy the address from the terminal and paste it into your browser's address bar.</p>
+
+<h4>If something goes wrong</h4>
+<ul>
+<li>The browser did not open: copy the address the terminal printed, and paste it into your browser.</li>
+<li>The terminal says the command was not found: the install in Part 1 did not finish. Run the install line from Part 1 again, open a new terminal window, and run the command again.</li>
+<li>The terminal says <q>No free port</q>: close any programs that may be using network ports, then run the command again.</li>
+</ul>
+
+<h3>Stop the app</h3>
+<p>To stop the app, click “<strong>Stop the app</strong>” on the Home screen. If nothing is running, the app stops at once, and the browser page says that it has stopped. You can then close the tab.</p>
+<p>If a task is running, such as a capture, the app asks you to confirm first. The page then shows “<strong>Yes, stop the app</strong>” and “<strong>Keep the app running</strong>”. Choose “<strong>Yes, stop the app</strong>” to stop: the running capture stops, the pages already fetched are kept, and a later capture picks up from them. Choose “<strong>Keep the app running</strong>” to go back without stopping.</p>
+<p>You can also press Ctrl+C in the terminal. When nothing is left running, the terminal shows:</p>
+<p class="output"><samp>prismabib has stopped. Nothing running was left behind.</samp></p>
+
+<h3>Choose the Projects folder</h3>
+<p>The Home screen has a box labelled “<strong>Projects folder</strong>”. The app keeps each Project in its own folder inside this one, and the Home screen shows the folder in use. Until you choose a folder, the app uses a folder named projects inside the folder the terminal was in when you started the app.</p>
+<ol>
+<li>Type a path into “<strong>Projects folder</strong>”.</li>
+<li>If the folder already exists, click “<strong>Use this folder</strong>”. If it does not exist yet, click “<strong>Create this folder</strong>” and the app creates it.</li>
+<li>Read the line under the buttons. When the folder is accepted, the line begins “Using” and shows the folder. The app remembers this folder for next time.</li>
+</ol>
+<p>Avoid a folder inside a synced location such as OneDrive, Dropbox, Google Drive, iCloud or Box Sync. In that case the app shows a warning but still accepts the folder. Sync can lock or change files while the app is writing to them, so a folder outside sync is safer.</p>
+<p>The app refuses three kinds of folder and says why under the buttons: a folder it cannot write to, a path that is too long, and a folder inside the installed program. A refusal changes nothing, so you can choose another folder straight away.</p>
+
+<h4>If something goes wrong</h4>
+<ul>
+<li>The message says the folder does not exist: click “<strong>Create this folder</strong>”, or check the spelling of the path.</li>
+<li>The message says prismabib cannot write to this folder: choose a folder where your account can save files.</li>
+<li>The message says the path is too long: choose a shorter path.</li>
+</ul>
+
+<h3>Create a Project</h3>
+<p>A Project holds one systematic review: its query, its eligibility criteria, its Records and its Decisions. The app never overwrites a Project. If a folder with the same name already exists, the app asks you to choose another Project name.</p>
+<ol>
+<li>On the Home screen, click “<strong>New Project</strong>”.</li>
+<li>In “<strong>Project name</strong>”, type a name, for example My first review. The app turns the name into a folder name and shows that folder name under the box.</li>
+<li>In “<strong>Reviewer name</strong>”, type your name. Every Decision in this Project carries that name. The app remembers it for the next Project.</li>
+<li>Answer “<strong>Do you have Scopus access?</strong>” by choosing “Yes”, “No” or “Not sure”. The app has no default answer, so you must choose one.</li>
+<li>Click “<strong>Create Project</strong>”.</li>
+</ol>
+<p>Scopus access means a Scopus key with the COMPLETE view, which usually comes through an institution such as a university. If you are not sure, choose “Not sure”.</p>
+<p>Your answer sets the <em>Source mode</em>, which means which databases this review searches. “No” and “Not sure” both create a Project in Source mode <code>openalex</code>, which searches OpenAlex only. That route needs a free OpenAlex key, which you get further down in this part, and it asks for no Scopus key. This part does not walk through the Scopus route.</p>
+<p>When the Project is created, the screen shows:</p>
+<p class="output"><samp>Project my-first-review created with Source mode openalex.</samp></p>
+<p>The Project then opens at its first step that is not done, “Query”. Part 2 of this guide explains that step.</p>
+
+<h4>If something goes wrong</h4>
+<ul>
+<li>The app says a Project or a folder with that name already exists: type a different “<strong>Project name</strong>”.</li>
+<li>The app says to enter the reviewer name: type your name in “<strong>Reviewer name</strong>”.</li>
+<li>The app says the path is too long: choose a shorter Project name or a shorter Projects folder.</li>
+<li>The app says you must answer the Scopus question: choose “Yes”, “No” or “Not sure”.</li>
+</ul>
+
+<h3>Get a free OpenAlex key</h3>
+<p>A real OpenAlex search needs a key. The key is a code that identifies your account. Create a free account on the OpenAlex website, openalex.org, and copy the API key from it.</p>
+
+<h3>Save the key and test it</h3>
+<p>Keys are saved in your per-user settings file, which is outside every Project folder. You enter the key in the Keys part of the “<strong>Source mode and keys</strong>” step.</p>
+<ol>
+<li>On the Home screen, click the Open button beside your Project in the list under Projects.</li>
+<li>In the sidebar, click “<strong>Source mode and keys</strong>”. The Keys part shows the settings file in a line that begins “Keys are saved in your per-user settings file”, followed by its location.</li>
+<li>Paste your key into “<strong>OpenAlex API key</strong>”. The box shows dots instead of the characters, so the key is not printed on screen.</li>
+<li>Click “<strong>Save OpenAlex key</strong>”. The app says the key is saved and clears the box.</li>
+<li>Click “<strong>Test OpenAlex key</strong>” and read the line it shows.</li>
+</ol>
+<p>When the key is accepted, the app shows <q>The key works.</q> The line that begins “OpenAlex key comes from” shows where the app reads the key from. You can change the key later on the same screen: paste a new key, save it, and test it again.</p>
+
+<h4>If something goes wrong</h4>
+<ul>
+<li>The result says <q>no key is set</q>: paste the key into “<strong>OpenAlex API key</strong>” and click “<strong>Save OpenAlex key</strong>” first.</li>
+<li>The result says <q>401: the key was rejected</q>: copy the key again from your OpenAlex account, paste it in, save it, and test again.</li>
+<li>The result says <q>403</q>: check that your account may use this service, then test again.</li>
+<li>The result is a network error: check your connection, then test again.</li>
+</ul>
+</section>
 <section id="part3a-build-en"></section>
 <section id="part3b-en"></section>
 <section id="closing-en"></section>
@@ -47,7 +132,92 @@ html.es body [lang="es"] { display: revert; }
 <pre class="cmd">prismabib gui</pre>
 </section>
 <section id="part2-es"></section>
-<section id="part3a-setup-es"></section>
+<section id="part3a-setup-es"><h2>Parte 3a: Iniciar la aplicación y prepararla</h2>
+<p>En esta parte inicias la aplicación, eliges la carpeta donde se guardan tus Projects, creas un Project y guardas una clave gratuita de OpenAlex. En esta parte no se ejecuta ninguna búsqueda.</p>
+
+<h3>Iniciar la aplicación</h3>
+<p>En la terminal, ejecuta el comando siguiente. La aplicación se inicia en tu equipo y se abre en tu navegador. Mantén abierta la ventana de la terminal mientras usas la aplicación. Si cierras esa ventana, la aplicación también se detiene.</p>
+<pre class="cmd">prismabib gui</pre>
+<p>Después, la terminal muestra una línea como esta:</p>
+<p class="output"><samp>prismabib is running at http://127.0.0.1:5006/ (Ctrl+C to stop)</samp></p>
+<p>La dirección apunta a tu propio equipo: 127.0.0.1 es la dirección local. El número 5006 es el puerto habitual. Si ese puerto está ocupado, la aplicación elige otro y muestra su dirección.</p>
+<p>Si el navegador no se abre solo, copia la dirección de la terminal y pégala en la barra de direcciones de tu navegador.</p>
+
+<h4>Si algo sale mal</h4>
+<ul>
+<li>El navegador no se abrió: copia la dirección que muestra la terminal y pégala en tu navegador.</li>
+<li>La terminal dice que no encuentra el comando: la instalación de la Parte 1 no terminó. Ejecuta otra vez la línea de instalación de la Parte 1, abre una ventana de terminal nueva y ejecuta el comando de nuevo.</li>
+<li>La terminal dice <q>No free port</q>: cierra los programas que puedan estar usando puertos de red y ejecuta el comando de nuevo.</li>
+</ul>
+
+<h3>Detener la aplicación</h3>
+<p>Para detenerla, haz clic en “<strong>Stop the app</strong>” en la pantalla Home. Si no hay nada en ejecución, la aplicación se detiene de inmediato y la página del navegador indica que se detuvo. Entonces puedes cerrar la pestaña.</p>
+<p>Si hay una tarea en ejecución, como una captura, la aplicación pide confirmación primero. La página muestra “<strong>Yes, stop the app</strong>” y “<strong>Keep the app running</strong>”. Elige “<strong>Yes, stop the app</strong>” para detenerla: la captura en curso se detiene, las páginas ya descargadas se conservan y una captura posterior continúa a partir de ellas. Elige “<strong>Keep the app running</strong>” para seguir sin detenerla.</p>
+<p>También puedes pulsar Ctrl+C en la terminal. Cuando no queda nada en ejecución, la terminal muestra:</p>
+<p class="output"><samp>prismabib has stopped. Nothing running was left behind.</samp></p>
+
+<h3>Elegir la carpeta de Projects</h3>
+<p>La pantalla Home tiene un campo llamado “<strong>Projects folder</strong>”. La aplicación guarda cada Project en su propia carpeta dentro de esta, y la pantalla muestra la carpeta en uso. Hasta que elijas una carpeta, la aplicación usa una carpeta llamada projects dentro de la carpeta en la que estaba la terminal al iniciar la aplicación.</p>
+<ol>
+<li>Escribe una ruta en “<strong>Projects folder</strong>”.</li>
+<li>Si la carpeta ya existe, haz clic en “<strong>Use this folder</strong>”. Si todavía no existe, haz clic en “<strong>Create this folder</strong>” y la aplicación la crea.</li>
+<li>Lee la línea que aparece debajo de los botones. Si la carpeta se acepta, la línea empieza con “Using” y muestra la carpeta. La aplicación recuerda esa carpeta para la próxima vez.</li>
+</ol>
+<p>Evita una carpeta dentro de un servicio de sincronización como OneDrive, Dropbox, Google Drive, iCloud o Box Sync. En ese caso la aplicación muestra una advertencia, pero acepta la carpeta. La sincronización puede bloquear o cambiar archivos mientras la aplicación escribe en ellos, así que una carpeta fuera de la sincronización es más segura.</p>
+<p>La aplicación rechaza tres tipos de carpeta y explica el motivo debajo de los botones: una carpeta en la que no puede escribir, una ruta demasiado larga y una carpeta dentro del programa instalado. Un rechazo no cambia nada, así que puedes elegir otra carpeta de inmediato.</p>
+
+<h4>Si algo sale mal</h4>
+<ul>
+<li>El mensaje dice que la carpeta no existe: haz clic en “<strong>Create this folder</strong>” o revisa cómo escribiste la ruta.</li>
+<li>El mensaje dice que prismabib no puede escribir en esta carpeta: elige una carpeta en la que tu cuenta pueda guardar archivos.</li>
+<li>El mensaje dice que la ruta es demasiado larga: elige una ruta más corta.</li>
+</ul>
+
+<h3>Crear un Project</h3>
+<p>Un Project contiene una revisión sistemática: su query, sus criterios de elegibilidad, sus Records y sus Decisions. La aplicación nunca sobrescribe un Project. Si ya existe una carpeta con el mismo nombre, la aplicación te pide que elijas otro nombre de Project.</p>
+<ol>
+<li>En la pantalla Home, haz clic en “<strong>New Project</strong>”.</li>
+<li>En “<strong>Project name</strong>”, escribe un nombre, por ejemplo My first review. La aplicación convierte el nombre en un nombre de carpeta y lo muestra debajo del campo.</li>
+<li>En “<strong>Reviewer name</strong>”, escribe tu nombre. Cada Decision de este Project lleva ese nombre. La aplicación lo recuerda para el siguiente Project.</li>
+<li>Responde a “<strong>Do you have Scopus access?</strong>” eligiendo “Yes”, “No” o “Not sure”. La aplicación no tiene una respuesta por defecto, así que debes elegir una.</li>
+<li>Haz clic en “<strong>Create Project</strong>”.</li>
+</ol>
+<p>Tener acceso a Scopus significa tener una clave de Scopus con la vista COMPLETE, que normalmente se obtiene a través de una institución, como una universidad. Si no lo sabes, elige “Not sure”.</p>
+<p>Tu respuesta define la <em>Source mode</em>, es decir, qué bases de datos busca esta revisión. Con “No” o con “Not sure” se crea un Project con Source mode <code>openalex</code>, que busca solo en OpenAlex. Esa ruta necesita una clave gratuita de OpenAlex, que obtienes más abajo en esta parte, y no pide ninguna clave de Scopus. Esta parte no explica la ruta de Scopus.</p>
+<p>Cuando el Project se crea, la pantalla muestra:</p>
+<p class="output"><samp>Project my-first-review created with Source mode openalex.</samp></p>
+<p>El Project se abre en su primer paso que no está terminado, “Query”. La Parte 2 de esta guía explica ese paso.</p>
+
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La aplicación dice que ya existe un Project o una carpeta con ese nombre: escribe otro “<strong>Project name</strong>”.</li>
+<li>La aplicación pide escribir el nombre del revisor: escribe tu nombre en “<strong>Reviewer name</strong>”.</li>
+<li>La aplicación dice que la ruta es demasiado larga: elige un nombre de Project más corto o una carpeta de Projects más corta.</li>
+<li>La aplicación pide responder a la pregunta sobre Scopus: elige “Yes”, “No” o “Not sure”.</li>
+</ul>
+
+<h3>Obtener una clave gratuita de OpenAlex</h3>
+<p>Una búsqueda real de OpenAlex necesita una clave. La clave es un código que identifica tu cuenta. Crea una cuenta gratuita en el sitio web de OpenAlex, openalex.org, y copia desde allí tu clave de API.</p>
+
+<h3>Guardar la clave y probarla</h3>
+<p>Las claves se guardan en tu archivo de configuración personal, que está fuera de cualquier carpeta de Project. La introduces en la parte “Keys” del paso “<strong>Source mode and keys</strong>”.</p>
+<ol>
+<li>En la pantalla Home, haz clic en el botón Open que está junto a tu Project, en la lista de Projects.</li>
+<li>En la barra lateral, haz clic en “<strong>Source mode and keys</strong>”. La parte “Keys” muestra el archivo de configuración en una línea que empieza con “Keys are saved in your per-user settings file”, seguida de su ubicación.</li>
+<li>Pega tu clave en “<strong>OpenAlex API key</strong>”. El campo muestra puntos en lugar de los caracteres, así que la clave no aparece en pantalla.</li>
+<li>Haz clic en “<strong>Save OpenAlex key</strong>”. La aplicación indica que la clave se guardó y vacía el campo.</li>
+<li>Haz clic en “<strong>Test OpenAlex key</strong>” y lee la línea que muestra.</li>
+</ol>
+<p>Cuando la clave es aceptada, la aplicación muestra <q>The key works.</q> La línea que empieza con “OpenAlex key comes from” indica de dónde lee la aplicación la clave. Puedes cambiar la clave más adelante en la misma pantalla: pega una nueva, guárdala y vuelve a probarla.</p>
+
+<h4>Si algo sale mal</h4>
+<ul>
+<li>El resultado dice <q>no key is set</q>: pega la clave en “<strong>OpenAlex API key</strong>” y haz clic primero en “<strong>Save OpenAlex key</strong>”.</li>
+<li>El resultado dice <q>401: the key was rejected</q>: copia la clave otra vez desde tu cuenta de OpenAlex, pégala, guárdala y prueba de nuevo.</li>
+<li>El resultado dice <q>403</q>: revisa que tu cuenta tenga permiso para usar este servicio y prueba de nuevo.</li>
+<li>El resultado es un error de red: revisa tu conexión y prueba de nuevo.</li>
+</ul>
+</section>
 <section id="part3a-build-es"></section>
 <section id="part3b-es"></section>
 <section id="closing-es"></section>
