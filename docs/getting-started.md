@@ -80,9 +80,9 @@ Install the app with one line:
 uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"
 ```
 
-uv is the only thing this install needs. When the app starts, its first-run check also looks for
-Python 3.11 or newer, git and uv. The Home screen names anything missing and says how to fix it.
-git is the one you may have to install yourself.
+This install needs uv and git. uv also provides Python 3.11 or newer. When the app starts, its
+first-run check looks for Python 3.11 or newer, git and uv. The Home screen names anything missing
+and says how to fix it. git is the one you may have to install yourself.
 
 Start the app from any folder:
 
@@ -272,10 +272,10 @@ search missed**:
 2. Choose the **Candidate** and a **Match rule**. `doi` is the default and suits a candidate with a
    DOI. `title_year` suits one without a DOI. `near_confirmed` is for a near match, and it needs the
    **I confirm this work is this candidate** tick.
-3. Choose the **Captured OpenAlex response** that holds the candidate's work. The app does not capture
-   these. The list shows only OpenAlex responses that the command line's `cascade` step has already
-   captured. If the list is empty, run that step from a clone of the repository on the command line
-   (walkthrough step 10, item 2), then reopen this step.
+3. Choose the **Captured OpenAlex response** that holds the candidate's work. The list shows OpenAlex
+   responses captured by **Run the cascade** on **Flow counts** or by the command line's `cascade` step.
+   If the list is empty, press **Run the cascade** on **Flow counts** and wait for it to finish, then
+   reopen this step.
 4. Click **Register this Record**. The screen names the new registration and says it is counted after
    the next build. Open **Build** and rebuild the store.
 
