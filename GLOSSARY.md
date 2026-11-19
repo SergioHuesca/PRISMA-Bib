@@ -67,6 +67,12 @@ Removal of a record by the criteria alone (year, subject area, document type, ve
 One reviewer's include, exclude or unsure judgement on one record at one screening stage, stored as an immutable event.
 _Avoid_: label, vote
 
+**Reviewer**:
+The person who makes a Decision. The Reviewer name typed on each Decision is the only identity on a Decision in v1, and there are no accounts.
+
+**actor**:
+The word for the library's own record of who changed a Source mode. It is not a second identity on a Decision. The Screening screen shows it as "Changed by".
+
 **Decision log**:
 The append-only sequence of decisions. A change of mind is a new decision; the current state is derived from the whole log.
 
