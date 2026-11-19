@@ -36,7 +36,66 @@ html.es body [lang="es"] { display: revert; }
 <section id="part2-en"></section>
 <section id="part3a-setup-en"></section>
 <section id="part3a-build-en"></section>
-<section id="part3b-en"></section>
+<section id="part3b-en"><h2>Part 3 (continued): Screen, count and export</h2>
+<p>This part covers the second half of Part 3: screening the Records, reading the Flow counts and exporting the results. The labels in bold are the words on the screen. They stay in English in both languages, so you can match them to what you see.</p>
+<h3>Read the Flow counts</h3>
+<p>The Flow counts screen shows the numbers of the PRISMA flow diagram, one line for each step. Read the table like this:</p>
+<ul>
+<li>A minus sign in front of a number means that the number is taken away from the total above it.</li>
+<li>An indented line is a breakdown of the line above it. It is not taken away a second time.</li>
+<li>Every number is worked out from your stored data and your Decision log each time the table is drawn. No number is typed in by hand. The screen says so: <q>These numbers are worked out again from the store and the Decision log each time.</q></li>
+</ul>
+<p>The first line, <strong>Records identified (OpenAlex meta.count)</strong> for an OpenAlex review, is the number of Records that the searches reported, before anything is removed.</p>
+<p>The table is redrawn when you press <strong>Refresh the Flow counts</strong>. Press it after each session of screening to see your Decisions move the right lines.</p>
+<h3>Screen the Records</h3>
+<p>Open the Screening step and press <strong>Start screening</strong>. Before you press it, check the name in the field <strong>Reviewer (recorded on every Decision you make here)</strong>. The field starts with the reviewer name you entered when you created the Project. If the Project has no such name, it starts with the name saved in Settings. Every Decision you make here carries the name in this field.</p>
+<p>Keep <strong>Blind mode: hide author names, citation counts and other reviewers' Decisions</strong> ticked. It is on by default. While it is on, the screen hides author names, citation counts and the Decisions of other reviewers, so that they do not sway your judgement. The header then reads <q>Blind mode: on</q>.</p>
+<p>The keys below do the same as the buttons next to them. A key acts only when you are not typing in a text box. Inside a text box, the key is typed as text.</p>
+<table>
+<thead><tr><th>Key</th><th>What it does</th><th>Button on screen</th></tr></thead>
+<tbody>
+<tr><td><code>i</code></td><td>Include the Record.</td><td><strong>include (i)</strong></td></tr>
+<tr><td><code>e</code></td><td>Exclude the Record. Press <code>e</code>, then the number of the reason (1 to 9). A number pressed on its own only reminds you to press <code>e</code> first.</td><td>No single button. Use the numbered reason buttons, one for each of the first nine reason codes in your Criteria.</td></tr>
+<tr><td><code>u</code></td><td>Mark the Record as unsure. It stays in the queue.</td><td>unsure (u)</td></tr>
+<tr><td><code>n</code></td><td>Go to the next Record without deciding.</td><td>next (n)</td></tr>
+<tr><td><code>p</code></td><td>Go back to the previous Record without deciding.</td><td>prev (p)</td></tr>
+<tr><td><code>z</code></td><td>Undo your latest Decision on the Record on screen.</td><td><strong>undo (z)</strong></td></tr>
+<tr><td><code>?</code></td><td>Show or hide the list of keys.</td><td>help (?)</td></tr>
+</tbody>
+</table>
+<p>Each Decision is saved before the next Record appears, so if you stop, you lose at most the Record on screen. Every Decision stays in the Decision log. Practise with about ten Records before you decide the rest, and make each key press a Decision you mean to make.</p>
+<p>Undo does not erase anything. It adds a new Unsure Decision to the Record on screen, and both the old Decision and the new one stay in the Decision log. The screen then reads <q>undone: the Record now counts as Unsure (the log keeps both Decisions)</q>.</p>
+<p>The header above each Record shows three counts. <strong>Unscreened:</strong> is the number of Records with no Decision yet. <strong>Unsure:</strong> is the number of Records whose latest Decision is Unsure. <strong>Records:</strong> is the total. An Unsure Record is not Unscreened: it has a Decision, and it stays in the queue.</p>
+<p>When you have finished a session, go back to the Flow counts screen and press <strong>Refresh the Flow counts</strong>. An exclusion at this stage moves one Record into <strong>Excluded at title and abstract</strong>, and an inclusion moves one into <strong>Sought for full-text retrieval</strong>.</p>
+<p>If the step fails:</p>
+<ul>
+<li>The screen says <q>Screening needs:</q> and names what is missing. If the Criteria are missing, finish the Criteria step. If the store is missing, finish the Build step.</li>
+<li>The screen says <q>Loading the Records.</q> Wait. The Screener appears when the loading ends.</li>
+<li>If a sentence in bold appears, it names the problem and the next step. Take that step, then press <strong>Start screening</strong> again.</li>
+</ul>
+<h3>Register a Record the search missed (optional)</h3>
+<p>You can skip this part. Registering is needed only when you know of a Record that the search did not return. It is done on the Flow counts screen, under the heading <q>Register a Record the search missed</q>. A registered Record has its own line in the Flow counts. It is never added to the first line, and it is counted after the next build of the store.</p>
+<p>The steps are described in <a href="../getting-started/#step-10-register-a-record-the-search-missed-optional">Getting Started, Step 10</a>. This guide does not walk through one prerequisite capture step that the section relies on: capturing the OpenAlex response for the Record you add. On the Flow counts screen, the section <q>Get the OpenAlex responses for your candidates</q> has the button <strong>Run the cascade</strong> for that capture. The link is relative, so it resolves on the built site. It does not resolve when this file is opened alone from disk, which is why the name of the page is written out here too.</p>
+<h3>Export the citable bundle</h3>
+<p>Open the Export step and press <strong>Export the citable bundle</strong>. A progress bar runs while the bundle is written. To stop it, press <strong>Cancel the export</strong>. A cancelled export changes nothing, and the bundle from the last export stays as it was. The screen says <q>Stopped as you asked. Nothing was changed in the bundle.</q></p>
+<p>The bundle goes into the <code>exports</code> folder inside your Project folder. When the export finishes, the screen names that folder and counts the files it wrote. The folder holds:</p>
+<ul>
+<li><code>figures</code>: the flow diagram, as an SVG file and a CSV file;</li>
+<li><code>tables</code>: each table as a CSV file, a Markdown file and a LaTeX file;</li>
+<li><code>numbers.json</code>: the numbers in the bundle;</li>
+<li><code>records.csv</code> and <code>provenance_conflicts.csv</code>;</li>
+<li><code>manifest.json</code>: what produced the numbers, including the criteria version, the run ids and the package version.</li>
+</ul>
+<p>You can keep your own files, such as a manuscript, in the <code>exports</code> folder. Only the <code>figures</code> and <code>tables</code> folders are emptied and written again on each export. The other files are overwritten each time. Do not edit any of these files by hand. To change a number, correct the cause in the store or in the Decisions, then export again, so that the numbers stay reproducible.</p>
+<p>After an export, the screen can show warnings. Each one starts with the word Warning. Read them before you cite a number.</p>
+<ul>
+<li>If your Project folder is its own git repository and has uncommitted changes, the bundle does not describe a committed state of it. Commit your changes outside the app, then export again.</li>
+<li>If your Project folder is its own git repository and its latest commit is on no remote branch, a reader cannot fetch that state. As far as the last fetch shows, the commit is not pushed. Push it outside the app, then export again.</li>
+<li>If your Project folder is not its own git repository, or has no commit yet, the screen says that the bundle cannot name the state of your Project folder. This warning is expected when you installed the app with the one-line command and your Project folder is not a git repository of its own. The bundle records the state of the installed app instead, and the screen says what that state is. You do not need to fix anything. Cite the package version instead: the <code>package_version</code> line in <code>manifest.json</code> says which release produced the numbers.</li>
+</ul>
+<h3>Tasks that stay on the command line</h3>
+<p>Some tasks are not in the app and are not walked through here. They are filling a manuscript, full-text screening and enrichment. Amending the Criteria after screening starts is also a command-line task: the app locks the Criteria once a Decision has been logged. When you reach one of these tasks, leave the app and use the command line. Getting Started has the command-line walkthrough.</p>
+</section>
 <section id="closing-en"></section>
 </div>
 <div lang="es" id="es-blocks">
@@ -49,7 +108,66 @@ html.es body [lang="es"] { display: revert; }
 <section id="part2-es"></section>
 <section id="part3a-setup-es"></section>
 <section id="part3a-build-es"></section>
-<section id="part3b-es"></section>
+<section id="part3b-es"><h2>Parte 3 (continuación): revisar, contar y exportar</h2>
+<p>Esta parte cubre la segunda mitad de la Parte 3: revisar los Records, leer los Flow counts y exportar los resultados. Las etiquetas en negrita son las palabras de la pantalla. Se quedan en inglés en los dos idiomas, para que puedas encontrarlas en lo que ves.</p>
+<h3>Leer los Flow counts</h3>
+<p>La pantalla Flow counts muestra los números del diagrama de flujo de PRISMA, una línea por cada paso. Lee la tabla así:</p>
+<ul>
+<li>Un signo menos delante de un número significa que ese número se resta del total de arriba.</li>
+<li>Una línea con sangría es un desglose de la línea de arriba. No se vuelve a restar.</li>
+<li>Cada número se calcula a partir de tus datos guardados y del Decision log cada vez que se dibuja la tabla. Ningún número se escribe a mano. La pantalla lo dice, en inglés: <q>These numbers are worked out again from the store and the Decision log each time.</q></li>
+</ul>
+<p>La primera línea, <strong>Records identified (OpenAlex meta.count)</strong> en una revisión de OpenAlex, es el número de Records que reportaron las búsquedas, antes de que se quite nada.</p>
+<p>La tabla se vuelve a dibujar cuando pulsas <strong>Refresh the Flow counts</strong>. Pulsa el botón al terminar cada sesión de revisión para ver cómo se mueven las líneas con tus Decisions.</p>
+<h3>Revisar los Records</h3>
+<p>Abre el paso Screening y pulsa <strong>Start screening</strong>. Antes de pulsarlo, revisa el nombre en el campo <strong>Reviewer (recorded on every Decision you make here)</strong>. El campo empieza con el nombre de revisor que escribiste al crear el Project. Si el Project no tiene ese nombre, empieza con el nombre guardado en Settings. Cada Decision que tomes aquí lleva el nombre de este campo.</p>
+<p>Deja marcada la casilla <strong>Blind mode: hide author names, citation counts and other reviewers' Decisions</strong>. Viene activada por defecto. Mientras está activada, la pantalla oculta los nombres de los autores, los recuentos de citas y las Decisions de otros revisores, para que no influyan en tu juicio. La cabecera dice entonces <q>Blind mode: on</q>.</p>
+<p>Las teclas de la tabla hacen lo mismo que los botones que están junto a ellas. Una tecla funciona solo cuando no estás escribiendo en un cuadro de texto. Dentro de un cuadro de texto, la tecla se escribe como texto.</p>
+<table>
+<thead><tr><th>Tecla</th><th>Qué hace</th><th>Botón en pantalla</th></tr></thead>
+<tbody>
+<tr><td><code>i</code></td><td>Incluye el Record.</td><td><strong>include (i)</strong></td></tr>
+<tr><td><code>e</code></td><td>Excluye el Record. Pulsa <code>e</code> y luego el número del motivo (del 1 al 9). Un número pulsado solo te recuerda que antes hay que pulsar <code>e</code>.</td><td>No hay un botón único. Usa los botones numerados de motivo, uno por cada uno de los nueve primeros códigos de motivo de tus Criteria.</td></tr>
+<tr><td><code>u</code></td><td>Marca el Record como Unsure. Se queda en la cola.</td><td>unsure (u)</td></tr>
+<tr><td><code>n</code></td><td>Pasa al Record siguiente sin decidir.</td><td>next (n)</td></tr>
+<tr><td><code>p</code></td><td>Vuelve al Record anterior sin decidir.</td><td>prev (p)</td></tr>
+<tr><td><code>z</code></td><td>Deshace tu última Decision sobre el Record en pantalla.</td><td><strong>undo (z)</strong></td></tr>
+<tr><td><code>?</code></td><td>Muestra u oculta la lista de teclas.</td><td>help (?)</td></tr>
+</tbody>
+</table>
+<p>Cada Decision se guarda antes de que aparezca el Record siguiente, así que si paras, pierdes como mucho el Record que tienes en pantalla. Cada Decision queda en el Decision log. Practica con unos diez Records antes de decidir el resto, y haz que cada tecla que pulses sea una Decision que de verdad quieres tomar.</p>
+<p>Undo no borra nada. Añade una Decision nueva, Unsure, al Record en pantalla, y tanto la Decision anterior como la nueva se quedan en el Decision log. Entonces la pantalla dice <q>undone: the Record now counts as Unsure (the log keeps both Decisions)</q>.</p>
+<p>La cabecera encima de cada Record muestra tres cifras. <strong>Unscreened:</strong> es el número de Records que todavía no tienen ninguna Decision. <strong>Unsure:</strong> es el número de Records cuya última Decision es Unsure. <strong>Records:</strong> es el total. Un Record Unsure no es Unscreened: ya tiene una Decision y se queda en la cola.</p>
+<p>Al terminar una sesión, vuelve a la pantalla Flow counts y pulsa <strong>Refresh the Flow counts</strong>. Una exclusión en esta fase mueve un Record a <strong>Excluded at title and abstract</strong>, y una inclusión mueve uno a <strong>Sought for full-text retrieval</strong>.</p>
+<p>Si no funcionó:</p>
+<ul>
+<li>La pantalla dice <q>Screening needs:</q> y nombra lo que falta. Si faltan los Criteria, termina el paso Criteria. Si falta el store, termina el paso Build.</li>
+<li>La pantalla dice <q>Loading the Records.</q> Espera. El Screener aparece cuando termina la carga.</li>
+<li>Si aparece una frase en negrita, nombra el problema y el paso siguiente. Haz ese paso y pulsa de nuevo <strong>Start screening</strong>.</li>
+</ul>
+<h3>Registrar un Record que la búsqueda no encontró (opcional)</h3>
+<p>Puedes saltarte esta parte. Registrar solo hace falta si conoces un Record que la búsqueda no devolvió. Se hace en la pantalla Flow counts, bajo el encabezado <q>Register a Record the search missed</q>. Un Record registrado tiene su propia línea en los Flow counts. Nunca se suma a la primera línea, y se cuenta después de la siguiente construcción del store.</p>
+<p>Los pasos están descritos en <a href="../getting-started/#step-10-register-a-record-the-search-missed-optional">Getting Started, Step 10</a>. Esta guía no recorre un paso previo de captura que esa sección necesita: capturar la respuesta de OpenAlex del Record que añades. En la pantalla Flow counts, la sección <q>Get the OpenAlex responses for your candidates</q> tiene para esa captura el botón <strong>Run the cascade</strong>. El enlace es relativo, así que se resuelve en el sitio publicado. No se resuelve cuando este archivo se abre solo desde el disco, por eso el nombre de la página también está escrito aquí.</p>
+<h3>Exportar el paquete citable</h3>
+<p>Abre el paso Export y pulsa <strong>Export the citable bundle</strong>. Mientras se escribe el paquete, aparece una barra de progreso. Para pararlo, pulsa <strong>Cancel the export</strong>. Una exportación cancelada no cambia nada, y el paquete de la última exportación se queda como estaba. La pantalla dice <q>Stopped as you asked. Nothing was changed in the bundle.</q></p>
+<p>El paquete se escribe en la carpeta <code>exports</code> dentro de la carpeta de tu Project. Al terminar, la pantalla nombra esa carpeta y cuenta los archivos escritos. La carpeta contiene:</p>
+<ul>
+<li><code>figures</code>: el diagrama de flujo, en un archivo SVG y en un archivo CSV;</li>
+<li><code>tables</code>: cada tabla en un archivo CSV, otro Markdown y otro LaTeX;</li>
+<li><code>numbers.json</code>: los números del paquete;</li>
+<li><code>records.csv</code> y <code>provenance_conflicts.csv</code>;</li>
+<li><code>manifest.json</code>: lo que produjo los números, con la versión de los Criteria, los identificadores de cada búsqueda y la versión del paquete.</li>
+</ul>
+<p>Puedes guardar tus propios archivos, como un manuscrito, en la carpeta <code>exports</code>. Solo las carpetas <code>figures</code> y <code>tables</code> se vacían y se vuelven a escribir en cada exportación. Los demás archivos se sobrescriben cada vez. No edites ninguno de estos archivos a mano. Para cambiar un número, corrige la causa en el store o en las Decisions y exporta de nuevo, para que los números sigan siendo reproducibles.</p>
+<p>Después de una exportación, la pantalla puede mostrar advertencias. Cada una empieza por la palabra Warning. Léelas antes de citar un número.</p>
+<ul>
+<li>Si la carpeta de tu Project es un repositorio git propio y tiene cambios sin confirmar, el paquete no describe un estado confirmado de ella. Confirma tus cambios fuera de la app y exporta de nuevo.</li>
+<li>Si la carpeta de tu Project es un repositorio git propio y su último commit no está en ninguna rama remota, un lector no puede obtener ese estado. Según la última descarga, el commit no está subido. Súbelo fuera de la app y exporta de nuevo.</li>
+<li>Si la carpeta de tu Project no es un repositorio git propio, o todavía no tiene ningún commit, la pantalla dice que el paquete no puede nombrar el estado de tu carpeta de Project. Esta advertencia es lo esperable si instalaste la app con el comando de una sola línea y tu carpeta de Project no es un repositorio git propio. El paquete registra el estado de la app instalada, y la pantalla dice cuál es. No tienes que arreglar nada. Cita en su lugar la versión del paquete: la línea <code>package_version</code> de <code>manifest.json</code> indica qué versión produjo los números.</li>
+</ul>
+<h3>Tareas que quedan en la línea de comandos</h3>
+<p>Algunas tareas no están en la app y no se recorren aquí. Son rellenar un manuscrito, la revisión de texto completo (full-text screening) y el enriquecimiento (enrichment). Modificar los Criteria después de empezar la revisión también es una tarea de la línea de comandos: la app bloquea los Criteria en cuanto se registra una Decision. Cuando llegues a una de estas tareas, sal de la app y usa la línea de comandos. Getting Started tiene el recorrido por la línea de comandos.</p>
+</section>
 <section id="closing-es"></section>
 </div>
 <figure>
