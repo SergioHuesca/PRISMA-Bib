@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GLOSSARY.md`**, the project's domain vocabulary, at the repository root. Its terms for records, reports, studies and included studies follow PRISMA 2020 (the statement paper and the Explanation & Elaboration glossary, which do not use the word "corpus"). It separates a build stage from a screening stage, and unsure from unscreened.
 - **Glossary: Enrichment and Cascade.** "Enrichment" is fetching only the subject-area codes of every record from Scopus Abstract Retrieval, so a subject-area restriction can be applied; "Cascade" is filling a record's missing abstract, authors, affiliations and keywords (not subject-area codes) from Scopus STANDARD, then Scopus META, then OpenAlex. When the two Scopus steps run, they supply affiliations only. Records with no DOI are first looked up in OpenAlex by title. "OpenAlex enrichment" names the cascade, not enrichment. (#284, #286)
 
+- **A beginner's guide to the app**, a single offline page in English and Spanish at `docs/guide/prismabib-for-beginners.html`, with screenshots of the eight key screens. A test checks its bold labels and commands against the app, and a script regenerates the screenshots. (#425, #426, #427, #428, #429, #430, #431, #432, #433)
+
 ### Changed
 
 - **Architecture overview, Layer 1.** Authors and affiliations are no longer described as "resolved and deduplicated": the loader keeps one row per source author id and performs no disambiguation. Citations are no longer described as coming from the ScienceDirect API: each snapshot comes from the citation count in the search response. Documentation only; no code or number changes.

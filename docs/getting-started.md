@@ -80,9 +80,9 @@ Install the app with one line:
 uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"
 ```
 
-uv is the only thing this install needs. When the app starts, its first-run check also looks for
-Python 3.11 or newer, git and uv. The Home screen names anything missing and says how to fix it.
-git is the one you may have to install yourself.
+This install needs uv and git. uv also provides Python 3.11 or newer. When the app starts, its
+first-run check looks for Python 3.11 or newer, git and uv. The Home screen names anything missing
+and says how to fix it. git is the one you may have to install yourself.
 
 Start the app from any folder:
 
