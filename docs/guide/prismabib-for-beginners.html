@@ -27,11 +27,164 @@ html.es body [lang="es"] { display: revert; }
 </header>
 <main>
 <div lang="en" id="en-blocks">
-<section id="part1-en"><h2>Part 1: Install</h2>
-<p>First, install the app with one line. This command downloads the app and makes it available in your terminal.</p>
+<section id="part1-en"><h2>Part 1: Install the app on Windows</h2>
+<p>This part takes you from an empty Windows computer to an installed app that has passed a check. You will install two programs, run one line that installs the app, and then check the result. Type each command into a terminal and press Enter.</p>
+
+<h3>What you need</h3>
+<ul>
+<li>uv, the program that installs the app. uv also provides Python 3.11 or newer, so you do not install Python yourself. The one exception is the Smart App Control fallback in section 4.</li>
+<li>git, the program that the app checks for the first time it runs.</li>
+<li>A terminal, which Windows already has. Section 1 shows how to open it.</li>
+<li>An internet connection. The install line downloads the app, and later the app searches OpenAlex over the internet.</li>
+</ul>
+
+<h3>1. Open a terminal</h3>
+<p>A terminal is a window where you type a command, press Enter, and read the answer as text. You type every command in this part into one.</p>
+<p>To open one on Windows, press the Windows key, type <code>PowerShell</code>, and press Enter. A window opens with a line of text that ends in <code>&gt;</code>. That line is the prompt, and it is where you type.</p>
+<p>After you install a program, close this terminal and open a new one. Windows finds a newly installed program only in a window that was opened after the install.</p>
+
+<h3>2. Install uv</h3>
+<p>This command installs uv with winget, the Windows package tool. Type it and press Enter:</p>
+<pre class="cmd">winget install --id=astral-sh.uv -e</pre>
+<p>You should see winget print lines about finding, downloading and installing uv. When it finishes, the prompt comes back. The exact lines vary, so do not match them word for word.</p>
+<pre class="out">[lines from winget about uv, then the prompt]</pre>
+<p>Close the terminal, open a new one, and check that uv is found:</p>
+<pre class="cmd">uv --version</pre>
+<p>You should see <code>uv</code> followed by a version number:</p>
+<pre class="out">uv 0.x.y</pre>
+<p>If it fails:</p>
+<ul>
+<li>winget is not recognized: install uv by following the Windows instructions on docs.astral.sh/uv, the page the app names for uv. Then open a new terminal.</li>
+<li>uv is not recognized after the install: close the terminal, open a new one, and run <code>uv --version</code> again. If it still fails, run the winget command again and let it finish.</li>
+<li>winget stopped before the end: run the same winget command again.</li>
+</ul>
+
+<h3>3. Install git and check that it is found</h3>
+<p>This command installs git with winget. Type it and press Enter. Windows may ask whether the installer may make changes to your computer; answer Yes, or the install stops.</p>
+<pre class="cmd">winget install --id Git.Git -e --source winget</pre>
+<p>You should see winget print lines about the git download and install. When it finishes, the prompt comes back.</p>
+<pre class="out">[lines from winget about git, then the prompt]</pre>
+<p>Close the terminal, open a new one, and check that git is found:</p>
+<pre class="cmd">git --version</pre>
+<p>You should see <code>git version</code> followed by a version number:</p>
+<pre class="out">git version 2.x.x.windows.1</pre>
+<p>If it fails:</p>
+<ul>
+<li>git is not recognized: close the terminal, open a new one, and run <code>git --version</code> again. If it still fails, run the winget command above again and let it finish.</li>
+<li>winget is not recognized: install git with the Windows installer on git-scm.com, the site the app names for git. Then open a new terminal.</li>
+<li>The winget command stopped before the end: run it again.</li>
+</ul>
+
+<h3>4. If Smart App Control blocks the program</h3>
+<p>Windows can use Smart App Control or Application Control. These features can block a program that Windows does not trust, and then the install or the app does not start. The app's own check gives the same advice. If this happens, use a Python installed from python.org, not the Python that uv would download. Use this fallback only when Windows blocks the install. It is the only place in Part 1 where you install Python yourself.</p>
+<ol>
+<li>Install Python 3.11 or newer from python.org, using the Windows installer on that site. Do not use a Python from the Microsoft Store or a portable copy. In the installer, tick the option that adds Python to PATH.</li>
+<li>Open a new terminal and check that Windows finds this Python:</li>
+</ol>
+<pre class="cmd">python --version</pre>
+<p>You should see <code>Python</code> followed by version 3.11 or a newer one:</p>
+<pre class="out">Python 3.x.x</pre>
+<ol start="3">
+<li>In that same terminal window, tell uv to use only a Python that is already on this computer. This setting lasts until you close the window.</li>
+</ol>
+<pre class="cmd">$env:UV_PYTHON_PREFERENCE = "only-system"</pre>
+<pre class="out">(no output: the prompt comes back)</pre>
+<p>Then, in the same window, run the install line in section 5.</p>
+<p>If it fails:</p>
+<ul>
+<li>python is not recognized: run the python.org installer again and tick the option that adds Python to PATH.</li>
+<li><code>python --version</code> prints a version below 3.11: install 3.11 or a newer version from python.org.</li>
+<li>The install in section 5 still says it cannot find Python: open a new terminal, run the two lines of this section again, and then the install line in section 5.</li>
+<li>Windows still blocks the program: ask the project's maintainer on the project's GitHub Issues page before you change any Windows security setting.</li>
+</ul>
+
+<h3>5. Install the app with one line</h3>
+<p>This line downloads the app from the project's public GitHub repository and installs it, so that its command, <code>prismabib</code>, runs from any folder. Type it and press Enter:</p>
 <pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
-<p>Then start the app with the command below. It opens the app in your browser. When you are done, press <strong>Stop the app</strong>.</p>
-<pre class="cmd">prismabib gui</pre>
+<p>The line has four parts:</p>
+<ul>
+<li><code>uv tool install</code> asks uv to install a command-line program in its own area, which uv manages. The program stays apart from other Python programs on your computer.</li>
+<li><code>prismabib</code> is the name of the app's package, and the command you will type later.</li>
+<li><code>[gui]</code> adds the libraries that the browser app uses: Panel and param.</li>
+<li><code>@ git+https://github.com/SergioHuesca/PRISMA-Bib</code> says where the app comes from: the project's public GitHub repository. The install needs an internet connection. The double quotes keep the whole line together.</li>
+</ul>
+<p>You should see uv print lines about the packages it downloads and installs. The exact lines depend on the uv version. When it finishes, the prompt comes back.</p>
+<pre class="out">[lines from uv about downloading and installing packages, then the prompt]</pre>
+<p>If it fails:</p>
+<ul>
+<li>The error mentions git, or the check says git was not found: go back to step 3, open a new terminal, and run the install line again.</li>
+<li>uv is not recognized: go back to step 2 and check uv.</li>
+<li>The error mentions Python or a blocked program: go to section 4.</li>
+<li>The download fails with a network error: check your internet connection, then run the install line again.</li>
+</ul>
+
+<h3>6. Check the install</h3>
+<p>The app has a check, <code>prismabib doctor</code>. It looks at your computer and prints one line for each item. Open a new terminal, so that the new program is found, and run it:</p>
+<pre class="cmd">prismabib doctor</pre>
+<p>Every line starts with <code>ok</code>, <code>warn</code> or <code>FAIL</code>. A healthy result looks like this. Your paths and version numbers will differ.</p>
+<pre class="out">environment:
+ok   python 3.x.x (&lt;the Python that uv uses&gt;)
+ok   prismabib x.y.z
+ok   platform: &lt;your Windows version&gt;
+  hint: if Windows (Smart App Control / Application Control) blocks a program, use a Python installed from python.org (signed), not a store or portable build.
+ok   git: &lt;path to git&gt;
+ok   projects root: &lt;a folder&gt;, writable (does not exist yet; it is created on first use)
+ok   .env: not present (created by `prismabib credentials set`)</pre>
+<p>The check passes when no line starts with <code>FAIL</code>. A <code>warn</code> line is a note that does not stop the app. The hint line is a tip, not an error.</p>
+<p>If it fails:</p>
+<ul>
+<li><code>FAIL git: not found on PATH</code>: go back to step 3, open a new terminal, and run the check again.</li>
+<li>A <code>FAIL</code> line about the projects root says it is not writable: open a terminal in a folder you can write to, such as a folder in your own user account, and run the check again.</li>
+<li><code>prismabib</code> is not recognized: see the fix in "If prismabib is not recognized" at the end of this part.</li>
+</ul>
+
+<h3>Mac and Linux</h3>
+<aside class="box">
+<h4>Mac and Linux: taken from the project's documentation, not run by the authors</h4>
+<p>The steps in this box come from the project's documentation and its continuous-integration setup. The authors did not run these steps on a Mac or on Linux. Compare each step with what you see.</p>
+<ol>
+<li>Install uv and git. Follow the install instructions on docs.astral.sh/uv and git-scm.com, the sites the app names for these programs.</li>
+<li>Run the one-line install from section 5, unchanged:</li>
+</ol>
+<pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
+<ol start="3">
+<li>Open a new terminal and run the check from section 6:</li>
+</ol>
+<pre class="cmd">prismabib doctor</pre>
+<p>You should see the same kind of output as in section 6. If the command is not recognized, see "If prismabib is not recognized" at the end of this part.</p>
+</aside>
+
+<h3>7. The firewall prompt</h3>
+<p>The first time you start the app, which you will do later in this guide, Windows may ask whether to allow the app through the firewall. This prompt comes from Windows, not from the app. Choose <q>Private networks only</q> or <q>Cancel</q>. Either choice lets the app run, because the app talks only to this computer.</p>
+
+<h3>8. The app listens only on your computer</h3>
+<p>When the app runs, it listens on the address <code>127.0.0.1</code>, which means this computer. The app refuses any other address, so other computers cannot connect to it. Your searches still go out over the internet, because they go to OpenAlex.</p>
+
+<h3>If prismabib is not recognized</h3>
+<p>If the terminal says the <code>prismabib</code> command is not recognized, uv has not yet added its folder to your PATH list. This command adds it:</p>
+<pre class="cmd">uv tool update-shell</pre>
+<p>You should see a message from uv about that folder. Its exact words vary. Then close the terminal, open a new one, and run <code>prismabib doctor</code> again.</p>
+<pre class="out">[a message from uv about the folder]</pre>
+<p>If it fails:</p>
+<ul>
+<li>It is still not recognized in a new terminal: run <code>uv tool update-shell</code> again, close the terminal, and open a new one.</li>
+<li>uv is not recognized: go back to step 2.</li>
+<li>The message from uv reports an error: copy the message and ask the project's maintainer on the project's GitHub Issues page.</li>
+</ul>
+
+<h3>If the git or uv install did not finish</h3>
+<p>If an install stopped early, do not repair files by hand. Run the same winget commands again, one for uv and one for git:</p>
+<pre class="cmd">winget install --id=astral-sh.uv -e
+winget install --id Git.Git -e --source winget</pre>
+<pre class="out">[lines from winget, then the prompt]</pre>
+<p>Then check the program: <code>uv --version</code> for uv, or <code>git --version</code> for git.</p>
+<p>If it fails:</p>
+<ul>
+<li>It stops again with a network message: check your internet connection, then run the commands again.</li>
+<li>winget is not recognized: follow the Windows install instructions on docs.astral.sh/uv for uv, or on git-scm.com for git.</li>
+</ul>
+
+<p>When the check in section 6 shows no FAIL line, Part 1 is done. Continue to Part 2.</p>
 </section>
 <section id="part2-en"></section>
 <section id="part3a-setup-en"></section>
@@ -40,11 +193,164 @@ html.es body [lang="es"] { display: revert; }
 <section id="closing-en"></section>
 </div>
 <div lang="es" id="es-blocks">
-<section id="part1-es"><h2>Parte 1: Instalación</h2>
-<p>Primero, instala la aplicación con una sola línea. Este comando descarga la aplicación y la deja disponible en tu terminal.</p>
+<section id="part1-es"><h2>Parte 1: Instalar la aplicación en Windows</h2>
+<p>Esta parte le lleva desde un equipo Windows sin nada instalado hasta una aplicación instalada que ha superado una comprobación. Instalará dos programas, ejecutará una línea que instala la aplicación y después comprobará el resultado. Escriba cada comando en una terminal y pulse Enter.</p>
+
+<h3>Lo que necesita</h3>
+<ul>
+<li>uv, el programa que instala la aplicación. uv también proporciona Python 3.11 o una versión más reciente, así que usted no instala Python por su cuenta. La única excepción es la alternativa de Smart App Control de la sección 4.</li>
+<li>git, el programa que la aplicación busca la primera vez que se ejecuta.</li>
+<li>Una terminal, que Windows ya tiene. La sección 1 explica cómo abrirla.</li>
+<li>Conexión a internet. La línea de instalación descarga la aplicación, y más adelante la aplicación busca en OpenAlex por internet.</li>
+</ul>
+
+<h3>1. Abrir una terminal</h3>
+<p>Una terminal es una ventana donde escribe un comando, pulsa Enter y lee la respuesta en forma de texto. Escribirá en una terminal todos los comandos de esta parte.</p>
+<p>Para abrir una en Windows, pulse la tecla de Windows, escriba <code>PowerShell</code> y pulse Enter. Se abre una ventana con una línea de texto que termina en <code>&gt;</code>. Esa línea es el indicador, y es donde se escribe.</p>
+<p>Después de instalar un programa, cierre esta terminal y abra una nueva. Windows encuentra un programa recién instalado solo en una ventana que se abrió después de la instalación.</p>
+
+<h3>2. Instalar uv</h3>
+<p>Este comando instala uv con winget, la herramienta de paquetes de Windows. Escríbalo y pulse Enter:</p>
+<pre class="cmd">winget install --id=astral-sh.uv -e</pre>
+<p>Debe ver que winget muestra líneas sobre la búsqueda, la descarga y la instalación de uv. Cuando termina, vuelve el indicador. Las líneas exactas varían, así que no las compare palabra por palabra.</p>
+<pre class="out">[líneas de winget sobre uv, y después el indicador]</pre>
+<p>Cierre la terminal, abra una nueva y compruebe que se encuentra uv:</p>
+<pre class="cmd">uv --version</pre>
+<p>Debe ver <code>uv</code> seguido de un número de versión:</p>
+<pre class="out">uv 0.x.y</pre>
+<p>Si no funcionó:</p>
+<ul>
+<li>winget no se reconoce: instale uv siguiendo las instrucciones para Windows de docs.astral.sh/uv, la página que la aplicación indica para uv. Después abra una terminal nueva.</li>
+<li>uv no se reconoce después de la instalación: cierre la terminal, abra una nueva y ejecute otra vez <code>uv --version</code>. Si sigue fallando, ejecute otra vez el comando de winget y deje que termine.</li>
+<li>winget se detuvo antes del final: ejecute otra vez el mismo comando de winget.</li>
+</ul>
+
+<h3>3. Instalar git y comprobar que se encuentra</h3>
+<p>Este comando instala git con winget. Escríbalo y pulse Enter. Es posible que Windows le pregunte si el instalador puede hacer cambios en el equipo; responda Sí, o la instalación se detiene.</p>
+<pre class="cmd">winget install --id Git.Git -e --source winget</pre>
+<p>Debe ver que winget muestra líneas sobre la descarga y la instalación de git. Cuando termina, vuelve el indicador.</p>
+<pre class="out">[líneas de winget sobre git, y después el indicador]</pre>
+<p>Cierre la terminal, abra una nueva y compruebe que se encuentra git:</p>
+<pre class="cmd">git --version</pre>
+<p>Debe ver <code>git version</code> seguido de un número de versión:</p>
+<pre class="out">git version 2.x.x.windows.1</pre>
+<p>Si no funcionó:</p>
+<ul>
+<li>git no se reconoce: cierre la terminal, abra una nueva y ejecute otra vez <code>git --version</code>. Si sigue fallando, ejecute otra vez el comando de winget de arriba y deje que termine.</li>
+<li>winget no se reconoce: instale git con el instalador para Windows de git-scm.com, el sitio que la aplicación indica para git. Después abra una terminal nueva.</li>
+<li>El comando de winget se detuvo antes del final: ejecútelo otra vez.</li>
+</ul>
+
+<h3>4. Si Smart App Control bloquea el programa</h3>
+<p>Windows puede usar Smart App Control o Application Control. Estas funciones pueden bloquear un programa en el que Windows no confía, y entonces la instalación o la aplicación no arrancan. El propio consejo de comprobación de la aplicación dice lo mismo. Si ocurre, use un Python instalado desde python.org, y no el Python que uv descargaría. Use esta alternativa solo cuando Windows bloquee la instalación. Es el único lugar de la Parte 1 donde usted instala Python por su cuenta.</p>
+<ol>
+<li>Instale Python 3.11 o una versión más reciente desde python.org, con el instalador para Windows de esa web. No use un Python de la Microsoft Store ni una copia portátil. En el instalador, marque la opción que añade Python al PATH.</li>
+<li>Abra una terminal nueva y compruebe que Windows encuentra este Python:</li>
+</ol>
+<pre class="cmd">python --version</pre>
+<p>Debe ver <code>Python</code> seguido de la versión 3.11 o de una más reciente:</p>
+<pre class="out">Python 3.x.x</pre>
+<ol start="3">
+<li>En esa misma ventana de terminal, indique a uv que use solo un Python que ya esté en este equipo. Este ajuste dura hasta que cierre la ventana.</li>
+</ol>
+<pre class="cmd">$env:UV_PYTHON_PREFERENCE = "only-system"</pre>
+<pre class="out">(sin salida: vuelve el indicador)</pre>
+<p>Después, en la misma ventana, ejecute la línea de instalación de la sección 5.</p>
+<p>Si no funcionó:</p>
+<ul>
+<li>python no se reconoce: vuelva a ejecutar el instalador de python.org y marque la opción que añade Python al PATH.</li>
+<li><code>python --version</code> muestra una versión anterior a 3.11: instale desde python.org la versión 3.11 o una más reciente.</li>
+<li>La instalación de la sección 5 sigue diciendo que no encuentra Python: abra una terminal nueva, ejecute otra vez las dos líneas de esta sección y después la línea de la sección 5.</li>
+<li>Windows sigue bloqueando el programa: pregunte al responsable del proyecto en la página de Issues de GitHub del proyecto antes de cambiar cualquier ajuste de seguridad de Windows.</li>
+</ul>
+
+<h3>5. Instalar la aplicación con una sola línea</h3>
+<p>Esta línea descarga la aplicación desde el repositorio público del proyecto en GitHub y la instala, para que su comando, <code>prismabib</code>, funcione desde cualquier carpeta. Escríbala y pulse Enter:</p>
 <pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
-<p>Después, inicia la aplicación con el comando siguiente. Abre la aplicación en tu navegador. Cuando termines, pulsa <strong>Stop the app</strong>.</p>
-<pre class="cmd">prismabib gui</pre>
+<p>La línea tiene cuatro partes:</p>
+<ul>
+<li><code>uv tool install</code> pide a uv que instale un programa de línea de comandos en un espacio propio que uv gestiona. El programa queda aparte de otros programas de Python del equipo.</li>
+<li><code>prismabib</code> es el nombre del paquete de la aplicación, y el comando que escribirá más adelante.</li>
+<li><code>[gui]</code> añade las bibliotecas que usa la aplicación en el navegador: Panel y param.</li>
+<li><code>@ git+https://github.com/SergioHuesca/PRISMA-Bib</code> indica de dónde viene la aplicación: el repositorio público del proyecto en GitHub. La instalación necesita conexión a internet. Las comillas dobles mantienen la línea completa.</li>
+</ul>
+<p>Debe ver que uv muestra líneas sobre los paquetes que descarga e instala. Las líneas exactas dependen de la versión de uv. Cuando termina, vuelve el indicador.</p>
+<pre class="out">[líneas de uv sobre la descarga y la instalación de paquetes, y después el indicador]</pre>
+<p>Si no funcionó:</p>
+<ul>
+<li>El error menciona git, o la comprobación dice que no encuentra git: vuelva al paso 3, abra una terminal nueva y ejecute otra vez la línea de instalación.</li>
+<li>uv no se reconoce: vuelva al paso 2 y compruebe uv.</li>
+<li>El error menciona Python o un programa bloqueado: vaya a la sección 4.</li>
+<li>La descarga falla con un error de red: compruebe la conexión a internet y ejecute otra vez la línea de instalación.</li>
+</ul>
+
+<h3>6. Comprobar la instalación</h3>
+<p>La aplicación tiene una comprobación, <code>prismabib doctor</code>. Revisa el equipo e imprime una línea por cada elemento. Abra una terminal nueva, para que se encuentre el programa recién instalado, y ejecútela:</p>
+<pre class="cmd">prismabib doctor</pre>
+<p>Cada línea empieza por <code>ok</code>, <code>warn</code> o <code>FAIL</code>. Así se ve un resultado correcto. Sus rutas y números de versión serán distintos.</p>
+<pre class="out">environment:
+ok   python 3.x.x (&lt;el Python que usa uv&gt;)
+ok   prismabib x.y.z
+ok   platform: &lt;su versión de Windows&gt;
+  hint: if Windows (Smart App Control / Application Control) blocks a program, use a Python installed from python.org (signed), not a store or portable build.
+ok   git: &lt;ruta a git&gt;
+ok   projects root: &lt;una carpeta&gt;, writable (does not exist yet; it is created on first use)
+ok   .env: not present (created by `prismabib credentials set`)</pre>
+<p>La comprobación está bien cuando ninguna línea empieza por <code>FAIL</code>. Una línea <code>warn</code> es una nota que no detiene la aplicación. La línea hint es un consejo, no un error.</p>
+<p>Si no funcionó:</p>
+<ul>
+<li><code>FAIL git: not found on PATH</code>: vuelva al paso 3, abra una terminal nueva y ejecute otra vez la comprobación.</li>
+<li>Una línea <code>FAIL</code> sobre la carpeta de proyectos dice que no se puede escribir en ella: abra una terminal en una carpeta en la que pueda escribir, por ejemplo una carpeta de su cuenta de usuario, y ejecute otra vez la comprobación.</li>
+<li><code>prismabib</code> no se reconoce: vea la solución «Si prismabib no se reconoce» al final de esta parte.</li>
+</ul>
+
+<h3>Mac y Linux</h3>
+<aside class="box">
+<h4>Mac y Linux: tomado de la documentación del proyecto, no ejecutado por los autores</h4>
+<p>Los pasos de este recuadro vienen de la documentación del proyecto y de su configuración de integración continua. Los autores no ejecutaron estos pasos en un Mac ni en Linux. Compare cada paso con lo que vea.</p>
+<ol>
+<li>Instale uv y git. Siga las instrucciones de instalación de docs.astral.sh/uv y de git-scm.com, los sitios que la aplicación indica para estos programas.</li>
+<li>Ejecute la instalación de una sola línea de la sección 5, sin cambios:</li>
+</ol>
+<pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
+<ol start="3">
+<li>Abra una terminal nueva y ejecute la comprobación de la sección 6:</li>
+</ol>
+<pre class="cmd">prismabib doctor</pre>
+<p>Debe ver el mismo tipo de salida que en la sección 6. Si el comando no se reconoce, vea la solución «Si prismabib no se reconoce» al final de esta parte.</p>
+</aside>
+
+<h3>7. El aviso del cortafuegos</h3>
+<p>La primera vez que inicie la aplicación, lo que hará más adelante en esta guía, Windows puede preguntar si permite a la aplicación pasar por el cortafuegos. Este aviso viene de Windows, no de la aplicación. Elija <q>Private networks only</q> o <q>Cancel</q>. Cualquiera de las dos opciones permite que la aplicación se ejecute, porque solo se comunica con este equipo. Si Windows muestra estas opciones en otro idioma, busque la de redes privadas o la de cancelar.</p>
+
+<h3>8. La aplicación escucha solo en su equipo</h3>
+<p>Cuando la aplicación se ejecuta, escucha en la dirección <code>127.0.0.1</code>, que significa este equipo. La aplicación rechaza cualquier otra dirección, así que otros equipos no pueden conectarse a ella. Sus búsquedas sí salen por internet, porque van a OpenAlex.</p>
+
+<h3>Si prismabib no se reconoce</h3>
+<p>Si la terminal dice que el comando <code>prismabib</code> no se reconoce, uv todavía no ha añadido su carpeta a la lista PATH. Este comando la añade:</p>
+<pre class="cmd">uv tool update-shell</pre>
+<p>Debe ver un mensaje de uv sobre esa carpeta. Sus palabras exactas pueden variar. Después cierre la terminal, abra una nueva y ejecute otra vez <code>prismabib doctor</code>.</p>
+<pre class="out">[mensaje de uv sobre la carpeta]</pre>
+<p>Si no funcionó:</p>
+<ul>
+<li>Sigue sin reconocerse en una terminal nueva: ejecute otra vez <code>uv tool update-shell</code>, cierre la terminal y abra una nueva.</li>
+<li><code>uv</code> no se reconoce: vuelva al paso 2.</li>
+<li>El mensaje de uv indica un error: copie el mensaje y pregunte al responsable del proyecto en la página de Issues de GitHub del proyecto.</li>
+</ul>
+
+<h3>Si la instalación de git o de uv no terminó</h3>
+<p>Si una instalación se detuvo antes de terminar, no intente reparar archivos a mano. Ejecute otra vez los mismos comandos de winget, uno para uv y otro para git:</p>
+<pre class="cmd">winget install --id=astral-sh.uv -e
+winget install --id Git.Git -e --source winget</pre>
+<pre class="out">[líneas de winget, y después el indicador]</pre>
+<p>Después compruebe el programa: <code>uv --version</code> para uv, o <code>git --version</code> para git.</p>
+<p>Si no funcionó:</p>
+<ul>
+<li>Vuelve a detenerse con un mensaje de red: compruebe la conexión a internet y ejecute otra vez los comandos.</li>
+<li>winget no se reconoce: siga las instrucciones de instalación para Windows de docs.astral.sh/uv (para uv) o de git-scm.com (para git).</li>
+</ul>
+
+<p>Cuando la comprobación de la sección 6 no muestre ninguna línea FAIL, la Parte 1 está terminada. Continúe con la Parte 2.</p>
 </section>
 <section id="part2-es"></section>
 <section id="part3a-setup-es"></section>
