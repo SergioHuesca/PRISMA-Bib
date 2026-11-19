@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prismabib for beginners</title>
+<style>
+body { font-family: system-ui, sans-serif; line-height: 1.5; max-width: 46rem; margin: 0 auto; padding: 1rem; color: #1b1b1b; background: #fff; }
+h1, h2, h3 { line-height: 1.25; }
+pre { background: #f3f3f3; padding: 0.75rem; overflow-x: auto; border-radius: 4px; }
+code { font-family: ui-monospace, Consolas, monospace; }
+figure { margin: 1.5rem 0; }
+img { max-width: 100%; height: auto; border: 1px solid #ccc; }
+button#lang-switch { font: inherit; padding: 0.4rem 0.9rem; cursor: pointer; }
+button#lang-switch:focus { outline: 3px solid #1a5fb4; outline-offset: 2px; }
+body [lang="es"] { display: none; }
+html.es body [lang="en"] { display: none; }
+html.es body [lang="es"] { display: revert; }
+</style>
+</head>
+<body>
+<header>
+<p>
+<button type="button" id="lang-switch" aria-pressed="false"><span lang="en">Español</span><span lang="es">English</span></button>
+</p>
+<h1><span lang="en">prismabib for beginners</span><span lang="es">prismabib para principiantes</span></h1>
+</header>
+<main>
+<div lang="en" id="en-blocks">
+<section id="part1-en"><h2>Part 1: Install</h2>
+<p>First, install the app with one line. This command downloads the app and makes it available in your terminal.</p>
+<pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
+<p>Then start the app with the command below. It opens the app in your browser. When you are done, press <strong>Stop the app</strong>.</p>
+<pre class="cmd">prismabib gui</pre>
+</section>
+<section id="part2-en"></section>
+<section id="part3a-setup-en"></section>
+<section id="part3a-build-en"></section>
+<section id="part3b-en"></section>
+<section id="closing-en"></section>
+</div>
+<div lang="es" id="es-blocks">
+<section id="part1-es"><h2>Parte 1: Instalación</h2>
+<p>Primero, instala la aplicación con una sola línea. Este comando descarga la aplicación y la deja disponible en tu terminal.</p>
+<pre class="cmd">uv tool install "prismabib[gui] @ git+https://github.com/SergioHuesca/PRISMA-Bib"</pre>
+<p>Después, inicia la aplicación con el comando siguiente. Abre la aplicación en tu navegador. Cuando termines, pulsa <strong>Stop the app</strong>.</p>
+<pre class="cmd">prismabib gui</pre>
+</section>
+<section id="part2-es"></section>
+<section id="part3a-setup-es"></section>
+<section id="part3a-build-es"></section>
+<section id="part3b-es"></section>
+<section id="closing-es"></section>
+</div>
+<figure>
+<img id="img-1" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==">
+<figcaption><span lang="en">Placeholder image.</span><span lang="es">Imagen de relleno.</span></figcaption>
+</figure>
+</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var button = document.getElementById("lang-switch");
+  button.addEventListener("click", function () {
+    var spanish = root.classList.toggle("es");
+    root.lang = spanish ? "es" : "en";
+    button.setAttribute("aria-pressed", spanish ? "true" : "false");
+  });
+})();
+</script>
+</body>
+</html>
