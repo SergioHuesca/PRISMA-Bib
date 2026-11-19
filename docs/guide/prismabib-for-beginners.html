@@ -52,7 +52,7 @@ html.es body [lang="es"] { display: revert; }
 <pre class="cmd">uv --version</pre>
 <p>You should see <code>uv</code> followed by a version number:</p>
 <pre class="out">uv 0.x.y</pre>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>winget is not recognized: install uv by following the Windows instructions on docs.astral.sh/uv, the page the app names for uv. Then open a new terminal.</li>
 <li>uv is not recognized after the install: close the terminal, open a new one, and run <code>uv --version</code> again. If it still fails, run the winget command again and let it finish.</li>
@@ -68,7 +68,7 @@ html.es body [lang="es"] { display: revert; }
 <pre class="cmd">git --version</pre>
 <p>You should see <code>git version</code> followed by a version number:</p>
 <pre class="out">git version 2.x.x.windows.1</pre>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>git is not recognized: close the terminal, open a new one, and run <code>git --version</code> again. If it still fails, run the winget command above again and let it finish.</li>
 <li>winget is not recognized: install git with the Windows installer on git-scm.com, the site the app names for git. Then open a new terminal.</li>
@@ -90,7 +90,7 @@ html.es body [lang="es"] { display: revert; }
 <pre class="cmd">$env:UV_PYTHON_PREFERENCE = "only-system"</pre>
 <pre class="out">(no output: the prompt comes back)</pre>
 <p>Then, in the same window, run the install line in section 5.</p>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>python is not recognized: run the python.org installer again and tick the option that adds Python to PATH.</li>
 <li><code>python --version</code> prints a version below 3.11: install 3.11 or a newer version from python.org.</li>
@@ -110,7 +110,7 @@ html.es body [lang="es"] { display: revert; }
 </ul>
 <p>You should see uv print lines about the packages it downloads and installs. The exact lines depend on the uv version. When it finishes, the prompt comes back.</p>
 <pre class="out">[lines from uv about downloading and installing packages, then the prompt]</pre>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>The error mentions git, or the check says git was not found: go back to step 3, open a new terminal, and run the install line again.</li>
 <li>uv is not recognized: go back to step 2 and check uv.</li>
@@ -131,7 +131,7 @@ ok   git: &lt;path to git&gt;
 ok   projects root: &lt;a folder&gt;, writable (does not exist yet; it is created on first use)
 ok   .env: not present (created by `prismabib credentials set`)</pre>
 <p>The check passes when no line starts with <code>FAIL</code>. A <code>warn</code> line is a note that does not stop the app. The hint line is a tip, not an error.</p>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li><code>FAIL git: not found on PATH</code>: go back to step 3, open a new terminal, and run the check again.</li>
 <li>A <code>FAIL</code> line about the projects root says it is not writable: open a terminal in a folder you can write to, such as a folder in your own user account, and run the check again.</li>
@@ -165,7 +165,7 @@ ok   .env: not present (created by `prismabib credentials set`)</pre>
 <pre class="cmd">uv tool update-shell</pre>
 <p>You should see a message from uv about that folder. Its exact words vary. Then close the terminal, open a new one, and run <code>prismabib doctor</code> again.</p>
 <pre class="out">[a message from uv about the folder]</pre>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>It is still not recognized in a new terminal: run <code>uv tool update-shell</code> again, close the terminal, and open a new one.</li>
 <li>uv is not recognized: go back to step 2.</li>
@@ -178,7 +178,7 @@ ok   .env: not present (created by `prismabib credentials set`)</pre>
 winget install --id Git.Git -e --source winget</pre>
 <pre class="out">[lines from winget, then the prompt]</pre>
 <p>Then check the program: <code>uv --version</code> for uv, or <code>git --version</code> for git.</p>
-<p>If it fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>It stops again with a network message: check your internet connection, then run the commands again.</li>
 <li>winget is not recognized: follow the Windows install instructions on docs.astral.sh/uv for uv, or on git-scm.com for git.</li>
@@ -203,7 +203,7 @@ winget install --id Git.Git -e --source winget</pre>
 <h3>5. Save the query</h3>
 <p>Press <q><strong>Save query</strong></q>. The screen then shows <q>Query saved to project.toml and criteria.yaml.</q></p>
 <p>You can still change the query until the first capture starts. After that, the Query screen shows a notice that begins <q>Read-only.</q> and gives the reason. When a Run has started, the notice reads: <q>The query is read-only because a Run has started. A different search needs a new Project.</q> A Run that you discarded also counts, so it still locks the query.</p>
-<h3>If it did not go right</h3>
+<h3>If something goes wrong</h3>
 <ul>
 <li><q>Add at least one search term or compound term.</q> Add the compound term from step 2, then press <q><strong>Save query</strong></q> again.</li>
 <li><q>OpenAlex searches have no grouping in this version: use search terms only, or a single compound term on its own.</q> Remove the search terms, so that only the compound term remains.</li>
@@ -435,7 +435,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <p>Undo does not erase anything. It adds a new Unsure Decision to the Record on screen, and both the old Decision and the new one stay in the Decision log. The screen then reads <q>undone: the Record now counts as Unsure (the log keeps both Decisions)</q>.</p>
 <p>The header above each Record shows three counts. <strong>Unscreened:</strong> is the number of Records with no Decision yet. <strong>Unsure:</strong> is the number of Records whose latest Decision is Unsure. <strong>Records:</strong> is the total. An Unsure Record is not Unscreened: it has a Decision, and it stays in the queue.</p>
 <p>When you have finished a session, go back to the Flow counts screen and press <strong>Refresh the Flow counts</strong>. An exclusion at this stage moves one Record into <strong>Excluded at title and abstract</strong>, and an inclusion moves one into <strong>Sought for full-text retrieval</strong>.</p>
-<p>If the step fails:</p>
+<p>If something goes wrong:</p>
 <ul>
 <li>The screen says <q>Screening needs:</q> and names what is missing. If the Criteria are missing, finish the Criteria step. If the store is missing, finish the Build step.</li>
 <li>The screen says <q>Loading the Records.</q> Wait. The Screener appears when the loading ends.</li>
@@ -492,7 +492,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <pre class="cmd">uv --version</pre>
 <p>Debe ver <code>uv</code> seguido de un número de versión:</p>
 <pre class="out">uv 0.x.y</pre>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>winget no se reconoce: instale uv siguiendo las instrucciones para Windows de docs.astral.sh/uv, la página que la aplicación indica para uv. Después abra una terminal nueva.</li>
 <li>uv no se reconoce después de la instalación: cierre la terminal, abra una nueva y ejecute otra vez <code>uv --version</code>. Si sigue fallando, ejecute otra vez el comando de winget y deje que termine.</li>
@@ -508,7 +508,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <pre class="cmd">git --version</pre>
 <p>Debe ver <code>git version</code> seguido de un número de versión:</p>
 <pre class="out">git version 2.x.x.windows.1</pre>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>git no se reconoce: cierre la terminal, abra una nueva y ejecute otra vez <code>git --version</code>. Si sigue fallando, ejecute otra vez el comando de winget de arriba y deje que termine.</li>
 <li>winget no se reconoce: instale git con el instalador para Windows de git-scm.com, el sitio que la aplicación indica para git. Después abra una terminal nueva.</li>
@@ -530,7 +530,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <pre class="cmd">$env:UV_PYTHON_PREFERENCE = "only-system"</pre>
 <pre class="out">(sin salida: vuelve el indicador)</pre>
 <p>Después, en la misma ventana, ejecute la línea de instalación de la sección 5.</p>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>python no se reconoce: vuelva a ejecutar el instalador de python.org y marque la opción que añade Python al PATH.</li>
 <li><code>python --version</code> muestra una versión anterior a 3.11: instale desde python.org la versión 3.11 o una más reciente.</li>
@@ -550,7 +550,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 </ul>
 <p>Debe ver que uv muestra líneas sobre los paquetes que descarga e instala. Las líneas exactas dependen de la versión de uv. Cuando termina, vuelve el indicador.</p>
 <pre class="out">[líneas de uv sobre la descarga y la instalación de paquetes, y después el indicador]</pre>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>El error menciona git, o la comprobación dice que no encuentra git: vuelva al paso 3, abra una terminal nueva y ejecute otra vez la línea de instalación.</li>
 <li>uv no se reconoce: vuelva al paso 2 y compruebe uv.</li>
@@ -571,7 +571,7 @@ ok   git: &lt;ruta a git&gt;
 ok   projects root: &lt;una carpeta&gt;, writable (does not exist yet; it is created on first use)
 ok   .env: not present (created by `prismabib credentials set`)</pre>
 <p>La comprobación está bien cuando ninguna línea empieza por <code>FAIL</code>. Una línea <code>warn</code> es una nota que no detiene la aplicación. La línea hint es un consejo, no un error.</p>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li><code>FAIL git: not found on PATH</code>: vuelva al paso 3, abra una terminal nueva y ejecute otra vez la comprobación.</li>
 <li>Una línea <code>FAIL</code> sobre la carpeta de proyectos dice que no se puede escribir en ella: abra una terminal en una carpeta en la que pueda escribir, por ejemplo una carpeta de su cuenta de usuario, y ejecute otra vez la comprobación.</li>
@@ -605,7 +605,7 @@ ok   .env: not present (created by `prismabib credentials set`)</pre>
 <pre class="cmd">uv tool update-shell</pre>
 <p>Debe ver un mensaje de uv sobre esa carpeta. Sus palabras exactas pueden variar. Después cierre la terminal, abra una nueva y ejecute otra vez <code>prismabib doctor</code>.</p>
 <pre class="out">[mensaje de uv sobre la carpeta]</pre>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>Sigue sin reconocerse en una terminal nueva: ejecute otra vez <code>uv tool update-shell</code>, cierre la terminal y abra una nueva.</li>
 <li><code>uv</code> no se reconoce: vuelva al paso 2.</li>
@@ -618,7 +618,7 @@ ok   .env: not present (created by `prismabib credentials set`)</pre>
 winget install --id Git.Git -e --source winget</pre>
 <pre class="out">[líneas de winget, y después el indicador]</pre>
 <p>Después compruebe el programa: <code>uv --version</code> para uv, o <code>git --version</code> para git.</p>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>Vuelve a detenerse con un mensaje de red: compruebe la conexión a internet y ejecute otra vez los comandos.</li>
 <li>winget no se reconoce: siga las instrucciones de instalación para Windows de docs.astral.sh/uv (para uv) o de git-scm.com (para git).</li>
@@ -643,7 +643,7 @@ winget install --id Git.Git -e --source winget</pre>
 <h3>5. Guarda la búsqueda</h3>
 <p>Pulsa <q><strong>Save query</strong></q>. La pantalla muestra entonces <q>Query saved to project.toml and criteria.yaml.</q></p>
 <p>Puedes seguir cambiando la búsqueda hasta que empiece la primera captura. Después, la pantalla Query muestra un aviso que empieza por <q>Read-only.</q> y da el motivo. Cuando ya ha empezado una ejecución, el aviso dice: <q>The query is read-only because a Run has started. A different search needs a new Project.</q> Una ejecución que descartaste también cuenta, así que sigue bloqueando la búsqueda.</p>
-<h3>Si algo no sale bien</h3>
+<h3>Si algo sale mal</h3>
 <ul>
 <li><q>Add at least one search term or compound term.</q> Añade el término compuesto del paso 2 y pulsa <q><strong>Save query</strong></q> otra vez.</li>
 <li><q>OpenAlex searches have no grouping in this version: use search terms only, or a single compound term on its own.</q> Quita los términos de búsqueda, para que solo quede el término compuesto.</li>
@@ -875,7 +875,7 @@ Pages done: 1. Records seen: 100 of 108.</pre>
 <p>Undo no borra nada. Añade una Decision nueva, Unsure, al Record en pantalla, y tanto la Decision anterior como la nueva se quedan en el Decision log. Entonces la pantalla dice <q>undone: the Record now counts as Unsure (the log keeps both Decisions)</q>.</p>
 <p>La cabecera encima de cada Record muestra tres cifras. <strong>Unscreened:</strong> es el número de Records que todavía no tienen ninguna Decision. <strong>Unsure:</strong> es el número de Records cuya última Decision es Unsure. <strong>Records:</strong> es el total. Un Record Unsure no es Unscreened: ya tiene una Decision y se queda en la cola.</p>
 <p>Al terminar una sesión, vuelve a la pantalla Flow counts y pulsa <strong>Refresh the Flow counts</strong>. Una exclusión en esta fase mueve un Record a <strong>Excluded at title and abstract</strong>, y una inclusión mueve uno a <strong>Sought for full-text retrieval</strong>.</p>
-<p>Si no funcionó:</p>
+<p>Si algo sale mal:</p>
 <ul>
 <li>La pantalla dice <q>Screening needs:</q> y nombra lo que falta. Si faltan los Criteria, termina el paso Criteria. Si falta el store, termina el paso Build.</li>
 <li>La pantalla dice <q>Loading the Records.</q> Espera. El Screener aparece cuando termina la carga.</li>
