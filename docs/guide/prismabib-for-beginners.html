@@ -310,7 +310,100 @@ winget install --id Git.Git -e --source winget</pre>
 <li>The result is a network error: check your connection, then test again.</li>
 </ul>
 </section>
-<section id="part3a-build-en"></section>
+<section id="part3a-build-en">
+<h2>Part 3: Use the app end to end (continued)</h2>
+<p>This part takes you from the saved query to a built store. You save the rules, check how large the search is, capture the results and build the store. Button and field names are in bold and are quoted exactly as the app shows them in English.</p>
+
+<h3>Save the Criteria</h3>
+<p>The Criteria screen holds the rules that a Record must meet to stay in the review, and the reason codes you pick when you exclude a Record. Enter the reason codes for abstract screening in <strong>Reason codes for excluding at abstract screening</strong>, one per line. Full-text screening has its own list, in <strong>Reason codes for excluding at full-text screening</strong>.</p>
+<p>In the Screener you press <em>e</em> and then a number key to choose a reason. The first code in the list is key 1, the second is key 2, and so on up to key 9. A code after the ninth has no number key, but you can still pick it with the mouse.</p>
+<p>Enter the version in <strong>Criteria version (MAJOR.MINOR.PATCH)</strong> as three numbers separated by dots, for example 1.0.0. Raise the version whenever you change a rule, so that the history of your rules stays clear. The comments in the criteria file also ask you to commit each change to git.</p>
+<p>Press <strong>Save Criteria</strong>. The screen confirms the save with the version you entered:</p>
+<pre class="output">Criteria version 1.0.0 saved to criteria.yaml.</pre>
+<h4>If something goes wrong</h4>
+<ul>
+<li>A message next to a field says the value is not a semantic version. Enter three numbers separated by dots, such as 1.0.0, and press <strong>Save Criteria</strong> again.</li>
+<li>The screen says <q>Some entries need correcting.</q> Read the message next to each field, correct it, and press <strong>Save Criteria</strong> again.</li>
+<li>The screen says <q>The Criteria are read-only because a Decision has been logged.</q> Once screening has started, the Criteria cannot be changed in the app. This guide does not cover the command-line route.</li>
+<li>The screen says <q>criteria.yaml has changed since you opened this form</q>. Nothing was written. Leave the Criteria step, reopen it, and enter your changes again.</li>
+</ul>
+
+<h3>Check the size of the search</h3>
+<p>Press <strong>Check the size of the OpenAlex search</strong> before any capture. The check sends one request to OpenAlex and captures nothing. It writes nothing to your Project, so you can run it again as often as you like. For the worked example, the screen shows lines like these:</p>
+<pre class="output">Records: 108
+Cost bound: $0.00
+Page budget: 2 pages
+Remaining daily allowance: a number from OpenAlex
+Allowance resets: a date and time in your local time zone</pre>
+<p>The line that begins with Records gives the number of Records the search matches in OpenAlex at the moment you check. Your number may differ from the example. The count is read from OpenAlex each time you press the button, and the Getting Started page notes that OpenAlex's counts change over time. The example returned 108 Records on 2026-11-05. A different figure is not an error.</p>
+<p>The check then applies three rules to the Records count:</p>
+<ul>
+<li>2,000 Records or fewer: the check passes and you can continue.</li>
+<li>More than 2,000 and up to 10,000 Records: the app shows a warning. Tick <strong>I understand this is a large set and want to continue</strong> to go on.</li>
+<li>More than 10,000 Records: the app blocks the search and names the next step, which is to narrow the query. To narrow it, go to the Query screen, change the terms or the years, press <strong>Save query</strong>, and check again.</li>
+</ul>
+<p>For OpenAlex, the screen also shows your daily allowance: how much of it is left, in OpenAlex's own units, and when it resets. The reset time is shown in your local time zone. OpenAlex search has a daily limit of 1,000 pages, and a capture counts against it.</p>
+<p>If your Project searches Scopus, the check shows the quota cost instead. That is the number of requests the capture would use, together with the remaining weekly allowance. The screen gives no reset time for Scopus.</p>
+<p>When the check passes, press <strong>Continue to capture</strong>. The capture controls appear below it.</p>
+<h4>If something goes wrong</h4>
+<ul>
+<li>The screen says a key is needed to check the size. Press <strong>Go to the keys step</strong>, add the key, and then press <strong>Check the size of the OpenAlex search</strong> again.</li>
+<li><strong>Continue to capture</strong> stays grey. Either the check blocked the search, or a warning is waiting for your tick. Narrow the query if the search is blocked, or tick the box if it only warns.</li>
+<li>A sentence in bold appears under the check and names the problem and the next step. Read it, follow the next step, and check again. The saved query is unchanged.</li>
+</ul>
+
+<h3>Capture the search</h3>
+<p>Capturing fetches the search results from OpenAlex and keeps every page as it arrived. Set <strong>Page budget (pages of 100 works)</strong> to the most pages this run may fetch. The field starts at 10. The example needs 2 pages, so enter 2. A capture that reaches its budget stops, and you can resume it later.</p>
+<p class="works-note">OpenAlex calls the items it returns "works". This guide and the app call the same items Records, so the page budget counts pages of 100 Records each.</p>
+<p>Tick <strong>I confirm: capture this search now</strong>, then press <strong>Start the capture</strong>. The app clears the tick box after every start, including a resume, so you tick it again each time.</p>
+<p>While it runs, the screen shows a progress bar and counts like these:</p>
+<pre class="output">Running. You can close the browser; the capture keeps going.
+Pages done: 1. Records seen: 100 of 108.</pre>
+<p>Closing the browser does not stop the capture while the app runs. Keep the terminal window open, because the app keeps running in it.</p>
+<p>To pause, press <strong>Cancel the capture</strong>. The capture stops after the page it is fetching is saved, and the pages already fetched are kept. Press <strong>Resume the capture</strong> later to carry on from the same point.</p>
+<p>When every page has been fetched, the run is marked as Sealed:</p>
+<pre class="output">Sealed. The capture is finished and can no longer be changed.</pre>
+<p>A Sealed run is complete and the app never changes it.</p>
+<h4>If something goes wrong</h4>
+<ul>
+<li>The screen says <q>Check the size of the saved query first; it has changed or not run.</q> Press <strong>Check the size of the OpenAlex search</strong> again, then tick the box and start.</li>
+<li>The screen says <q>Confirm that you want to capture before it starts.</q> Tick <strong>I confirm: capture this search now</strong>, then press <strong>Start the capture</strong>.</li>
+<li>The screen says the network stopped and that the pages already fetched are kept. Check your internet connection, then press <strong>Resume the capture</strong>.</li>
+<li>The screen says OpenAlex's daily allowance is spent, and shows when it resets, in your local time. Wait until that time, then press <strong>Resume the capture</strong>.</li>
+</ul>
+
+<h3>Capture again, or discard an unfinished run</h3>
+<p><strong>Capture again (a new run)</strong> starts a new run of the same search, even though a Sealed run already exists. The Sealed run stays as it is. The new run sends new requests to OpenAlex, so it spends your daily allowance again. Use it only when you need a fresh capture.</p>
+<p>To discard an unsealed run you do not want, press <strong>Discard the unsealed run</strong>. The app asks you to confirm with <strong>Yes, discard it</strong>. Press <strong>Keep it</strong> to change your mind. Discarding deletes nothing: the pages already fetched stay on disk, and the discarded run is never resumed or sealed.</p>
+<h4>If something goes wrong</h4>
+<ul>
+<li>The screen says <q>This capture is already Sealed.</q> A Sealed run cannot be captured in place. Press <strong>Capture again (a new run)</strong> to start a new run.</li>
+<li>The screen says <q>The capture is running. Cancel it before discarding.</q> Press <strong>Cancel the capture</strong>, wait for it to stop, and then discard.</li>
+<li><strong>Discard the unsealed run</strong> is grey. Only an unsealed run can be discarded, and a Sealed run cannot be discarded.</li>
+</ul>
+
+<h3>Build the store</h3>
+<p>The store is the set of Records built from your captured searches. Press <strong>Build the store</strong>. After the first build, the button reads <strong>Rebuild the store</strong>. While the build runs, the screen says <q>Building.</q> and shows its progress.</p>
+<p>When the build finishes, the screen shows its result. For the example, it looks like this:</p>
+<pre class="output"><strong>Built.</strong> The store holds 108 Records. 0 duplicates across searches were removed.</pre>
+<p>Your numbers will be your own. A Record that more than one search returned is counted once, and the second number tells you how many duplicates were removed.</p>
+<p>A rebuild never touches your captured searches or your Decisions. The app replaces the store only when the new one is complete. To stop a build that is running, press <strong>Cancel the build</strong>. The app then says <q>Stopped as you asked.</q> and keeps the previous store.</p>
+<h4>If something goes wrong</h4>
+<ul>
+<li>The screen says <q>The build failed.</q> Read the sentence after it, fix the problem it names, and press <strong>Rebuild the store</strong>, or <strong>Build the store</strong> if there is no store yet.</li>
+<li>The store seems out of date after new captures. Press <strong>Rebuild the store</strong>. A rebuild keeps your captured searches and Decisions.</li>
+</ul>
+
+<h3>Delete the built store</h3>
+<p>Deleting the built store is safe, because you can build it again from your captured searches. Press <strong>Delete the built store</strong>. The app then lists what goes and what stays. Press <strong>Yes, delete the store</strong> to delete it, or <strong>Keep the store</strong> to keep it.</p>
+<p>Only the built store is deleted. Your captured searches and every Sealed run stay, and so do your Decision log, the Project's settings file and its Criteria file. The app never deletes any of these. After a delete, the screen says:</p>
+<pre class="output">The store was deleted. Build the store to make it again.</pre>
+<h4>If something goes wrong</h4>
+<ul>
+<li>The screen says <q>A task is running.</q> Wait for it to finish, or press <strong>Cancel the capture</strong> or <strong>Cancel the build</strong>, and then delete again.</li>
+<li>The screen says <q>The store could not be deleted, probably because another program has it open.</q> Close that program and press <strong>Delete the built store</strong> again.</li>
+</ul>
+</section>
 <section id="part3b-en"></section>
 <section id="closing-en"></section>
 </div>
@@ -598,7 +691,100 @@ winget install --id Git.Git -e --source winget</pre>
 <li>El resultado es un error de red: revisa tu conexión y prueba de nuevo.</li>
 </ul>
 </section>
-<section id="part3a-build-es"></section>
+<section id="part3a-build-es">
+<h2>Parte 3: Usar la aplicación de principio a fin (continuación)</h2>
+<p>Esta parte lleva desde la consulta guardada hasta un almacén construido. Guardas las reglas, compruebas el tamaño de la búsqueda, capturas los resultados y construyes el almacén. Los nombres de botones y campos van en negrita y se citan exactamente como aparecen en inglés en la aplicación.</p>
+
+<h3>Guardar los criterios</h3>
+<p>La pantalla Criteria contiene las reglas que un Record debe cumplir para seguir en la revisión, y los códigos de motivo que eliges al excluir un Record. Escribe los códigos de motivo para el cribado de resúmenes en <strong>Reason codes for excluding at abstract screening</strong>, uno por línea. El cribado de texto completo tiene su propia lista, en <strong>Reason codes for excluding at full-text screening</strong>.</p>
+<p>En el Screener pulsas <em>e</em> y luego una tecla numérica para elegir un motivo. El primer código de la lista es la tecla 1, el segundo la tecla 2, y así hasta la tecla 9. Un código después del noveno no tiene tecla numérica, pero puedes elegirlo con el ratón.</p>
+<p>Escribe la versión en <strong>Criteria version (MAJOR.MINOR.PATCH)</strong> como tres números separados por puntos, por ejemplo 1.0.0. Sube la versión cada vez que cambies una regla, para que el historial de tus reglas siga claro. Los comentarios del archivo de criterios también piden guardar cada cambio en git.</p>
+<p>Pulsa <strong>Save Criteria</strong>. La pantalla confirma el guardado con la versión que escribiste:</p>
+<pre class="output">Criteria version 1.0.0 saved to criteria.yaml.</pre>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>Un mensaje junto a un campo indica que el valor no es una versión semántica. Escribe tres números separados por puntos, por ejemplo 1.0.0, y vuelve a pulsar <strong>Save Criteria</strong>.</li>
+<li>La pantalla dice <q>Some entries need correcting.</q> Lee el mensaje junto a cada campo, corrígelo y vuelve a pulsar <strong>Save Criteria</strong>.</li>
+<li>La pantalla dice <q>The Criteria are read-only because a Decision has been logged.</q> Cuando el cribado ha empezado, los criterios no se pueden cambiar en la aplicación. Esta guía no explica la ruta de línea de comandos.</li>
+<li>La pantalla dice <q>criteria.yaml has changed since you opened this form</q>. No se guardó nada. Sal del paso Criteria, vuelve a abrirlo y escribe tus cambios de nuevo.</li>
+</ul>
+
+<h3>Comprobar el tamaño de la búsqueda</h3>
+<p>Pulsa <strong>Check the size of the OpenAlex search</strong> antes de cualquier captura. La comprobación envía una sola solicitud a OpenAlex y no captura nada. No escribe nada en tu Project, así que puedes repetirla cuantas veces quieras. Para el ejemplo, la pantalla muestra líneas como estas:</p>
+<pre class="output">Records: 108
+Cost bound: $0.00
+Page budget: 2 pages
+Remaining daily allowance: un número que devuelve OpenAlex
+Allowance resets: una fecha y hora en tu zona horaria local</pre>
+<p>La línea que empieza por Records indica cuántos Records encuentra la búsqueda en OpenAlex en el momento de la comprobación. Tu número puede ser distinto del ejemplo. La comprobación lee el recuento de OpenAlex cada vez que pulsas el botón, y la página Getting Started indica que esos recuentos cambian con el tiempo. El ejemplo devolvió 108 Records el 2026-11-05. Una cifra distinta no es un error.</p>
+<p>Después, la comprobación aplica tres reglas al recuento de Records:</p>
+<ul>
+<li>2.000 Records o menos: la comprobación pasa y puedes continuar.</li>
+<li>Más de 2.000 y hasta 10.000 Records: la aplicación muestra un aviso. Marca <strong>I understand this is a large set and want to continue</strong> para seguir.</li>
+<li>Más de 10.000 Records: la aplicación bloquea la búsqueda e indica el siguiente paso, que es reducir la consulta. Para reducirla, ve a la pantalla Query, cambia los términos o los años, pulsa <strong>Save query</strong> y vuelve a comprobar.</li>
+</ul>
+<p>En OpenAlex, la pantalla muestra además tu asignación diaria: cuánta queda, en las unidades propias de OpenAlex, y cuándo se restablece. La hora de restablecimiento se muestra en tu hora local. La búsqueda en OpenAlex tiene un límite diario de 1.000 páginas, y una captura cuenta contra ese límite.</p>
+<p>Si tu Project busca en Scopus, la comprobación muestra en su lugar el coste de cuota. Es el número de solicitudes que usaría la captura, junto con la asignación semanal restante. La pantalla no indica hora de restablecimiento para Scopus.</p>
+<p>Cuando la comprobación pasa, pulsa <strong>Continue to capture</strong>. Debajo aparecen los controles de captura.</p>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La pantalla dice que hace falta una clave para comprobar el tamaño. Pulsa <strong>Go to the keys step</strong>, añade la clave y luego vuelve a pulsar <strong>Check the size of the OpenAlex search</strong>.</li>
+<li><strong>Continue to capture</strong> aparece en gris. La comprobación bloqueó la búsqueda, o hay un aviso que espera tu marca. Si está bloqueada, reduce la consulta; si solo avisa, marca la casilla.</li>
+<li>Aparece una frase en negrita debajo de la comprobación con el problema y el siguiente paso. Léela, sigue el paso y vuelve a comprobar. La consulta guardada no ha cambiado.</li>
+</ul>
+
+<h3>Capturar la búsqueda</h3>
+<p>Capturar trae los resultados de la búsqueda desde OpenAlex y guarda cada página tal como llegó. Ajusta <strong>Page budget (pages of 100 works)</strong> al máximo de páginas que puede traer esta ejecución. El campo empieza en 10. El ejemplo necesita 2 páginas, así que escribe 2. Una captura que llega a su presupuesto se detiene, y puedes reanudarla después.</p>
+<p class="works-note">OpenAlex llama "works" a los elementos que devuelve. Esta guía y la aplicación llaman Records a esos mismos elementos, así que el presupuesto de páginas cuenta páginas de 100 Records cada una.</p>
+<p>Marca <strong>I confirm: capture this search now</strong> y pulsa <strong>Start the capture</strong>. La aplicación desmarca la casilla después de cada inicio, incluida una reanudación, así que la marcas de nuevo cada vez.</p>
+<p>Mientras se ejecuta, la pantalla muestra una barra de progreso y recuentos como estos:</p>
+<pre class="output">Running. You can close the browser; the capture keeps going.
+Pages done: 1. Records seen: 100 of 108.</pre>
+<p>Cerrar el navegador no detiene la captura mientras la aplicación esté en marcha. Mantén abierta la ventana de la terminal, porque la aplicación sigue funcionando en ella.</p>
+<p>Para pausarla, pulsa <strong>Cancel the capture</strong>. La captura se detiene después de guardar la página que está trayendo, y las páginas ya traídas se conservan. Pulsa <strong>Resume the capture</strong> más tarde para continuar desde el mismo punto.</p>
+<p>Cuando se han traído todas las páginas, la ejecución se marca como Sealed:</p>
+<pre class="output">Sealed. The capture is finished and can no longer be changed.</pre>
+<p>Una Sealed run está completa, y la aplicación nunca la cambia.</p>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La pantalla dice <q>Check the size of the saved query first; it has changed or not run.</q> Pulsa de nuevo <strong>Check the size of the OpenAlex search</strong>, luego marca la casilla e inicia.</li>
+<li>La pantalla dice <q>Confirm that you want to capture before it starts.</q> Marca <strong>I confirm: capture this search now</strong> y pulsa <strong>Start the capture</strong>.</li>
+<li>La pantalla dice que la red se detuvo y que las páginas ya traídas se conservan. Revisa tu conexión a internet y pulsa <strong>Resume the capture</strong>.</li>
+<li>La pantalla dice que la asignación diaria de OpenAlex está agotada y muestra cuándo se restablece, en tu hora local. Espera hasta esa hora y pulsa <strong>Resume the capture</strong>.</li>
+</ul>
+
+<h3>Capturar de nuevo, o descartar una ejecución sin sellar</h3>
+<p><strong>Capture again (a new run)</strong> inicia una nueva ejecución de la misma búsqueda, aunque ya exista una Sealed run. La Sealed run se queda como está. La nueva ejecución envía solicitudes nuevas a OpenAlex, así que vuelve a gastar tu asignación diaria. Úsala solo cuando necesites una captura nueva.</p>
+<p>Para descartar una ejecución sin sellar que no quieres, pulsa <strong>Discard the unsealed run</strong>. La aplicación te pide confirmar con <strong>Yes, discard it</strong>. Pulsa <strong>Keep it</strong> si cambias de opinión. Descartar no borra nada: las páginas ya traídas siguen en el disco, y la ejecución descartada nunca se reanuda ni se sella.</p>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La pantalla dice <q>This capture is already Sealed.</q> Una Sealed run no se puede capturar en su lugar. Pulsa <strong>Capture again (a new run)</strong> para iniciar una nueva ejecución.</li>
+<li>La pantalla dice <q>The capture is running. Cancel it before discarding.</q> Pulsa <strong>Cancel the capture</strong>, espera a que se detenga y después descarta.</li>
+<li><strong>Discard the unsealed run</strong> aparece en gris. Solo se puede descartar una ejecución sin sellar; una Sealed run no se puede descartar.</li>
+</ul>
+
+<h3>Construir el almacén</h3>
+<p>El almacén es el conjunto de Records construido a partir de tus búsquedas capturadas. Pulsa <strong>Build the store</strong>. Después de la primera construcción, el botón dice <strong>Rebuild the store</strong>. Mientras se construye, la pantalla dice <q>Building.</q> y muestra el progreso.</p>
+<p>Cuando termina la construcción, la pantalla muestra el resultado. Para el ejemplo, se ve así:</p>
+<pre class="output"><strong>Built.</strong> The store holds 108 Records. 0 duplicates across searches were removed.</pre>
+<p>Tus números serán los tuyos. Un Record que devuelven varias búsquedas se cuenta una sola vez, y el segundo número indica cuántos duplicados se eliminaron.</p>
+<p>Reconstruir nunca toca tus búsquedas capturadas ni tus Decisions. La aplicación reemplaza el almacén solo cuando el nuevo está completo. Para detener una construcción en curso, pulsa <strong>Cancel the build</strong>. La aplicación dice <q>Stopped as you asked.</q> y conserva el almacén anterior.</p>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La pantalla dice <q>The build failed.</q> Lee la frase que sigue, corrige el problema que indica y pulsa <strong>Rebuild the store</strong>, o <strong>Build the store</strong> si todavía no hay almacén.</li>
+<li>El almacén parece desactualizado tras nuevas capturas. Pulsa <strong>Rebuild the store</strong>. Reconstruir conserva tus búsquedas capturadas y tus Decisions.</li>
+</ul>
+
+<h3>Borrar el almacén construido</h3>
+<p>Borrar el almacén construido es seguro, porque puedes construirlo de nuevo a partir de tus búsquedas capturadas. Pulsa <strong>Delete the built store</strong>. La aplicación muestra qué se borra y qué se conserva. Pulsa <strong>Yes, delete the store</strong> para borrarlo, o <strong>Keep the store</strong> para conservarlo.</p>
+<p>Solo se borra el almacén construido. Tus búsquedas capturadas y cada Sealed run se quedan, y también se quedan tu Decision log, el archivo de ajustes del Project y su archivo de Criteria. La aplicación nunca borra ninguno de estos. Después de borrar, la pantalla dice:</p>
+<pre class="output">The store was deleted. Build the store to make it again.</pre>
+<h4>Si algo sale mal</h4>
+<ul>
+<li>La pantalla dice <q>A task is running.</q> Espera a que termine, o pulsa <strong>Cancel the capture</strong> o <strong>Cancel the build</strong>, y luego borra de nuevo.</li>
+<li>La pantalla dice <q>The store could not be deleted, probably because another program has it open.</q> Cierra ese programa y pulsa <strong>Delete the built store</strong> otra vez.</li>
+</ul>
+</section>
 <section id="part3b-es"></section>
 <section id="closing-es"></section>
 </div>
