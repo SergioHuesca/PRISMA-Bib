@@ -46,3 +46,10 @@ def test_docs__named_pages__use_no_banned_phrase() -> None:
         text = " ".join((ROOT / "docs" / page).read_text(encoding="utf-8").lower().split())
         for phrase in BANNED_PHRASES:
             assert phrase not in text, f"{page} still says {phrase!r}"
+
+
+def test_name_sweep__chip_exception_reason__names_the_tracking_issue_not_380() -> None:
+    sweep = ROOT / "tests/integration/gui/browser/test_name_sweep.py"
+    reason = sweep.read_text(encoding="utf-8").split("_CHIP_REASON = (", 1)[1].split(")\n", 1)[0]
+    assert "#410" in reason
+    assert "#380" not in reason

@@ -58,7 +58,7 @@ class Exception_:
 
 _CHIP_REASON = (
     "Choices.js puts role=combobox on the box container and Bokeh passes no label id, so the "
-    "container has no name; whether Panel can name it is UNVERIFIED. Tracked in #380."
+    "container has no name; whether Panel can name it is UNVERIFIED. Tracked in #410."
 )
 #: Every control allowed a bad name. The sweep fails on an entry that matches no control.
 EXCEPTIONS: Final = [
