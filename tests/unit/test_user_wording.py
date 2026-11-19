@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-GLOSSARY = Path(__file__).resolve().parents[2] / "GLOSSARY.md"
+ROOT = Path(__file__).resolve().parents[2]
+GLOSSARY = ROOT / "GLOSSARY.md"
+PAGES = ("getting-started.md", "how-to/run-the-demo.md", "methodology/limitations.md")
+BANNED_PHRASES = ("register a paper", "studies in the final corpus")
 
 
 def entry(term: str) -> str:
@@ -36,3 +39,10 @@ def test_glossary__new_entries__name_no_module_field_or_file() -> None:
     for term in ("Reviewer", "actor"):
         body = entry(term)
         assert not re.search(r"\.(py|yaml|jsonl|md|duckdb)\b|\b\w+_\w+\b|`", body), body
+
+
+def test_docs__named_pages__use_no_banned_phrase() -> None:
+    for page in PAGES:
+        text = " ".join((ROOT / "docs" / page).read_text(encoding="utf-8").lower().split())
+        for phrase in BANNED_PHRASES:
+            assert phrase not in text, f"{page} still says {phrase!r}"

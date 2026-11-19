@@ -732,7 +732,7 @@ Eligibility -- full text, from logged human decisions
       (unsure never resolves to inclusion; it stays in the queue)
 
 Included
-  studies in the final corpus                           0
+  included studies                                      0
 ```
 
 Read the signs like this:
@@ -794,7 +794,7 @@ The numbers move as follows:
 
 No number is typed in. Every line is recomputed from the store and the log each time you run it.
 
-### Step 10. Optional: register a paper OpenAlex did not return
+### Step 10. Optional: register a record OpenAlex did not return
 
 Use this step when you know a paper that the search missed. A reviewer registers it as a record.
 The flow counts it on its own `registered` line and never adds it to `identified`. The example
@@ -1384,7 +1384,7 @@ Eligibility -- full text, from logged human decisions
       (unsure never resolves to inclusion; it stays in the queue)
 
 Included
-  studies in the final corpus                           0
+  included studies                                      0
 ```
 
 That is the state after exactly one logged exclusion: 1,322 records reached title/abstract

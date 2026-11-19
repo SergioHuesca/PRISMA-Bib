@@ -138,7 +138,7 @@ brings up the next entry.
 
 ## Registered records: a second, manual population
 
-**Current state, and deliberate.** A reviewer may register a paper found by a manual Google
+**Current state, and deliberate.** A reviewer may register a candidate found by a manual Google
 Scholar search as a record
 ([ADR 0029](../architecture/adr/0029-reviewer-registration-of-a-candidate-as-a-record.md),
 [ADR 0032](../architecture/adr/0032-registered-records-table-and-classification-map.md)).
