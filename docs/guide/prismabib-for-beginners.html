@@ -186,7 +186,44 @@ winget install --id Git.Git -e --source winget</pre>
 
 <p>When the check in section 6 shows no FAIL line, Part 1 is done. Continue to Part 2.</p>
 </section>
-<section id="part2-en"></section>
+<section id="part2-en"><h2>Part 2: Write the search</h2>
+<p>In this part you write the search on the <q><strong>Query</strong></q> screen of the app. The search is the list of words that the app sends to the database. The example in this guide searches OpenAlex for baseball, pose estimation and pitcher, for the years 2015 to 2026. Saving the query does not search anything. It only writes the search and the years into your project folder.</p>
+<h3>1. Add the search terms</h3>
+<p>Click the box under <q><strong>Search terms</strong></q>, type one word or phrase, and press Enter. The word appears as a chip, a small box with a remove button. Each search term is an alternative: the app joins the terms with OR, so a Record matches if it has at least one of them.</p>
+<p>The worked example uses no search terms, so leave this box empty.</p>
+<h3>2. Add the compound term</h3>
+<p>A compound term is a group of parts that must all appear. Click the box under <q><strong>Compound terms</strong></q>, type <code>baseball + pose estimation + pitcher</code>, and press Enter. Put a space on each side of the plus sign. Without the spaces, the whole text becomes one phrase.</p>
+<p>The app saves a compound term as its parts in quotation marks, joined by AND. For the example, the app saves this line in the project file (project.toml):</p>
+<pre><code>search = '"baseball" AND "pose estimation" AND "pitcher"'</code></pre>
+<p>The text between the outer single quotation marks is the search: <code>"baseball" AND "pose estimation" AND "pitcher"</code>.</p>
+<h3>3. Set the years</h3>
+<p>In <q><strong>First year</strong></q>, type 2015. In <q><strong>Last year</strong></q>, type 2026. Both boxes are needed. The same years are copied to the <q><strong>Criteria</strong></q> screen, as <q><strong>Include from year</strong></q> and <q><strong>Include up to year</strong></q>, so they also apply as a screening rule.</p>
+<h3>4. Leave Subject areas empty</h3>
+<p>Leave <q><strong>Subject areas</strong></q> empty for this example. An empty list means no restriction. An empty box does not mean that nothing matches.</p>
+<h3>5. Save the query</h3>
+<p>Press <q><strong>Save query</strong></q>. The screen then shows <q>Query saved to project.toml and criteria.yaml.</q></p>
+<p>You can still change the query until the first capture starts. After that, the Query screen shows a notice that begins <q>Read-only.</q> and gives the reason. When a Run has started, the notice reads: <q>The query is read-only because a Run has started. A different search needs a new Project.</q> A Run that you discarded also counts, so it still locks the query.</p>
+<h3>If it did not go right</h3>
+<ul>
+<li><q>Add at least one search term or compound term.</q> Add the compound term from step 2, then press <q><strong>Save query</strong></q> again.</li>
+<li><q>OpenAlex searches have no grouping in this version: use search terms only, or a single compound term on its own.</q> Remove the search terms, so that only the compound term remains.</li>
+<li><q>Enter both the first and the last year.</q> Type 2015 and 2026, then save again.</li>
+<li>The notice <q>Read-only.</q> stays once a Run has started. Nothing is wrong. To search differently, start a new Project.</li>
+</ul>
+<h3>The example count</h3>
+<p>The example returned 108 Records on 2026-11-05, the date the repository documents. The count may differ today, because OpenAlex's counts change over time. Part 3 shows where the count of Records appears in the app.</p>
+<div id="scopus-en">
+<h3>If you have Scopus</h3>
+<p>Read this only if your Source mode uses Scopus. The steps above still apply. There are three differences. This guide does not walk through a Scopus capture.</p>
+<ol>
+<li><q><strong>Subject areas</strong></q> is disabled, and the screen shows why: <q>Restricting by subject area with Scopus needs Enrichment, which this version does not offer.</q></li>
+<li>In the size check, <q><strong>Check the size of the Scopus search</strong></q> shows the quota cost and the remaining weekly allowance, as <q>Quota cost</q> and <q>Remaining weekly allowance</q>. It shows no reset time. The OpenAlex check shows when its daily allowance resets.</li>
+<li>A capture needs a key entitled to the full view, which the software calls COMPLETE. If your key does not have it, the app refuses the capture and does not fall back to a lower view. The screen then shows the general key message <q>A key is missing, or the service did not accept it.</q> and suggests checking the key. A valid key can show that message too, because the refusal is about the view. The size check does not need the full view, so it can succeed before a capture is refused.</li>
+</ol>
+<p>Elsevier and your institution decide which views your key can use. You find out only by trying.</p>
+<p>For the difference between a query and criteria, read the page named <q>Build a Scopus Query</q> in this documentation. You can open it here: <a href="../how-to/build-a-query/">Build a Scopus Query</a>.</p>
+</div>
+</section>
 <section id="part3a-setup-en"></section>
 <section id="part3a-build-en"></section>
 <section id="part3b-en"></section>
@@ -352,7 +389,44 @@ winget install --id Git.Git -e --source winget</pre>
 
 <p>Cuando la comprobación de la sección 6 no muestre ninguna línea FAIL, la Parte 1 está terminada. Continúe con la Parte 2.</p>
 </section>
-<section id="part2-es"></section>
+<section id="part2-es"><h2>Parte 2: Escribe la búsqueda</h2>
+<p>En esta parte escribes la búsqueda en la pantalla <q><strong>Query</strong></q> de la aplicación. La búsqueda es la lista de palabras que la aplicación envía a la base de datos. El ejemplo de esta guía busca en OpenAlex baseball, pose estimation y pitcher, para los años 2015 a 2026. Guardar la búsqueda no busca nada: solo escribe la búsqueda y los años en la carpeta de tu proyecto.</p>
+<h3>1. Añade los términos de búsqueda</h3>
+<p>Haz clic en el recuadro debajo de <q><strong>Search terms</strong></q>, escribe una palabra o una frase y pulsa Enter. La palabra aparece como una ficha, un recuadro pequeño con un botón para quitarla. Cada término de búsqueda es una alternativa: la aplicación los une con OR, así que un registro coincide si tiene al menos uno de ellos.</p>
+<p>El ejemplo de la guía no usa términos de búsqueda, así que deja este recuadro vacío.</p>
+<h3>2. Añade el término compuesto</h3>
+<p>Un término compuesto es un grupo de partes que deben aparecer todas. Haz clic en el recuadro debajo de <q><strong>Compound terms</strong></q>, escribe <code>baseball + pose estimation + pitcher</code> y pulsa Enter. Deja un espacio a cada lado del signo más. Sin los espacios, todo el texto se convierte en una sola frase.</p>
+<p>La aplicación guarda un término compuesto como sus partes entre comillas, unidas por AND. Para el ejemplo, la aplicación guarda esta línea en el archivo del proyecto (project.toml):</p>
+<pre><code>search = '"baseball" AND "pose estimation" AND "pitcher"'</code></pre>
+<p>El texto entre las comillas simples exteriores es la búsqueda: <code>"baseball" AND "pose estimation" AND "pitcher"</code>.</p>
+<h3>3. Indica los años</h3>
+<p>En <q><strong>First year</strong></q>, escribe 2015. En <q><strong>Last year</strong></q>, escribe 2026. Hacen falta los dos. Los mismos años se copian a la pantalla <q><strong>Criteria</strong></q>, como <q><strong>Include from year</strong></q> e <q><strong>Include up to year</strong></q>, así que también se aplican como regla de cribado.</p>
+<h3>4. Deja Subject areas vacío</h3>
+<p>Deja <q><strong>Subject areas</strong></q> vacío en este ejemplo. Una lista vacía significa sin restricción. Un recuadro vacío no significa que no coincida nada.</p>
+<h3>5. Guarda la búsqueda</h3>
+<p>Pulsa <q><strong>Save query</strong></q>. La pantalla muestra entonces <q>Query saved to project.toml and criteria.yaml.</q></p>
+<p>Puedes seguir cambiando la búsqueda hasta que empiece la primera captura. Después, la pantalla Query muestra un aviso que empieza por <q>Read-only.</q> y da el motivo. Cuando ya ha empezado una ejecución, el aviso dice: <q>The query is read-only because a Run has started. A different search needs a new Project.</q> Una ejecución que descartaste también cuenta, así que sigue bloqueando la búsqueda.</p>
+<h3>Si algo no sale bien</h3>
+<ul>
+<li><q>Add at least one search term or compound term.</q> Añade el término compuesto del paso 2 y pulsa <q><strong>Save query</strong></q> otra vez.</li>
+<li><q>OpenAlex searches have no grouping in this version: use search terms only, or a single compound term on its own.</q> Quita los términos de búsqueda, para que solo quede el término compuesto.</li>
+<li><q>Enter both the first and the last year.</q> Escribe 2015 y 2026, y guarda otra vez.</li>
+<li>El aviso <q>Read-only.</q> permanece una vez que ha empezado una ejecución. No hay ningún error. Para buscar de otra manera, empieza un proyecto nuevo.</li>
+</ul>
+<h3>El recuento del ejemplo</h3>
+<p>El ejemplo devolvió 108 registros el 2026-11-05, la fecha que documenta el repositorio. Hoy el número puede ser distinto, porque los recuentos de OpenAlex cambian con el tiempo. La parte 3 muestra dónde aparece el recuento de registros en la aplicación.</p>
+<div id="scopus-es">
+<h3>Si tienes Scopus</h3>
+<p>Lee esto solo si tu modo de fuente usa Scopus. Los pasos anteriores siguen valiendo. Hay tres diferencias. Esta guía no recorre una captura de Scopus.</p>
+<ol>
+<li><q><strong>Subject areas</strong></q> aparece desactivado, y la pantalla explica por qué: <q>Restricting by subject area with Scopus needs Enrichment, which this version does not offer.</q></li>
+<li>En la comprobación de tamaño, <q><strong>Check the size of the Scopus search</strong></q> muestra el coste de cuota y la cuota semanal que queda, como <q>Quota cost</q> y <q>Remaining weekly allowance</q>. No muestra cuándo se reinicia. La comprobación de OpenAlex sí muestra cuándo se reinicia su cuota diaria.</li>
+<li>Una captura necesita una clave con derecho a la vista completa, que el software llama COMPLETE. Si tu clave no lo tiene, la aplicación rechaza la captura y no recurre a una vista inferior. La pantalla muestra entonces el mensaje general sobre la clave <q>A key is missing, or the service did not accept it.</q> y sugiere revisar la clave. Una clave válida también puede mostrar ese mensaje, porque el rechazo se refiere a la vista. La comprobación de tamaño no necesita la vista completa, así que puede funcionar antes de que una captura sea rechazada.</li>
+</ol>
+<p>Elsevier y tu institución deciden qué vistas puede usar tu clave. Solo lo sabes al intentarlo.</p>
+<p>Para la diferencia entre una búsqueda y los criterios, lee la página titulada <q>Build a Scopus Query</q> en esta documentación. Puedes abrirla aquí: <a href="../how-to/build-a-query/">Build a Scopus Query</a>.</p>
+</div>
+</section>
 <section id="part3a-setup-es"></section>
 <section id="part3a-build-es"></section>
 <section id="part3b-es"></section>
