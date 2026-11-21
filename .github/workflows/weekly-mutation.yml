@@ -75,6 +75,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Mutation run
+        timeout-minutes: 20
         # Scope comes from [tool.mutmut] in pyproject.toml: source_paths is the whole
         # package (mutmut puts `mutants/src` on sys.path, so a narrower copy would fail
         # to import), only_mutate confines mutation to prisma/.
@@ -83,6 +84,22 @@ jobs:
         # os.cpu_count(), so a change of runner size cannot silently change timing and
         # with it which mutants are classified as timeouts.
         run: uv run mutmut run --max-children 4
+
+      - name: List timed-out mutants (bisect)
+        if: always()
+        run: |
+          {
+            echo "## Timed-out mutants (bisect)"
+            echo
+            echo '```'
+            uv run mutmut results | grep -E ': timeout' || echo "(none)"
+            echo '```'
+            echo
+            echo "Counts by status:"
+            echo '```'
+            uv run mutmut results | sed -E 's/^.*: //' | sort | uniq -c
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Export kill/survive statistics
         # Writes mutants/mutmut-cicd-stats.json.
@@ -235,7 +252,7 @@ jobs:
           retention-days: 30
 
       - name: Ensure triage labels exist
-        if: steps.survivors.outputs.count != '0'
+        if: false
         # `gh issue create --label` hard-fails on a label the repository does not have,
         # which would turn a reportable test gap into an unexplained workflow failure.
         # Both labels are the ones .github/ISSUE_TEMPLATE/surviving_mutant.md declares.
@@ -312,13 +329,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Comment on the open issue
-        if: steps.survivors.outputs.count != '0' && steps.check-issue.outputs.issue_found == 'true'
+        if: false
         run: gh issue comment "${{ steps.check-issue.outputs.issue_number }}" --body-file "$RUNNER_TEMP/issue-body.md"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Open a surviving-mutant issue
-        if: steps.survivors.outputs.count != '0' && steps.check-issue.outputs.issue_found == 'false'
+        if: false
         run: |
           gh issue create \
             --title "[MUTANT] ${{ steps.survivors.outputs.count }} surviving mutant(s) in src/prismabib/prisma/" \

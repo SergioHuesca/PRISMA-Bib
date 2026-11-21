@@ -413,7 +413,9 @@ source_paths = ["src/prismabib"]
 # The prisma package only (ADR 0045, which supersedes the scope part of ADR 0009): taxonomy
 # left the scope because the weekly run has hung since it joined. log.py is the append-only
 # log that ADR 0029 moved out of prisma/.
-only_mutate = ["src/prismabib/prisma/*", "src/prismabib/log.py"]
+only_mutate = ["src/prismabib/prisma/*"]
+# BISECT (#405, throwaway, never merged): a hung mutant becomes a timeout quickly.
+timeout_multiplier = 3
 # Mutants are only worth generating for code the PRISMA suites exercise, and the
 # whole test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read
 # repository files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part
