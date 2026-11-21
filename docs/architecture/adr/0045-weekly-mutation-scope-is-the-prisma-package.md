@@ -4,6 +4,8 @@
 
 Accepted, 2026-11-16. Supersedes the scope part of [ADR 0009](0009-mutmut-3x-cli-deviation.md), the line that adds `src/prismabib/taxonomy/*` to `only_mutate`. The rest of ADR 0009 stands: the mutmut 3.x CLI, the scope read from `[tool.mutmut]`, and the rule that a scope change needs an ADR. The number 0044 is reserved for issue #354.
 
+Amended 2026-11-17 (issue #405): the closing sentence of Consequences, which named the Stage 9 change as the next suspect, is removed. `git show 88c506c --stat` lists 36 files and none is under `src/prismabib/prisma/` or `src/prismabib/log.py`, so Stage 9 did not touch the code the mutation scope now covers. The History bullet and the CHANGELOG describe Stage 9 accurately and are unchanged.
+
 ## Context
 
 The weekly mutation job has been cancelled at its 180-minute limit on every scheduled run since 2026-09-14, so the kill rate has not been read since the 2026-09-07 run (87.14%).
@@ -26,4 +28,4 @@ Mutation testing of taxonomy is tracked in its own follow-up issue, filed by the
 
 ## Consequences
 
-The weekly score again measures code a run can finish measuring. Taxonomy has no mutation gate until that issue is resolved, and its kill rate stays unmeasured. The test shows the files say the right thing; only a manual run of the workflow shows the narrowing works. If the scheduled run still hangs, the Stage 9 change is the next suspect.
+The weekly score again measures code a run can finish measuring. Taxonomy has no mutation gate until that issue is resolved, and its kill rate stays unmeasured. The test shows the files say the right thing; only a manual run of the workflow shows the narrowing works.
