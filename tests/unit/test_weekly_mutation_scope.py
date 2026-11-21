@@ -1,41 +1,123 @@
-"""The weekly mutation scope is the prisma package only (ADR 0045).
+"""The weekly mutation scope and its limits (ADR 0045, issue #363).
 
-The workflow cannot run here, so this reads `[tool.mutmut]` and the workflow header as data,
-as `test_update_behind_workflow.py` does. It shows the files say the right thing; only a
-manual run of the workflow shows it works.
+The workflow cannot run here, so this reads `[tool.mutmut]` and the workflow as data, as
+`test_update_behind_workflow.py` does: `breaches` returns what is wrong, and a table of
+deliberate changes must each produce a breach. It shows the files say the right thing; only a
+manual run of the workflow shows the narrowing works. Pragma spans are not asserted here.
 """
 
 from __future__ import annotations
 
+import copy
 import tomllib
 from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
 
 _ROOT = Path(__file__).parent.parent.parent
 _WF = _ROOT / ".github" / "workflows" / "weekly-mutation.yml"
-# ADR 0029 moved the append-only log out of prisma/; ADR 0010's note keeps it in scope.
-_MOVED_FROM_PRISMA = "src/prismabib/log.py"
+
+# The final decision of #405. Change these together with pyproject.toml and the header.
+EXPECTED_SOURCE = ["src/prismabib"]
+# ADR 0029 moved the append-only log out of prisma/; ADR 0045 keeps it in scope.
+EXPECTED_SCOPE = ["src/prismabib/prisma/*", "src/prismabib/log.py"]
+EXPECTED_SELECTION = [
+    "tests/unit/prisma",
+    "tests/integration/prisma",
+    "tests/property/test_engine_invariants.py",
+]
+# The bisect (#407) located no single file, so no file is exempt.
+EXPECTED_EXEMPT: list[str] = []
+EXPECTED_MULTIPLIER = 3
+EXPECTED_HEADER = "the prisma package and the log module"
+JOB_LIMIT_MINUTES = 180
+STEP_LIMIT_MINUTES = 60
 
 
-def _header() -> str:
-    lines = _WF.read_text(encoding="utf-8").splitlines()
+def _header(text: str) -> str:
     header = []
-    for line in lines:
+    for line in text.splitlines():
         if not line.startswith("#"):
             break
         header.append(line)
     return " ".join(ln.lstrip("# ") for ln in header)
 
 
-def test_mutmut_scope__in_configuration__is_the_prisma_package_only() -> None:
+def breaches(cfg: dict[str, Any], header: str, workflow: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+    if cfg.get("source_paths") != EXPECTED_SOURCE:
+        found.append("source_paths is not the package root")
+    if cfg.get("only_mutate") != EXPECTED_SCOPE:
+        found.append("only_mutate is not the final scope")
+    if cfg.get("pytest_add_cli_args_test_selection") != EXPECTED_SELECTION:
+        found.append("the test selection is not the final selection")
+    if cfg.get("do_not_mutate", []) != EXPECTED_EXEMPT:
+        found.append("do_not_mutate is not exactly the bisect's file exemptions")
+    if cfg.get("timeout_multiplier") != EXPECTED_MULTIPLIER:
+        found.append("timeout_multiplier is not the measured value")
+    if EXPECTED_HEADER not in header:
+        found.append("the header does not state the final scope")
+    if "prisma package only" in header:
+        found.append("the header names the prisma package alone while naming the log module")
+    if "taxonomy" in header.lower():
+        found.append("the header names taxonomy")
+    job = workflow["jobs"]["mutation"]
+    if job.get("timeout-minutes") != JOB_LIMIT_MINUTES:
+        found.append("the job limit is not 180 minutes")
+    steps = [s for s in job["steps"] if s.get("name") == "Mutation run"]
+    if len(steps) != 1:
+        found.append("there is not exactly one 'Mutation run' step")
+    elif steps[0].get("timeout-minutes") != STEP_LIMIT_MINUTES:
+        found.append("the 'Mutation run' step limit is not 60 minutes")
+    return found
+
+
+def _load() -> tuple[dict[str, Any], str, dict[str, Any]]:
     cfg = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
-    for entry in cfg["only_mutate"]:
-        assert entry == _MOVED_FROM_PRISMA or entry.startswith("src/prismabib/prisma/")
-    assert "src/prismabib/prisma/*" in cfg["only_mutate"]
-    assert not [e for e in cfg["only_mutate"] if "taxonomy" in e]
-    assert not [t for t in cfg["pytest_add_cli_args_test_selection"] if "taxonomy" in t]
+    text = _WF.read_text(encoding="utf-8")
+    return cfg, _header(text), yaml.safe_load(text)
 
 
-def test_mutmut_scope__in_workflow_header__states_prisma_only_and_names_no_taxonomy() -> None:
-    header = _header()
-    assert "prisma package only" in header
-    assert "taxonomy" not in header.lower()
+def _step(workflow: dict[str, Any]) -> dict[str, Any]:
+    return next(s for s in workflow["jobs"]["mutation"]["steps"] if s.get("name") == "Mutation run")
+
+
+def _drop_step_limit(workflow: dict[str, Any]) -> None:
+    _step(workflow).pop("timeout-minutes", None)
+
+
+# Each entry changes the parsed files in place and returns the (possibly changed) header.
+MUTATIONS = {
+    "wrong source": lambda c, h, w: c.update(source_paths=["src/prismabib/prisma"]) or h,
+    "wrong scope": lambda c, h, w: c.update(only_mutate=["src/prismabib/prisma/*"]) or h,
+    "taxonomy in scope": lambda c, h, w: (
+        c.update(only_mutate=[*c["only_mutate"], "src/prismabib/taxonomy/*"]) or h
+    ),
+    "wrong selection": lambda c, h, w: (
+        c.update(pytest_add_cli_args_test_selection=["tests/unit/prisma"]) or h
+    ),
+    "changed glob": lambda c, h, w: c.update(do_not_mutate=["src/prismabib/prisma/flow.py"]) or h,
+    "changed multiplier": lambda c, h, w: c.update(timeout_multiplier=15) or h,
+    "header names prisma alone": lambda c, h, w: h.replace(
+        EXPECTED_HEADER, "the prisma package only, plus the log module"
+    ),
+    "header drops the scope": lambda c, h, w: h.replace(EXPECTED_HEADER, "something"),
+    "changed job limit": lambda c, h, w: (
+        w["jobs"]["mutation"].update({"timeout-minutes": 360}) or h
+    ),
+    "changed step limit": lambda c, h, w: _step(w).update({"timeout-minutes": 90}) or h,
+    "no step limit": lambda c, h, w: _drop_step_limit(w) or h,
+}
+
+
+def test_real_files__have_no_breaches() -> None:
+    assert breaches(*_load()) == []
+
+
+@pytest.mark.parametrize("name", sorted(MUTATIONS))
+def test_mutation__is_caught(name: str) -> None:
+    cfg, header, workflow = (copy.deepcopy(part) for part in _load())
+    header = MUTATIONS[name](cfg, header, workflow)
+    assert breaches(cfg, header, workflow), name
