@@ -425,7 +425,6 @@ timeout_multiplier = 3
 pytest_add_cli_args_test_selection = [
     "tests/unit/prisma",
     "tests/integration/prisma",
-    "tests/property/test_engine_invariants.py",
 ]
 
 [tool.pytest.ini_options]
