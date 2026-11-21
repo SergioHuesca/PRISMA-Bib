@@ -416,6 +416,7 @@ source_paths = ["src/prismabib"]
 only_mutate = ["src/prismabib/prisma/*"]
 # BISECT (#405, throwaway, never merged): a hung mutant becomes a timeout quickly.
 timeout_multiplier = 3
+do_not_mutate = ["src/prismabib/prisma/flow.py"]
 # Mutants are only worth generating for code the PRISMA suites exercise, and the
 # whole test suite cannot run from inside `mutants/`: the Stage 0 meta-tests read
 # repository files (BUILD_PLAN.md, .github/, .pre-commit-config.yaml) that are not part
