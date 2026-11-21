@@ -22,16 +22,23 @@ _WF = _ROOT / ".github" / "workflows" / "weekly-mutation.yml"
 # The final decision of #405. Change these together with pyproject.toml and the header.
 EXPECTED_SOURCE = ["src/prismabib"]
 # ADR 0029 moved the append-only log out of prisma/; ADR 0045 keeps it in scope.
-EXPECTED_SCOPE = ["src/prismabib/prisma/*", "src/prismabib/log.py"]
+EXPECTED_SCOPE = [
+    "src/prismabib/prisma/*",
+    "src/prismabib/log.py",
+    "src/prismabib/taxonomy/*",
+]
 EXPECTED_SELECTION = [
     "tests/unit/prisma",
     "tests/integration/prisma",
     "tests/property/test_engine_invariants.py",
+    "tests/unit/taxonomy",
+    "tests/integration/taxonomy",
+    "tests/golden/taxonomy",
 ]
 # The bisect (#407) located no single file, so no file is exempt.
 EXPECTED_EXEMPT: list[str] = []
 EXPECTED_MULTIPLIER = 3
-EXPECTED_HEADER = "the prisma package and the log module"
+EXPECTED_HEADER = "the prisma package, the log module and the taxonomy package"
 JOB_LIMIT_MINUTES = 180
 STEP_LIMIT_MINUTES = 60
 
@@ -61,8 +68,6 @@ def breaches(cfg: dict[str, Any], header: str, workflow: dict[str, Any]) -> list
         found.append("the header does not state the final scope")
     if "prisma package only" in header:
         found.append("the header names the prisma package alone while naming the log module")
-    if "taxonomy" in header.lower():
-        found.append("the header names taxonomy")
     job = workflow["jobs"]["mutation"]
     if job.get("timeout-minutes") != JOB_LIMIT_MINUTES:
         found.append("the job limit is not 180 minutes")
@@ -92,8 +97,10 @@ def _drop_step_limit(workflow: dict[str, Any]) -> None:
 MUTATIONS = {
     "wrong source": lambda c, h, w: c.update(source_paths=["src/prismabib/prisma"]) or h,
     "wrong scope": lambda c, h, w: c.update(only_mutate=["src/prismabib/prisma/*"]) or h,
-    "taxonomy in scope": lambda c, h, w: (
-        c.update(only_mutate=[*c["only_mutate"], "src/prismabib/taxonomy/*"]) or h
+    "taxonomy dropped from scope": lambda c, h, w: c.update(only_mutate=c["only_mutate"][:2]) or h,
+    "taxonomy suites dropped": lambda c, h, w: (
+        c.update(pytest_add_cli_args_test_selection=c["pytest_add_cli_args_test_selection"][:3])
+        or h
     ),
     "wrong selection": lambda c, h, w: (
         c.update(pytest_add_cli_args_test_selection=["tests/unit/prisma"]) or h
