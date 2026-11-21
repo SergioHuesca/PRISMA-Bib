@@ -75,7 +75,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Mutation run
-        timeout-minutes: 20
+        timeout-minutes: 60
         # Scope comes from [tool.mutmut] in pyproject.toml: source_paths is the whole
         # package (mutmut puts `mutants/src` on sys.path, so a narrower copy would fail
         # to import), only_mutate confines mutation to prisma/.
