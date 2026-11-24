@@ -410,10 +410,10 @@ fail_under = 90
 # `_identified_count` return 0 -- the PRISMA diagram's "records identified"
 # silently becoming zero, with the gate no longer able to report it.
 source_paths = ["src/prismabib"]
-# The prisma package, the log module and the taxonomy package: ADR 0045 narrowed the scope to
-# the prisma package and the log module, and taxonomy is back for the #405 candidate run.
-# log.py is the append-only log that ADR 0029 moved out of prisma/.
-only_mutate = ["src/prismabib/prisma/*", "src/prismabib/log.py", "src/prismabib/taxonomy/*"]
+# The prisma package and the log module (ADR 0045, which supersedes the scope part of ADR 0009): taxonomy
+# left the scope because the weekly run has hung since it joined. log.py is the append-only
+# log that ADR 0029 moved out of prisma/.
+only_mutate = ["src/prismabib/prisma/*", "src/prismabib/log.py"]
 # mutmut's default is 15: a mutant gets 15x the estimated test time before it counts as a
 # timeout, and mutants of the DuckDB-backed and lock-taking code time out in large numbers
 # (#405, bisect runs 1-6). 3 is the value the bisect ran at; at it the first 800 of the 820
@@ -432,9 +432,6 @@ pytest_add_cli_args_test_selection = [
     "tests/unit/prisma",
     "tests/integration/prisma",
     "tests/property/test_engine_invariants.py",
-    "tests/unit/taxonomy",
-    "tests/integration/taxonomy",
-    "tests/golden/taxonomy",
 ]
 
 [tool.pytest.ini_options]
