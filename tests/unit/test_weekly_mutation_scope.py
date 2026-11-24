@@ -100,7 +100,9 @@ MUTATIONS = {
     "wrong selection": lambda c, h, w: (
         c.update(pytest_add_cli_args_test_selection=["tests/unit/prisma"]) or h
     ),
-    "changed glob": lambda c, h, w: c.update(do_not_mutate=["src/prismabib/prisma/flow.py"]) or h,
+    "do_not_mutate set": lambda c, h, w: (
+        c.update(do_not_mutate=["src/prismabib/prisma/flow.py"]) or h
+    ),
     "changed multiplier": lambda c, h, w: c.update(timeout_multiplier=15) or h,
     "header adds the log module": lambda c, h, w: (
         h + " It also covers the prisma package and the log module."
