@@ -412,12 +412,13 @@ fail_under = 90
 source_paths = ["src/prismabib"]
 # The prisma package only (ADR 0045, which supersedes the scope part of ADR 0009). Taxonomy and
 # log.py, the append-only log that ADR 0029 moved out of prisma/, are out: with either, the
-# 60-minute "Mutation run" step was cut off before a kill rate printed (#405, runs 7 and 8).
+# 60-minute "Mutation run" step was cut off before a kill rate printed (#405, runs 7 and 8),
+# and it was cut off on the prisma package alone too (run 9, 756 of 820 mutants).
 only_mutate = ["src/prismabib/prisma/*"]
 # mutmut's default is 15: a mutant gets 15x the estimated test time before it counts as a
 # timeout, and mutants of the DuckDB-backed and lock-taking code time out in large numbers
-# (#405, bisect runs 1-6). 3 is the value the bisect ran at; at it the first 800 of the 820
-# prisma mutants took about 35 minutes (run 6). This is a measurement setting, not a claim the code is
+# (#405, bisect runs 1-6). 3 is the value the bisect ran at; at it no run finished (runs 6-9).
+# This is a measurement setting, not a claim the code is
 # correct: a timeout is counted as caught, so a lower multiplier can flatter the kill rate,
 # and a rate read at 3 is not comparable with the 87.14% read at 15 on 2026-09-07.
 # No file is exempt (`do_not_mutate`): the bisect located no single file or function.
