@@ -16,9 +16,9 @@
 # that is the 2.x CLI, `uv.lock` resolves mutmut 3.7.0, and 3.x `run` accepts only
 # `[MUTANT_NAMES]... --max-children`, reading its scope from `[tool.mutmut]` in
 # pyproject.toml. See ADR 0009 for the deviation and why 3.x was adopted rather than
-# pinning `mutmut<3`. The scope is the prisma package only, as ADR 0045 sets it: mutated
-# code is `src/prismabib/prisma/` plus `src/prismabib/log.py`, which ADR 0029 moved out of
-# it. Change the scope in pyproject.toml, not here.
+# pinning `mutmut<3`. The scope is the prisma package (ADR 0045): mutated code is
+# `src/prismabib/prisma/` only; `src/prismabib/log.py` and the taxonomy package are out of it
+# (#405). Change the scope in pyproject.toml, not here.
 #
 # Surviving mutants become backlog issues (line 1055), so this job publishes them twice:
 # as an artifact (every mutant, with diffs) and as one auto-opened issue per run,
@@ -75,6 +75,8 @@ jobs:
         run: uv sync --all-extras
 
       - name: Mutation run
+        # A hung run must fail here, well inside the 180-minute job limit (#405).
+        timeout-minutes: 60
         # Scope comes from [tool.mutmut] in pyproject.toml: source_paths is the whole
         # package (mutmut puts `mutants/src` on sys.path, so a narrower copy would fail
         # to import), only_mutate confines mutation to prisma/.
