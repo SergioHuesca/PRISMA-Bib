@@ -1164,3 +1164,261 @@ def test_legacy_list__committed_file__parses_with_only_complexity_above_ten() ->
     assert all(e.complexity > 10 for e in entries)
     assert all(e.file.startswith("src/prismabib/") and "\\" not in e.file for e in entries)
     assert text.endswith("\n") and "\r" not in text
+    assert prepush.legacy_format_problems(text, "working copy") == []
+
+
+def _fmt(text: str) -> list[str]:
+    return prepush.legacy_format_problems(text, "working copy")  # type: ignore[no-any-return]
+
+
+_L1 = "src/prismabib/a.py f 1 12\n"
+_L2 = "src/prismabib/b.py g 1 12\n"
+_FINAL_NL = (
+    "[legacy-format] working copy: final newline: the file must end with exactly one newline"
+)
+
+
+@pytest.mark.unit
+def test_legacy_format__correct_text__passes() -> None:
+    assert _fmt(_L1 + _L2) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "src\\prismabib\\a.py f 1 12\n",
+            ["[legacy-format] working copy: forward slashes: line 1 has a backslash"],
+        ),
+        (
+            _L2 + _L1,
+            [
+                (
+                    "[legacy-format] working copy: sort order: src/prismabib/a.py f#1 (complexity 12)"
+                    " must come after src/prismabib/b.py g#1 (complexity 12) (UTF-8 bytes)"
+                )
+            ],
+        ),
+        (
+            "src/prismabib/a.py f 1 12\r\n",
+            ["[legacy-format] working copy: line endings: must be LF, found a carriage return"],
+        ),
+        ("src/prismabib/a.py f 1 12", [_FINAL_NL]),
+        (
+            "src/prismabib/a.py f 1 12\n\n",
+            [_FINAL_NL, "[legacy-format] working copy: entry shape: line 2 is blank"],
+        ),
+        (
+            "src/prismabib/a.py f 1 12 \n",
+            [
+                "[legacy-format] working copy: trailing spaces: line 1",
+                (
+                    "[legacy-format] working copy: entry shape: legacy list line 1:"
+                    " want 'file qualname ordinal complexity'"
+                ),
+            ],
+        ),
+    ],
+)
+def test_legacy_format__broken_text__fails_naming_the_rule(text: str, expected: list[str]) -> None:
+    assert _fmt(text) == expected
+
+
+@pytest.mark.unit
+def test_legacy_format__utf8_byte_order__uppercase_before_lowercase_and_non_ascii_last() -> None:
+    ok = "src/prismabib/B.py f 1 12\nsrc/prismabib/a.py f 1 12\nsrc/prismabib/é.py f 1 12\n"
+    swapped = "src/prismabib/a.py f 1 12\nsrc/prismabib/B.py f 1 12\n"
+
+    assert _fmt(ok) == []
+    assert len(_fmt(swapped)) == 1 and "sort order" in _fmt(swapped)[0]
+
+
+@pytest.mark.unit
+def test_legacy_format__ordinals_sort_as_numbers() -> None:
+    assert _fmt("src/prismabib/a.py f 2 12\nsrc/prismabib/a.py f 10 12\n") == []
+
+
+def _entries(text: str) -> list[Any]:
+    return prepush.parse_legacy(text)  # type: ignore[no-any-return]
+
+
+def _shrink(base: str, work: str) -> list[str]:
+    return prepush.legacy_shrink_problems(_entries(base), _entries(work))  # type: ignore[no-any-return]
+
+
+@pytest.mark.unit
+def test_legacy_shrink__entry_added_without_partner__fails() -> None:
+    assert _shrink(_L1, _L1 + _L2) == [
+        (
+            "[legacy-shrink] added without a removed entry to replace:"
+            " src/prismabib/b.py g#1 (complexity 12)"
+        )
+    ]
+
+
+@pytest.mark.unit
+def test_legacy_shrink__complexity_raised_in_place__fails_and_lowered_passes() -> None:
+    assert _shrink("src/prismabib/a.py f 1 12\n", "src/prismabib/a.py f 1 13\n") == [
+        "[legacy-shrink] raised in place: src/prismabib/a.py f#1 (complexity 13), was 12"
+    ]
+    assert _shrink("src/prismabib/a.py f 1 12\n", "src/prismabib/a.py f 1 11\n") == []
+
+
+@pytest.mark.unit
+def test_legacy_shrink__moved_function__equal_passes_and_raised_fails() -> None:
+    base = "src/prismabib/a.py f 1 12\n"
+
+    assert _shrink(base, "src/prismabib/z.py f 1 12\n") == []
+    assert _shrink(base, "src/prismabib/z.py f 1 13\n") == [
+        (
+            "[legacy-shrink] replacement raises complexity: src/prismabib/z.py f#1 (complexity 13)"
+            " replaces src/prismabib/a.py f#1 (complexity 12)"
+        )
+    ]
+
+
+@pytest.mark.unit
+def test_legacy_shrink__two_new_against_one_removed__fails() -> None:
+    work = "src/prismabib/y.py f 1 12\nsrc/prismabib/z.py f 1 12\n"
+
+    assert _shrink("src/prismabib/a.py f 1 12\n", work) == [
+        (
+            "[legacy-shrink] added without a removed entry to replace:"
+            " src/prismabib/z.py f#1 (complexity 12)"
+        )
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("removed", "ok"), [(7, True), (4, False)])
+def test_legacy_shrink__new_five_against_removed__passes_only_when_removed_is_at_least_five(
+    removed: int, ok: bool
+) -> None:
+    result = _shrink(f"src/prismabib/a.py f 1 {removed}\n", "src/prismabib/z.py f 1 5\n")
+
+    assert (result == []) is ok
+
+
+@pytest.mark.unit
+def test_legacy_shrink__removed_entry_without_partner__is_accepted() -> None:
+    assert _shrink(_L1 + _L2, _L1) == []
+
+
+@pytest.mark.unit
+def test_legacy_shrink__pairing_is_highest_first__not_in_file_order() -> None:
+    base = "src/prismabib/a.py f 1 4\nsrc/prismabib/b.py f 1 9\n"
+    work = "src/prismabib/y.py f 1 3\nsrc/prismabib/z.py f 1 8\n"
+
+    assert _shrink(base, work) == []
+
+
+@pytest.mark.unit
+def test_legacy_count__one_above_base__fails_and_equal_or_fewer_passes() -> None:
+    assert prepush.legacy_count_problems(3, 4) == [
+        "[legacy-shrink] count rule: 4 entries, base has 3"
+    ]
+    assert prepush.legacy_count_problems(3, 3) == []
+    assert prepush.legacy_count_problems(3, 2) == []
+
+
+class _VcsRunner:
+    """Fake of the version-control calls: ``base`` is the base copy, ``None`` means absent."""
+
+    def __init__(self, base: str | None, merge_base: tuple[int, str] = (0, "abc123\n")) -> None:
+        self.base, self.merge_base = base, merge_base
+        self.calls: list[list[str]] = []
+
+    def __call__(self, cmd: Sequence[str]) -> tuple[int, str]:
+        self.calls.append(list(cmd))
+        if cmd[1] == "merge-base":
+            return self.merge_base
+        if cmd[1] == "ls-tree":
+            return 0, "" if self.base is None else "scripts/complexity-legacy.txt\n"
+        return 0, self.base or ""
+
+
+def _integrity(base: str | None, work: str | None, **kw: Any) -> tuple[list[str], list[str]]:
+    return prepush.legacy_integrity(_VcsRunner(base, **kw), work)  # type: ignore[no-any-return]
+
+
+@pytest.mark.unit
+def test_legacy_integrity__unresolved_merge_base__fails_with_the_fetch_message() -> None:
+    result = _integrity(_L1, _L1, merge_base=(128, "fatal: Not a valid object name"))
+
+    assert result == (
+        [
+            (
+                "[legacy-shrink] cannot resolve or read the merge-base with origin/main:"
+                " fetch the base branch (git fetch origin main) and run the gate again"
+            )
+        ],
+        [],
+    )
+
+
+@pytest.mark.unit
+def test_legacy_integrity__no_list_at_base_but_a_working_list__is_accepted_with_a_note() -> None:
+    assert _integrity(None, _L1) == (
+        [],
+        ["legacy list is new in this change (absent at the merge-base): accepted"],
+    )
+
+
+@pytest.mark.unit
+def test_legacy_integrity__no_list_at_base_and_a_broken_working_list__fails_the_format() -> None:
+    problems, _ = _integrity(None, _L2 + _L1)
+
+    assert len(problems) == 1 and "sort order" in problems[0]
+
+
+@pytest.mark.unit
+def test_legacy_integrity__list_in_base_missing_from_working_copy__fails() -> None:
+    assert _integrity(_L1, None) == (
+        ["[legacy-shrink] the list is in the base and missing from the working copy"],
+        [],
+    )
+
+
+@pytest.mark.unit
+def test_legacy_integrity__reads_the_base_copy_with_forward_slashes() -> None:
+    runner = _VcsRunner(_L1)
+
+    prepush.legacy_integrity(runner, _L1)
+
+    assert runner.calls == [
+        ["git", "merge-base", "origin/main", "HEAD"],
+        ["git", "ls-tree", "--name-only", "abc123", "--", "scripts/complexity-legacy.txt"],
+        ["git", "show", "abc123:scripts/complexity-legacy.txt"],
+    ]
+
+
+@pytest.mark.unit
+def test_legacy_integrity__base_copy_is_format_checked_on_its_raw_text() -> None:
+    problems, _ = _integrity("src/prismabib/a.py f 1 12\r\n", _L1)
+
+    assert problems == [
+        "[legacy-format] base copy: line endings: must be LF, found a carriage return"
+    ]
+
+
+@pytest.mark.unit
+def test_legacy_integrity__shrinking_list_passes_and_growing_list_fails() -> None:
+    assert _integrity(_L1 + _L2, _L1) == ([], [])
+    assert _integrity(_L1, _L1 + _L2)[0] == [
+        (
+            "[legacy-shrink] added without a removed entry to replace:"
+            " src/prismabib/b.py g#1 (complexity 12)"
+        ),
+        "[legacy-shrink] count rule: 2 entries, base has 1",
+    ]
+
+
+@pytest.mark.unit
+def test_complexity_evaluator__legacy_problem__is_the_summary_note() -> None:
+    out = "[legacy-shrink] count rule: 2 entries, base has 1\ncomplexity-risk: 0 problem(s)"
+
+    assert prepush.complexity_evaluator(1, out) == (
+        False,
+        "[legacy-shrink] count rule: 2 entries, base has 1",
+    )

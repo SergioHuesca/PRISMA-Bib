@@ -24,6 +24,7 @@ import sys
 import tempfile
 import tomllib
 from collections.abc import Callable, Sequence
+from itertools import pairwise
 from pathlib import Path
 from typing import NamedTuple
 
@@ -544,6 +545,116 @@ def parse_legacy(text: str) -> list[LegacyEntry]:
     return entries
 
 
+LEGACY_FETCH = (
+    f"[legacy-shrink] cannot resolve or read the merge-base with {BASE_REF}: "
+    f"fetch the base branch (git fetch origin main) and run the gate again"
+)
+LEGACY_BOOTSTRAP = "legacy list is new in this change (absent at the merge-base): accepted"
+
+
+def _entry_key(e: LegacyEntry) -> tuple[bytes, bytes, int]:
+    return (e.file.encode("utf-8"), e.qualname.encode("utf-8"), e.ordinal)
+
+
+def _entry_name(e: LegacyEntry) -> str:
+    return f"{e.file} {e.qualname}#{e.ordinal} (complexity {e.complexity})"
+
+
+def legacy_format_problems(text: str, label: str) -> list[str]:
+    """Rules broken by the raw text of one copy of the legacy list, each naming its rule."""
+
+    def bad(rule: str, detail: str) -> str:
+        return f"[legacy-format] {label}: {rule}: {detail}"
+
+    problems = []
+    if "\r" in text:
+        problems.append(bad("line endings", "must be LF, found a carriage return"))
+        text = text.replace("\r", "")
+    if not text:
+        return problems
+    if not text.endswith("\n") or text.endswith("\n\n"):
+        problems.append(bad("final newline", "the file must end with exactly one newline"))
+    lines = text.split("\n")[:-1] if text.endswith("\n") else text.split("\n")
+    for n, line in enumerate(lines, 1):
+        if line != line.rstrip(" "):
+            problems.append(bad("trailing spaces", f"line {n}"))
+        if "\\" in line:
+            problems.append(bad("forward slashes", f"line {n} has a backslash"))
+        if not line:
+            problems.append(bad("entry shape", f"line {n} is blank"))
+    try:
+        entries = parse_legacy(text)
+    except ValueError as exc:
+        return [*problems, bad("entry shape", str(exc))]
+    for a, b in pairwise(entries):
+        if _entry_key(b) <= _entry_key(a):
+            problems.append(
+                bad(
+                    "sort order", f"{_entry_name(b)} must come after {_entry_name(a)} (UTF-8 bytes)"
+                )
+            )
+    return problems
+
+
+def legacy_shrink_problems(base: Sequence[LegacyEntry], work: Sequence[LegacyEntry]) -> list[str]:
+    """Identity match and replacement pairing of the working list against the base list."""
+    old = {(e.file, e.qualname, e.ordinal): e for e in base}
+    new = {(e.file, e.qualname, e.ordinal): e for e in work}
+    problems = [
+        f"[legacy-shrink] raised in place: {_entry_name(new[k])}, was {old[k].complexity}"
+        for k in sorted(old.keys() & new.keys())
+        if new[k].complexity > old[k].complexity
+    ]
+    added = sorted((new[k] for k in new.keys() - old.keys()), key=lambda e: (-e.complexity, e))
+    removed = sorted((old[k] for k in old.keys() - new.keys()), key=lambda e: (-e.complexity, e))
+    for i, e in enumerate(added):
+        if i >= len(removed):
+            problems.append(
+                f"[legacy-shrink] added without a removed entry to replace: {_entry_name(e)}"
+            )
+        elif removed[i].complexity < e.complexity:
+            problems.append(
+                f"[legacy-shrink] replacement raises complexity: {_entry_name(e)}"
+                f" replaces {_entry_name(removed[i])}"
+            )
+    return problems
+
+
+def legacy_count_problems(base_count: int, work_count: int) -> list[str]:
+    if work_count > base_count:
+        return [f"[legacy-shrink] count rule: {work_count} entries, base has {base_count}"]
+    return []
+
+
+def legacy_integrity(runner: Runner, work_text: str | None) -> tuple[list[str], list[str]]:
+    """Format and shrink-only checks of the working list (``None``: absent); (problems, notes)."""
+    problems = legacy_format_problems(work_text, "working copy") if work_text is not None else []
+    rc, sha = runner(["git", "merge-base", BASE_REF, "HEAD"])
+    if rc != 0 or not sha.strip():
+        return [*problems, LEGACY_FETCH], []
+    sha = sha.strip()
+    rc, listing = runner(["git", "ls-tree", "--name-only", sha, "--", LEGACY_LIST])
+    if rc != 0:
+        return [*problems, LEGACY_FETCH], []
+    base_text: str | None = None
+    if listing.strip():
+        rc, base_text = runner(["git", "show", f"{sha}:{LEGACY_LIST}"])
+        if rc != 0:
+            return [*problems, LEGACY_FETCH], []
+    if base_text is None:
+        return problems, ([LEGACY_BOOTSTRAP] if work_text is not None else [])
+    problems += legacy_format_problems(base_text, "base copy")
+    if work_text is None:
+        gone = "[legacy-shrink] the list is in the base and missing from the working copy"
+        return [*problems, gone], []
+    try:
+        base, work = parse_legacy(base_text), parse_legacy(work_text)
+    except ValueError:
+        return problems, []  # the format problems above already name the line
+    problems += legacy_shrink_problems(base, work) + legacy_count_problems(len(base), len(work))
+    return problems, []
+
+
 def complexity_scope(changed: Sequence[str]) -> list[str]:
     """The touched Python files under the package source tree (scripts and tests are out)."""
     paths = {normalize_path(p) for p in changed}
@@ -612,7 +723,7 @@ def complexity_evaluator(rc: int, out: str) -> tuple[bool, str]:
     lines = [x for x in out.splitlines() if x.strip()]
     if rc == 0:
         return True, lines[-1] if lines else ""
-    notes = [x[6:] for x in lines if x.startswith("note: ")]
+    notes = [x.removeprefix("note: ") for x in lines if x.startswith(("note: ", "[legacy-"))]
     return False, notes[0] if notes else PLATFORM_NOTE
 
 
@@ -782,22 +893,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.complexity_risk:
         root = str(Path(__file__).resolve().parent.parent)
-        try:
-            legacy = (Path(root) / LEGACY_LIST).read_text("utf-8")
+        try:  # bytes, not read_text: text mode would turn CRLF into LF and hide the rule
+            legacy: str | None = (Path(root) / LEGACY_LIST).read_bytes().decode("utf-8")
         except FileNotFoundError:
-            legacy = ""
+            legacy = None
         rc, diff = _git(root, *DIFF_ARGS)
         _, porcelain = _git(root, *STATUS_ARGS)
         touched = complexity_scope(parse_changed_files(diff if rc == 0 else "", porcelain))
+
+        def run(cmd: Sequence[str]) -> tuple[int, str]:
+            return _run(cmd, root, args.timeout)
+
+        problems, notes = legacy_integrity(run, legacy)
         code, text = complexity_risk(
-            lambda cmd: _run(cmd, root, args.timeout),
+            run,
             args.complexity_risk,
-            legacy,
+            legacy or "",
             touched,
             lambda p: (Path(root) / p).is_file(),
         )
-        print(text)
-        return code
+        print("\n".join([*problems, text, *notes]))
+        return 1 if problems else code
 
     rc, top = _run(["git", "rev-parse", "--show-toplevel"], ".")
     if rc == NOT_FOUND_RC:

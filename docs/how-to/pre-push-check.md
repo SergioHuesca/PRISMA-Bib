@@ -103,6 +103,26 @@ never writes it: a failing run prints the entries to delete (stale) or to lower 
 function whose complexity went down) and you edit the file by hand. A function at complexity
 10 or less is never listed, even when poor coverage makes it a violation.
 
+**Legacy list integrity.** The same step also checks the list itself, on every run of the
+step (it needs no coverage, but it lives in the step, so `--quick` and `--changed` skip it too).
+Each failure names its rule or the entries involved, and the gate never rewrites the file.
+
+- *Format*, checked on the raw text of both the working copy and the copy at the merge-base
+  (the same merge-base as the three-dot diff, read through git): forward-slash paths with no
+  backslash; entries sorted by file, then qualified name, then ordinal, in UTF-8 byte order
+  (uppercase before lowercase, non-ASCII last, ordinals as numbers); LF line endings (a CRLF
+  file fails the line-endings rule); exactly one final newline; no trailing spaces.
+- *Shrink-only*, against the merge-base copy. An entry in both copies may keep or lower its
+  complexity, never raise it. Every entry only in the working copy must replace a distinct entry
+  only in the base copy with complexity at least its own (both sides sorted by complexity,
+  highest first, and paired in order), so a moved or renamed function passes at equal or lower
+  complexity and fails when raised. The working count may not exceed the base count. A removed
+  entry with no partner is accepted: that is a fixed or deleted function.
+- *Bootstrap and absence.* If the merge-base resolves but has no list, a working list is
+  accepted with a note in the summary. A list present at the merge-base and missing from the
+  working copy fails. If the merge-base cannot be resolved or read, the step fails with a
+  message to fetch the base branch (`git fetch origin main`); it never passes by default.
+
 **Failure output.** For each violating function: file, qualified name, ordinal, complexity,
 score and the coverage it was scored with.
 
