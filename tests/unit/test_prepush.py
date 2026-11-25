@@ -9,6 +9,7 @@ import importlib.util
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -387,12 +388,13 @@ def test_build_steps__each_option__selects_the_literal_step_set() -> None:
         "ruff format --check",
         "detect-secrets",
         "mypy --strict",
+        "duplicate-code",
         "pytest unit+contract",
     ]
 
     assert _names(_build()) == full
-    assert _names(_build(quick=True)) == full[:4]
-    assert _names(_build(skip_mypy=True)) == [*full[:3], full[4]]
+    assert _names(_build(quick=True)) == full[:5]
+    assert _names(_build(skip_mypy=True)) == [*full[:3], *full[4:]]
     assert _names(_build(test_paths=["tests/unit/test_log.py"])) == full
     changed_cmd = _build(test_paths=["tests/unit/test_log.py"])[-1].cmd  # type: ignore[attr-defined]
     assert changed_cmd[-1] == "tests/unit/test_log.py"
@@ -407,3 +409,231 @@ def test_select_tests__changed_file_list__selects_the_literal_test_set() -> None
     )
 
     assert got == ["tests/unit/test_log.py", "tests/unit/test_store.py"]
+
+
+_FIXTURES = Path(__file__).parent.parent / "fixtures" / "prepush"
+_TWO_BLOCKS = (
+    "************* Module prismabib.viz.__init__\n"
+    "src\\prismabib\\viz\\__init__.py:1:0: R0801: Similar lines in 2 files\n"
+    "==prismabib.a:[10:20]\n"
+    "==prismabib.sub.b:[5:15]\n"
+    "    x = 1 (duplicate-code)\n"
+    "src\\prismabib\\viz\\__init__.py:1:0: R0801: Similar lines in 2 files\n"
+    "==prismabib.c:[100:110]\n"
+    "==prismabib.d.__init__:[1:11]\n"
+    "    y = 2 (duplicate-code)\n"
+)
+_Added = dict[str, list[tuple[int, int]]]
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__real_fixture__reads_nine_pairs_with_two_locations() -> None:
+    text = (_FIXTURES / "pylint_duplicate_code_6.txt").read_text(encoding="utf-8")
+
+    blocks = prepush.parse_pylint_duplicates(text)
+
+    assert len(blocks) == 9
+    assert [len(b.locations) for b in blocks] == [2] * 9
+    assert blocks[0].locations == (
+        ("src/prismabib/gui/capture_layer.py", 141, 163),
+        ("src/prismabib/gui/openalex_capture_layer.py", 85, 107),
+    )
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__wrong_format__fails_clearly() -> None:
+    with pytest.raises(ValueError, match="expected a '==module"):
+        prepush.parse_pylint_duplicates("x.py:1:0: R0801: Similar lines in 2 files\nnot a location")
+    with pytest.raises(ValueError, match="R0801"):
+        prepush.parse_pylint_duplicates("R0801 but a different shape")
+    assert prepush.parse_pylint_duplicates("") == []
+
+
+@pytest.mark.unit
+def test_normalize_path__backslashes_and_root__gives_forward_slash_relative_form() -> None:
+    assert prepush.normalize_path("D:\\repo\\src\\prismabib\\a.py", "D:\\repo") == (
+        "src/prismabib/a.py"
+    )
+    assert prepush.normalize_path(".\\src\\a.py") == "src/a.py"
+    assert prepush.normalize_path("src/a.py", "/repo") == "src/a.py"
+
+
+_DIFF = (
+    "diff --git a/src/prismabib/a.py b/src/prismabib/a.py\n"
+    "--- a/src/prismabib/a.py\n"
+    "+++ b/src/prismabib/a.py\n"
+    "@@ -3,0 +4,2 @@ def f():\n"
+    "+x\n"
+    "+y\n"
+    "@@ -30 +32 @@\n"
+    "-old\n"
+    "+new\n"
+    "@@ -40,3 +41,0 @@\n"
+    "-gone\n"
+    "diff --git a/src/prismabib/old.py b/src/prismabib/old.py\n"
+    "--- a/src/prismabib/old.py\n"
+    "+++ /dev/null\n"
+    "@@ -1,2 +0,0 @@\n"
+)
+
+
+@pytest.mark.unit
+def test_parse_added_lines__zero_context_diff__keeps_only_new_side_additions() -> None:
+    assert prepush.parse_added_lines(_DIFF) == {"src/prismabib/a.py": [(4, 5), (32, 32)]}
+
+
+@pytest.mark.unit
+def test_filter_duplicates__location_overlapping_an_added_line__is_reported() -> None:
+    blocks = prepush.parse_pylint_duplicates(_TWO_BLOCKS)
+
+    kept = prepush.filter_duplicates(blocks, {"src/prismabib/sub/b.py": [(14, 14)]})
+
+    assert [b.locations[0][0] for b in kept] == ["src/prismabib/a.py"]
+
+
+@pytest.mark.unit
+def test_filter_duplicates__touched_file_but_unchanged_block__is_not_reported() -> None:
+    blocks = prepush.parse_pylint_duplicates(_TWO_BLOCKS)
+
+    # a.py is touched, outside lines 10-19; the removal-only hunk adds nothing at all.
+    assert prepush.filter_duplicates(blocks, {"src/prismabib/a.py": [(20, 30)]}) == []
+    assert prepush.filter_duplicates(blocks, prepush.parse_added_lines(_DIFF)) == []
+
+
+@pytest.mark.unit
+def test_untracked_files__porcelain__lists_only_untracked_paths() -> None:
+    porcelain = "?? src/prismabib/new.py\0 M src/prismabib/a.py\0A  src/b.py\0"
+
+    assert prepush.untracked_files(porcelain) == ["src/prismabib/new.py"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("C:\\v\\python.exe: No module named pylint\n", True),
+        ("/v/bin/python: No module named pylint", True),
+        ("C:\\v\\python.exe: No module named radon\n", False),
+        ("E   ModuleNotFoundError: No module named 'pylint'", False),
+        ("C:\\v\\python.exe: No module named pylint.extra", False),
+        ("see: No module named pylint, then retry", False),
+    ],
+)
+def test_missing_module_note__line_forms__only_the_exact_interpreter_line_matches(
+    output: str, expected: bool
+) -> None:
+    note = prepush.missing_module_note(output, "pylint")
+
+    assert (note is not None) is expected
+    if note:
+        assert "'pylint'" in note
+        assert "uv sync --all-extras" in note
+
+
+def _dup_step(added: _Added | None = None) -> Any:
+    return next(s for s in _build(added_lines=added) if s.name == "duplicate-code")  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
+def test_duplication_step__command__scans_the_whole_tree_at_the_recorded_similarity() -> None:
+    assert _dup_step().cmd[1:] == [
+        "-m",
+        "pylint",
+        "--disable=all",
+        "--enable=duplicate-code",
+        "--min-similarity-lines=6",
+        "--persistent=n",
+        "--score=n",
+        "src/prismabib",
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"quick": True}, {"test_paths": ["tests/unit/test_log.py"]}, {"skip_mypy": True}],
+)
+def test_duplication_step__every_option__is_selected(options: dict[str, object]) -> None:
+    assert "duplicate-code" in _names(_build(**options))
+    skipped = [s.name for s in prepush.option_skips(quick=True, skip_mypy=True)]
+    assert "duplicate-code" not in skipped
+
+
+@pytest.mark.unit
+def test_duplication_step__block_on_a_changed_line__fails_and_names_both_locations() -> None:
+    step = _dup_step({"src/prismabib/sub/b.py": [(14, 14)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _TWO_BLOCKS)}))
+
+    assert not result.ok
+    assert "src/prismabib/a.py:10-19  <->  src/prismabib/sub/b.py:5-14" in result.note
+    assert "prismabib/c.py" not in result.note
+
+
+@pytest.mark.unit
+def test_duplication_step__block_outside_the_change__passes_with_a_note() -> None:
+    step = _dup_step({"src/prismabib/other.py": [(1, 9)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _TWO_BLOCKS)}))
+
+    assert result.ok
+    assert result.note == "2 known duplicate block(s) outside this change"
+
+
+@pytest.mark.unit
+def test_duplication_step__clean_run__passes() -> None:
+    step = _dup_step()
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (0, "")}))
+
+    assert result.ok
+
+
+@pytest.mark.unit
+def test_duplication_step__crash_or_unparseable_output__fails() -> None:
+    step = _dup_step()
+    py = step.cmd[0]
+
+    (crash,) = prepush.run_steps([step], _FakeRunner({py: (32, "usage: pylint")}))
+    (bad,) = prepush.run_steps([step], _FakeRunner({py: (8, "R0801 odd shape")}))
+
+    assert not crash.ok
+    assert not bad.ok
+
+
+class _Runner:
+    """Answers every command with rc 0, except pylint, which reports itself missing."""
+
+    def __init__(self, pylint: tuple[int, str]) -> None:
+        self.pylint = pylint
+        self.calls: list[str] = []
+
+    def __call__(self, cmd: Sequence[str]) -> tuple[int, str]:
+        self.calls.append(" ".join(cmd[1:3]))
+        return self.pylint if "pylint" in cmd else (0, "")
+
+
+@pytest.mark.unit
+def test_duplication_step__pylint_missing__fails_with_note_and_other_steps_still_run() -> None:
+    runner = _Runner((1, "C:\\v\\python.exe: No module named pylint\n"))
+
+    results = prepush.run_steps(_build(), runner)
+
+    by_name = {r.name: r for r in results}
+    assert not by_name["duplicate-code"].ok
+    assert by_name["duplicate-code"].note == (
+        "module 'pylint' is missing; install the development dependencies: uv sync --all-extras"
+    )
+    assert by_name["pytest unit+contract"].ok
+    assert "-m pytest" in runner.calls
+
+
+@pytest.mark.unit
+def test_missing_module_phrase__in_a_failing_test_step__is_an_ordinary_failure() -> None:
+    pytest_step = next(s for s in _build() if s.name == "pytest unit+contract")
+    runner = _FakeRunner({pytest_step.cmd[0]: (1, "E   ModuleNotFoundError: No module named 'x'")})
+
+    (result,) = prepush.run_steps([pytest_step], runner)
+
+    assert not result.ok
+    assert "missing" not in result.note
