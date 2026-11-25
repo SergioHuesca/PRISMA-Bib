@@ -35,7 +35,8 @@ NOT_FOUND_RC = 127  # same convention as a shell for "command not found"
 RAW_OUTPUT_LINES = 40
 
 # Three dots: only what this branch changed since it left origin/main, not what others merged.
-DIFF_ARGS = ["diff", "-z", "--name-only", f"{BASE_REF}...HEAD"]
+# --no-renames: a rename also lists its old path (as a delete), so that file's legacy entries go stale.
+DIFF_ARGS = ["diff", "-z", "--name-only", "--no-renames", f"{BASE_REF}...HEAD"]
 STATUS_ARGS = ["status", "--porcelain", "-z", "--untracked-files=all"]
 
 # Mirrors the `exclude` of the detect-secrets hook in .pre-commit-config.yaml.
@@ -494,6 +495,7 @@ def coverage_config_text(data_file: str, exclude_lines: Sequence[str]) -> str:
 
     ``--cov-config`` replaces the pyproject coverage settings, so the exclusions are copied.
     """
+    data_file = data_file.replace("$", "$$")  # coverage expands $VAR in config values
     lines = ["[run]", f"data_file = {data_file}", "branch = True", "", "[report]"]
     lines += ["exclude_lines ="] + [f"    {x}" for x in exclude_lines]
     return "\n".join(lines) + "\n"
@@ -661,6 +663,40 @@ def complexity_scope(changed: Sequence[str]) -> list[str]:
     return sorted(p for p in paths if p.startswith(COVERAGE_SOURCE + "/") and p.endswith(".py"))
 
 
+def _tool_outputs(
+    runner: Runner, cov_config: str, present: Sequence[str]
+) -> tuple[tuple[int, str] | None, str, str]:
+    """Run coverage json and radon; (failure or None, coverage JSON text, radon JSON text)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_json = str(Path(tmp) / "cov.json")
+        rc, out = runner(coverage_json_cmd(cov_config, out_json))
+        note = missing_module_note(out, "coverage")
+        if note or rc != 0:
+            msg = f"note: {note}" if note else f"coverage json failed:\n{out.rstrip()}"
+            return (1, msg), "", ""
+        cov_text = Path(out_json).read_text("utf-8")
+    radon_json = "{}"
+    if present:
+        rc, radon_json = runner([sys.executable, "-m", "radon", "cc", "-s", "-j", *present])
+        note = missing_module_note(radon_json, "radon")
+        if note or rc != 0:
+            msg = f"note: {note}" if note else f"radon failed:\n{radon_json.rstrip()}"
+            return (1, msg), "", ""
+    return None, cov_text, radon_json
+
+
+def _outcome_line(o: Outcome) -> str:
+    """One report line for a classified outcome."""
+    name = f"{o.file} {o.qualname}#{o.ordinal}"
+    if o.kind == "stale":
+        return f"[stale] {name}: recorded {o.recorded}; gone or now at 10 or less: delete"
+    now = f"complexity {o.complexity}, score {o.score:.1f}, coverage {o.coverage:.2f}"
+    if o.kind == "known" and o.recorded is not None and o.complexity < o.recorded:
+        return f"[known] {name}: {now}; lower the entry from {o.recorded} to {o.complexity}"
+    was = f" (recorded {o.recorded})" if o.kind == "raised" else ""
+    return f"[{o.kind}] {name}: {now}{was}"
+
+
 def complexity_risk(
     runner: Runner,
     cov_config: str,
@@ -673,45 +709,27 @@ def complexity_risk(
     Scores every function of each touched file in scope, and looks only at the legacy entries
     of those files. A deleted touched file has no functions, so its entries come out stale.
     """
-    py = sys.executable
     if not touched:
         return 0, f"complexity-risk: no touched Python file under {COVERAGE_SOURCE}"
-    with tempfile.TemporaryDirectory() as tmp:
-        out_json = str(Path(tmp) / "cov.json")
-        rc, out = runner(coverage_json_cmd(cov_config, out_json))
-        note = missing_module_note(out, "coverage")
-        if note or rc != 0:
-            return 1, f"note: {note}" if note else f"coverage json failed:\n{out.rstrip()}"
-        cov_text = Path(out_json).read_text("utf-8")
-    present = [f for f in touched if exists(f)]
-    radon_json = "{}"
-    if present:
-        rc, radon_json = runner([py, "-m", "radon", "cc", "-s", "-j", *present])
-        note = missing_module_note(radon_json, "radon")
-        if note or rc != 0:
-            return 1, f"note: {note}" if note else f"radon failed:\n{radon_json.rstrip()}"
+    failure, cov_text, radon_json = _tool_outputs(
+        runner, cov_config, [f for f in touched if exists(f)]
+    )
+    return failure or _report(radon_json, cov_text, legacy_text, touched)
+
+
+def _report(
+    radon_json: str, cov_text: str, legacy_text: str, touched: Sequence[str]
+) -> tuple[int, str]:
+    """Parse the two tool outputs and render the problem lines and the summary."""
     try:
         functions = parse_radon_cc(radon_json)
         coverage = parse_coverage_json(cov_text)
         legacy = [e for e in parse_legacy(legacy_text) if e.file in touched]
     except ValueError as exc:
         return 1, f"error: {exc}"
+    outcomes = classify_outcomes(score_functions(functions, coverage), legacy)
     lines = [f"[error] {f}: no coverage data" for f in files_without_coverage(functions, coverage)]
-    for o in classify_outcomes(score_functions(functions, coverage), legacy):
-        name = f"{o.file} {o.qualname}#{o.ordinal}"
-        if o.kind == "stale":
-            lines.append(
-                f"[stale] {name}: recorded {o.recorded}; gone or now at 10 or less: delete"
-            )
-            continue
-        now = f"complexity {o.complexity}, score {o.score:.1f}, coverage {o.coverage:.2f}"
-        if o.kind == "known" and o.recorded is not None and o.complexity < o.recorded:
-            lines.append(
-                f"[known] {name}: {now}; lower the entry from {o.recorded} to {o.complexity}"
-            )
-        else:
-            was = f" (recorded {o.recorded})" if o.kind == "raised" else ""
-            lines.append(f"[{o.kind}] {name}: {now}{was}")
+    lines += [_outcome_line(o) for o in outcomes]
     bad = [x for x in lines if not x.startswith("[known]")]
     known = len(lines) - len(bad)
     lines.append(f"complexity-risk: {len(bad)} problem(s), {known} known legacy function(s)")
@@ -719,12 +737,19 @@ def complexity_risk(
 
 
 def complexity_evaluator(rc: int, out: str) -> tuple[bool, str]:
-    """The child's last line when it passed; its ``note:`` line or the platform note when not."""
+    """The child's last line when it passed; when not, the reason for the failure.
+
+    A ``note:`` or legacy line is the reason as it stands; a new/raised/stale/error line gets the
+    platform note appended.
+    """
     lines = [x for x in out.splitlines() if x.strip()]
     if rc == 0:
         return True, lines[-1] if lines else ""
     notes = [x.removeprefix("note: ") for x in lines if x.startswith(("note: ", "[legacy-"))]
-    return False, notes[0] if notes else PLATFORM_NOTE
+    if notes:
+        return False, notes[0]
+    reasons = [x for x in lines if x.startswith(("[new]", "[raised]", "[stale]", "[error]"))]
+    return False, f"{reasons[0]}; {PLATFORM_NOTE}" if reasons else PLATFORM_NOTE
 
 
 def build_steps(
@@ -880,6 +905,39 @@ def _git(root: str, *args: str) -> tuple[int, str]:
     return _run(["git", *args], root)
 
 
+def duplication_base(runner: Runner) -> tuple[str, str | None]:
+    """(base for the duplicate diff, warning or None): the merge-base, else HEAD with a warning."""
+    rc, mb = runner(["git", "merge-base", BASE_REF, "HEAD"])
+    if rc == 0 and mb.strip():
+        return mb.strip(), None
+    return "HEAD", (
+        f"warning: cannot find the merge-base with {BASE_REF}: committed duplicates are not "
+        f"checked; fetch the base branch (git fetch origin main)"
+    )
+
+
+def _child_main(cov_config: str, timeout: float) -> int:
+    """The ``--complexity-risk`` child: legacy integrity checks, then the risk report."""
+    root = str(Path(__file__).resolve().parent.parent)
+    try:  # bytes, not read_text: text mode would turn CRLF into LF and hide the rule
+        legacy: str | None = (Path(root) / LEGACY_LIST).read_bytes().decode("utf-8")
+    except FileNotFoundError:
+        legacy = None
+    rc, diff = _git(root, *DIFF_ARGS)
+    _, porcelain = _git(root, *STATUS_ARGS)
+    touched = complexity_scope(parse_changed_files(diff if rc == 0 else "", porcelain))
+
+    def run(cmd: Sequence[str]) -> tuple[int, str]:
+        return _run(cmd, root, timeout)
+
+    problems, notes = legacy_integrity(run, legacy)
+    code, text = complexity_risk(
+        run, cov_config, legacy or "", touched, lambda p: (Path(root) / p).is_file()
+    )
+    print("\n".join([*problems, text, *notes]))
+    return 1 if problems else code
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Local pre-push gate (docs/how-to/pre-push-check.md)")
     ap.add_argument("--quick", action="store_true", help="skip pytest")
@@ -892,28 +950,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.complexity_risk:
-        root = str(Path(__file__).resolve().parent.parent)
-        try:  # bytes, not read_text: text mode would turn CRLF into LF and hide the rule
-            legacy: str | None = (Path(root) / LEGACY_LIST).read_bytes().decode("utf-8")
-        except FileNotFoundError:
-            legacy = None
-        rc, diff = _git(root, *DIFF_ARGS)
-        _, porcelain = _git(root, *STATUS_ARGS)
-        touched = complexity_scope(parse_changed_files(diff if rc == 0 else "", porcelain))
-
-        def run(cmd: Sequence[str]) -> tuple[int, str]:
-            return _run(cmd, root, args.timeout)
-
-        problems, notes = legacy_integrity(run, legacy)
-        code, text = complexity_risk(
-            run,
-            args.complexity_risk,
-            legacy or "",
-            touched,
-            lambda p: (Path(root) / p).is_file(),
-        )
-        print("\n".join([*problems, text, *notes]))
-        return 1 if problems else code
+        return _child_main(args.complexity_risk, args.timeout)
 
     rc, top = _run(["git", "rev-parse", "--show-toplevel"], ".")
     if rc == NOT_FOUND_RC:
@@ -931,8 +968,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     _, porcelain = _git(root, *STATUS_ARGS)
     changed = parse_changed_files(diff, porcelain)
     # Same base as the three-dot diff above; HEAD (local changes only) when it cannot resolve.
-    mb_rc, mb = _git(root, "merge-base", BASE_REF, "HEAD")
-    base = mb.strip() if mb_rc == 0 else "HEAD"
+    base, base_warning = duplication_base(lambda cmd: _run(cmd, root, args.timeout))
+    if base_warning:
+        print(base_warning)
     _, zero_diff = _git(root, "-c", "core.quotepath=off", "diff", "-U0", "--no-color", base)
     added = parse_added_lines(zero_diff)
     for path in untracked_files(porcelain):

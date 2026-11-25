@@ -116,7 +116,7 @@ def test_changed_files__diff_and_porcelain__are_merged_without_deleted_files() -
 
 @pytest.mark.unit
 def test_git_args__committed_changes__use_three_dot_diff_and_nul_output() -> None:
-    assert prepush.DIFF_ARGS == ["diff", "-z", "--name-only", "origin/main...HEAD"]
+    assert prepush.DIFF_ARGS == ["diff", "-z", "--name-only", "--no-renames", "origin/main...HEAD"]
     assert "-z" in prepush.STATUS_ARGS
     assert "--porcelain" in prepush.STATUS_ARGS
 
@@ -1421,4 +1421,71 @@ def test_complexity_evaluator__legacy_problem__is_the_summary_note() -> None:
     assert prepush.complexity_evaluator(1, out) == (
         False,
         "[legacy-shrink] count rule: 2 entries, base has 1",
+    )
+
+
+@pytest.mark.unit
+def test_complexity_evaluator__new_violation__names_the_function_then_the_platform_note() -> None:
+    out = (
+        "[new] src/prismabib/m.py f#1: complexity 14, score 14.0, coverage 0.00\n"
+        "[raised] src/prismabib/m.py g#1: complexity 15, score 15.0, coverage 0.00 (recorded 12)\n"
+        "complexity-risk: 2 problem(s), 0 known legacy function(s)"
+    )
+
+    assert prepush.complexity_evaluator(1, out) == (
+        False,
+        "[new] src/prismabib/m.py f#1: complexity 14, score 14.0, coverage 0.00; "
+        + prepush.PLATFORM_NOTE,
+    )
+
+
+@pytest.mark.unit
+def test_complexity_evaluator__failure_without_a_reason_line__is_the_platform_note() -> None:
+    assert prepush.complexity_evaluator(1, "complexity-risk: 1 problem(s)") == (
+        False,
+        prepush.PLATFORM_NOTE,
+    )
+
+
+@pytest.mark.unit
+def test_git_args__rename__lists_the_old_path_as_touched() -> None:
+    # `git diff -z --name-only --no-renames` prints a rename as a delete plus an add.
+    assert "--no-renames" in prepush.DIFF_ARGS
+    diff = "src/prismabib/old.py\0src/prismabib/new.py\0"
+
+    got = prepush.complexity_scope(prepush.parse_changed_files(diff, ""))
+
+    assert got == ["src/prismabib/new.py", "src/prismabib/old.py"]
+
+
+@pytest.mark.unit
+def test_coverage_config__awkward_data_file_path__is_read_back_unchanged(tmp_path: Path) -> None:
+    from coverage.config import read_coverage_config
+
+    for data_file in [
+        "C:\\Users\\a b\\Temp\\tmp 1\\covdata\\.coverage",
+        "/t/a b/$HOME/100%/.coverage",
+    ]:
+        cfg = tmp_path / "cov.ini"
+        cfg.write_text(prepush.coverage_config_text(data_file, ["pragma: no cover"]), "utf-8")
+
+        got = read_coverage_config(str(cfg), warn=lambda _msg, **_kw: None)
+
+        assert got.data_file == data_file
+        assert got.exclude_list == ["pragma: no cover"]
+
+
+@pytest.mark.unit
+def test_duplication_base__merge_base_resolves__is_the_sha_without_warning() -> None:
+    assert prepush.duplication_base(lambda _cmd: (0, "abc123\n")) == ("abc123", None)
+
+
+@pytest.mark.unit
+def test_duplication_base__merge_base_fails__falls_back_to_head_with_a_warning() -> None:
+    base, warning = prepush.duplication_base(lambda _cmd: (128, "fatal: Not a valid object name"))
+
+    assert base == "HEAD"
+    assert warning == (
+        "warning: cannot find the merge-base with origin/main: committed duplicates are not "
+        "checked; fetch the base branch (git fetch origin main)"
     )

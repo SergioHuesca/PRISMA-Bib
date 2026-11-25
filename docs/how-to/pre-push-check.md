@@ -50,7 +50,9 @@ with an untouched file. A block is reported only when one of its locations overl
 branch added or edited: the new side of `git diff -U0` against the merge-base of `origin/main`
 and `HEAD`, plus every line of an untracked, non-ignored file. A block made only of unchanged
 lines is not reported, even in a touched file, and neither is a removed or moved one. There is
-no list of known duplicates.
+no list of known duplicates. When the merge-base cannot be found (for example `origin/main` was
+never fetched), the step falls back to `HEAD`, prints a one-line warning that committed
+duplicates are not checked, and asks you to fetch the base branch.
 
 **Threshold.** `--min-similarity-lines=6`, which finds 9 duplicate pairs on `main` at commit
 `308bb02` (measured at 4 lines: 31, 6: 9, 8: 4, 10: 2). The value lives as
@@ -87,6 +89,7 @@ a score is never below the complexity, so every function above complexity 10 is 
 function at complexity 10 or less is over it only when poor coverage lifts the score. A touched
 file with no coverage data is an error. Functions in files you did not touch, and the legacy
 entries for them, are not looked at, so a branch that touches no such file has nothing to score.
+A rename counts as touching both paths, so the old file's legacy entries come out stale.
 
 | Outcome | Meaning | Fails |
 |---|---|---|
@@ -137,7 +140,8 @@ tests first.
 temporary coverage config and the JSON report), all removed when the gate exits, whether it
 passed or failed. Nothing in the repository changes.
 
-**Platform note.** Some unit and contract tests skip on some platforms, so coverage, and with
+**Platform note.** A failed step's one-line note names the first new, raised, stale or error
+line, followed by this note. Some unit and contract tests skip on some platforms, so coverage, and with
 it the new-violation result, can differ by platform. The raise rule compares complexity only
 and is stable. The first legacy list was recorded on Windows from the unit and contract run, not
 from the full-suite coverage of CI. A function covered only by integration tests can be flagged
