@@ -64,9 +64,11 @@ sample size.
   full request URL and a checklist about `SCOPUS_API_KEY` and `SCOPUS_INSTTOKEN`. The checklist
   does not mention entitlements, and its first step is to check that `SCOPUS_API_KEY` is set in
   `.env`. That reads misleadingly for a key that is valid but not entitled. Only a 403 becomes
-  the entitlement error. ADR 0028 measured the same refusals, all HTTP 401, and kept this mapping
-  on purpose. In an opt-in cascade run, a 401 or a 403 is recorded as
-  `refused` for the records that step was asked about, and the cascade goes on to the next level
+  the entitlement error. ADR 0028 measured the same refusals, all HTTP 401, and notes that
+  the `AuthError` classification misdescribes them. Its Resolved decisions item 1 keeps the mapping
+  unchanged outside an opt-in cascade run. In an opt-in cascade run, a 401 is recorded as
+  `refused` for the field and the cascade goes on to the next level (the client does the same for
+  a 403)
   ([ADR 0028, Resolved decisions, item 1](../architecture/adr/0028-field-level-fallback-cascade.md#resolved-decisions)).
 - `prismabib enrich` (subject areas, [ADR 0011](../architecture/adr/0011-abstract-retrieval-for-subject-areas.md))
   requests `view=FULL`, also closed to this key.
@@ -134,7 +136,7 @@ For the seed record it returned (18.5 kB):
 | Check | Result |
 |---|---|
 | Author count, Scopus RDF vs OpenAlex | equal on 10 of 10 (2 to 10 authors) |
-| Reference count | equal on 3 of 10; within 10% on 4; Scopus had more references in the other 3 (26 vs 17, 35 vs 27, 96 vs 0). The direction of the 4 records within 10% was not recorded. Completeness was not verified. |
+| Reference count | equal on 3 of 10; within 10% on 4; Scopus had more references in the other 3 (Scopus vs OpenAlex: 26 vs 17, 35 vs 27, 96 vs 0). The direction of the 4 records within 10% was not recorded. Completeness was not verified. |
 | Keywords | 0 to 6 per record; one record had none |
 | Subject areas | 1 to 4 ASJC codes per record |
 
