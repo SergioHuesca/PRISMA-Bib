@@ -52,7 +52,9 @@ and `HEAD`, plus every line of an untracked, non-ignored file. A block made only
 lines is not reported, even in a touched file, and neither is a removed or moved one. There is
 no list of known duplicates. When the merge-base cannot be found (for example `origin/main` was
 never fetched), the step falls back to `HEAD`, prints a one-line warning that committed
-duplicates are not checked, and asks you to fetch the base branch.
+duplicates are not checked, and asks you to fetch the base branch. An unreadable diff header or a failed diff command fails the
+step when duplicates exist, with a note that says the diff could not be read; a clean pylint run
+still passes.
 
 **Threshold.** `--min-similarity-lines=6`, which finds 9 duplicate pairs on `main` at commit
 `308bb02` (measured at 4 lines: 31, 6: 9, 8: 4, 10: 2). The value lives as
