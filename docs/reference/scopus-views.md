@@ -15,11 +15,12 @@ so another key or another institution may get different results.
 | Abstract Retrieval | `META_ABS`, `FULL`, `REF` | **401** |
 | Abstract Retrieval | `ENTITLED` | 401 |
 
-## Best view available: Search `STANDARD`
+## Widest Search view available: `STANDARD`
 
-Search `STANDARD` is the widest view. Abstract Retrieval `META` returns no field that Search
-does not, except the fuller author block for one record (see below). It costs one call per
-record against a separate quota, so it is not worth it as a bulk path.
+Search `STANDARD` is the widest view this key can read. Abstract Retrieval `META` as JSON adds
+only a few fields over it: an author block for one sampled record, `dc:publisher`, `srctype` and
+`link` (see below). It costs one call per record against a separate quota, so it is not a
+practical bulk path.
 
 Fields returned (25-record sample; the share is how many records carried it):
 
@@ -32,8 +33,9 @@ Fields returned (25-record sample; the share is how many records carried it):
   `freetoread` / `freetoreadLabel` (18), `article-number` (6), `pubmed-id` (8), `prism:isbn`
   (4), `pii` (4).
 
-`orcid`, `affilname`, `affiliation-city` and `affiliation-country` are accepted in `field=`
-but only reproduce data already inside `affiliation`.
+`affilname`, `affiliation-city` and `affiliation-country` are accepted in `field=` but only
+repeat data already inside `affiliation`. `orcid` is also accepted; this page does not record
+whether it returned values.
 
 ## What `STANDARD` cannot give
 
@@ -43,8 +45,10 @@ Requesting these with `field=` returns HTTP 400, so a field list does not get ar
 
 Abstract Retrieval `META` **as JSON** adds an `author` block under `dc:creator` (one author in
 the sample), `dc:publisher`, `srctype` and `link`, and returns no abstract, keywords,
-references or subject areas. The same call **as RDF/XML** returns much more: see the
-experiment below, which supersedes the earlier conclusion that those fields are out of reach.
+author keywords, references or subject areas (indexed terms are the one exception: see the
+`field=` row in the experiment below). The same call **as RDF/XML** returns much more: see the
+experiment below, which supersedes the earlier conclusion that the author list, keywords,
+subject areas and references are out of reach. The abstract is still out of reach.
 
 [ADR 0011](../architecture/adr/0011-abstract-retrieval-for-subject-areas.md) says the opposite
 about `view=META`: it states that `META` does carry `subject-areas`. This page's JSON `META`
@@ -83,7 +87,7 @@ sample size.
 ## Quota observed
 
 Response headers showed `X-RateLimit-Limit` 20000 for Search and 10000 for Abstract Retrieval.
-A 401 for an unentitled view still consumes one request from the quota.
+A 401 for an unentitled view appeared to count against the limit; this was not separately verified.
 
 ## Experiment: a second call by id to recover the missing fields
 
@@ -106,11 +110,11 @@ Raw responses were kept; keys are not logged.
 | Abstract Retrieval view | none, `META`, `META_ABS`, `FULL`, `REF`, `ENTITLED`, plus `BASIC`/`ENHANCED`/`STANDARD`/`COMPLETE`/`LIGHT` | No view = `META`. `META_ABS`, `FULL`, `REF`, `ENTITLED`: 401. The rest: 400 (not valid for this API). |
 | Media type | `application/json`, `text/xml`, `application/xml`, `application/atom+xml`, `application/rdf+xml`, `text/plain`, `text/html`, `application/pdf`, `application/ld+json`, `text/turtle` | **Only `application/rdf+xml` returns more.** `atom+xml` is 406 on Abstract Retrieval. The others are 406 or the same data. |
 | `field=` on `META` (JSON) | `author`, `affiliation`, `idxterms`, `abstract`, `dc:description`, `authkeywords`, `subject-areas`, `references`, `bibliography`, `item`, `classifications` | `idxterms` works (indexed terms). `author`/`affiliation` give nothing new. The rest: 400 "restricted". |
-| Search facets | 17 facets (`subjarea`, `authname`, `exactkeyword`, ...) on `EID(x)` | All 400: the key has no facet entitlement. |
+| Search facets | 17 facets (`subjarea`, `authname`, `exactkeyword`, ...) on `EID(x)` | All 400. The responses do not name the cause; the key may lack facet entitlement. |
 | Search views | `ENHANCED`, `LIGHT`, `BASIC`, `FULL`, `META`, `META_ABS`, `REF` | All 400. Search accepts only `STANDARD` and `COMPLETE` (the latter 401). |
 | Other endpoints | Author, Author search, Affiliation, Serial Title, `/search/index:SCOPUS` | 401. |
-| | Citation Overview | 403 `AUTHENTICATION_ERROR` (needs a separate service entitlement). |
-| | `/search/scidir`, `/search/sciencedirect`, `/article/doi\|eid` | 410 / 400 / 404 for this record. Not an Elsevier journal, so this proves nothing about ScienceDirect. |
+| | Citation Overview | 403 `AUTHENTICATION_ERROR`. The response does not state the reason; it may need a separate service entitlement. |
+| | `/search/scidir`, `/search/sciencedirect`, `/article/doi` or `/article/eid` | 410 / 400 / 404 for this record. The seed record is not in an Elsevier journal, so these codes say nothing about ScienceDirect coverage. |
 | | `REFEID()` query | 400: restricted field. |
 
 ### Result: `Accept: application/rdf+xml` on Abstract Retrieval `META`
