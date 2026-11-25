@@ -159,7 +159,9 @@ nav:
       - Protocol: evaluation/protocol.md
       - Questionnaires: evaluation/questionnaires.md
       - Note Sheet: evaluation/note-sheet.md
-  - API Reference: reference/index.md
+  - Reference:
+      - API Reference: reference/index.md
+      - Scopus Views: reference/scopus-views.md
 
 strict: true
 
