@@ -14,12 +14,14 @@ Project tools are invoked through this interpreter (``sys.executable -m ...``).
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -299,8 +301,222 @@ def duplication_evaluator(added: dict[str, list[tuple[int, int]]]) -> Evaluator:
     return evaluate
 
 
+COMPLEXITY_THRESHOLD = 10
+COVERAGE_SOURCE = "src/prismabib"
+
+
+class FunctionRecord(NamedTuple):
+    """One function from radon: identity is (file, qualname, ordinal); lines are not identity."""
+
+    file: str
+    qualname: str
+    ordinal: int  # among functions with this qualname in this file, in line order from 1
+    start: int  # the definition line, not the first decorator (radon, measured in #450)
+    end: int
+    complexity: int
+
+
+class FileCoverage(NamedTuple):
+    executed: frozenset[int]
+    missing: frozenset[int]
+    excluded: frozenset[int]
+
+
+class Scored(NamedTuple):
+    file: str
+    qualname: str
+    ordinal: int
+    complexity: int
+    coverage: float
+    score: float
+
+
+class LegacyEntry(NamedTuple):
+    file: str
+    qualname: str
+    ordinal: int
+    complexity: int
+
+
+class Outcome(NamedTuple):
+    kind: str  # "new" | "raised" | "known" | "stale"; all but "known" fail the step
+    file: str
+    qualname: str
+    ordinal: int
+    complexity: int  # now; 0 for a function that no longer exists
+    score: float
+    coverage: float
+    recorded: int | None  # the legacy entry's complexity, None for "new"
+
+
+def _radon_entries(item: object, prefix: str, file: str) -> list[tuple[str, int, int, int]]:
+    """(qualname, start, end, complexity) for a function and, recursively, its closures."""
+    if not isinstance(item, dict):
+        raise ValueError(  # noqa: TRY004 - one error type for every wrong format
+            f"radon output: {file}: expected an object per function, got {item!r}"
+        )
+    try:
+        name = prefix + str(item["name"])
+        row = (name, int(item["lineno"]), int(item["endline"]), int(item["complexity"]))
+        closures = item.get("closures", [])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"radon output: {file}: function entry lacks {exc!r}") from exc
+    rows = [row]
+    for closure in closures:
+        rows += _radon_entries(closure, name + ".", file)
+    return rows
+
+
+def parse_radon_cc(text: str, root: str = "") -> list[FunctionRecord]:
+    """Function records from ``radon cc -s -j`` (JSON, not the text form: it has no end line).
+
+    Methods are read from the flat ``method`` entries (radon also lists them under their class,
+    so reading both would count each twice); classes themselves are ignored. Raises ValueError
+    on any other shape.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"radon output is not JSON: {exc}") from exc
+    if not isinstance(data, dict) or not all(isinstance(v, list) for v in data.values()):
+        raise ValueError("radon output: expected an object mapping a file to a list of entries")
+    records: list[FunctionRecord] = []
+    for raw_file, items in data.items():
+        file = normalize_path(raw_file, root)
+        rows: list[tuple[str, int, int, int]] = []
+        for item in items:
+            kind = item.get("type") if isinstance(item, dict) else None
+            if kind == "class":
+                continue
+            if kind == "method":  # ponytail: a nested class's methods are assumed flat too
+                item = {**item, "name": f"{item.get('classname', '')}.{item.get('name', '')}"}
+            rows += _radon_entries(item, "", file)
+        seen: dict[str, int] = {}
+        for name, start, end, cc in sorted(rows, key=lambda r: (r[1], r[0])):
+            seen[name] = seen.get(name, 0) + 1
+            records.append(FunctionRecord(file, name, seen[name], start, end, cc))
+    return records
+
+
+def parse_coverage_json(text: str, root: str = "") -> dict[str, FileCoverage]:
+    """Per-file executed, missing and excluded lines from ``coverage json``.
+
+    Keys are normalised. Raises ValueError on a wrong shape, and on data in which no line of
+    any file executed: that is a run that collected nothing (e.g. the editable install pointing
+    at another checkout), and reading it as 0% coverage would hide the cause.
+    """
+    try:
+        data = json.loads(text)
+        files = data["files"]
+        result = {
+            normalize_path(path, root): FileCoverage(
+                frozenset(info["executed_lines"]),
+                frozenset(info["missing_lines"]),
+                frozenset(info["excluded_lines"]),
+            )
+            for path, info in files.items()
+        }
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f"coverage JSON: unexpected shape ({exc!r})") from exc
+    if result and not any(c.executed for c in result.values()):
+        raise ValueError("coverage JSON: no line executed in any file; no data was collected")
+    return result
+
+
+def function_coverage(fn: FunctionRecord, cov: FileCoverage | None) -> float:
+    """Share of the executable lines in the function's range that executed (nested included)."""
+    if cov is None:
+        return 0.0
+    in_range = range(fn.start, fn.end + 1)
+    executed = sum(1 for n in in_range if n in cov.executed and n not in cov.excluded)
+    missing = sum(1 for n in in_range if n in cov.missing and n not in cov.excluded)
+    return executed / (executed + missing) if executed + missing else 1.0
+
+
+def crap_score(complexity: int, coverage: float) -> float:
+    return complexity**2 * (1 - coverage) ** 3 + complexity
+
+
+def score_functions(
+    functions: Sequence[FunctionRecord], coverage: dict[str, FileCoverage]
+) -> list[Scored]:
+    """Join radon's ranges with coverage's lines. A file with no coverage data scores 0."""
+    scored = []
+    for f in functions:
+        cov = function_coverage(f, coverage.get(f.file))
+        scored.append(
+            Scored(f.file, f.qualname, f.ordinal, f.complexity, cov, crap_score(f.complexity, cov))
+        )
+    return scored
+
+
+def files_without_coverage(
+    functions: Sequence[FunctionRecord], coverage: dict[str, FileCoverage]
+) -> list[str]:
+    """Files that have functions but no coverage data: an error, never read as covered."""
+    return sorted({f.file for f in functions if f.file not in coverage})
+
+
+def classify_outcomes(scored: Sequence[Scored], legacy: Sequence[LegacyEntry]) -> list[Outcome]:
+    """new / raised / known / stale against the legacy list (see the #449 spec)."""
+    listed = {(e.file, e.qualname, e.ordinal): e.complexity for e in legacy}
+    outcomes: list[Outcome] = []
+    present: set[tuple[str, str, int]] = set()
+    for s in scored:
+        key = (s.file, s.qualname, s.ordinal)
+        present.add(key)
+        recorded = listed.get(key)
+        if recorded is None:
+            kind = "new" if s.score > COMPLEXITY_THRESHOLD else ""
+        elif s.complexity <= COMPLEXITY_THRESHOLD:
+            kind = "stale"  # fixed: the entry must go
+        else:
+            kind = "raised" if s.complexity > recorded else "known"
+        if kind:
+            outcomes.append(Outcome(kind, *key, s.complexity, s.score, s.coverage, recorded))
+    outcomes += [
+        Outcome("stale", e.file, e.qualname, e.ordinal, 0, 0.0, 0.0, e.complexity)
+        for e in legacy
+        if (e.file, e.qualname, e.ordinal) not in present
+    ]
+    return sorted(outcomes, key=lambda o: (o.file, o.qualname, o.ordinal))
+
+
+def load_exclude_lines(pyproject_text: str) -> list[str]:
+    report = tomllib.loads(pyproject_text).get("tool", {}).get("coverage", {}).get("report", {})
+    return [str(x) for x in report.get("exclude_lines", [])]
+
+
+def coverage_config_text(data_file: str, exclude_lines: Sequence[str]) -> str:
+    """Temporary coverage config: data file in the gate's temp dir, project exclusions kept.
+
+    ``--cov-config`` replaces the pyproject coverage settings, so the exclusions are copied.
+    """
+    lines = ["[run]", f"data_file = {data_file}", "branch = True", "", "[report]"]
+    lines += ["exclude_lines ="] + [f"    {x}" for x in exclude_lines]
+    return "\n".join(lines) + "\n"
+
+
+def write_coverage_config(tmp: str, exclude_lines: Sequence[str]) -> str:
+    """Write the config under ``tmp`` (outside the repository); return its path."""
+    data_dir = Path(tmp) / "covdata"
+    data_dir.mkdir(exist_ok=True)  # coverage does not create the data file's directory
+    cfg = Path(tmp) / "cov.ini"
+    cfg.write_text(coverage_config_text(str(data_dir / ".coverage"), exclude_lines), "utf-8")
+    return str(cfg)
+
+
+def coverage_json_cmd(cov_config: str, out_json: str) -> list[str]:
+    return [
+        sys.executable,
+        *("-m", "coverage", "json", f"--rcfile={cov_config}", "--fail-under=0"),
+        *("-o", out_json),
+    ]
+
+
 def build_steps(
     *,
+    cov_config: str,
     platform: str,
     quick: bool,
     skip_mypy: bool,
@@ -345,7 +561,10 @@ def build_steps(
         )
     )
     if not quick:
-        pytest_cmd = [py, "-m", "pytest", "-m", "unit or contract", "-q", "--no-cov"]
+        pytest_cmd = [py, "-m", "pytest", "-m", "unit or contract", "-q"]
+        # Coverage on, for the complexity-risk step; 0 because this is a subset of the suite.
+        pytest_cmd += [f"--cov={COVERAGE_SOURCE}", f"--cov-config={cov_config}"]
+        pytest_cmd += ["--cov-fail-under=0", "--cov-report="]
         pytest_cmd += ["-n", str(workers), *(test_paths or [])]
         steps.append(Step("pytest unit+contract", pytest_cmd))
     return steps
@@ -483,7 +702,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if exists(".secrets.baseline"):
             baseline = str(Path(tmp) / "baseline.json")
             shutil.copy(Path(root) / ".secrets.baseline", baseline)
+        try:
+            exclude = load_exclude_lines((Path(root) / "pyproject.toml").read_text("utf-8"))
+        except OSError:
+            exclude = []
         steps = build_steps(
+            cov_config=write_coverage_config(tmp, exclude),
             platform=sys.platform,
             quick=args.quick,
             skip_mypy=args.skip_mypy,

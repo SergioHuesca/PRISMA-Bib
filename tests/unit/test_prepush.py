@@ -31,6 +31,7 @@ OTHER_FILE = 'src\\prismabib\\store.py:9: error: Module has no attribute "flock"
 
 def _build(**overrides: object) -> list[object]:
     kwargs: dict[str, object] = {
+        "cov_config": "/tmp-x/cov.ini",
         "platform": "linux",
         "quick": False,
         "skip_mypy": False,
@@ -637,3 +638,245 @@ def test_missing_module_phrase__in_a_failing_test_step__is_an_ordinary_failure()
 
     assert not result.ok
     assert "missing" not in result.note
+
+
+# --- #453: complexity-risk rules, parsers, test-step coverage arguments ---------------------
+
+_FIXTURES = Path(__file__).parent.parent / "fixtures" / "prepush"
+_SRC = "src/m.py"
+
+
+def _rec(qualname: str, start: int, end: int, cc: int, ordinal: int = 1) -> Any:
+    return prepush.FunctionRecord(_SRC, qualname, ordinal, start, end, cc)
+
+
+def _cov(executed: Sequence[int], missing: Sequence[int], excluded: Sequence[int] = ()) -> Any:
+    return prepush.FileCoverage(frozenset(executed), frozenset(missing), frozenset(excluded))
+
+
+def _scored(cc: int, cov: float, qualname: str = "f", ordinal: int = 1) -> Any:
+    return prepush.Scored(_SRC, qualname, ordinal, cc, cov, prepush.crap_score(cc, cov))
+
+
+def _entry(cc: int, qualname: str = "f", ordinal: int = 1) -> Any:
+    return prepush.LegacyEntry(_SRC, qualname, ordinal, cc)
+
+
+def _kinds(scored: list[Any], legacy: list[Any]) -> list[str]:
+    return [o.kind for o in prepush.classify_outcomes(scored, legacy)]
+
+
+@pytest.mark.unit
+def test_test_step__arguments__turn_coverage_on_outside_the_repo_with_fail_under_zero() -> None:
+    step = next(s for s in _build(cov_config="/outside/cov.ini") if s.name.startswith("pytest"))
+
+    cmd = step.cmd  # type: ignore[attr-defined]
+    assert "--no-cov" not in cmd
+    assert "--cov=src/prismabib" in cmd
+    assert "--cov-config=/outside/cov.ini" in cmd
+    assert "--cov-fail-under=0" in cmd
+    assert "--cov-report=" in cmd
+    assert "unit or contract" in cmd
+    assert cmd[cmd.index("-n") + 1] == "2"
+
+
+@pytest.mark.unit
+def test_coverage_config__text__sets_data_file_branch_and_copies_exclusions() -> None:
+    text = prepush.coverage_config_text(
+        "/t/covdata/.coverage", ["pragma: no cover", "def __repr__"]
+    )
+
+    assert text == (
+        "[run]\ndata_file = /t/covdata/.coverage\nbranch = True\n\n[report]\n"
+        "exclude_lines =\n    pragma: no cover\n    def __repr__\n"
+    )
+
+
+@pytest.mark.unit
+def test_coverage_config__write__creates_the_data_dir_next_to_the_config(tmp_path: Path) -> None:
+    path = prepush.write_coverage_config(str(tmp_path), ["pragma: no cover"])
+
+    assert path == str(tmp_path / "cov.ini")
+    assert (tmp_path / "covdata").is_dir()
+    assert "data_file = " in Path(path).read_text("utf-8")
+
+
+@pytest.mark.unit
+def test_exclude_lines__from_pyproject_text__are_read_and_missing_means_empty() -> None:
+    text = '[tool.coverage.report]\nexclude_lines = ["a", "b.c"]\n'
+
+    assert prepush.load_exclude_lines(text) == ["a", "b.c"]
+    assert prepush.load_exclude_lines("[tool.other]\nx = 1\n") == []
+
+
+@pytest.mark.unit
+def test_coverage_json_cmd__has_rcfile_fail_under_zero_and_output() -> None:
+    cmd = prepush.coverage_json_cmd("/t/cov.ini", "/t/cov.json")
+
+    assert cmd[1:] == [
+        "-m",
+        "coverage",
+        "json",
+        "--rcfile=/t/cov.ini",
+        "--fail-under=0",
+        "-o",
+        "/t/cov.json",
+    ]
+
+
+@pytest.mark.unit
+def test_parse_radon_cc__real_fixture__gives_each_function_once_with_ordinals() -> None:
+    text = (_FIXTURES / "radon_cc.json").read_text("utf-8")
+
+    records = prepush.parse_radon_cc(text)
+
+    assert [tuple(r) for r in records] == [
+        ("sample_module.py", "plain", 1, 6, 9, 3),
+        ("sample_module.py", "decorated_wrapper", 1, 12, 13, 1),
+        ("sample_module.py", "decorated", 1, 18, 21, 2),
+        ("sample_module.py", "Box.method", 1, 25, 30, 3),
+        ("sample_module.py", "Box.size", 1, 33, 34, 1),
+        ("sample_module.py", "Box.size", 2, 37, 39, 2),
+        ("sample_module.py", "outer", 1, 42, 48, 1),
+        ("sample_module.py", "outer.inner", 1, 43, 46, 2),
+        ("sample_module.py", "fetch", 1, 51, 54, 2),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad", ["not json", "[1]", '{"a.py": {"x": 1}}', '{"a.py": [{"name": "f"}]}']
+)
+def test_parse_radon_cc__wrong_format__raises_a_clear_error(bad: str) -> None:
+    with pytest.raises(ValueError, match="radon output"):
+        prepush.parse_radon_cc(bad)
+
+
+@pytest.mark.unit
+def test_parse_coverage_json__real_fixture__gives_normalised_per_file_lines() -> None:
+    text = (_FIXTURES / "coverage_report.json").read_text("utf-8")
+
+    cov = prepush.parse_coverage_json(text)
+
+    assert sorted(cov) == ["src/prismabib/ids.py", "src/prismabib/progress.py"]
+    ids = cov["src/prismabib/ids.py"]
+    assert sorted(ids.executed)[:5] == [7, 9, 10, 11, 12]
+    assert ids.missing == frozenset()
+    assert sorted(ids.excluded) == list(range(14, 31))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad", ["nope", "{}", '{"files": {"a.py": {"executed_lines": [1]}}}', "[]"]
+)
+def test_parse_coverage_json__wrong_format__raises_a_clear_error(bad: str) -> None:
+    with pytest.raises(ValueError, match="coverage JSON"):
+        prepush.parse_coverage_json(bad)
+
+
+@pytest.mark.unit
+def test_parse_coverage_json__nothing_executed_anywhere__is_an_error_not_zero_percent() -> None:
+    empty = (
+        '{"files": {"a.py": {"executed_lines": [], "missing_lines": [1], "excluded_lines": []}}}'
+    )
+
+    with pytest.raises(ValueError, match="no data was collected"):
+        prepush.parse_coverage_json(empty)
+
+
+@pytest.mark.unit
+def test_join__method_nested_decorated_and_async__get_coverage_from_their_range() -> None:
+    fns = [
+        _rec("Box.method", 25, 30, 3),
+        _rec("outer", 42, 48, 1),  # includes inner's lines 43-46
+        _rec("outer.inner", 43, 46, 2),
+        _rec("decorated", 18, 21, 2),  # range starts at def: the missing decorator line 17 is out
+        _rec("fetch", 51, 54, 2),  # async
+    ]
+    cov = {
+        _SRC: _cov(
+            executed=[26, 27, 28, 29, 43, 44, 45, 47, 18, 19, 20, 21, 51, 52, 53, 54],
+            missing=[30, 46, 48, 17],
+        )
+    }
+
+    got = [(s.qualname, s.coverage) for s in prepush.score_functions(fns, cov)]
+
+    assert got == [
+        ("Box.method", 0.8),  # 26-29 ran, 30 missing
+        ("outer", 4 / 6),  # 43,44,45,47 ran; 46,48 missing
+        ("outer.inner", 0.75),  # 43,44,45 ran; 46 missing
+        ("decorated", 1.0),
+        ("fetch", 1.0),
+    ]
+
+
+@pytest.mark.unit
+def test_join__no_executable_lines_in_range__coverage_is_one_and_score_is_complexity() -> None:
+    cov = {_SRC: _cov(executed=[1], missing=[2], excluded=[5, 6])}
+
+    (s,) = prepush.score_functions([_rec("stub", 5, 6, 4)], cov)
+
+    assert (s.coverage, s.score) == (1.0, 4.0)
+
+
+@pytest.mark.unit
+def test_join__file_absent_from_coverage__is_zero_coverage_and_reported() -> None:
+    fns = [_rec("f", 1, 9, 3)]
+    other = {"src/other.py": _cov([1], [])}
+
+    (s,) = prepush.score_functions(fns, other)
+
+    assert (s.coverage, s.score) == (0.0, 12.0)
+    assert prepush.files_without_coverage(fns, other) == [_SRC]
+    assert prepush.files_without_coverage(fns, {_SRC: _cov([1], [])}) == []
+
+
+@pytest.mark.unit
+def test_crap_score__literals() -> None:
+    assert prepush.crap_score(10, 0.0) == 110.0
+    assert prepush.crap_score(10, 0.5) == 22.5
+    assert prepush.crap_score(5, 1.0) == 5.0
+
+
+@pytest.mark.unit
+def test_parse_radon_cc__same_name_in_two_places__ordinals_follow_line_order() -> None:
+    text = (
+        '{"a.py": [{"type":"function","name":"f","lineno":30,"endline":32,"complexity":2,'
+        '"closures":[]},{"type":"function","name":"f","lineno":5,"endline":7,"complexity":1,'
+        '"closures":[]}]}'
+    )
+
+    got = [(r.qualname, r.ordinal, r.start) for r in prepush.parse_radon_cc(text)]
+
+    assert got == [("f", 1, 5), ("f", 2, 30)]
+
+
+@pytest.mark.unit
+def test_outcomes__unlisted_function_above_threshold__is_new() -> None:
+    assert _kinds([_scored(11, 1.0)], []) == ["new"]
+    assert _kinds([_scored(3, 1.0)], []) == []
+
+
+@pytest.mark.unit
+def test_outcomes__complexity_ten_with_low_coverage__is_new_and_not_listable() -> None:
+    (o,) = prepush.classify_outcomes([_scored(10, 0.5)], [])
+
+    assert (o.kind, o.score) == ("new", 22.5)
+    assert _kinds([_scored(10, 0.5)], [_entry(10)]) == ["stale"]
+
+
+@pytest.mark.unit
+def test_outcomes__listed_function__raised_known_lowered_or_stale() -> None:
+    assert _kinds([_scored(13, 1.0)], [_entry(12)]) == ["raised"]
+    assert _kinds([_scored(12, 0.0)], [_entry(12)]) == ["known"]  # score above 10, cc unchanged
+    assert _kinds([_scored(11, 1.0)], [_entry(12)]) == ["known"]  # lowered
+    assert _kinds([_scored(9, 1.0)], [_entry(12)]) == ["stale"]  # now at 10 or below
+    assert _kinds([], [_entry(12)]) == ["stale"]  # function gone
+
+
+@pytest.mark.unit
+def test_outcomes__identity_is_file_name_and_ordinal__not_line() -> None:
+    got = prepush.classify_outcomes([_scored(15, 1.0, "f", 2)], [_entry(15, "f", 1)])
+
+    assert [(o.kind, o.ordinal) for o in got] == [("stale", 1), ("new", 2)]
