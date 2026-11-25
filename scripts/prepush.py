@@ -2,7 +2,8 @@
 
 Runs ruff check, ruff format --check (whole tree), detect-secrets over the changed files,
 mypy --strict, pylint's duplicate-code check (blocks touching this branch's lines) and the
-unit + contract tests, then prints a summary listing every failed step
+unit + contract tests (with coverage) and the complexity-risk step that reads that coverage
+(skipped under --quick, --changed and when the tests fail), then prints a summary listing every failed step
 with the exact command to re-run it. It never commits, pushes or changes a tracked file.
 
     python scripts/prepush.py [--quick] [--changed] [--workers N] [--skip-mypy] [--fail-fast]
@@ -514,6 +515,107 @@ def coverage_json_cmd(cov_config: str, out_json: str) -> list[str]:
     ]
 
 
+LEGACY_LIST = "scripts/complexity-legacy.txt"
+PLATFORM_NOTE = (
+    "new-violation results may differ by platform (some tests skip on some platforms); "
+    "the raise rule compares complexity only and is stable"
+)
+TEST_STEP = "pytest unit+contract"
+COMPLEXITY_STEP = "complexity-risk"
+COMPLEXITY_RERUN = (
+    "a fresh test run comes first: python scripts/prepush.py (this step cannot run alone)"
+)
+
+
+def parse_legacy(text: str) -> list[LegacyEntry]:
+    """Entries from the legacy list: one ``file qualname ordinal complexity`` per line."""
+    entries = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line:
+            continue
+        try:
+            head, ordinal, complexity = line.rsplit(" ", 2)
+            file, qualname = head.rsplit(" ", 1)  # only the file could hold a space
+            entries.append(LegacyEntry(file, qualname, int(ordinal), int(complexity)))
+        except ValueError as exc:
+            raise ValueError(
+                f"legacy list line {n}: want 'file qualname ordinal complexity'"
+            ) from exc
+    return entries
+
+
+def complexity_scope(changed: Sequence[str]) -> list[str]:
+    """The touched Python files under the package source tree (scripts and tests are out)."""
+    paths = {normalize_path(p) for p in changed}
+    return sorted(p for p in paths if p.startswith(COVERAGE_SOURCE + "/") and p.endswith(".py"))
+
+
+def complexity_risk(
+    runner: Runner,
+    cov_config: str,
+    legacy_text: str,
+    touched: Sequence[str],
+    exists: Callable[[str], bool],
+) -> tuple[int, str]:
+    """The child mode: coverage JSON + radon + the #453 rules; returns (exit code, output).
+
+    Scores every function of each touched file in scope, and looks only at the legacy entries
+    of those files. A deleted touched file has no functions, so its entries come out stale.
+    """
+    py = sys.executable
+    if not touched:
+        return 0, f"complexity-risk: no touched Python file under {COVERAGE_SOURCE}"
+    with tempfile.TemporaryDirectory() as tmp:
+        out_json = str(Path(tmp) / "cov.json")
+        rc, out = runner(coverage_json_cmd(cov_config, out_json))
+        note = missing_module_note(out, "coverage")
+        if note or rc != 0:
+            return 1, f"note: {note}" if note else f"coverage json failed:\n{out.rstrip()}"
+        cov_text = Path(out_json).read_text("utf-8")
+    present = [f for f in touched if exists(f)]
+    radon_json = "{}"
+    if present:
+        rc, radon_json = runner([py, "-m", "radon", "cc", "-s", "-j", *present])
+        note = missing_module_note(radon_json, "radon")
+        if note or rc != 0:
+            return 1, f"note: {note}" if note else f"radon failed:\n{radon_json.rstrip()}"
+    try:
+        functions = parse_radon_cc(radon_json)
+        coverage = parse_coverage_json(cov_text)
+        legacy = [e for e in parse_legacy(legacy_text) if e.file in touched]
+    except ValueError as exc:
+        return 1, f"error: {exc}"
+    lines = [f"[error] {f}: no coverage data" for f in files_without_coverage(functions, coverage)]
+    for o in classify_outcomes(score_functions(functions, coverage), legacy):
+        name = f"{o.file} {o.qualname}#{o.ordinal}"
+        if o.kind == "stale":
+            lines.append(
+                f"[stale] {name}: recorded {o.recorded}; gone or now at 10 or less: delete"
+            )
+            continue
+        now = f"complexity {o.complexity}, score {o.score:.1f}, coverage {o.coverage:.2f}"
+        if o.kind == "known" and o.recorded is not None and o.complexity < o.recorded:
+            lines.append(
+                f"[known] {name}: {now}; lower the entry from {o.recorded} to {o.complexity}"
+            )
+        else:
+            was = f" (recorded {o.recorded})" if o.kind == "raised" else ""
+            lines.append(f"[{o.kind}] {name}: {now}{was}")
+    bad = [x for x in lines if not x.startswith("[known]")]
+    known = len(lines) - len(bad)
+    lines.append(f"complexity-risk: {len(bad)} problem(s), {known} known legacy function(s)")
+    return (1 if bad else 0), "\n".join(lines)
+
+
+def complexity_evaluator(rc: int, out: str) -> tuple[bool, str]:
+    """The child's last line when it passed; its ``note:`` line or the platform note when not."""
+    lines = [x for x in out.splitlines() if x.strip()]
+    if rc == 0:
+        return True, lines[-1] if lines else ""
+    notes = [x[6:] for x in lines if x.startswith("note: ")]
+    return False, notes[0] if notes else PLATFORM_NOTE
+
+
 def build_steps(
     *,
     cov_config: str,
@@ -525,6 +627,7 @@ def build_steps(
     baseline: str | None,
     test_paths: Sequence[str] | None,
     added_lines: dict[str, list[tuple[int, int]]] | None = None,
+    changed: bool = False,
 ) -> list[Step]:
     py = sys.executable
     steps = [
@@ -566,17 +669,32 @@ def build_steps(
         pytest_cmd += [f"--cov={COVERAGE_SOURCE}", f"--cov-config={cov_config}"]
         pytest_cmd += ["--cov-fail-under=0", "--cov-report="]
         pytest_cmd += ["-n", str(workers), *(test_paths or [])]
-        steps.append(Step("pytest unit+contract", pytest_cmd))
+        steps.append(Step(TEST_STEP, pytest_cmd))
+    if not quick and not changed:
+        # One command: this script again, in the child mode; it needs the test step's coverage.
+        child = [py, str(Path(__file__).resolve()), "--complexity-risk", cov_config]
+        steps.append(
+            Step(
+                COMPLEXITY_STEP,
+                child,
+                complexity_evaluator,
+                after=TEST_STEP,
+                rerun=COMPLEXITY_RERUN,
+            )
+        )
     return steps
 
 
-def option_skips(*, quick: bool, skip_mypy: bool) -> list[Step]:
+def option_skips(*, quick: bool, skip_mypy: bool, changed: bool = False) -> list[Step]:
     """Steps that an option leaves out, as never-run steps carrying the reason."""
     skips = []
     if skip_mypy:
         skips.append(Step("mypy --strict", [], skip_reason="--skip-mypy"))
     if quick:
-        skips.append(Step("pytest unit+contract", [], skip_reason="--quick"))
+        skips.append(Step(TEST_STEP, [], skip_reason="--quick"))
+    if quick or changed:
+        reason = "--quick" if quick else "--changed"
+        skips.append(Step(COMPLEXITY_STEP, [], skip_reason=reason, rerun=COMPLEXITY_RERUN))
     return skips
 
 
@@ -659,7 +777,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--skip-mypy", action="store_true", help="skip mypy (CI will still run it)")
     ap.add_argument("--fail-fast", action="store_true", help="stop at the first failed step")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds per step")
+    ap.add_argument("--complexity-risk", metavar="COV_CONFIG", help=argparse.SUPPRESS)  # child mode
     args = ap.parse_args(argv)
+
+    if args.complexity_risk:
+        root = str(Path(__file__).resolve().parent.parent)
+        try:
+            legacy = (Path(root) / LEGACY_LIST).read_text("utf-8")
+        except FileNotFoundError:
+            legacy = ""
+        rc, diff = _git(root, *DIFF_ARGS)
+        _, porcelain = _git(root, *STATUS_ARGS)
+        touched = complexity_scope(parse_changed_files(diff if rc == 0 else "", porcelain))
+        code, text = complexity_risk(
+            lambda cmd: _run(cmd, root, args.timeout),
+            args.complexity_risk,
+            legacy,
+            touched,
+            lambda p: (Path(root) / p).is_file(),
+        )
+        print(text)
+        return code
 
     rc, top = _run(["git", "rev-parse", "--show-toplevel"], ".")
     if rc == NOT_FOUND_RC:
@@ -716,8 +854,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline=baseline,
             test_paths=test_paths,
             added_lines=added,
+            changed=args.changed,
         )
-        steps += option_skips(quick=args.quick, skip_mypy=args.skip_mypy)
+        steps += option_skips(quick=args.quick, skip_mypy=args.skip_mypy, changed=args.changed)
         results = run_steps(steps, lambda cmd: _run(cmd, root, args.timeout), args.fail_fast)
 
     for r in results:

@@ -23,12 +23,13 @@ In order, all steps run and a summary at the end lists every failed step:
 4. `mypy --strict src/prismabib` (Python 3.11 target, as in CI).
 5. `pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 src/prismabib`,
    filtered to the blocks this branch touched (see [Duplication step](#duplication-step)).
-6. `pytest -m "unit or contract" -q --no-cov -n 2`.
+6. `pytest -m "unit or contract" -q -n 2` with line coverage on for `src/prismabib` (fail-under 0).
+7. The complexity-risk step, which reads that coverage (see [Complexity-risk step](#complexity-risk-step)).
 
 | Option | Effect |
 |---|---|
-| `--quick` | Skip pytest. |
-| `--changed` | Only the tests of changed modules (`tests/unit/test_<module>.py`). Falls back to the full unit and contract set if any changed file has no obvious test. |
+| `--quick` | Skip pytest and the complexity-risk step. |
+| `--changed` | Only the tests of changed modules (`tests/unit/test_<module>.py`). Falls back to the full unit and contract set if any changed file has no obvious test. Skips the complexity-risk step. |
 | `--workers N` | pytest-xdist workers. The default is `-n 2`; this overrides it. |
 | `--skip-mypy` | Skip mypy. Prints a warning; CI still runs it. |
 | `--fail-fast` | Stop at the first failed step. |
@@ -74,9 +75,62 @@ repository root before they are compared, so the result is the same on every pla
 hint, and the other steps still run. Any other pylint failure is an ordinary failure. Install
 the development dependencies as described in the next section.
 
+## Complexity-risk step
+
+**What it checks.** Every function in each Python file under `src/prismabib` that this branch
+touched (changed since `origin/main`, uncommitted or untracked; files outside the `prisma`
+package included; scripts and tests are out of scope) is scored with
+`score = complexity^2 x (1 - coverage)^3 + complexity`, where complexity is radon's cyclomatic
+complexity and coverage is the share of the function's executable lines that the unit and
+contract run executed (nested functions count toward their outer function). The threshold is 10;
+a score is never below the complexity, so every function above complexity 10 is over it, and a
+function at complexity 10 or less is over it only when poor coverage lifts the score. A touched
+file with no coverage data is an error. Functions in files you did not touch, and the legacy
+entries for them, are not looked at, so a branch that touches no such file has nothing to score.
+
+| Outcome | Meaning | Fails |
+|---|---|---|
+| new | Not on the legacy list and score above 10. | yes |
+| raised | On the list and complexity above the recorded one. | yes |
+| known | On the list and complexity not above the recorded one. | no |
+| stale | On the list, but the function is gone or is now at complexity 10 or less. | yes |
+
+The legacy list is `scripts/complexity-legacy.txt`: one entry per function whose complexity was
+above 10 when the list was produced, one per line, `file qualname ordinal complexity`
+separated by single spaces (forward-slash path relative to the repository root; the ordinal
+counts functions with the same qualified name in that file, in line order from 1). The gate
+never writes it: a failing run prints the entries to delete (stale) or to lower (a known
+function whose complexity went down) and you edit the file by hand. A function at complexity
+10 or less is never listed, even when poor coverage makes it a violation.
+
+**Failure output.** For each violating function: file, qualified name, ordinal, complexity,
+score and the coverage it was scored with.
+
+**Skipped** (counted as neither passed nor failed, with the reason in the summary): under
+`--quick`, under `--changed`, and when the test step failed.
+
+**Re-run.** Its coverage data exists only for the test run that produced it, so the step cannot
+be re-run alone: run the whole gate again (`uv run python scripts/prepush.py`), which runs the
+tests first.
+
+**What it writes:** only to the gate's temporary directory (the coverage data file, the
+temporary coverage config and the JSON report), all removed when the gate exits, whether it
+passed or failed. Nothing in the repository changes.
+
+**Platform note.** Some unit and contract tests skip on some platforms, so coverage, and with
+it the new-violation result, can differ by platform. The raise rule compares complexity only
+and is stable. The first legacy list was recorded on Windows from the unit and contract run, not
+from the full-suite coverage of CI. A function covered only by integration tests can be flagged
+locally, because the gate does not run those tests.
+
+**Missing module.** If `radon` or `coverage` is not installed, the child run prints the
+module name and the install hint, exits non-zero and the summary shows that note. Install the
+development dependencies as described in the next section.
+
 ## Installing the development dependencies
 
-The duplication step needs `pylint`, which is in the `dev` extra:
+The duplication and complexity-risk steps need `pylint`, `radon` and `coverage`, which are in
+the `dev` extra:
 
 ```text
 uv sync --all-extras

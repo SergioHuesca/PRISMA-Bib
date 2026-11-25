@@ -216,7 +216,8 @@ def test_build_steps__skip_mypy_and_no_secret_files__omit_those_steps() -> None:
 
 @pytest.mark.unit
 def test_build_steps__workers_and_test_paths__reach_pytest_command() -> None:
-    step = _build(workers=3, test_paths=["tests/unit/test_log.py"])[-1]
+    steps = _build(workers=3, test_paths=["tests/unit/test_log.py"])
+    step = next(s for s in steps if s.name == "pytest unit+contract")  # type: ignore[attr-defined]
 
     cmd = step.cmd  # type: ignore[attr-defined]
     assert cmd[cmd.index("-n") + 1] == "3"
@@ -340,6 +341,7 @@ def test_run_steps__step_excluded_by_option__is_skipped_with_reason_and_not_run(
     assert code == 0
     assert "[skip] mypy --strict  (--skip-mypy)" in text
     assert "[skip] pytest unit+contract  (--quick)" in text
+    assert "[skip] complexity-risk  (--quick)" in text
 
 
 @pytest.mark.unit
@@ -391,14 +393,15 @@ def test_build_steps__each_option__selects_the_literal_step_set() -> None:
         "mypy --strict",
         "duplicate-code",
         "pytest unit+contract",
+        "complexity-risk",
     ]
+    changed = _build(test_paths=["tests/unit/test_log.py"], changed=True)
 
     assert _names(_build()) == full
     assert _names(_build(quick=True)) == full[:5]
     assert _names(_build(skip_mypy=True)) == [*full[:3], *full[4:]]
-    assert _names(_build(test_paths=["tests/unit/test_log.py"])) == full
-    changed_cmd = _build(test_paths=["tests/unit/test_log.py"])[-1].cmd  # type: ignore[attr-defined]
-    assert changed_cmd[-1] == "tests/unit/test_log.py"
+    assert _names(changed) == full[:6]
+    assert changed[-1].cmd[-1] == "tests/unit/test_log.py"  # type: ignore[attr-defined]
 
 
 @pytest.mark.unit
@@ -552,7 +555,7 @@ def test_duplication_step__command__scans_the_whole_tree_at_the_recorded_similar
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "options",
-    [{}, {"quick": True}, {"test_paths": ["tests/unit/test_log.py"]}, {"skip_mypy": True}],
+    [{}, {"quick": True}, {"changed": True}, {"skip_mypy": True}],
 )
 def test_duplication_step__every_option__is_selected(options: dict[str, object]) -> None:
     assert "duplicate-code" in _names(_build(**options))
@@ -880,3 +883,284 @@ def test_outcomes__identity_is_file_name_and_ordinal__not_line() -> None:
     got = prepush.classify_outcomes([_scored(15, 1.0, "f", 2)], [_entry(15, "f", 1)])
 
     assert [(o.kind, o.ordinal) for o in got] == [("stale", 1), ("new", 2)]
+
+
+# --- #454: the complexity-risk step and its child mode ---------------------------------------
+
+_COV_JSON = (
+    '{"files": {"src\\\\prismabib\\\\m.py": {"executed_lines": [1, 2, 3],'
+    ' "missing_lines": [5, 6], "excluded_lines": []}}}'
+)
+# g (lines 1-3) is fully executed, f (lines 5-6) not at all: scores 12.0 and 156.0.
+_RADON = (
+    '{"src\\\\prismabib\\\\m.py": ['
+    '{"type": "function", "name": "g", "lineno": 1, "endline": 3, "complexity": 12,'
+    ' "closures": []},'
+    '{"type": "function", "name": "f", "lineno": 5, "endline": 6, "complexity": 12,'
+    ' "closures": []}]}'
+)
+
+
+class _ChildRunner:
+    """Fake for the child: writes the coverage JSON where asked, answers radon with ``radon``."""
+
+    def __init__(self, cov: tuple[int, str], radon: tuple[int, str]) -> None:
+        self.cov, self.radon = cov, radon
+        self.out_json = ""
+        self.radon_cmd: list[str] = []
+
+    def __call__(self, cmd: Sequence[str]) -> tuple[int, str]:
+        if "coverage" in cmd:
+            self.out_json = cmd[cmd.index("-o") + 1]
+            if self.cov[0] == 0:
+                Path(self.out_json).write_text(self.cov[1], "utf-8")
+                return 0, "Wrote JSON report"
+            return self.cov
+        self.radon_cmd = list(cmd)
+        return self.radon
+
+
+def _risk(
+    runner: Any,
+    cov_config: str,
+    legacy: str,
+    touched: Sequence[str] = ("src/prismabib/m.py",),
+    exists: Any = lambda _path: True,
+) -> tuple[int, str]:
+    return prepush.complexity_risk(runner, cov_config, legacy, touched, exists)  # type: ignore[no-any-return]
+
+
+@pytest.mark.unit
+def test_complexity_scope__changed_files__keeps_package_python_only() -> None:
+    changed = [
+        "src\\prismabib\\store\\load.py",
+        "src/other_pkg/x.py",
+        "src/prismabib/data.toml",
+        "scripts/prepush.py",
+        "tests/unit/test_x.py",
+        "src/prismabib/a.py",
+    ]
+
+    assert prepush.complexity_scope(changed) == [
+        "src/prismabib/a.py",
+        "src/prismabib/store/load.py",
+    ]
+
+
+@pytest.mark.unit
+def test_complexity_risk__nothing_touched__passes_without_running_a_tool() -> None:
+    runner = _ChildRunner((0, _COV_JSON), (0, _RADON))
+
+    code, text = _risk(runner, "/c", "src/prismabib/m.py f 1 12\n", touched=[])
+
+    assert (code, text, runner.out_json) == (
+        0,
+        "complexity-risk: no touched Python file under src/prismabib",
+        "",
+    )
+
+
+@pytest.mark.unit
+def test_complexity_risk__untouched_files__are_not_scored_and_their_entries_not_stale() -> None:
+    runner = _ChildRunner((0, _COV_JSON), (0, _RADON))
+    legacy = "src/prismabib/m.py f 1 12\nsrc/prismabib/m.py g 1 12\nsrc/prismabib/z.py q 1 20\n"
+
+    code, text = _risk(runner, "/c", legacy)
+
+    assert code == 0
+    assert runner.radon_cmd[-1] == "src/prismabib/m.py"
+    assert "z.py" not in text
+
+
+@pytest.mark.unit
+def test_complexity_risk__deleted_touched_file__its_entries_are_stale_and_radon_skips_it() -> None:
+    runner = _ChildRunner((0, _COV_JSON), (0, "{}"))
+    gone = "src/prismabib/gone.py"
+
+    code, text = _risk(runner, "/c", f"{gone} q 1 20\n", touched=[gone], exists=lambda _p: False)
+
+    assert (code, runner.radon_cmd) == (1, [])
+    assert (
+        text.splitlines()[0]
+        == f"[stale] {gone} q#1: recorded 20; gone or now at 10 or less: delete"
+    )
+
+
+def _step(name: str) -> Any:
+    return next(s for s in _build(cov_config="/outside/cov.ini") if s.name == name)  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
+def test_complexity_step__arguments_and_dependency__one_child_command_after_the_tests() -> None:
+    step = _step("complexity-risk")
+
+    assert step.cmd[1:] == [str(_SCRIPT.resolve()), "--complexity-risk", "/outside/cov.ini"]
+    assert step.after == "pytest unit+contract"
+    assert step.rerun.startswith("a fresh test run comes first")
+    assert "--complexity-risk" not in step.rerun  # no printed command stands alone
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("quick", "changed", "reason"), [(True, False, "--quick"), (False, True, "--changed")]
+)
+def test_complexity_step__quick_or_changed__is_skipped_with_reason(
+    quick: bool, changed: bool, reason: str
+) -> None:
+    runner = _FakeRunner({})
+
+    skips = prepush.option_skips(quick=quick, skip_mypy=False, changed=changed)
+    text, code = prepush.summarize(prepush.run_steps(skips, runner))
+
+    assert f"[skip] complexity-risk  ({reason})" in text
+    assert (runner.calls, code) == ([], 0)
+
+
+@pytest.mark.unit
+def test_complexity_step__test_step_failed__is_skipped_and_never_run() -> None:
+    steps = [s for s in _build() if s.name in ("pytest unit+contract", "complexity-risk")]
+    runner = _FakeRunner({steps[0].cmd[0]: (1, "boom")})
+
+    results = prepush.run_steps(steps, runner)
+
+    assert [(r.name, r.skipped) for r in results] == [
+        ("pytest unit+contract", False),
+        ("complexity-risk", True),
+    ]
+    assert results[1].note == "prerequisite 'pytest unit+contract' failed"
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.unit
+def test_complexity_step__failing_run__summary_has_platform_note_and_no_bare_command() -> None:
+    step = _step("complexity-risk")
+    runner = _FakeRunner({step.cmd[0]: (1, "[new] src/m.py f#1: complexity 12")})
+
+    (result,) = prepush.run_steps([step._replace(after=None)], runner)
+    text, code = prepush.summarize([result])
+
+    assert code == 1
+    assert "new-violation results may differ by platform" in text
+    assert "re-run: a fresh test run comes first: python scripts/prepush.py" in text
+    assert "--complexity-risk" not in text
+
+
+@pytest.mark.unit
+def test_complexity_risk__new_violation_beside_known_legacy__fails_naming_the_new_one() -> None:
+    runner = _ChildRunner((0, _COV_JSON), (0, _RADON))
+
+    code, text = _risk(runner, "/c.ini", "src/prismabib/m.py g 1 12\n")
+
+    assert code == 1
+    assert text.splitlines() == [
+        "[new] src/prismabib/m.py f#1: complexity 12, score 156.0, coverage 0.00",
+        "[known] src/prismabib/m.py g#1: complexity 12, score 12.0, coverage 1.00",
+        "complexity-risk: 1 problem(s), 1 known legacy function(s)",
+    ]
+
+
+@pytest.mark.unit
+def test_complexity_risk__all_listed_and_unchanged__passes() -> None:
+    legacy = "src/prismabib/m.py f 1 12\nsrc/prismabib/m.py g 1 12\n"
+
+    code, text = _risk(_ChildRunner((0, _COV_JSON), (0, _RADON)), "/c", legacy)
+
+    assert code == 0
+    assert text.splitlines()[-1] == "complexity-risk: 0 problem(s), 2 known legacy function(s)"
+
+
+@pytest.mark.unit
+def test_complexity_risk__stale_and_lowered_entries__print_what_to_delete_or_lower() -> None:
+    legacy = "src/prismabib/gone.py h 1 14\nsrc/prismabib/m.py f 1 15\nsrc/prismabib/m.py g 1 12\n"
+
+    touched = ["src/prismabib/gone.py", "src/prismabib/m.py"]
+
+    code, text = _risk(_ChildRunner((0, _COV_JSON), (0, _RADON)), "/c", legacy, touched)
+
+    assert code == 1
+    assert text.splitlines() == [
+        "[stale] src/prismabib/gone.py h#1: recorded 14; gone or now at 10 or less: delete",
+        (
+            "[known] src/prismabib/m.py f#1: complexity 12, score 156.0, coverage 0.00;"
+            " lower the entry from 15 to 12"
+        ),
+        "[known] src/prismabib/m.py g#1: complexity 12, score 12.0, coverage 1.00",
+        "complexity-risk: 1 problem(s), 2 known legacy function(s)",
+    ]
+
+
+@pytest.mark.unit
+def test_complexity_risk__raised_legacy_function__fails_showing_the_recorded_value() -> None:
+    legacy = "src/prismabib/m.py f 1 11\nsrc/prismabib/m.py g 1 12\n"
+
+    code, text = _risk(_ChildRunner((0, _COV_JSON), (0, _RADON)), "/c", legacy)
+
+    assert code == 1
+    assert text.splitlines()[0] == (
+        "[raised] src/prismabib/m.py f#1: complexity 12, score 156.0, coverage 0.00 (recorded 11)"
+    )
+
+
+@pytest.mark.unit
+def test_complexity_risk__function_in_file_without_coverage__is_an_error() -> None:
+    cov = (
+        '{"files": {"src/prismabib/other.py": {"executed_lines": [1], "missing_lines": [],'
+        ' "excluded_lines": []}}}'
+    )
+
+    code, text = _risk(_ChildRunner((0, cov), (0, _RADON)), "/c", "")
+
+    assert code == 1
+    assert text.splitlines()[0] == "[error] src/prismabib/m.py: no coverage data"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("module", ["coverage", "radon"])
+def test_complexity_risk__missing_module__child_fails_with_note_and_parent_reports_it(
+    module: str,
+) -> None:
+    gone = (1, f"C:\\v\\python.exe: No module named {module}\n")
+    runner = _ChildRunner(gone if module == "coverage" else (0, _COV_JSON), gone)
+    hint = "install the development dependencies: uv sync --all-extras"
+
+    code, text = _risk(runner, "/c", "")
+
+    assert (code, text) == (1, f"note: module '{module}' is missing; {hint}")
+    assert prepush.complexity_evaluator(code, text) == (
+        False,
+        f"module '{module}' is missing; {hint}",
+    )
+
+
+@pytest.mark.unit
+def test_complexity_risk__tools__run_on_the_package_tree_and_leave_no_temp_files() -> None:
+    runner = _ChildRunner((0, _COV_JSON), (0, _RADON))
+
+    _risk(runner, "/c", "")
+
+    assert runner.radon_cmd[-4:] == ["cc", "-s", "-j", "src/prismabib/m.py"]
+    assert not Path(runner.out_json).parent.exists()
+
+
+@pytest.mark.unit
+def test_parse_legacy__lines__become_entries_and_a_bad_line_fails_naming_it() -> None:
+    text = "src/prismabib/a.py A.f 2 13\nsrc/prismabib/b.py g 1 11\n"
+
+    assert prepush.parse_legacy(text) == [
+        prepush.LegacyEntry("src/prismabib/a.py", "A.f", 2, 13),
+        prepush.LegacyEntry("src/prismabib/b.py", "g", 1, 11),
+    ]
+    with pytest.raises(ValueError, match="line 1"):
+        prepush.parse_legacy("src/prismabib/a.py A.f two 13\n")
+
+
+@pytest.mark.unit
+def test_legacy_list__committed_file__parses_with_only_complexity_above_ten() -> None:
+    text = (_SCRIPT.parent / "complexity-legacy.txt").read_text("utf-8")
+
+    entries = prepush.parse_legacy(text)
+
+    assert entries
+    assert all(e.complexity > 10 for e in entries)
+    assert all(e.file.startswith("src/prismabib/") and "\\" not in e.file for e in entries)
+    assert text.endswith("\n") and "\r" not in text
