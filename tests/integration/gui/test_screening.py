@@ -13,8 +13,8 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import ProjectLockedError
-from prismabib.gui import layer, tasks
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import service, tasks
 from prismabib.gui.new_project import build_stepper
 from prismabib.gui.screening import build_screening
 from prismabib.prisma.log import DecisionLog
@@ -47,7 +47,7 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 def make_project(root: Path, *, built: bool = True, criteria: bool = True) -> Project:
     """A Project created through the layer (Reviewer Ada), with five authored Records."""
-    project = layer.create_project(
+    project = service.create_project(
         "demo", title="Demo", root=root, source_mode="scopus", reviewer="Ada"
     )
     if criteria:
@@ -87,8 +87,11 @@ def test_decide__through_the_hosted_screener__carries_the_creation_reviewer(tmp_
     assert [e["decision"] for e in events] == ["include", "unsure"]
     assert not any("actor" in e for e in events)
     text = sl.screen_markdown(sl.screen_model(screener.queue, {}, blind=True))
-    assert sl.REVIEWER_LABEL in text and sl.ACTOR_LABEL in text
-    assert sl.REVIEWER_LABEL != sl.ACTOR_LABEL
+    assert sl.REVIEWER_LABEL in text and sl.CHANGED_BY_LABEL in text
+    assert sl.CHANGED_BY_LABEL.startswith("Changed by")
+    assert sl.REVIEWER_LABEL != sl.CHANGED_BY_LABEL
+    assert "Actor" not in text
+    assert "Actor" not in sl.CHANGED_BY_LABEL
 
 
 def test_screener__runs_with_palette_and_progress_inside_the_view(tmp_path: Path) -> None:
@@ -148,7 +151,7 @@ def test_blind_mode__second_reviewer__nothing_leaks_into_the_view_model(tmp_path
 def test_read_only_window__decision__is_refused_and_logged_nothing(tmp_path: Path) -> None:
     project = make_project(tmp_path)
     screener = sl.open_screening(project, STAGE, "Ada")
-    holder = layer.Session(project)  # another window holds the write lock
+    holder = service.Session(project)  # another window holds the write lock
 
     with pytest.raises(ProjectLockedError):
         screener.queue.decide("include")
@@ -165,8 +168,8 @@ def test_open__criteria_saved_unchanged_with_the_defaults__screening_is_not_bloc
     project = make_project(tmp_path, criteria=False)  # the init scaffold, store built
     assert any("Criteria are not written" in gap for gap in sl.missing(project))
 
-    with layer.open_session("demo", root=tmp_path) as session:
-        layer.save_criteria(session, project.criteria)  # unrestricted, by choice
+    with service.open_session("demo", root=tmp_path) as session:
+        service.save_criteria(session, project.criteria)  # unrestricted, by choice
 
     assert sl.missing(project) == []
 
@@ -178,7 +181,7 @@ def test_open_early__says_what_is_missing(tmp_path: Path) -> None:
 
     text = " ".join(str(p.object) for p in view.select(pn.pane.Markdown))
     assert "Criteria are not written" in text and "store is not built" in text
-    with pytest.raises(layer.ValidationError):
+    with pytest.raises(service.ValidationError):
         sl.open_screening(project, STAGE, "Ada")
 
 
@@ -195,3 +198,46 @@ def test_smoke__stepper_screening_step__builds_with_labelled_controls(tmp_path: 
     assert view.select(pn.widgets.TextInput)[0].value == "Ada"
     assert any("Unscreened" in str(p.object) for p in view.select(pn.pane.Markdown))
     assert build_stepper(project) is not None
+
+
+FULLTEXT_NOTE = "Full text screening (not in this version)"
+
+
+def _stage_radio(view: pn.Column) -> pn.widgets.RadioButtonGroup:
+    return next(r for r in view.select(pn.widgets.RadioButtonGroup) if r.name == "Stage")
+
+
+def test_stage_choice__offers_only_title_and_abstract__with_the_full_text_note(
+    tmp_path: Path,
+) -> None:
+    view = build_screening(make_project(tmp_path))
+
+    notes = [str(p.object) for p in view.select(pn.pane.Markdown)]
+    assert list(_stage_radio(view).options) == ["Title and abstract"]
+    assert any(FULLTEXT_NOTE in n for n in notes)
+
+
+def test_start_screening__every_offered_stage__records_title_and_abstract_at_the_loader_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[PrismaStage] = []
+    monkeypatch.setattr(sl, "start_loading", lambda _p, stage, *_a, **_k: started.append(stage))
+    view = build_screening(make_project(tmp_path))
+    start = next(b for b in view.select(pn.widgets.Button) if b.name == "Start screening")
+    stage = _stage_radio(view)
+
+    for option in list(stage.options):  # on main this includes "Full text"
+        stage.value = option
+        start.clicks += 1
+
+    assert started
+    assert set(started) == {PrismaStage.TITLE_ABSTRACT}
+
+
+def test_stage_choice__title_and_abstract_is_selected_when_the_screen_opens(
+    tmp_path: Path,
+) -> None:
+    """Guard: passes on main too."""
+    view = build_screening(make_project(tmp_path))
+
+    assert _stage_radio(view).value == "Title and abstract"

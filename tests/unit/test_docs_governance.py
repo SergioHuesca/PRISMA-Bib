@@ -13,7 +13,10 @@ plain bracketed text.
 from __future__ import annotations
 
 import ast
+import base64
+import binascii
 import re
+from html.parser import HTMLParser
 from itertools import pairwise
 from pathlib import Path
 
@@ -320,3 +323,270 @@ def test_adr_0046__every_evidence_test__exists() -> None:
         if name not in defined:
             missing.append(f"{rel}::{name}")
     assert not missing, "ADR 0046 cites tests that do not exist:\n" + "\n".join(missing)
+
+
+GUIDE = REPO_ROOT / "docs" / "guide" / "prismabib-for-beginners.html"
+GUIDE_LINK_PAGE = REPO_ROOT / "docs" / "beginner-guide.md"
+GUIDE_SECTIONS = ["part1", "part2", "part3a-setup", "part3a-build", "part3b", "closing"]
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+#: Labels the app builds from a variable: (text the guide shows, template in the source,
+#: values filled in). The only place they are listed; nothing is resolved by default.
+#: A template wrapped in ``**`` is the bold part of a longer string.
+TEMPLATE_LABELS: tuple[tuple[str, str, dict[str, str]], ...] = (
+    (
+        "Check the size of the OpenAlex search",
+        "Check the size of the {name} search",
+        {"name": "OpenAlex"},
+    ),
+    (
+        "Check the size of the Scopus search",
+        "Check the size of the {name} search",
+        {"name": "Scopus"},
+    ),
+    ("Built.", "**Built.**", {}),
+    (
+        "Records identified (OpenAlex meta.count)",
+        "Records identified ({source})",
+        {"source": "OpenAlex meta.count"},
+    ),
+    (
+        "Records identified (Scopus total_results)",
+        "Records identified ({source})",
+        {"source": "Scopus total_results"},
+    ),
+    ("Unscreened:", "**Unscreened:**", {}),
+    ("Unsure:", "**Unsure:**", {}),
+    ("Records:", "**Records:**", {}),
+)
+
+_GUIDE_URL_ATTRS = frozenset({"src", "href", "srcset", "action", "formaction", "poster", "data"})
+_CDN_TOKENS = ("cdn", "jsdelivr", "unpkg", "googleapis", "gstatic", "cloudflare", "fontawesome")
+_GUIDE_VOID = frozenset({"meta", "link", "img", "br", "hr", "input", "source", "col", "area"})
+_GUIDE_EXEMPT = frozenset({"strong", "code", "pre", "q", "script", "style"})
+_GUIDE_AVOIDED = re.compile(
+    r"\b(papers?|works?|entry|entries|corpus|completed run|finished run|vote)\b", re.IGNORECASE
+)
+_GUIDE_PERSONAL = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]|/home/|/Users/", re.IGNORECASE)
+
+
+class _GuideParser(HTMLParser):
+    """Collects what the guide governance test checks (helper, not a test)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, str | None, bool]] = []  # tag, own lang, prose-exempt
+        self.bold: list[tuple[str | None, str]] = []
+        self.commands: list[tuple[str | None, str]] = []
+        self.images: list[tuple[str | None, dict[str, str | None]]] = []
+        self.prose: list[tuple[str | None, str]] = []
+        self.sections: dict[str | None, list[str]] = {}
+        self.refs: list[str] = []
+        self.code_text = ""
+        self.bold_text: str | None = None
+        self.html_attrs: dict[str, str | None] = {}
+        self.has_switch_button = False
+
+    def _lang(self) -> str | None:
+        return next((lang for _, lang, _ in reversed(self.stack) if lang), None)
+
+    def _in(self, *tags: str) -> bool:
+        return any(tag in tags for tag, _, _ in self.stack)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        a = dict(attrs)
+        if tag == "html":
+            self.html_attrs = a
+        lang = a.get("lang") if tag != "html" else None
+        if tag == "button" and a.get("id") == "lang-switch" and a.get("type") == "button":
+            self.has_switch_button = True
+        for name, value in a.items():
+            text = (value or "").strip().lower()
+            if name in _GUIDE_URL_ATTRS and not text.startswith("data:"):
+                if re.match(r"(https?:|ftp:|//)", text) or any(t in text for t in _CDN_TOKENS):
+                    self.refs.append(f"{tag} {name}={text[:60]!r}")
+            elif name == "style" and "url(" in text:
+                self.refs.append(f"{tag} style={text[:60]!r}")
+        if tag == "section" and a.get("id"):
+            self.sections.setdefault(self._lang(), []).append(a["id"] or "")
+        if tag == "img":
+            self.images.append((self._lang(), a))
+        if tag == "strong":
+            self.bold_text = ""
+        if tag not in _GUIDE_VOID:
+            exempt = tag in _GUIDE_EXEMPT or "works-note" in (a.get("class") or "")
+            self.stack.append((tag, lang, exempt))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in [t for t, _, _ in self.stack]:
+            self.refs.append(f"unmatched </{tag}>")
+            return
+        lang = self._lang()
+        while self.stack:
+            popped = self.stack.pop()[0]
+            if popped == "strong" and self.bold_text is not None:
+                self.bold.append((lang, self.bold_text.strip()))
+                self.bold_text = None
+            if popped in {"pre", "code"} and not self._in("pre", "code"):
+                self.commands += [
+                    (lang, line.strip())
+                    for line in self.code_text.splitlines()
+                    if line.strip().startswith("prismabib ")
+                ]
+                self.code_text = ""
+            if popped == tag:
+                break
+
+    def handle_data(self, data: str) -> None:
+        if self.bold_text is not None:
+            self.bold_text += data
+        if self._in("pre", "code"):
+            self.code_text += data
+        if self._in("style") and re.search(r"@import|url\(", data):
+            self.refs.append("style imports or url()")
+        if self._in("script") and re.search(r"https?:|\bimport\s*\(|\bfetch\s*\(|XMLHttp", data):
+            self.refs.append("script reaches out")
+        if not any(exempt for _, _, exempt in self.stack) and data.strip():
+            self.prose.append((self._lang(), data))
+
+
+def _source_strings() -> tuple[set[str], set[str]]:
+    """(exact string literals, every literal and f-string template) of the GUI and the screener."""
+    package = REPO_ROOT / "src" / "prismabib"
+    files = [*sorted((package / "gui").glob("*.py")), package / "screening" / "ui.py"]
+    literals: set[str] = set()
+    templates: set[str] = set()
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        pieces = {id(v) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr) for v in n.values}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                templates.add(node.value)
+                if id(node) not in pieces:  # a piece of an f-string is not a whole label
+                    literals.add(node.value)
+            elif isinstance(node, ast.JoinedStr):
+                templates.add(
+                    "".join(
+                        v.value if isinstance(v, ast.Constant) else "{" + ast.unparse(v.value) + "}"
+                        for v in node.values
+                        if isinstance(v, ast.Constant | ast.FormattedValue)
+                    )
+                )
+    return literals, templates
+
+
+@pytest.mark.unit
+def test_beginner_guide__against_the_app_and_itself__has_no_drift() -> None:
+    """The guide's labels, commands, languages and images match the app and each other.
+
+    One function collects every problem so a single run names all of them. It reads files
+    as UTF-8 and sorts before comparing; it never imports the GUI library.
+    """
+    import typer.main
+
+    from prismabib.cli import app
+
+    text = GUIDE.read_text(encoding="utf-8")
+    parser = _GuideParser()
+    parser.feed(text)
+    parser.close()
+    problems: list[str] = [f"external reference: {ref}" for ref in parser.refs]
+    if parser.stack:
+        problems.append(f"unclosed tags: {[t for t, _, _ in parser.stack]}")
+    if _GUIDE_PERSONAL.search(text):
+        problems.append("a personal path (user folder or home folder) appears in the guide")
+    if re.search(r"""["'][A-Za-z0-9+/]{64,}={0,2}["']""", text):
+        problems.append("a bare base64 string in quotes (images are data-URI img tags only)")
+    if parser.html_attrs.get("lang") != "en" or "es" in (parser.html_attrs.get("class") or ""):
+        problems.append("English is not the default language")
+    if not parser.has_switch_button:
+        problems.append("no <button type=button id=lang-switch>")
+
+    # Bold labels: exact equality with a source literal, or a row of the template table.
+    literals, templates = _source_strings()
+    resolved: set[str] = set()
+    for shown, template, values in TEMPLATE_LABELS:
+        if not any(template in t for t in templates):
+            problems.append(f"template not in source: {template!r}")
+        elif template.strip("*").format(**values) != shown:
+            problems.append(f"template {template!r} does not resolve to {shown!r}")
+        else:
+            resolved.add(shown)
+    problems += [
+        f"bold label not found in the app source: {label!r} ({lang})"
+        for lang, label in parser.bold
+        if label not in literals and label not in resolved
+    ]
+
+    # Commands: each names a real command, walked down the command tree.
+    node0 = typer.main.get_command(app)
+    for lang, command in parser.commands:
+        node = node0
+        for token in command.split()[1:]:
+            # Duck-typed: typer vendors click, so isinstance against click.Group is always False.
+            subcommands = getattr(node, "commands", None)
+            if token.startswith("-") or subcommands is None:
+                continue  # ponytail: a root flag's value reads as a name; none is used yet
+            if token not in subcommands:
+                problems.append(f"command not in the command tree: {command!r} ({lang})")
+                break
+            node = subcommands[token]
+
+    # Parity and structure of the two language blocks.
+    for kind, items in (("bold labels", parser.bold), ("commands", parser.commands)):
+        by_lang = {k: sorted({v for lang, v in items if lang == k}) for k in ("en", "es")}
+        if by_lang["en"] != by_lang["es"]:
+            problems.append(f"{kind} differ between English and Spanish: {by_lang}")
+        if any(lang not in ("en", "es") for lang, _ in items):
+            problems.append(f"{kind} outside a language block")
+    for lang in ("en", "es"):
+        found = [s.removesuffix(f"-{lang}") for s in parser.sections.get(lang, [])]
+        if found != GUIDE_SECTIONS:
+            problems.append(f"{lang} sections {found} != {GUIDE_SECTIONS}")
+
+    # Images: a base64 PNG in a slot outside the language blocks.
+    prefix = "data:image/png;base64,"
+    for lang, attrs in parser.images:
+        name = attrs.get("id") or ""
+        src = attrs.get("src") or ""
+        try:
+            data = base64.b64decode(src.removeprefix(prefix), validate=True)
+        except binascii.Error:
+            data = b""
+        if not re.fullmatch(r"img-[1-8]", name):
+            problems.append(f"image id {name!r} is not img-1 to img-8")
+        if not src.startswith(prefix) or not data.startswith(PNG_SIGNATURE) or len(data) <= 8:
+            problems.append(f"image {name!r} is not a non-empty base64 PNG")
+        if lang is not None:
+            problems.append(f"image {name!r} sits inside a language block")
+
+    # Glossary terms in prose (bold labels, code, quotes and the works note are exempt).
+    problems += [
+        f"avoided word {m[1]!r} in prose ({lang}): {chunk.strip()[:50]!r}"
+        for lang, chunk in parser.prose
+        for m in _GUIDE_AVOIDED.finditer(chunk)
+    ]
+
+    # The link page links to the guide, and every relative link on it resolves.
+    page = GUIDE_LINK_PAGE.read_text(encoding="utf-8")
+    targets = [t.split("#")[0] for t in re.findall(r"\]\(([^)\s]+)\)", page)]
+    if "guide/prismabib-for-beginners.html" not in targets:
+        problems.append("the link page does not link to guide/prismabib-for-beginners.html")
+    problems += [
+        f"link page target does not exist: {t}"
+        for t in targets
+        if t and not t.startswith(("http:", "https:")) and not (GUIDE_LINK_PAGE.parent / t).exists()
+    ]
+
+    # Discovery guard: an empty parse must not pass.
+    problems += [
+        f"the guide parsed to zero {kind}"
+        for kind, count in (
+            ("bold labels", len(parser.bold)),
+            ("commands", len(parser.commands)),
+            ("image slots", len(parser.images)),
+        )
+        if count == 0
+    ]
+
+    assert sorted(problems) == [], "\n" + "\n".join(sorted(problems))

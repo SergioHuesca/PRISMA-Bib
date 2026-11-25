@@ -11,7 +11,7 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.doctor_checks import Check
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.home import build_home
 from prismabib.gui.home_model import FIREWALL_NOTE
 from prismabib.user_settings import USER_FILE_OVERRIDE_VAR
@@ -41,7 +41,9 @@ def unlabelled_controls(view: pn.viewable.Viewable) -> list[pn.widgets.Widget]:
 def test_build_home__passing_machine__lists_projects_and_offers_new_project(
     tmp_path: Path,
 ) -> None:
-    layer.create_project("demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="A")
+    service.create_project(
+        "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="A"
+    )
     view = build_home(tmp_path, checks=lambda: PASSING)
     text = _text(view)
     assert "Demo" in text

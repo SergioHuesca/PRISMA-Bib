@@ -17,18 +17,18 @@ from prismabib.gui import capture_layer as cl
 from prismabib.gui import delete_store_layer as dsl
 from prismabib.gui import export_layer as xl
 from prismabib.gui import flow_layer as fl
-from prismabib.gui import layer
 from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui import screening_layer as sl
-from prismabib.gui.layer import Session
+from prismabib.gui import service
 from prismabib.gui.query_form_model import QueryInputs
+from prismabib.gui.service import Session
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
-    layer.create_project(
+    service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
     return tmp_path
@@ -36,15 +36,16 @@ def root(tmp_path: Path) -> Path:
 
 def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
     return {
-        "set_source_mode": lambda: layer.set_source_mode(session, "scopus", reviewer="Ada"),
-        "save_query": lambda: layer.save_query(session, QueryInputs(terms=["a"])),
-        "save_criteria": lambda: layer.save_criteria(session, session.project.criteria),
+        "set_source_mode": lambda: service.set_source_mode(session, "scopus", reviewer="Ada"),
+        "save_query": lambda: service.save_query(session, QueryInputs(terms=["a"])),
+        "save_criteria": lambda: service.save_criteria(session, session.project.criteria),
         "start_capture": lambda: cl.start_capture(session, confirmed=True),
         "start_build": lambda: bl.start_build(session),
         "start_export": lambda: xl.start_export(session),
         "start_openalex_capture": lambda: oal.start_openalex_capture(
             session, budget=1, confirmed=True
         ),
+        "start_cascade": lambda: fl.start_cascade(session),
         "delete_store": lambda: dsl.delete_store(session, confirmed=True),
         "discard_capture": lambda: cl.discard_capture(session, "run", confirmed=True),
         "add_candidates": lambda: fl.add_candidates(session, "T, 2020", reviewer="Ada"),
@@ -57,8 +58,8 @@ def _write_calls(session: Session) -> dict[str, Callable[[], object]]:
 
 
 def test_second_session__open_project__is_read_only_with_a_reason(root: Path) -> None:
-    first = layer.open_session("demo", root=root)
-    second = layer.open_session("demo", root=root)
+    first = service.open_session("demo", root=root)
+    second = service.open_session("demo", root=root)
 
     assert not first.read_only
     assert second.read_only
@@ -67,43 +68,45 @@ def test_second_session__open_project__is_read_only_with_a_reason(root: Path) ->
 
 
 def test_read_only_session__every_write_operation__is_refused(root: Path) -> None:
-    layer.open_session("demo", root=root)
-    second = layer.open_session("demo", root=root)
+    service.open_session("demo", root=root)
+    second = service.open_session("demo", root=root)
     calls = _write_calls(second)
 
-    assert set(calls) == set(layer.WRITE_OPERATIONS)  # a new write operation needs a case here
+    assert set(calls) == set(service.WRITE_OPERATIONS)  # a new write operation needs a case here
     for call in calls.values():
         with pytest.raises(ProjectLockedError):
             call()
-    assert layer.translate(ProjectLockedError("x")).error_class is layer.ErrorClass.PROJECT_LOCKED
+    assert (
+        service.translate(ProjectLockedError("x")).error_class is service.ErrorClass.PROJECT_LOCKED
+    )
 
 
 def test_close__first_session__lets_the_second_take_write_rights(root: Path) -> None:
-    first = layer.open_session("demo", root=root)
+    first = service.open_session("demo", root=root)
     first.close()
 
-    second = layer.open_session("demo", root=root)
+    second = service.open_session("demo", root=root)
 
     assert not second.read_only
     assert first.read_only  # a closed session no longer writes
     second.close()
-    assert not (root / "demo" / layer.LOCK_NAME).exists()
+    assert not (root / "demo" / service.LOCK_NAME).exists()
 
 
 def test_close__read_only_session__leaves_the_holders_lock(root: Path) -> None:
-    layer.open_session("demo", root=root)
-    layer.open_session("demo", root=root).close()
+    service.open_session("demo", root=root)
+    service.open_session("demo", root=root).close()
 
-    assert (root / "demo" / layer.LOCK_NAME).exists()
+    assert (root / "demo" / service.LOCK_NAME).exists()
 
 
 def test_stale_lock__crashed_process__reported_and_taken_over_only_when_confirmed(
     root: Path,
 ) -> None:
     dead_pid = 2**22 + 12345  # above Linux pid_max; a just-exited pid can be reused under xdist
-    (root / "demo" / layer.LOCK_NAME).write_text(json.dumps({"pid": dead_pid}), encoding="utf-8")
+    (root / "demo" / service.LOCK_NAME).write_text(json.dumps({"pid": dead_pid}), encoding="utf-8")
 
-    session = layer.open_session("demo", root=root)
+    session = service.open_session("demo", root=root)
 
     assert session.read_only and session.stale
     assert session.reason is not None and "closed unexpectedly" in session.reason
@@ -115,8 +118,8 @@ def test_stale_lock__crashed_process__reported_and_taken_over_only_when_confirme
 
 
 def test_live_lock__take_over__refused(root: Path) -> None:
-    layer.open_session("demo", root=root)
-    second = layer.open_session("demo", root=root)
+    service.open_session("demo", root=root)
+    second = service.open_session("demo", root=root)
 
     with pytest.raises(ProjectLockedError):
         second.take_over(confirmed=True)
@@ -124,7 +127,7 @@ def test_live_lock__take_over__refused(root: Path) -> None:
 
 def test_lock__is_excluded_from_version_control() -> None:
     done = subprocess.run(
-        ["git", "check-ignore", "-q", "examples/demo/" + layer.LOCK_NAME],
+        ["git", "check-ignore", "-q", "examples/demo/" + service.LOCK_NAME],
         capture_output=True,
         cwd=Path(__file__).parent,
         check=False,
@@ -134,13 +137,13 @@ def test_lock__is_excluded_from_version_control() -> None:
 
 
 def test_restart__fresh_session__reports_the_same_step_state(root: Path) -> None:
-    with layer.open_session("demo", root=root) as first:
-        layer.set_source_mode(first, "scopus", reviewer="Ada")
-        before = layer.step_progress(first.project)
+    with service.open_session("demo", root=root) as first:
+        service.set_source_mode(first, "scopus", reviewer="Ada")
+        before = service.step_progress(first.project)
 
-    again = layer.open_session("demo", root=root)
+    again = service.open_session("demo", root=root)
 
-    assert layer.step_progress(again.project) == before
+    assert service.step_progress(again.project) == before
     assert not again.read_only
 
 
@@ -148,50 +151,50 @@ def test_restart__fresh_session__reports_the_same_step_state(root: Path) -> None
 
 
 def _write_lock(root: Path, **fields: object) -> None:
-    (root / "demo" / layer.LOCK_NAME).write_text(json.dumps(fields), encoding="utf-8")
+    (root / "demo" / service.LOCK_NAME).write_text(json.dumps(fields), encoding="utf-8")
 
 
 def _holder(root: Path) -> dict[str, object]:
-    return json.loads((root / "demo" / layer.LOCK_NAME).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    return json.loads((root / "demo" / service.LOCK_NAME).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
 
 
 def test_stale_lock__live_pid_with_another_start_time__is_stale_not_live(root: Path) -> None:
-    if layer.process_start_token(os.getpid()) is None:
+    if service.process_start_token(os.getpid()) is None:
         pytest.skip("no process start time on this platform: the pid check is all there is")
     # the pid exists (it is this process) but belongs to a different process than the one that
     # wrote the lock: the pid was reused after a crash
     _write_lock(root, pid=os.getpid(), start="not-this-process")
 
-    session = layer.open_session("demo", root=root)
+    session = service.open_session("demo", root=root)
 
     assert session.read_only and session.stale
     assert session.reason is not None and "closed unexpectedly" in session.reason
 
 
 def test_live_lock__pid_and_start_time_match__is_not_stale(root: Path) -> None:
-    token = layer.process_start_token(os.getpid())
+    token = service.process_start_token(os.getpid())
     _write_lock(root, pid=os.getpid(), start=token)
 
-    session = layer.open_session("demo", root=root)
+    session = service.open_session("demo", root=root)
 
     assert session.read_only and not session.stale
 
 
 def test_lock_file__written_with_the_pid_the_start_token_and_a_session_token(root: Path) -> None:
-    session = layer.open_session("demo", root=root)
+    session = service.open_session("demo", root=root)
 
     held = _holder(root)
 
     assert held["pid"] == os.getpid()
-    assert held["start"] == layer.process_start_token(os.getpid())
+    assert held["start"] == service.process_start_token(os.getpid())
     assert isinstance(held["token"], str) and held["token"]
     session.close()
 
 
 def test_take_over__two_confirming_windows__only_one_ends_up_writable(root: Path) -> None:
     _write_lock(root, pid=2**22 + 12345)
-    first = layer.open_session("demo", root=root)
-    second = layer.open_session("demo", root=root)
+    first = service.open_session("demo", root=root)
+    second = service.open_session("demo", root=root)
     assert first.stale and second.stale
 
     first.take_over(confirmed=True)
@@ -204,10 +207,10 @@ def test_take_over__two_confirming_windows__only_one_ends_up_writable(root: Path
 
 def test_take_over__concurrent_windows__exactly_one_wins(root: Path) -> None:
     _write_lock(root, pid=2**22 + 12345)
-    sessions = [layer.open_session("demo", root=root) for _ in range(6)]
+    sessions = [service.open_session("demo", root=root) for _ in range(6)]
     barrier = threading.Barrier(len(sessions))
 
-    def take(session: layer.Session) -> None:
+    def take(session: service.Session) -> None:
         barrier.wait()
         session.take_over(confirmed=True)
 
@@ -224,11 +227,11 @@ def test_take_over__lock_file_held_open_by_another_process__is_refused_with_a_se
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_lock(root, pid=2**22 + 12345)
-    session = layer.open_session("demo", root=root)
+    session = service.open_session("demo", root=root)
     real_unlink = Path.unlink
 
     def locked_unlink(self: Path, missing_ok: bool = False) -> None:
-        if self.name == layer.LOCK_NAME:  # Windows: a file another process has open
+        if self.name == service.LOCK_NAME:  # Windows: a file another process has open
             raise PermissionError(13, "The process cannot access the file")
         real_unlink(self, missing_ok=missing_ok)
 
@@ -237,39 +240,41 @@ def test_take_over__lock_file_held_open_by_another_process__is_refused_with_a_se
     with pytest.raises(ValidationError, match="in use") as caught:
         session.take_over(confirmed=True)
 
-    assert layer.translate(caught.value).error_class is layer.ErrorClass.INPUT  # not "unexpected"
+    assert (
+        service.translate(caught.value).error_class is service.ErrorClass.INPUT
+    )  # not "unexpected"
     assert session.read_only and session.stale  # still read-only, and it can be tried again
-    assert not (root / "demo" / (layer.LOCK_NAME + ".takeover")).exists()  # the guard is released
+    assert not (root / "demo" / (service.LOCK_NAME + ".takeover")).exists()  # the guard is released
 
 
 def test_held_sessions__every_access_to_the_registry_holds_its_lock(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class Guarded(set[layer.Session]):
+    class Guarded(set[service.Session]):
         """A set that fails when touched without the registry lock (it is mutated from threads)."""
 
-        def add(self, item: layer.Session) -> None:
-            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+        def add(self, item: service.Session) -> None:
+            assert service._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
             super().add(item)
 
-        def discard(self, item: layer.Session) -> None:
-            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+        def discard(self, item: service.Session) -> None:
+            assert service._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
             super().discard(item)
 
         def __iter__(self):  # type: ignore[no-untyped-def]
-            assert layer._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
+            assert service._held_lock.locked()  # pyright: ignore[reportPrivateUsage]
             return super().__iter__()
 
-    monkeypatch.setattr(layer, "_held", Guarded())
-    session = layer.open_session("demo", root=root)
+    monkeypatch.setattr(service, "_held", Guarded())
+    session = service.open_session("demo", root=root)
 
-    assert layer.held_sessions() == [session]
-    layer.release_all()
-    assert layer.held_sessions() == []
+    assert service.held_sessions() == [session]
+    service.release_all()
+    assert service.held_sessions() == []
 
 
 def test_close__lock_now_owned_by_another_window__is_left_alone(root: Path) -> None:
-    first = layer.open_session("demo", root=root)
+    first = service.open_session("demo", root=root)
     _write_lock(root, pid=os.getpid(), start="x", token="someone-else")  # taken over from under it
 
     first.close()

@@ -12,7 +12,7 @@ from prismabib.credentials_ui import ConnectScopusPanel
 from prismabib.errors import PrismabibError
 from prismabib.gui import keys_model as km
 from prismabib.gui import palette
-from prismabib.gui.layer import translate
+from prismabib.gui.service import translate
 from prismabib.project import Project
 from prismabib.user_settings import load_settings, user_settings_path, write_user_settings
 

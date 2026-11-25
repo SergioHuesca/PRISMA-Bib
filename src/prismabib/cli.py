@@ -126,7 +126,6 @@ app.command("openalex")(_openalex_command)
 app.command("openalex-search")(_openalex_search_command)
 register_manual_commands(app)
 register_source_commands(app)
-register_gui_command(app)
 app.add_typer(credentials_app)
 
 _ROOT_OPTION = typer.Option(
@@ -138,6 +137,7 @@ _ROOT_OPTION = typer.Option(
     ),
     show_default=False,
 )
+register_gui_command(app, _ROOT_OPTION)  # after the option: the gui command reuses it
 
 
 def _echo(line: str = "") -> None:
@@ -1209,7 +1209,7 @@ def _print_flow(counts: FlowCounts, *, slug: str, mode: SourceMode = "scopus+ope
     _echo("      (unsure never resolves to inclusion; it stays in the queue)")
     _echo()
     _echo("Included")
-    row("studies in the final corpus", f"{counts.included:,}")
+    row("included studies", f"{counts.included:,}")
 
 
 def _warn_if_inconsistent(counts: FlowCounts, *, mode: SourceMode = "scopus+openalex") -> None:

@@ -1,17 +1,23 @@
-"""Flow counts and registering a Record, as the screen sees them.
+"""Flow counts, registering a Record and the cascade step, as the screen sees them.
 
 Plain functions over the library: ``compute_flow_counts`` (what the CLI ``flow`` prints) and the
 CLI's own writers, ``CandidateLog.add`` and ``register_candidate``. Registering writes one event to
 the registration log and nothing else: it starts no cascade step, and it takes effect in the Flow
-counts at the next build, exactly as on the CLI. Nothing here reads a key.
+counts at the next build, exactly as on the CLI.
+
+The cascade is a separate step the researcher starts (``start_cascade``): it gets the OpenAlex
+responses the candidates need, on the Project's task runner, through the library's ``run_cascade``
+with the Scopus options off (no opt-in, no budget) and no refresh, so no Scopus request is made.
+It ends by rebuilding the store, as the CLI does. Nothing here reads a key.
 """
 
 from __future__ import annotations
 
+import threading
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from prismabib.capture.candidates import (
     CandidateEvent,
@@ -19,6 +25,8 @@ from prismabib.capture.candidates import (
     CandidateView,
     parse_pasted_rows,
 )
+from prismabib.capture.cascade_commands import run_cascade
+from prismabib.capture.registration_ui import response_options
 from prismabib.capture.registrations import (
     MatchRule,
     RegisterEvent,
@@ -27,8 +35,9 @@ from prismabib.capture.registrations import (
     load_registration_events,
     register_candidate,
 )
-from prismabib.errors import ValidationError
-from prismabib.gui.layer import Session, write_operation
+from prismabib.errors import CaptureCancelledError, ValidationError
+from prismabib.gui import tasks
+from prismabib.gui.service import Session, write_operation
 from prismabib.openalex_map import ClassificationRefusal
 from prismabib.prisma.flow import FlowCounts, compute_flow_counts
 from prismabib.project import Project
@@ -178,15 +187,89 @@ def register_record(
         raise ValidationError(f"{str(exc)[:1].upper()}{str(exc)[1:]}.") from exc
 
 
+CASCADE_TASK_NAME = "The cascade"
+
+
+def cascade_refusal(project: Project) -> str | None:
+    """Why the cascade is not available here (the CLI's own Source mode refusal), else ``None``."""
+    return command_refusal(project, "cascade")
+
+
+def cascade_status(project: Project) -> tasks.TaskStatus:
+    """The runner's status when it is about the cascade, else an idle one (a memory read)."""
+    return tasks.status_of(project, CASCADE_TASK_NAME)
+
+
+def cancel_cascade(project: Project) -> None:
+    """Stop the running cascade at its next report line; sealed runs already written stay."""
+    tasks.cancel_named(project, CASCADE_TASK_NAME)
+
+
+@write_operation
+def start_cascade(session: Session) -> None:
+    """Run the cascade in the background: OpenAlex only, no refresh, as the CLI does by default.
+
+    Raises:
+        ProjectLockedError: If the session is read-only.
+        ConfigError: In a Source mode with no cascade.
+        ValidationError: While a task is running.
+    """
+    project = session.require_writable()
+    require_command(project, "cascade")
+
+    def work(cancel: threading.Event, report: Any) -> list[str]:
+        def emit(line: str) -> None:
+            report(line)
+            # ponytail: no cancel hook in the library; a report line is the only (coarse) stop
+            # point, so a stop may land before or after the store rebuild. The GUI text says so.
+            if cancel.is_set():
+                raise CaptureCancelledError("The cascade was stopped.")
+
+        return run_cascade(
+            project, opt_in=False, scopus_budget=None, refresh=False, dry_run=False, emit=emit
+        )
+
+    tasks.runner_for(project).start(CASCADE_TASK_NAME, work)
+
+
+def cascade_summary(project: Project) -> str:
+    """Plain sentences: for each candidate, whether it now has the OpenAlex response it needs."""
+    rows = candidates(project)
+    if not rows:
+        return "There are no candidates to look up. Add a candidate first."
+    sentences = ["The cascade finished and the store was rebuilt."]
+    for view in rows:
+        rule = "doi" if view.doi else "title_year"
+        label = f"{view.event.title} ({view.event.year})"
+        if response_options(project.raw_dir, view, rule).options:
+            sentences.append(
+                f"{label} now has the OpenAlex response it needs. You can register it."
+            )
+        elif response_options(project.raw_dir, view, "near_confirmed").options:
+            sentences.append(
+                f"{label} has a close match in the OpenAlex responses, not an exact one. "
+                "Open Register and confirm the match yourself if it is the same work."
+            )
+        else:
+            sentences.append(f"{label} still has no OpenAlex response that matches it.")
+    return " ".join(sentences)
+
+
 __all__ = [
+    "CASCADE_TASK_NAME",
     "NEEDS_STORE",
     "FlowRow",
     "add_candidates",
+    "cancel_cascade",
     "candidate_log",
     "candidates",
+    "cascade_refusal",
+    "cascade_status",
+    "cascade_summary",
     "flow_counts",
     "flow_rows",
     "pending_registrations",
     "register_record",
     "registration_refusal",
+    "start_cascade",
 ]

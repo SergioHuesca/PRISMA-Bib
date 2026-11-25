@@ -6,7 +6,7 @@ counts, export. Every stage leaves one normalised output, and :func:`assert_chai
 runs stage by stage with :func:`tests.integration.gui.test_parity.assert_parity`.
 
 Where the CLI has no path, the other side is the library, as in the per-step cases: criteria take
-the same ``layer.save_criteria`` write (the CLI has no Criteria writer), the query is the
+the same ``service.save_criteria`` write (the CLI has no Criteria writer), the query is the
 documented hand-edit of ``project.toml``, the size check is the library call, and screening is the
 Screener's decide interface. The clock and the run id are fixed for both paths, so the sealed
 payload hash and ``numbers.json`` are compared by exact equality; only the manifest's git fields
@@ -46,9 +46,9 @@ from prismabib.config import Settings
 from prismabib.gui import build_layer as bl
 from prismabib.gui import capture_layer as cl
 from prismabib.gui import export_layer as xl
-from prismabib.gui import layer, tasks
 from prismabib.gui import openalex_capture_layer as oal
 from prismabib.gui import screening_layer as sl
+from prismabib.gui import service, tasks
 from prismabib.gui.query_form_model import QueryInputs
 from prismabib.gui.size_check import build_size_check
 from prismabib.prisma import log as log_module
@@ -159,7 +159,7 @@ def _criteria() -> Criteria:
 
 def _create(mode: str, root: Path, *, via_layer: bool) -> Project:
     if via_layer:
-        return layer.create_project(
+        return service.create_project(
             "demo",
             title="Demo review",
             root=root,
@@ -175,8 +175,8 @@ def _create(mode: str, root: Path, *, via_layer: bool) -> Project:
 def _query(project: Project, mode: str, *, via_layer: bool) -> None:
     if via_layer:
         inputs = QueryInputs(terms=_TERMS, year_start=2015, year_end=2024)
-        with layer.Session(project) as session:
-            layer.save_query(session, inputs)
+        with service.Session(project) as session:
+            service.save_query(session, inputs)
         return
     toml = project.root / "project.toml"  # the CLI workflow's documented hand-edit
     text = toml.read_text(encoding="utf-8")
@@ -196,8 +196,8 @@ def _query(project: Project, mode: str, *, via_layer: bool) -> None:
 
 def _save_criteria(project: Project, *, via_layer: bool) -> None:
     del via_layer  # the CLI has no Criteria writer: both paths take the layer's save (as #326)
-    with layer.Session(project) as session:
-        layer.save_criteria(session, _criteria())
+    with service.Session(project) as session:
+        service.save_criteria(session, _criteria())
 
 
 def _size_check(project: Project, mode: str, user_file: Path, *, via_layer: bool) -> str:
@@ -232,7 +232,7 @@ def _capture(project: Project, mode: str, root: Path, *, via_layer: bool) -> Non
     with respx.mock:
         respx.get(url).mock(side_effect=handler)
         if via_layer:
-            with layer.Session(project) as session:
+            with service.Session(project) as session:
                 if mode == "scopus":
                     cl.start_capture(session, confirmed=True)
                 else:
@@ -252,7 +252,7 @@ def _capture(project: Project, mode: str, root: Path, *, via_layer: bool) -> Non
 
 def _build(project: Project, root: Path, *, via_layer: bool) -> str:
     if via_layer:
-        with layer.Session(project) as session:
+        with service.Session(project) as session:
             bl.start_build(session)
         tasks.runner_for(project).join(60)
         assert bl.build_status(project).outcome == "done"
@@ -271,7 +271,7 @@ def _screen(project: Project, *, via_layer: bool) -> str:
     log = DecisionLog(project, id_factory=SeededIdFactory(0, "id"))
     queue = ScreeningQueue(project, stage, "Ada", log=log)
     if via_layer:
-        with layer.Session(project) as session:
+        with service.Session(project) as session:
             sl.decide(session, queue, "include")
             sl.decide(session, queue, "exclude", reason_code="OFF_TOPIC")
             sl.decide(session, queue, "unsure")
@@ -291,7 +291,7 @@ def _flow(project: Project, root: Path, *, via_layer: bool) -> str:
 
 def _export(project: Project, root: Path, *, via_layer: bool) -> dict[str, str]:
     if via_layer:
-        with layer.Session(project) as session:
+        with service.Session(project) as session:
             xl.start_export(session)
         tasks.runner_for(project).join(60)
         assert xl.export_status(project).outcome == "done"

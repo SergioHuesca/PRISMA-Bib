@@ -7,7 +7,7 @@ from collections.abc import Callable
 import panel as pn  # widget layer only
 
 from prismabib.gui import delete_store_layer as dl
-from prismabib.gui import layer, palette
+from prismabib.gui import palette, service
 from prismabib.project import Project
 
 
@@ -22,7 +22,7 @@ def confirmation_text() -> str:
 
 def build_delete_store(
     project: Project,
-    session: layer.Session | None = None,
+    session: service.Session | None = None,
     *,
     after: Callable[[], None] = lambda: None,
 ) -> tuple[pn.Column, Callable[[], None]]:
@@ -54,11 +54,11 @@ def build_delete_store(
     def on_yes(_: object) -> None:
         toggle(False)
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 dl.delete_store(active, confirmed=True)
             message.object = "**The store was deleted.** Build the store to make it again."
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
         refresh()
         after()

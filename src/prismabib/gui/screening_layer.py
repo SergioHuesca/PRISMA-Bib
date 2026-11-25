@@ -14,8 +14,8 @@ from typing import Any, Final
 import panel as pn  # the hosted Screener repaints an extra pane
 
 from prismabib.errors import ValidationError
-from prismabib.gui import layer, tasks
-from prismabib.gui.layer import Session, write_operation
+from prismabib.gui import service, tasks
+from prismabib.gui.service import Session, write_operation
 from prismabib.prisma.events import Decision, DecisionEvent
 from prismabib.prisma.log import DecisionLog
 from prismabib.project import Project
@@ -25,10 +25,12 @@ from prismabib.source_mode import load_mode_events
 from prismabib.stage import PrismaStage
 from prismabib.user_settings import REVIEWER_NAME_KEY, read_user_setting
 
-#: The two names a screen must keep apart. A Decision carries only the Reviewer; the actor is the
-#: name the library records on Source mode changes.
+#: The two names a screen must keep apart. A Decision carries only the Reviewer; the name the library
+#: records on Source mode changes is shown as "Changed by".
 REVIEWER_LABEL: Final = "Reviewer (recorded on every Decision you make here)"
-ACTOR_LABEL: Final = "Actor (recorded by the library on Source mode changes; a separate field)"
+CHANGED_BY_LABEL: Final = (
+    "Changed by (the library records who changed a Source mode; not a second Reviewer)"
+)
 #: What undo really does: the library appends an Unsure Decision, so an undone Record is Unsure.
 UNDO_NOTE: Final = (
     "Undo withdraws your Decision on the Record on screen by adding an Unsure Decision; "
@@ -41,7 +43,7 @@ LOAD_TASK_NAME: Final = "Opening the Screener"
 def missing(project: Project) -> list[str]:
     """What screening still needs, as sentences; empty when it can open."""
     out = []
-    if not layer.criteria_written(project):
+    if not service.criteria_written(project):
         out.append("Criteria are not written yet. Finish the Criteria step.")
     if not project.db_path.is_file():
         out.append("The store is not built yet. Finish the Build step.")
@@ -65,11 +67,11 @@ class LockedQueue(ScreeningQueue):
     def decide(
         self, decision: Decision, *, reason_code: str | None = None, note: str = ""
     ) -> DecisionEvent:
-        with layer.session_for(self.project, self.session) as active:
+        with service.session_for(self.project, self.session) as active:
             return decide(active, self, decision, reason_code=reason_code, note=note)
 
     def undo(self) -> DecisionEvent | None:
-        with layer.session_for(self.project, self.session) as active:
+        with service.session_for(self.project, self.session) as active:
             return undo(active, self)
 
 
@@ -140,7 +142,7 @@ def screen_markdown(model: dict[str, Any]) -> str:
     c = model["counts"]
     lines = [
         f"**{REVIEWER_LABEL}:** {model['reviewer']}",
-        f"**{ACTOR_LABEL}:** set by the library, not by you",
+        f"**{CHANGED_BY_LABEL}:** set by the library, not by you",
         f"**Unscreened:** {c['unscreened']} · **Unsure:** {c['unsure']} · **Records:** {c['total']}",
         f"**Blind mode:** {'on' if model['blind'] else 'off'}",
         f"_{UNDO_NOTE}_",

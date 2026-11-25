@@ -22,8 +22,8 @@ pytest.importorskip("panel")
 
 import panel as pn
 
-from prismabib.gui import layer, palette
 from prismabib.gui import new_project_model as npm
+from prismabib.gui import palette, service
 from prismabib.gui import screening_layer as sl
 from prismabib.gui.app import build_app
 from prismabib.gui.build import build_build
@@ -48,7 +48,7 @@ from tests.integration.gui.test_screening import make_project
 
 pytestmark = pytest.mark.integration
 
-GUI_DIR = Path(layer.__file__).parent
+GUI_DIR = Path(service.__file__).parent
 NATIVE = (
     pn.widgets.Button,
     pn.widgets.Checkbox,
@@ -265,6 +265,8 @@ def test_flow__every_action__is_native_and_labelled(tmp_path: Path) -> None:
         build_flow(project),
         {
             "Refresh the Flow counts",
+            "Run the cascade",
+            "Cancel the cascade",
             "Reviewer name",
             "Records the search missed: one line each, title then year then DOI (DOI optional)",
             "Add these as candidates",
@@ -349,7 +351,7 @@ NON_SCREEN_MODULES = {
     "home_model",
     "keys_model",
     "launch",
-    "layer",
+    "service",
     "new_project_model",
     "openalex_capture_layer",
     "path_limit",

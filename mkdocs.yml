@@ -78,6 +78,7 @@ extra:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Beginner Guide: beginner-guide.md
   - Architecture:
       - Overview: architecture/overview.md
       - Data Model: architecture/data-model.md

@@ -5,7 +5,7 @@ from __future__ import annotations
 import panel as pn  # widget layer only
 
 from prismabib.gui import export_layer as el
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.project import Project
 
 EXPORT_POLL_MS = 1000
@@ -15,7 +15,7 @@ NOTE = (
 )
 
 
-def build_export(project: Project, session: layer.Session | None = None) -> pn.Column:
+def build_export(project: Project, session: service.Session | None = None) -> pn.Column:
     """The export button and the state of the export of ``project``.
 
     ``session`` is the window's held write lock; a bare screen takes one per click.
@@ -26,7 +26,7 @@ def build_export(project: Project, session: layer.Session | None = None) -> pn.C
     message = pn.pane.Markdown("")
     warning = pn.pane.Markdown("")
     bar = pn.indicators.Progress(name="Export progress", active=True, visible=False)
-    git_text = el.current_git_warnings()  # read once: git is not asked on every poll
+    git_text = el.project_git_warnings(project)  # read once: git is not asked on every poll
 
     def show(*_: object) -> None:
         s = el.export_status(project)
@@ -47,16 +47,16 @@ def build_export(project: Project, session: layer.Session | None = None) -> pn.C
         elif s.outcome == "cancelled":
             state.object = "**Stopped as you asked.** Nothing was changed in the bundle."
         elif s.outcome == "failed" and s.error is not None:
-            msg = layer.translate(s.error)
+            msg = service.translate(s.error)
             state.object = f"**The export failed.** {msg.sentence} {msg.next_step}"
 
     def on_start(_: object) -> None:
         message.object = ""
         try:
-            with layer.session_for(project, session) as active:
+            with service.session_for(project, session) as active:
                 el.start_export(active)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
         show()
 

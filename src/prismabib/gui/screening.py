@@ -6,13 +6,15 @@ from collections.abc import Callable
 
 import panel as pn  # widget layer only
 
-from prismabib.gui import layer, palette
+from prismabib.gui import palette, service
 from prismabib.gui import screening_layer as sl
 from prismabib.project import Project
 from prismabib.stage import PrismaStage
 
 POLL_MS = 250
-STAGES = {"Title and abstract": PrismaStage.TITLE_ABSTRACT, "Full text": PrismaStage.FULLTEXT}
+# Panel 1.9.4 cannot disable one radio option, so full text is not offered (#390 item 5).
+STAGES = {"Title and abstract": PrismaStage.TITLE_ABSTRACT}
+FULLTEXT_NOTE = "Full text screening (not in this version)"
 
 
 class ScreeningStep(pn.Column):
@@ -21,7 +23,7 @@ class ScreeningStep(pn.Column):
     poll: Callable[[], None]
 
 
-def build_screening(project: Project, session: layer.Session | None = None) -> ScreeningStep:
+def build_screening(project: Project, session: service.Session | None = None) -> ScreeningStep:
     """Reviewer, stage and blind mode, then the Screener; says what is missing when opened early.
 
     ``session`` is the window's held write lock; every Decision uses it, else takes a short one.
@@ -62,7 +64,7 @@ def build_screening(project: Project, session: layer.Session | None = None) -> S
             screener = sl.finish_loading(project, blind=blind.value)
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
             waiting = False
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
             return
         if screener is not None:
@@ -77,7 +79,7 @@ def build_screening(project: Project, session: layer.Session | None = None) -> S
             sl.start_loading(project, STAGES[stage.value], reviewer.value or "", session)
             waiting = True
         except Exception as exc:  # noqa: BLE001 - every failure is shown as a sentence
-            msg = layer.translate(exc)
+            msg = service.translate(exc)
             message.object = f"**{msg.sentence}** {msg.next_step}"
         poll()
 
@@ -87,8 +89,9 @@ def build_screening(project: Project, session: layer.Session | None = None) -> S
     step = ScreeningStep(
         pn.pane.Markdown("## Screening"),
         reviewer,
-        pn.pane.Markdown(f"_{sl.ACTOR_LABEL}._"),
+        pn.pane.Markdown(f"_{sl.CHANGED_BY_LABEL}._"),
         stage,
+        pn.pane.Markdown(f"_{FULLTEXT_NOTE}._"),
         blind,
         start,
         message,

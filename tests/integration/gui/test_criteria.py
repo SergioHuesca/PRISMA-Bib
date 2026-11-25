@@ -12,10 +12,11 @@ pytest.importorskip("panel")
 import panel as pn
 
 from prismabib.errors import StepLockedError, ValidationError
-from prismabib.gui import layer
+from prismabib.gui import service
 from prismabib.gui.criteria import build_criteria
 from prismabib.gui.criteria_model import CriteriaFormError, criteria_from_form, form_from_criteria
 from prismabib.gui.new_project import build_stepper
+from prismabib.gui.query_form_model import ENRICHMENT_REASON
 from prismabib.project import Project, scaffold_criteria
 from tests.integration.gui.helpers import text as _text
 from tests.integration.gui.test_home import unlabelled_controls
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
-    return layer.create_project(
+    return service.create_project(
         "demo", title="Demo", root=tmp_path, source_mode="openalex", reviewer="Ada"
     )
 
@@ -36,7 +37,7 @@ def _w(view: pn.Column, label: str) -> pn.widgets.Widget:
 
 def _log_decision(project: Project) -> None:
     project.decisions_path.parent.mkdir(exist_ok=True)
-    line = json.dumps({"schema_version": layer.CURRENT_PROJECT_VERSION}) + "\n"
+    line = json.dumps({"schema_version": service.CURRENT_PROJECT_VERSION}) + "\n"
     project.decisions_path.write_text(line, encoding="utf-8")
 
 
@@ -115,15 +116,15 @@ def test_form__second_hand_edit__is_backed_up_too_and_no_backup_is_overwritten(
 def test_layer__every_backup_name_taken__refuses_instead_of_overwriting(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(layer, "_BACKUP_LIMIT", 2)
+    monkeypatch.setattr(service, "_BACKUP_LIMIT", 2)
     edited = _hand_edit(project)
     (project.root / BACKUP).write_bytes(b"first")
     (project.root / f"{BACKUP}.1").write_bytes(b"second")
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(ValidationError, match="backup"),
     ):
-        layer.save_criteria(session, project.criteria)
+        service.save_criteria(session, project.criteria)
 
     assert (project.root / "criteria.yaml").read_bytes() == edited  # nothing was written
     assert (project.root / BACKUP).read_bytes() == b"first"
@@ -177,10 +178,10 @@ def test_layer__loaded_bytes_differ_from_the_file__refused(project: Project) -> 
     loaded = (project.root / "criteria.yaml").read_bytes()
     edited = _hand_edit(project)
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(ValidationError, match="changed since"),
     ):
-        layer.save_criteria(session, project.criteria, loaded=loaded)
+        service.save_criteria(session, project.criteria, loaded=loaded)
     assert (project.root / "criteria.yaml").read_bytes() == edited
 
 
@@ -199,8 +200,8 @@ def test_form__saving_over_a_file_the_app_wrote__makes_no_backup(project: Projec
 
 def test_layer__saving_an_unreadable_hand_edit__keeps_it_too(project: Project) -> None:
     broken = _hand_edit(project, "version: [")
-    with layer.open_session("demo", root=project.root.parent) as session:
-        layer.save_criteria(session, criteria_from_form(form_from_criteria(scaffold_criteria())))
+    with service.open_session("demo", root=project.root.parent) as session:
+        service.save_criteria(session, criteria_from_form(form_from_criteria(scaffold_criteria())))
 
     assert (project.root / BACKUP).read_bytes() == broken
 
@@ -259,15 +260,15 @@ def test_layer__decision_logged__refuses_a_save(project: Project) -> None:
     _log_decision(project)
     before = (project.root / "criteria.yaml").read_bytes()
     with (
-        layer.open_session("demo", root=project.root.parent) as session,
+        service.open_session("demo", root=project.root.parent) as session,
         pytest.raises(StepLockedError, match="Decision"),
     ):
-        layer.save_criteria(session, project.criteria)
+        service.save_criteria(session, project.criteria)
     assert (project.root / "criteria.yaml").read_bytes() == before
 
 
 def test_form__another_window_holds_the_lock__save_says_so(project: Project) -> None:
-    other = layer.Session(project)
+    other = service.Session(project)
     view = build_criteria(project)
     _w(view, "Save Criteria").clicks += 1
     assert "Another window" in _text(view)
@@ -283,3 +284,44 @@ def test_stepper__criteria_step__shows_the_form(project: Project) -> None:
     button = next(b for b in view.select(pn.widgets.Button) if b.name.startswith("Criteria"))
     button.clicks += 1
     assert any(w.name == "Save Criteria" for w in view.select(pn.widgets.Button))
+
+
+def _scopus_project(tmp_path: Path, mode: str) -> Project:
+    return service.create_project(
+        "scopus-demo",
+        title="Demo",
+        root=tmp_path,
+        source_mode=mode,  # type: ignore[arg-type]
+        reviewer="Ada",
+    )
+
+
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_form__scopus_mode__subject_areas_is_disabled_with_the_query_screens_reason(
+    tmp_path: Path, mode: str
+) -> None:
+    view = build_criteria(_scopus_project(tmp_path, mode))
+    assert _w(view, "Include subject areas").disabled
+    assert ENRICHMENT_REASON in _text(view)
+
+
+def test_form__openalex_mode__subject_areas_stays_enabled(project: Project) -> None:  # guard
+    view = build_criteria(project)
+    assert not _w(view, "Include subject areas").disabled
+    assert ENRICHMENT_REASON not in _text(view)
+
+
+@pytest.mark.parametrize("mode", ["scopus", "scopus+openalex"])
+def test_form__scopus_mode_save__keeps_the_files_subject_areas(tmp_path: Path, mode: str) -> None:
+    project = _scopus_project(tmp_path, mode)
+    path = project.root / "criteria.yaml"
+    text = path.read_text(encoding="utf-8").replace(
+        "subject_areas: []", "subject_areas: [MEDI, PSYC]"
+    )
+    path.write_text(text, encoding="utf-8")
+    assert project.criteria.subject_areas == ["MEDI", "PSYC"]
+    view = build_criteria(project)
+    _w(view, "Include languages").value = "English"
+    _w(view, "Save Criteria").clicks += 1
+    assert project.criteria.languages == ["English"]
+    assert project.criteria.subject_areas == ["MEDI", "PSYC"]  # new check: no equivalent on main
