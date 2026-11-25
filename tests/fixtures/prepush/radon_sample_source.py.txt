@@ -1,0 +1,54 @@
+"""Sample source for capturing radon output (fixture input, never imported)."""
+
+import functools
+
+
+def plain(a, b):
+    if a and b:
+        return 1
+    return 0
+
+
+def decorated_wrapper(fn):
+    return fn
+
+
+@decorated_wrapper
+@functools.cache
+def decorated(x):
+    if x > 1:
+        return x
+    return 0
+
+
+class Box:
+    def method(self, items):
+        total = 0
+        for item in items:
+            if item:
+                total += item
+        return total
+
+    @property
+    def size(self):
+        return 1
+
+    @size.setter
+    def size(self, value):
+        if value:
+            self._size = value
+
+
+def outer(n):
+    def inner(m):
+        if m:
+            return m
+        return 0
+
+    return inner(n)
+
+
+async def fetch(url):
+    if url:
+        return url
+    return None

@@ -1,0 +1,241 @@
+************* Module prismabib.viz.__init__
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.gui.capture_layer:[141:164]
+==prismabib.gui.openalex_capture_layer:[85:108]
+    shown: dict[str, Any] = (
+        {}
+        if seen is None
+        else {
+            "run_id": seen.run_id,
+            "pages_done": seen.pages_done,
+            "records_seen": seen.records_seen,
+            "total_results": seen.total_results,
+        }
+    )
+    if task.running:
+        state = CaptureState.CANCELLING if task.cancelling else CaptureState.RUNNING
+        return CaptureStatus(state, **shown)
+    if task.outcome == "failed" and task.error is not None:
+        message = translate(task.error)
+        text = f"{message.sentence} {message.next_step}"
+        by_class = {
+            ErrorClass.NETWORK: CaptureState.NETWORK_STOPPED,
+            ErrorClass.QUOTA: CaptureState.QUOTA_WAIT,
+        }
+        if message.error_class in by_class:
+            return CaptureStatus(by_class[message.error_class], message=text, **shown)
+        return replace(_disk(project), message=text) (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.sources.crossref:[195:247]
+==prismabib.sources.unpaywall:[119:177]
+        self._http = (
+            http_client
+            if http_client is not None
+            else httpx.Client(
+                timeout=timeout,
+                # `httpx` defaults `follow_redirects` to False, unlike `requests`.
+                # Unlike every other client in this package, this one fetches from
+                # *arbitrary* hosts -- whatever Unpaywall names as the open-access
+                # location -- and repositories redirect as a matter of course
+                # (DSpace to a bitstream, a DOI to a publisher, http to https).
+                # Without this, a redirect surfaced as "unexpected HTTP 302" and the
+                # record was recorded as a mid-chain failure. Measured on a real
+                # 35-record run: 6 of 10 failures were 301/302.
+                follow_redirects=True,
+                # Five covers the cases this exists for (DSpace to a bitstream,
+                # http to https, a DOI to a publisher). httpx's default of 20
+                # is a wider capability than any of them needs, granted to
+                # hosts named by a third-party API.
+                max_redirects=5,
+                headers={"User-Agent": _USER_AGENT},
+            )
+        )
+        self._owns_http = http_client is None
+        self._rate_limiter = rate_limiter if rate_limiter is not None else RateLimiter()
+        self._cache = cache
+
+    def __enter__(self) -> Self:
+        """Enter the client as a context manager; returns ``self``."""
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Exit the client as a context manager, closing an owned HTTP client."""
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying HTTP client, if this instance owns one."""
+        if self._owns_http:
+            self._http.close()
+
+    def lookup(self, doi: str) -> JsonDict | None:
+        """Ask Unpaywall for the best open-access location of one DOI.
+
+        Args:
+            doi: The bare DOI (``10.xxxx/...``), not URL-wrapped.
+
+        Returns:
+            The parsed Unpaywall response, or ``None`` if Unpaywall has no
+            record for this DOI (HTTP 404) -- not an entitlement question,
+            simply "we do not know this DOI", so this resolver step
+            contributes ``entitled=NULL`` rather than any refusal.
+
+        Raises:
+            RateLimitError: On HTTP 429 exhausting the retry budget.
+            UpstreamError: On HTTP 5xx exhausting the retry budget, or any
+                other unexpected non-2xx status.
+            ValidationError: If a 200 response body is not a JSON object.
+        """
+        url = self.LOOKUP_ENDPOINT_TEMPLATE.format(doi=doi) (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.credentials:[347:356]
+==prismabib.gui.keys_model:[71:80]
+        )
+    except (httpx.HTTPError, UnicodeError) as exc:
+        return ProbeResult(False, f"network error ({type(exc).__name__})")
+    finally:
+        if http_client is None:
+            client.close()
+    status = response.status_code
+    if status == 200:
+        return ProbeResult(True, "ok") (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.models:[310:332]
+==prismabib.source_mode:[121:145]
+            raise ValueError(f"unsupported schema_version {value}")
+        return value
+
+    @field_validator("event_id", "project", "actor")
+    @classmethod
+    def _nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("ts")
+    @classmethod
+    def _aware_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("ts must be timezone-aware")
+        return value.astimezone(UTC)
+
+    @field_serializer("ts", when_used="json")
+    def _serialize_ts(self, value: datetime) -> str:
+        return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def source_modes_path(project: Project) -> Path:
+    """``<root>/decisions/source_modes.jsonl``.""" (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.capture.enrich:[478:487]
+==prismabib.fulltext.capture:[517:526]
+        if not entry.is_dir() or is_sealed(entry):
+            continue
+        progress_path = entry / PROGRESS_FILENAME
+        if not progress_path.is_file():
+            continue
+        try:
+            state = _load_progress(progress_path)
+        except (OSError, ValueError):
+            continue (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.capture.enrich:[986:998]
+==prismabib.fulltext.capture:[856:864]
+    guard_writable(run_dir)
+    atomic_write_bytes(
+        run_dir / RUN_MANIFEST_FILENAME,
+        manifest.model_dump_json(indent=2).encode("utf-8") + b"\n",
+    )
+
+    progress_path = run_dir / PROGRESS_FILENAME
+    if progress_path.is_file():
+        # Not part of the sealed payload -- removed once sealing succeeds,
+        # since there is nothing left to resume.
+        progress_path.unlink()
+    # Best-effort and only after the manifest: a file lock must not raise on a sealed run. (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.capture.enrich:[297:338]
+==prismabib.store.load:[730:760]
+    if not raw_dir.is_dir():
+        return []
+    candidates = [
+        entry
+        for entry in raw_dir.iterdir()
+        if entry.is_dir() and entry.name not in NON_RUN_DIRNAMES and is_sealed(entry)
+    ]
+    return sorted(candidates, key=lambda path: path.name)
+
+
+def _record_ids_from_layer0(raw_dir: Path) -> tuple[list[str], list[str], list[str]]:
+    """Collect every record id captured by the sealed search runs under ``raw_dir``.
+
+    Reads each run's ``manifest.json`` for its ``payload_files`` rather than
+    globbing, so a page file left behind by an interrupted attempt and not
+    named by the seal is never enriched.
+
+    A payload file the seal names but that is not on disk is **skipped, and
+    reported**. Skipping is deliberate -- a damaged capture should not cost the
+    other 1,799 records their subject areas -- but skipping *silently* is not:
+    the Layer 1 loader is not lenient about the same input (``_load_run``
+    raises ``FileNotFoundError``), so ``raw/`` copied between machines with one
+    ``page-NNNN.jsonl`` missing would make ``build_store`` fail loudly and this
+    run seal quietly, with ``records_requested`` reduced,
+    ``records_fetched == records_requested`` and ``unavailable == []``. Every
+    record from that page would then have no subject areas and no entry saying
+    why -- the exact ambiguity
+    :class:`~prismabib.capture.manifest.AbstractRunManifest` exists to resolve.
+    So the third return value carries the shortfall into the seal.
+
+    Args:
+        raw_dir: A project's ``raw/`` directory.
+
+    Returns:
+        ``(source_run_ids, record_ids, missing_payload_files)`` -- all three
+        sorted; ``record_ids`` deduplicated across runs, since a paper matched
+        by two captures is one record and needs one Abstract Retrieval call.
+        ``missing_payload_files`` holds ``"<run_id>/<filename>"`` for every
+        file a seal names that is absent from disk, and is empty for an intact
+        Layer 0.
+    """ (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.sources.crossref:[342:367]
+==prismabib.sources.unpaywall:[255:281]
+        )
+        return response
+
+    def _do_request(
+        self,
+        url: str,
+        params: Mapping[str, str],
+        allow_404: bool,
+        follow_redirects: bool,
+        entitlement_on_403: bool,
+    ) -> httpx.Response:
+        """Perform exactly one HTTP GET, honouring the rate limiter and raising on error status."""
+        self._rate_limiter.acquire()
+        # `or None`, never a bare `{}`: httpx *replaces* a URL's query string
+        # with `params`, so an empty mapping silently truncates a TDM URL's own
+        # query string -- the same trap `UnpaywallClient._do_request` guards
+        # against.
+        with self._http.stream(
+            "GET", url, params=dict(params) or None, follow_redirects=follow_redirects
+        ) as streamed:
+            # Only the API's own host speaks for this client's quota: a third-party OA/TDM
+            # host's `X-RateLimit-*` must not make every later `acquire()` raise.
+            # `streamed.url` is the final URL, so a redirect off-host is excluded too.
+            if streamed.url.host == httpx.URL(self.LOOKUP_ENDPOINT_TEMPLATE).host:
+                self._rate_limiter.observe_headers(streamed.headers) (duplicate-code)
+src\prismabib\viz\__init__.py:1:0: R0801: Similar lines in 2 files
+==prismabib.sources.crossref:[370:384]
+==prismabib.sources.unpaywall:[282:294]
+            return read_capped(streamed, MAX_DOWNLOAD_BYTES)
+
+    def _raise_for_status(self, response: httpx.Response, *, allow_404: bool) -> None:
+        """Translate a non-2xx Unpaywall (or OA-location) response into the §3.3 taxonomy."""
+        status = response.status_code
+        if 200 <= status < 300:
+            return
+        if status == 404 and allow_404:
+            return
+
+        endpoint = redact_url(response.request.url)
+ (duplicate-code)
