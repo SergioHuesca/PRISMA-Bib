@@ -1,0 +1,10 @@
+sample_module.py
+    F 6:0 plain - A (3)
+    C 24:0 Box - A (3)
+    M 25:4 Box.method - A (3)
+    F 18:0 decorated - A (2)
+    F 51:0 fetch - A (2)
+    M 37:4 Box.size - A (2)
+    F 12:0 decorated_wrapper - A (1)
+    F 42:0 outer - A (1)
+    M 33:4 Box.size - A (1)
