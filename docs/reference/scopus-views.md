@@ -44,7 +44,7 @@ Requesting these with `field=` returns HTTP 400, so a field list does not get ar
 `authkeywords`, `idxterms`, `fund-acr` / `fund-no` / `fund-sponsor`, `dc:publisher`.
 
 Abstract Retrieval `META` **as JSON** adds an `author` block under `dc:creator` (one author in
-the sample), `dc:publisher`, `srctype` and `link`, and returns no abstract, keywords,
+the sample), `dc:publisher`, `srctype` and `link`, and returns no abstract,
 author keywords, references or subject areas (indexed terms are the one exception: see the
 `field=` row in the experiment below). The same call **as RDF/XML** returns much more: see the
 experiment below, which supersedes the earlier conclusion that the author list, keywords,
@@ -52,9 +52,8 @@ subject areas and references are out of reach. The abstract is still out of reac
 
 [ADR 0011](../architecture/adr/0011-abstract-retrieval-for-subject-areas.md) says the opposite
 about `view=META`: it states that `META` does carry `subject-areas`. This page's JSON `META`
-result shows none, and its RDF/XML result for the seed record does carry them. The two disagree.
-This page does not decide which one is right. The JSON `META` result above does not state its
-sample size.
+result shows none. The two differ, and the difference is unresolved. This page does not decide
+which one is right.
 
 ## Consequences for the project
 
@@ -65,11 +64,11 @@ sample size.
   this key. A `COMPLETE` entitlement, usually tied to an institutional subscription, is needed.
 - **The 401 path.** Outside an opt-in run, a 401 from Scopus stops the command with
   `AuthError`. The message begins `Scopus rejected the API key (HTTP 401) for`, followed by the
-  full request URL and a checklist about `SCOPUS_API_KEY` and `SCOPUS_INSTTOKEN`. The checklist
+  endpoint and a checklist about `SCOPUS_API_KEY` and `SCOPUS_INSTTOKEN`. The checklist
   does not mention entitlements, and its first step is to check that `SCOPUS_API_KEY` is set in
   `.env`. That reads misleadingly for a key that is valid but not entitled. Only a 403 becomes
-  the entitlement error. ADR 0028 measured the same refusals, all HTTP 401, and notes that
-  the `AuthError` classification misdescribes them. Its Resolved decisions item 1 keeps the mapping
+  the entitlement error. ADR 0028 measured the same refusals, all HTTP 401, and calls
+  the `AuthError` classification a misclassification that it leaves as an open decision. Its Resolved decisions item 1 keeps the mapping
   unchanged outside an opt-in cascade run. In an opt-in cascade run, a 401 is recorded as
   `refused` for the field and the cascade goes on to the next level (the client does the same for
   a 403)
@@ -81,7 +80,7 @@ sample size.
   entry and [ADR 0041](../architecture/adr/0041-field-level-provenance-and-cascade-completion.md)
   (Decision 1a) say so. They do not supply the abstract, the full author list, keywords,
   subject areas or references. The RDF/XML route in the experiment below returns more. It is a
-  follow-up, not current behaviour: the code does not request RDF, and switching level 3 to RDF
+  follow-up, not current behavior: the code does not request RDF, and switching level 3 to RDF
   is a code change that needs the Main Flow and its own spec.
 
 ## Quota observed
@@ -119,7 +118,7 @@ Raw responses were kept; keys are not logged.
 
 ### Result: `Accept: application/rdf+xml` on Abstract Retrieval `META`
 
-```
+```text
 GET /content/abstract/eid/{eid}?view=META     Accept: application/rdf+xml     (key only)
 ```
 
