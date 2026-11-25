@@ -258,20 +258,46 @@ def parse_pylint_duplicates(output: str) -> list[DuplicateBlock]:
 
 
 def parse_added_lines(diff: str) -> dict[str, list[tuple[int, int]]]:
-    """New-side line ranges (first, last) per file from ``git diff -U0`` output."""
+    """New-side line ranges (first, last) per file from ``git diff -U0`` output.
+
+    A ``+++ `` line is a header only between a file's ``diff --git`` line and its first hunk;
+    inside a hunk it is content. Split on newline only, so a control character in a content
+    line cannot start a line. Paths are kept as git writes them.
+    """
     added: dict[str, list[tuple[int, int]]] = {}
     current: str | None = None
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            target = line[4:]
-            current = normalize_path(target[2:]) if target.startswith("b/") else None
-        elif line.startswith("@@") and current:
-            m = HUNK.match(line)
-            if m:
+    in_header = False  # between "diff --git" and the file's first hunk
+    for line in diff.split("\n"):
+        if line.startswith("diff --git "):
+            current, in_header = None, True
+        elif in_header and line.startswith("+++ "):
+            target = line[4:].removesuffix("\t")  # git appends a tab after a path with a space
+            current = target[2:] if target.startswith("b/") else None
+        elif line.startswith("@@"):
+            in_header = False
+            m = HUNK.match(line) if current else None
+            if m and current:
                 start, count = int(m.group(1)), int(m.group(2) or 1)
                 if count:
                     added.setdefault(current, []).append((start, start + count - 1))
     return added
+
+
+def zero_context_diff_args(base: str) -> list[str]:
+    """Arguments of the zero-context diff, pinned so personal git configuration cannot change it."""
+    return [
+        "-c",
+        "core.quotepath=off",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-M",
+        "--no-ext-diff",
+        "--no-textconv",
+        base,
+    ]
 
 
 def untracked_files(porcelain_z: str) -> list[str]:
@@ -983,7 +1009,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     base, base_warning = duplication_base(lambda cmd: _run(cmd, root, args.timeout))
     if base_warning:
         print(base_warning)
-    _, zero_diff = _git(root, "-c", "core.quotepath=off", "diff", "-U0", "--no-color", base)
+    _, zero_diff = _git(root, *zero_context_diff_args(base))
     added = parse_added_lines(zero_diff)
     for path in untracked_files(porcelain):
         try:  # every line of an untracked, non-ignored file counts as added
@@ -991,7 +1017,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except OSError:
             continue
         if count:
-            added[normalize_path(path)] = [(1, count)]
+            added[path] = [(1, count)]
 
     def exists(p: str) -> bool:
         return (Path(root) / p).is_file()

@@ -505,6 +505,145 @@ def test_filter_duplicates__touched_file_but_unchanged_block__is_not_reported() 
 
 
 @pytest.mark.unit
+def test_zero_context_diff_args__pins_and_existing_arguments__are_exactly_these() -> None:
+    # The one accepted exception to behaviour-only: main() cannot run in a unit test.
+    assert prepush.zero_context_diff_args("BASE") == [
+        "-c",
+        "core.quotepath=off",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-M",
+        "--no-ext-diff",
+        "--no-textconv",
+        "BASE",
+    ]
+
+
+@pytest.mark.unit
+def test_parse_added_lines__header_with_trailing_tab__is_read_without_the_tab() -> None:
+    diff = (
+        "diff --git a/dir with space/a.py b/dir with space/a.py\n"
+        "--- a/dir with space/a.py\t\n"
+        "+++ b/dir with space/a.py\t\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+x\n"
+        "+y\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"dir with space/a.py": [(1, 2)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__backslash_in_a_header_path__is_kept_as_written() -> None:
+    diff = "diff --git a/d\\a.py b/d\\a.py\n--- a/d\\a.py\n+++ b/d\\a.py\n@@ -0,0 +1 @@\n+x\n"
+
+    assert prepush.parse_added_lines(diff) == {"d\\a.py": [(1, 1)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__header_shaped_content_in_a_hunk__keeps_later_hunks_and_files() -> None:
+    diff = (
+        "diff --git a/a.py b/a.py\n"
+        "--- a/a.py\n"
+        "+++ b/a.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+first\n"
+        "+++ b/other.py\n"  # an added line whose text is "++ b/other.py"
+        "@@ -9 +10 @@\n"
+        "-old\n"
+        "+new\n"
+        "@@ -20,0 +21 @@\n"
+        "+++ not a path\n"  # an added line whose text is "++ not a path"
+        "@@ -30,0 +31 @@\n"
+        "+later\n"
+        "diff --git a/c.py b/c.py\n"
+        "--- a/c.py\n"
+        "+++ b/c.py\n"
+        "@@ -0,0 +5 @@\n"
+        "+z\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {
+        "a.py": [(1, 2), (10, 10), (21, 21), (31, 31)],
+        "c.py": [(5, 5)],
+    }
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_character_in_a_content_line__creates_no_line() -> None:
+    diff = (
+        "diff --git a/a.py b/a.py\n"
+        "--- a/a.py\n"
+        "+++ b/a.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+x\x0cdiff --git a/z.py b/z.py\x0c+++ b/z.py\x0c@@ -0,0 +50,3 @@\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"a.py": [(1, 1)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_deleted_file_marker__is_accepted() -> None:
+    diff = (
+        "diff --git a/old.py b/old.py\n"
+        "deleted file mode 100644\n"
+        "--- a/old.py\n"
+        "+++ /dev/null\n"
+        "@@ -1,2 +0,0 @@\n"
+        "-a\n"
+        "-b\n"
+        "diff --git a/n.py b/n.py\n"
+        "--- a/n.py\n"
+        "+++ b/n.py\n"
+        "@@ -0,0 +3 @@\n"
+        "+n\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"n.py": [(3, 3)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_blocks_without_a_header__add_nothing_and_do_not_fail() -> None:
+    diff = (
+        "warning: in the working copy of 'x', LF will be replaced by CRLF\n"
+        "diff --git a/img.png b/img.png\n"
+        "index 1111111..2222222 100644\n"
+        "Binary files a/img.png and b/img.png differ\n"
+        "diff --git a/run.sh b/run.sh\n"
+        "old mode 100644\n"
+        "new mode 100755\n"
+        "diff --git a/before.py b/after.py\n"
+        "similarity index 100%\n"
+        "rename from before.py\n"
+        "rename to after.py\n"
+        "diff --git a/n.py b/n.py\n"
+        "--- a/n.py\n"
+        "+++ b/n.py\n"
+        "@@ -0,0 +3 @@\n"
+        "+n\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"n.py": [(3, 3)]}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "porcelain",
+    ["?? dir with space/new é.py\0 M a.py\0", "?? dir with space/new é.py\0"],
+)
+def test_file_list_parsers__control_names_with_spaces_and_non_ascii__are_read_whole(
+    porcelain: str,
+) -> None:
+    assert prepush.untracked_files(porcelain) == ["dir with space/new é.py"]
+    got = prepush.parse_changed_files("sp ace/é.py\0", porcelain)
+    assert "sp ace/é.py" in got
+    assert "dir with space/new é.py" in got
+
+
+@pytest.mark.unit
 def test_untracked_files__porcelain__lists_only_untracked_paths() -> None:
     porcelain = "?? src/prismabib/new.py\0 M src/prismabib/a.py\0A  src/b.py\0"
 
