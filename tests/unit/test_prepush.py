@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -272,3 +273,137 @@ def test_summarize__all_green__exits_zero() -> None:
     results = prepush.run_steps([prepush.Step("one", ["a"])], lambda _cmd: (0, ""))
 
     assert prepush.summarize(results)[1] == 0
+
+
+class _FakeRunner:
+    """Records every command it is asked to run; answers from ``rcs`` keyed by argv[0]."""
+
+    def __init__(self, rcs: dict[str, tuple[int, str]]) -> None:
+        self.rcs = rcs
+        self.calls: list[str] = []
+
+    def __call__(self, cmd: Sequence[str]) -> tuple[int, str]:
+        self.calls.append(cmd[0])
+        return self.rcs[cmd[0]]
+
+
+@pytest.mark.unit
+def test_run_steps__prerequisite_failed__dependent_is_skipped_and_never_run() -> None:
+    steps = [prepush.Step("base", ["tool-a"]), prepush.Step("dep", ["tool-b"], after="base")]
+    runner = _FakeRunner({"tool-a": (1, ""), "tool-b": (0, "")})
+
+    results = prepush.run_steps(steps, runner)
+
+    assert runner.calls == ["tool-a"]
+    assert [(r.name, r.skipped, r.note) for r in results] == [
+        ("base", False, ""),
+        ("dep", True, "prerequisite 'base' failed"),
+    ]
+
+
+@pytest.mark.unit
+def test_run_steps__prerequisite_passed__dependent_runs_normally() -> None:
+    steps = [prepush.Step("base", ["tool-a"]), prepush.Step("dep", ["tool-b"], after="base")]
+    runner = _FakeRunner({"tool-a": (0, ""), "tool-b": (0, "")})
+
+    results = prepush.run_steps(steps, runner)
+
+    assert runner.calls == ["tool-a", "tool-b"]
+    assert [r.skipped for r in results] == [False, False]
+
+
+@pytest.mark.unit
+def test_run_steps__prerequisite_itself_skipped__dependent_is_skipped() -> None:
+    steps = [
+        prepush.Step("base", [], skip_reason="--quick"),
+        prepush.Step("dep", ["tool-b"], after="base"),
+    ]
+    runner = _FakeRunner({"tool-b": (0, "")})
+
+    results = prepush.run_steps(steps, runner)
+
+    assert runner.calls == []
+    assert results[1].note == "prerequisite 'base' did not run"
+
+
+@pytest.mark.unit
+def test_run_steps__step_excluded_by_option__is_skipped_with_reason_and_not_run() -> None:
+    runner = _FakeRunner({})
+    skips = prepush.option_skips(quick=True, skip_mypy=True)
+
+    results = prepush.run_steps(skips, runner)
+    text, code = prepush.summarize(results)
+
+    assert runner.calls == []
+    assert code == 0
+    assert "[skip] mypy --strict  (--skip-mypy)" in text
+    assert "[skip] pytest unit+contract  (--quick)" in text
+
+
+@pytest.mark.unit
+def test_summarize__passes_and_skips_only__exits_zero_with_counts() -> None:
+    steps = [prepush.Step("a", ["x"]), prepush.Step("b", [], skip_reason="--quick")]
+
+    text, code = prepush.summarize(prepush.run_steps(steps, _FakeRunner({"x": (0, "")})))
+
+    assert code == 0
+    assert "1 passed, 0 failed, 1 skipped" in text
+
+
+@pytest.mark.unit
+def test_summarize__failure_and_skip__exits_one_with_counts() -> None:
+    steps = [prepush.Step("a", ["x"]), prepush.Step("b", ["y"], after="a")]
+
+    text, code = prepush.summarize(prepush.run_steps(steps, _FakeRunner({"x": (1, "")})))
+
+    assert code == 1
+    assert "0 passed, 1 failed, 1 skipped" in text
+    assert "[skip] b  (prerequisite 'a' failed)" in text
+
+
+@pytest.mark.unit
+def test_summarize__step_with_rerun_text__prints_it_instead_of_the_bare_command() -> None:
+    step = prepush.Step("risk", ["tool-r", "--cov"], rerun="run the tests first, then tool-r")
+
+    text, _ = prepush.summarize(prepush.run_steps([step], _FakeRunner({"tool-r": (1, "")})))
+
+    assert "re-run: run the tests first, then tool-r" in text
+    assert "re-run: tool-r --cov" not in text
+
+
+@pytest.mark.unit
+def test_summarize__timed_out_step__summary_line_names_the_timeout() -> None:
+    runner = _FakeRunner({"slow": (124, "slow step exceeded the 5s timeout (--timeout N)")})
+
+    text, _ = prepush.summarize(prepush.run_steps([prepush.Step("slow", ["slow"])], runner))
+
+    assert "[FAIL] slow  (timed out)" in text
+
+
+@pytest.mark.unit
+def test_build_steps__each_option__selects_the_literal_step_set() -> None:
+    full = [
+        "ruff check",
+        "ruff format --check",
+        "detect-secrets",
+        "mypy --strict",
+        "pytest unit+contract",
+    ]
+
+    assert _names(_build()) == full
+    assert _names(_build(quick=True)) == full[:4]
+    assert _names(_build(skip_mypy=True)) == [*full[:3], full[4]]
+    assert _names(_build(test_paths=["tests/unit/test_log.py"])) == full
+    changed_cmd = _build(test_paths=["tests/unit/test_log.py"])[-1].cmd  # type: ignore[attr-defined]
+    assert changed_cmd[-1] == "tests/unit/test_log.py"
+
+
+@pytest.mark.unit
+def test_select_tests__changed_file_list__selects_the_literal_test_set() -> None:
+    exists = {"tests/unit/test_log.py", "tests/unit/test_store.py"}.__contains__
+
+    got = prepush.select_tests(
+        ["src/prismabib/store.py", "src/prismabib/log.py", "tests/unit/test_log.py"], exists
+    )
+
+    assert got == ["tests/unit/test_log.py", "tests/unit/test_store.py"]

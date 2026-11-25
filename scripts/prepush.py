@@ -60,14 +60,21 @@ class Step(NamedTuple):
     name: str
     cmd: list[str]
     evaluate: Evaluator | None = None
+    after: str | None = None  # name of a prerequisite step; skipped when it did not pass
+    skip_reason: str | None = None  # set: never run, recorded as skipped with this reason
+    rerun: str | None = (
+        None  # printed instead of the bare command (e.g. "run pytest first, then ...")
+    )
 
 
 class StepResult(NamedTuple):
     name: str
     cmd: list[str]
-    ok: bool
+    ok: bool  # True for a skipped step too: skipped is neither passed nor failed
     note: str
     output: str
+    skipped: bool = False
+    rerun: str | None = None
 
 
 def filter_known(
@@ -209,16 +216,40 @@ def build_steps(
     return steps
 
 
+def option_skips(*, quick: bool, skip_mypy: bool) -> list[Step]:
+    """Steps that an option leaves out, as never-run steps carrying the reason."""
+    skips = []
+    if skip_mypy:
+        skips.append(Step("mypy --strict", [], skip_reason="--skip-mypy"))
+    if quick:
+        skips.append(Step("pytest unit+contract", [], skip_reason="--quick"))
+    return skips
+
+
+def _skipped(step: Step, reason: str) -> StepResult:
+    return StepResult(step.name, step.cmd, True, reason, "", skipped=True, rerun=step.rerun)
+
+
 def run_steps(steps: Sequence[Step], runner: Runner, fail_fast: bool = False) -> list[StepResult]:
     results: list[StepResult] = []
+    by_name: dict[str, StepResult] = {}
     for step in steps:
-        rc, out = runner(step.cmd)
-        if rc == TIMEOUT_RC:
-            ok, note = False, f"timed out: {out.strip()}"
+        prereq = by_name.get(step.after) if step.after else None
+        if step.skip_reason:
+            result = _skipped(step, step.skip_reason)
+        elif step.after and (prereq is None or prereq.skipped or not prereq.ok):
+            state = "did not run" if prereq is None or prereq.skipped else "failed"
+            result = _skipped(step, f"prerequisite '{step.after}' {state}")
         else:
-            ok, note = step.evaluate(rc, out) if step.evaluate else (rc == 0, "")
-        results.append(StepResult(step.name, step.cmd, ok, note, out))
-        if fail_fast and not ok:
+            rc, out = runner(step.cmd)
+            if rc == TIMEOUT_RC:
+                ok, note = False, f"timed out: {out.strip()}"
+            else:
+                ok, note = step.evaluate(rc, out) if step.evaluate else (rc == 0, "")
+            result = StepResult(step.name, step.cmd, ok, note, out, rerun=step.rerun)
+        results.append(result)
+        by_name[step.name] = result
+        if fail_fast and not result.ok:
             break
     return results
 
@@ -227,9 +258,16 @@ def summarize(results: Sequence[StepResult]) -> tuple[str, int]:
     """Human summary plus the process exit code (non-zero if any step failed)."""
     lines = ["", "== pre-push summary =="]
     for r in results:
-        extra = f"  ({r.note})" if r.ok and r.note else ""
+        if r.skipped:
+            lines.append(f"[skip] {r.name}  ({r.note})")
+            continue
+        timeout = "  (timed out)" if not r.ok and r.note.startswith("timed out") else ""
+        extra = f"  ({r.note})" if r.ok and r.note else timeout
         lines.append(f"[{'ok' if r.ok else 'FAIL'}] {r.name}{extra}")
     failed = [r for r in results if not r.ok]
+    skipped = [r for r in results if r.skipped]
+    passed = len(results) - len(failed) - len(skipped)
+    lines.append(f"{passed} passed, {len(failed)} failed, {len(skipped)} skipped")
     if failed:
         lines.append("")
         lines.append(f"{len(failed)} step(s) failed:")
@@ -237,7 +275,7 @@ def summarize(results: Sequence[StepResult]) -> tuple[str, int]:
             lines.append(f"- {r.name}")
             if r.note:
                 lines.append(f"  {r.note}")
-            lines.append(f"  re-run: {shlex.join(r.cmd)}")
+            lines.append(f"  re-run: {r.rerun or shlex.join(r.cmd)}")
     else:
         lines.append("All steps passed.")
     return "\n".join(lines), 1 if failed else 0
@@ -307,6 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline=baseline,
             test_paths=test_paths,
         )
+        steps += option_skips(quick=args.quick, skip_mypy=args.skip_mypy)
         results = run_steps(steps, lambda cmd: _run(cmd, root, args.timeout), args.fail_fast)
 
     for r in results:
