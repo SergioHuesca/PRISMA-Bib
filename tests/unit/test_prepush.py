@@ -584,6 +584,67 @@ def test_duplication_step__block_outside_the_change__passes_with_a_note() -> Non
     assert result.note == "2 known duplicate block(s) outside this change"
 
 
+_ROOT_INIT = (_FIXTURES / "pylint_duplicate_code_root_init.txt").read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__bare_root_name__maps_to_the_root_init_module() -> None:
+    (block,) = prepush.parse_pylint_duplicates(_ROOT_INIT)
+
+    assert block.locations == (
+        ("src/prismabib/other.py", 4, 10),
+        ("src/prismabib/__init__.py", 4, 10),
+    )
+
+
+@pytest.mark.unit
+def test_duplication_step__root_init_block_on_an_added_line__fails_and_names_the_file() -> None:
+    step = _dup_step({"src/prismabib/__init__.py": [(5, 5)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _ROOT_INIT)}))
+
+    assert not result.ok
+    assert "src/prismabib/other.py:4-10  <->  src/prismabib/__init__.py:4-10" in result.note
+
+
+@pytest.mark.unit
+def test_duplication_step__root_init_block_outside_the_change__passes_with_a_note() -> None:
+    step = _dup_step({"src/prismabib/__init__.py": [(20, 25)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _ROOT_INIT)}))
+
+    assert result.ok
+    assert result.note == "1 known duplicate block(s) outside this change"
+
+
+@pytest.mark.unit
+def test_duplication_step__control_subpackage_init_block_on_an_added_line__fails() -> None:
+    # Control: the subpackage case already mapped correctly before the root fix.
+    step = _dup_step({"src/prismabib/d/__init__.py": [(3, 3)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _TWO_BLOCKS)}))
+
+    assert not result.ok
+    assert "src/prismabib/c.py:100-109  <->  src/prismabib/d/__init__.py:1-10" in result.note
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__name_only_prefixed_by_root__maps_as_before() -> None:
+    out = (
+        "src\\prismabib_x.py:1:0: R0801: Similar lines in 2 files\n"
+        "==prismabib_x:[1:11]\n"
+        "==prismabib.other:[4:14]\n"
+        "    y = 2 (duplicate-code)\n"
+    )
+
+    (block,) = prepush.parse_pylint_duplicates(out)
+
+    assert block.locations == (
+        ("src/prismabib_x.py", 1, 10),
+        ("src/prismabib/other.py", 4, 13),
+    )
+
+
 @pytest.mark.unit
 def test_duplication_step__clean_run__passes() -> None:
     step = _dup_step()

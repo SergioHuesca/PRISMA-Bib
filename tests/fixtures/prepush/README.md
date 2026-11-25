@@ -16,3 +16,4 @@ Line endings were normalised to LF.
 | `radon_cc.txt` | `radon cc -s sample_module.py` (the text form of the same run). |
 | `coverage_report.json` | `coverage json --include='*/prismabib/ids.py,*/prismabib/progress.py'` after a unit and contract run with coverage on. Two real files: executed, missing and excluded lines are all present. |
 | `pylint_duplicate_code_6.txt` | `pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 src/prismabib` on main at 308bb02 (nine duplicated blocks). |
+| `pylint_duplicate_code_root_init.txt` | Same command, run on a scratch package named `prismabib` (`src/prismabib/__init__.py` and `src/prismabib/other.py`, each holding the same seven-line function body at lines 4-10). It shows pylint naming the root package's own `__init__` module by the bare package name (`==prismabib:[4:11]`), not `prismabib.__init__`. The separate nine-pair capture is unchanged. |

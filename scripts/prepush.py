@@ -62,6 +62,11 @@ SECRET_LOCATION = re.compile(r"^Location:\s+(.+):(\d+)\s*$", re.MULTILINE)
 # its own change, never in the feature change that hit it (docs/how-to/pre-push-check.md).
 MIN_SIMILARITY_LINES = 6
 PYLINT_REFACTOR_RC = 8
+# The one package the gate scans. The duplicate-code command, the coverage scope and the
+# root-module mapping below all derive from this constant, so they cannot drift apart.
+COVERAGE_SOURCE = "src/prismabib"
+ROOT_MODULE = COVERAGE_SOURCE.rsplit("/", 1)[-1]
+ROOT_INIT_PATH = f"{COVERAGE_SOURCE}/__init__.py"
 DEV_INSTALL_HINT = "install the development dependencies: uv sync --all-extras"
 DUP_HEADER = re.compile(r"R0801: Similar lines in (\d+) files")
 DUP_LOCATION = re.compile(r"^==([\w.]+):\[(\d+):(\d+)\]\s*$")
@@ -237,7 +242,13 @@ def parse_pylint_duplicates(output: str) -> list[DuplicateBlock]:
                 raise ValueError(
                     f"pylint output: expected a '==module:[a:b]' line, got {lines[i : i + 1]}"
                 )
-            path = "src/" + m.group(1).replace(".", "/") + ".py"
+            module = m.group(1)
+            # Pylint names the root package's own __init__ by the bare package name.
+            path = (
+                ROOT_INIT_PATH
+                if module == ROOT_MODULE
+                else "src/" + module.replace(".", "/") + ".py"
+            )
             locations.append((path, int(m.group(2)), int(m.group(3)) - 1))
             i += 1
         blocks.append(DuplicateBlock(tuple(locations)))
@@ -305,7 +316,6 @@ def duplication_evaluator(added: dict[str, list[tuple[int, int]]]) -> Evaluator:
 
 
 COMPLEXITY_THRESHOLD = 10
-COVERAGE_SOURCE = "src/prismabib"
 
 
 class FunctionRecord(NamedTuple):
@@ -796,7 +806,9 @@ def build_steps(
     # Whole tree: a run over touched files alone cannot see a block shared with an untouched one.
     steps.append(
         Step(
-            "duplicate-code", [*dup_cmd, "src/prismabib"], duplication_evaluator(added_lines or {})
+            "duplicate-code",
+            [*dup_cmd, COVERAGE_SOURCE],
+            duplication_evaluator(added_lines or {}),
         )
     )
     if not quick:

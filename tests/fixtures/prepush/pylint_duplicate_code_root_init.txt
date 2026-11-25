@@ -1,0 +1,11 @@
+************* Module prismabib.other
+src\prismabib\other.py:1:0: R0801: Similar lines in 2 files
+==prismabib.other:[4:11]
+==prismabib:[4:11]
+    total = 0
+    for value in values:
+        if value > 0:
+            total += value
+        else:
+            total -= value
+    return total (duplicate-code)
