@@ -51,10 +51,12 @@ branch added or edited: the new side of `git diff -U0` against the merge-base of
 and `HEAD`, plus every line of an untracked, non-ignored file. A block made only of unchanged
 lines is not reported, even in a touched file, and neither is a removed or moved one. There is
 no list of known duplicates. When the merge-base cannot be found (for example `origin/main` was
-never fetched), the step falls back to `HEAD`, prints a one-line warning that committed
-duplicates are not checked, and asks you to fetch the base branch. An unreadable diff header or a failed diff command fails the
-step when duplicates exist, with a note that says the diff could not be read; a clean pylint run
-still passes.
+never fetched), the step falls back to `HEAD`, prints a one-line warning that committed duplicates
+are not checked, and asks you to fetch the base branch. An unreadable diff header or a failed diff
+command fails the step when duplicates exist, with a note that says the diff could not be read.
+Here "duplicates" means every duplicated code block pylint reports, including pre-existing ones this
+branch never touched, because without the diff the gate cannot tell which blocks are the branch's.
+A clean pylint run still passes.
 
 **Threshold.** `--min-similarity-lines=6`, which finds 9 duplicate pairs on `main` at commit
 `308bb02` (measured at 4 lines: 31, 6: 9, 8: 4, 10: 2). The value lives as
