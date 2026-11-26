@@ -7,6 +7,8 @@ nothing in any cell.
 Entitlements are granted per API key and often per institution. These results are for one key,
 so another key or another institution may get different results.
 
+A later measurement, on 2026-11-27, covers Search `STANDARD` paging and sample coverage. It is in the last section. RDF was not re-measured then.
+
 | API | View | Result |
 |---|---|---|
 | Search (`/search/scopus`) | `STANDARD` | 200 |
@@ -17,17 +19,17 @@ so another key or another institution may get different results.
 
 ## Widest Search view available: `STANDARD`
 
-Search `STANDARD` is the widest view this key can read. Abstract Retrieval `META` as JSON adds
+Search `STANDARD` is the widest view this key can read, but only without the `cursor` parameter: on 2026-11-27 every cursor request under `STANDARD` was refused (see the last section). Code reading: `ScopusClient.search` always sends a cursor, so for this key it would be refused on page 1; the client was not run. Abstract Retrieval `META` as JSON adds
 only a few fields over it: an author block for one sampled record, `dc:publisher`, `srctype` and
 `link` (see below). It costs one call per record against a separate quota, so it is not a
 practical bulk path.
 
 Fields returned (25-record sample; the share is how many records carried it):
 
-- **Always present:** `eid`, `dc:identifier`, `dc:title`, `dc:creator` (first author only),
+- **Always present in the 25-record sample:** `eid`, `dc:identifier`, `dc:title`, `dc:creator` (first author only),
   `affiliation` (name, city, country), `prism:publicationName`, `prism:coverDate`,
   `prism:aggregationType`, `subtype`, `subtypeDescription`, `source-id`, `citedby-count`,
-  `openaccess`, `openaccessFlag`, `prism:url`.
+  `openaccess`, `openaccessFlag`, `prism:url`. On 2026-11-27, `dc:creator` was on 302 of 303 recorded entries and an affiliation object on 280 of 303, so neither is always present (see the last section).
 - **Present when the record has them:** `prism:doi` (23/25), `prism:volume` (22), `prism:eIssn`
   (18), `prism:issn` (17), `prism:issueIdentifier` (16), `prism:pageRange` (18),
   `freetoread` / `freetoreadLabel` (18), `article-number` (6), `pubmed-id` (8), `prism:isbn`
@@ -81,7 +83,7 @@ which one is right.
   (Decision 1a) say so. They do not supply the abstract, the full author list, keywords,
   subject areas or references. The RDF/XML route in the experiment below returns more. It is a
   follow-up, not current behavior: the code does not request RDF, and switching level 3 to RDF
-  is a code change that needs the Main Flow and its own spec.
+  is a code change that needs the Main Flow and its own spec. Level 2 (`search_standard_by_dois`) sends one request per batch of up to 25 DOIs, with no cursor (code reading), so the cursor refusal of 2026-11-27 does not apply to it as coded. It was not re-run on 2026-11-27; the code records one live single-DOI request (2026-10-21, HTTP 200) and says the multi-DOI form is not verified.
 
 ## Quota observed
 
@@ -143,6 +145,8 @@ For the seed record it returned (18.5 kB):
 | Keywords | 0 to 6 per record; one record had none |
 | Subject areas | 1 to 4 ASJC codes per record |
 
+RDF was not re-measured on 2026-11-27. The results above stand only on their original sample: one seed record for the grid and 10 records for the comparison.
+
 ### What is still unreachable
 
 **The abstract.** It appears only in `META_ABS`/`FULL` (401). No media type, `field=` value or
@@ -151,9 +155,9 @@ another source (OpenAlex returned one for 10 of 10).
 
 ### Recommended path with this key
 
-This is a recommendation for later work. It is not what the project's cascade does today.
+This is a recommendation for later work. It is not what the project's cascade does today. It was written before the 2026-11-27 cursor finding and does not consider cursor paging, so step 1 below does not hold as written.
 
-1. Search `STANDARD` for the ids and the basic metadata.
+1. Search `STANDARD` for the ids and the basic metadata. Every cursor request under `STANDARD`, including the first page, was refused on this key (2026-11-27), so this step is not settled.
 2. Abstract Retrieval `META` with `Accept: application/rdf+xml`, one call per record, for the
    full author list, affiliations, author keywords, ASJC subject areas and references.
 3. The abstract from OpenAlex.
@@ -169,3 +173,144 @@ for the 10-record check, so journals from other publishers, older records and no
 records are not covered. Only the 401 and 400 behavior of each view was observed, never its
 documented purpose. Author, Affiliation and Serial Title APIs returned 401, so their content
 was not seen.
+
+## Search STANDARD paging and sample coverage (2026-11-27)
+
+Measured on 2026-11-27 with the same key, `X-ELS-APIKey` only (no insttoken) and a generic
+User-Agent, against `api.elsevier.com/content/search/scopus`. It was the go or no-go check for
+the spec tracked as #466 (ticket #467). Only aggregate counts are given here. No response body,
+record content, key or personal detail is recorded on this page.
+
+### Outcome
+
+Cursor paging is refused under `STANDARD` for this key, so the check failed.
+Offset paging with `start` returned complete result sets for two of the four queries and first
+pages for the other two. Offset paging is outside the project's spec, so using it needs a new
+decision. The decision recorded for #467 is no-go. No Abstract Retrieval request was sent, so
+this measurement has no RDF results.
+
+### Cursor requests
+
+Every request below carried `cursor=*`. None returned a page.
+
+| Query | View | Count | HTTP | Result |
+|---|---|---|---|---|
+| Q1 | `STANDARD` | 25 | 403 | refused |
+| Q3 | `STANDARD` | 25 | 403 | refused |
+| Q1 | none | 25 | 403 | refused |
+| Q1 | `STANDARD` | 1 | 403 | refused |
+| Q3 | `STANDARD` (verification) | 25 | 403 | refused |
+
+Each refusal had status `ENTITLEMENTS_ERROR` with the text "Use of the cursor parameter is
+restricted". The three consecutive diagnostic refusals reported an unchanged remaining-quota
+header. No page came back by cursor, so no next cursor was followed: page 2 and later are not
+reachable by cursor with this key.
+
+Code reading, not a client run: `ScopusClient.search` in `src/prismabib/sources/scopus.py`
+sends a `cursor` parameter on every request. The first request uses `start_cursor`, which defaults
+to `*`; each later request uses the next cursor the previous page reported. For this key a
+`STANDARD` call through that method would therefore be refused on its first request, in the same
+way as the raw `cursor=*` requests above.
+
+### Paging by `start` offset
+
+Not in the spec, and not requested by the ticket. It was run to show that the same queries answer
+without a cursor. Parameters: `view=STANDARD`, `count=25`, `start` = 0, 25, 50, and so on.
+
+| Query | Pages read | `totalResults` | Entries | Distinct entries | Entries without EID | Result set |
+|---|---|---|---|---|---|---|
+| Q1 | 2 (all) | 28 | 28 | 28 | 0 | complete; count matches |
+| Q3 | 7 (all) | 175 | 175 | 175 | 0 | complete; count matches; total the same on every page |
+| Q2 | 2 | 2625 | 50 | 50 | 0 | first 50 only |
+| Q4 | 2 | 6602 | 50 | 50 | 0 | first 50 only |
+
+All 13 offset requests of the main run returned 200. A later verification request (`start=25`,
+query Q3) also returned 200, with 25 entries of the 175 total. Responses carried `first`, `last`
+and `self` links, plus `next` and `prev` where applicable, and no `cursor` object. Offsets above
+150 were not requested, so the upper limit of `start` was not measured. The client docstring says
+`start` and `count` cap at 5,000 results; Q4 reports more than that, but the cap was not tested.
+
+### Queries
+
+Default sort order. No query is about bibliometrics.
+
+| Label | Query string |
+|---|---|
+| Q1 | `TITLE("circadian rhythm") AND TITLE(exercise) AND PUBYEAR < 2000` |
+| Q2 | `TITLE-ABS-KEY("physical education") AND LANGUAGE(spanish)` |
+| Q3 | `TITLE-ABS-KEY("self-healing concrete") AND PUBYEAR = 2023` |
+| Q4 | `TITLE-ABS-KEY(philosophy) AND (LANGUAGE(french) OR LANGUAGE(german)) AND PUBYEAR < 2010` |
+
+Disciplines intended by query design: physiology and medicine, education, materials engineering,
+humanities. These were not verified per record.
+
+### Sample composition (search entries only)
+
+The sample is the first 50 distinct entries of each query, except Q1, which matches only 28. The
+total is 178, short of the ticket's "about 200". No Abstract Retrieval request was made for any of
+them.
+
+| Category | Q1 (n=28) | Q2 (n=50) | Q3 (n=50) | Q4 (n=50) | All (n=178) |
+|---|---|---|---|---|---|
+| Pre-2000 (cover date) | 28 | 0 | 0 | 0 | 28 |
+| Non-English by query restriction | not restricted | 50 | not restricted | 50 | 100 |
+| Without DOI | 13 | 1 | 0 | 31 | 45 |
+| DOI prefix `10.1016/` | 1 | 2 | 29 | 0 | 32 |
+| DOI with another prefix | 14 | 47 | 21 | 19 | 101 |
+
+Pre-2000 status is by cover date and comes from Q1 only. Non-English status comes from the query
+restriction, because entries carry no language field. The `10.1016/` prefix is a proxy for
+Elsevier. Other prefixes exist, and entries without a DOI are not classified. Publisher is not in
+`STANDARD` entries.
+
+### STANDARD entry coverage
+
+The sample column is the 178 entries above. The all-recorded column is the 303 distinct entries
+read by offset paging (Q1 28, Q2 50, Q3 175, Q4 50).
+
+| Field | Sample (n=178) | All recorded (n=303) |
+|---|---|---|
+| Any affiliation | 156 | 280 |
+| Affiliation name | 156 | 280 |
+| Affiliation country | 156 | 280 |
+| Affiliation id (`afid`) | 0 | 0 |
+| DOI (`prism:doi`) | 133 | 255 |
+| `dc:creator` | 178 | 302 |
+| `dc:description` (abstract) | 0 | 0 |
+| `authkeywords` | 0 | 0 |
+| `author` list | 0 | 0 |
+| `pii` | 32 | 85 |
+| `pubmed-id` | 28 | 29 |
+
+By query, Q1 / Q2 / Q3 / Q4 (n = 28 / 50 / 50 / 50): any affiliation 26 / 49 / 50 / 31; `afid`
+0 / 0 / 0 / 0; DOI 15 / 49 / 50 / 19.
+
+Affiliation objects: 173 in the sample and 317 across all recorded entries. All 317 carried
+`affilname`, `affiliation-country` and `@_fa`; 315 carried `affiliation-city`. None carried `afid`
+or an affiliation URL, which agrees with the list above. Affiliation objects per entry (303
+entries): none 23, one 244, two 35, three 1. Whether `STANDARD` truncates the affiliation list was
+not established, because there is no RDF comparison.
+
+### Not measured
+
+- Any RDF request: RDF parse rate, DTD rejections, and RDF coverage of the author list, author
+  ids, affiliations, author keywords, ASJC subject areas and references.
+- RDF element and attribute names. The names on this page come from 2026-11-25 and were not
+  re-checked.
+- Any OpenAlex comparison: author counts, keyword and subject presence, abstract availability and
+  reference counts.
+- Abstract and reference coverage.
+- The spec's assumptions about authors given only as `dc:creator`, missing author ids and RDF
+  affiliation country.
+- The client's own `search()` path: only a raw request with the same parameters was sent.
+- Cursor entitlement for any other key or institution.
+- Offsets above 150.
+
+### Limits
+
+- One key, one network, one day. The cursor refusal was seen on all five cursor requests, but
+  another key or institution may have a different entitlement.
+- Pre-2000 coverage comes from Q1 only (28 entries).
+- Non-English status rests on the query restriction. A record may list more than one language.
+- Default sort order. First pages only for Q2 and Q4.
+- The 17 responses of the main run were kept outside the repository and are not published here. The two verification responses were not stored.
