@@ -505,6 +505,145 @@ def test_filter_duplicates__touched_file_but_unchanged_block__is_not_reported() 
 
 
 @pytest.mark.unit
+def test_zero_context_diff_args__pins_and_existing_arguments__are_exactly_these() -> None:
+    # The one accepted exception to behaviour-only: main() cannot run in a unit test.
+    assert prepush.zero_context_diff_args("BASE") == [
+        "-c",
+        "core.quotepath=off",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-M",
+        "--no-ext-diff",
+        "--no-textconv",
+        "BASE",
+    ]
+
+
+@pytest.mark.unit
+def test_parse_added_lines__header_with_trailing_tab__is_read_without_the_tab() -> None:
+    diff = (
+        "diff --git a/dir with space/a.py b/dir with space/a.py\n"
+        "--- a/dir with space/a.py\t\n"
+        "+++ b/dir with space/a.py\t\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+x\n"
+        "+y\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"dir with space/a.py": [(1, 2)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__backslash_in_a_header_path__is_kept_as_written() -> None:
+    diff = "diff --git a/d\\a.py b/d\\a.py\n--- a/d\\a.py\n+++ b/d\\a.py\n@@ -0,0 +1 @@\n+x\n"
+
+    assert prepush.parse_added_lines(diff) == {"d\\a.py": [(1, 1)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__header_shaped_content_in_a_hunk__keeps_later_hunks_and_files() -> None:
+    diff = (
+        "diff --git a/a.py b/a.py\n"
+        "--- a/a.py\n"
+        "+++ b/a.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+first\n"
+        "+++ b/other.py\n"  # an added line whose text is "++ b/other.py"
+        "@@ -9 +10 @@\n"
+        "-old\n"
+        "+new\n"
+        "@@ -20,0 +21 @@\n"
+        "+++ not a path\n"  # an added line whose text is "++ not a path"
+        "@@ -30,0 +31 @@\n"
+        "+later\n"
+        "diff --git a/c.py b/c.py\n"
+        "--- a/c.py\n"
+        "+++ b/c.py\n"
+        "@@ -0,0 +5 @@\n"
+        "+z\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {
+        "a.py": [(1, 2), (10, 10), (21, 21), (31, 31)],
+        "c.py": [(5, 5)],
+    }
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_character_in_a_content_line__creates_no_line() -> None:
+    diff = (
+        "diff --git a/a.py b/a.py\n"
+        "--- a/a.py\n"
+        "+++ b/a.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+x\x0cdiff --git a/z.py b/z.py\x0c+++ b/z.py\x0c@@ -0,0 +50,3 @@\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"a.py": [(1, 1)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_deleted_file_marker__is_accepted() -> None:
+    diff = (
+        "diff --git a/old.py b/old.py\n"
+        "deleted file mode 100644\n"
+        "--- a/old.py\n"
+        "+++ /dev/null\n"
+        "@@ -1,2 +0,0 @@\n"
+        "-a\n"
+        "-b\n"
+        "diff --git a/n.py b/n.py\n"
+        "--- a/n.py\n"
+        "+++ b/n.py\n"
+        "@@ -0,0 +3 @@\n"
+        "+n\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"n.py": [(3, 3)]}
+
+
+@pytest.mark.unit
+def test_parse_added_lines__control_blocks_without_a_header__add_nothing_and_do_not_fail() -> None:
+    diff = (
+        "warning: in the working copy of 'x', LF will be replaced by CRLF\n"
+        "diff --git a/img.png b/img.png\n"
+        "index 1111111..2222222 100644\n"
+        "Binary files a/img.png and b/img.png differ\n"
+        "diff --git a/run.sh b/run.sh\n"
+        "old mode 100644\n"
+        "new mode 100755\n"
+        "diff --git a/before.py b/after.py\n"
+        "similarity index 100%\n"
+        "rename from before.py\n"
+        "rename to after.py\n"
+        "diff --git a/n.py b/n.py\n"
+        "--- a/n.py\n"
+        "+++ b/n.py\n"
+        "@@ -0,0 +3 @@\n"
+        "+n\n"
+    )
+
+    assert prepush.parse_added_lines(diff) == {"n.py": [(3, 3)]}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "porcelain",
+    ["?? dir with space/new é.py\0 M a.py\0", "?? dir with space/new é.py\0"],
+)
+def test_file_list_parsers__control_names_with_spaces_and_non_ascii__are_read_whole(
+    porcelain: str,
+) -> None:
+    assert prepush.untracked_files(porcelain) == ["dir with space/new é.py"]
+    got = prepush.parse_changed_files("sp ace/é.py\0", porcelain)
+    assert "sp ace/é.py" in got
+    assert "dir with space/new é.py" in got
+
+
+@pytest.mark.unit
 def test_untracked_files__porcelain__lists_only_untracked_paths() -> None:
     porcelain = "?? src/prismabib/new.py\0 M src/prismabib/a.py\0A  src/b.py\0"
 
@@ -582,6 +721,67 @@ def test_duplication_step__block_outside_the_change__passes_with_a_note() -> Non
 
     assert result.ok
     assert result.note == "2 known duplicate block(s) outside this change"
+
+
+_ROOT_INIT = (_FIXTURES / "pylint_duplicate_code_root_init.txt").read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__bare_root_name__maps_to_the_root_init_module() -> None:
+    (block,) = prepush.parse_pylint_duplicates(_ROOT_INIT)
+
+    assert block.locations == (
+        ("src/prismabib/other.py", 4, 10),
+        ("src/prismabib/__init__.py", 4, 10),
+    )
+
+
+@pytest.mark.unit
+def test_duplication_step__root_init_block_on_an_added_line__fails_and_names_the_file() -> None:
+    step = _dup_step({"src/prismabib/__init__.py": [(5, 5)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _ROOT_INIT)}))
+
+    assert not result.ok
+    assert "src/prismabib/other.py:4-10  <->  src/prismabib/__init__.py:4-10" in result.note
+
+
+@pytest.mark.unit
+def test_duplication_step__root_init_block_outside_the_change__passes_with_a_note() -> None:
+    step = _dup_step({"src/prismabib/__init__.py": [(20, 25)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _ROOT_INIT)}))
+
+    assert result.ok
+    assert result.note == "1 known duplicate block(s) outside this change"
+
+
+@pytest.mark.unit
+def test_duplication_step__control_subpackage_init_block_on_an_added_line__fails() -> None:
+    # Control: the subpackage case already mapped correctly before the root fix.
+    step = _dup_step({"src/prismabib/d/__init__.py": [(3, 3)]})
+
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (8, _TWO_BLOCKS)}))
+
+    assert not result.ok
+    assert "src/prismabib/c.py:100-109  <->  src/prismabib/d/__init__.py:1-10" in result.note
+
+
+@pytest.mark.unit
+def test_parse_pylint_duplicates__name_only_prefixed_by_root__maps_as_before() -> None:
+    out = (
+        "src\\prismabib_x.py:1:0: R0801: Similar lines in 2 files\n"
+        "==prismabib_x:[1:11]\n"
+        "==prismabib.other:[4:14]\n"
+        "    y = 2 (duplicate-code)\n"
+    )
+
+    (block,) = prepush.parse_pylint_duplicates(out)
+
+    assert block.locations == (
+        ("src/prismabib_x.py", 1, 10),
+        ("src/prismabib/other.py", 4, 13),
+    )
 
 
 @pytest.mark.unit
@@ -1489,3 +1689,178 @@ def test_duplication_base__merge_base_fails__falls_back_to_head_with_a_warning()
         "warning: cannot find the merge-base with origin/main: committed duplicates are not "
         "checked; fetch the base branch (git fetch origin main)"
     )
+
+
+_UNREADABLE = "diff could not be read: unreadable header '+++ garbage'"
+
+
+@pytest.mark.unit
+def test_parse_added_lines__unreadable_header__raises_naming_the_quoted_line() -> None:
+    diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ garbage\n@@ -0,0 +1 @@\n+x\n"
+
+    with pytest.raises(ValueError) as caught:
+        prepush.parse_added_lines(diff)
+
+    assert str(caught.value) == _UNREADABLE
+    assert str(caught.value).startswith("diff could not be read:")
+
+
+@pytest.mark.unit
+def test_parse_added_lines__quoted_header_for_a_backslash_name__raises() -> None:
+    diff = (
+        'diff --git "a/d\\\\a.py" "b/d\\\\a.py"\n'
+        '--- "a/d\\\\a.py"\n'
+        '+++ "b/d\\\\a.py"\n'
+        "@@ -0,0 +1 @@\n"
+        "+x\n"
+    )
+
+    with pytest.raises(ValueError) as caught:
+        prepush.parse_added_lines(diff)
+
+    assert str(caught.value) == (
+        "diff could not be read: unreadable header '+++ \"b/d\\\\\\\\a.py\"'"
+    )
+
+
+@pytest.mark.unit
+def test_parse_added_lines__header_with_an_empty_path__raises() -> None:
+    diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/\n@@ -0,0 +1 @@\n+x\n"
+
+    with pytest.raises(ValueError, match=r"^diff could not be read: unreadable header"):
+        prepush.parse_added_lines(diff)
+
+
+@pytest.mark.unit
+def test_added_lines_from_diff__non_zero_exit__raises_with_code_and_first_non_empty_line() -> None:
+    with pytest.raises(ValueError) as caught:
+        prepush.added_lines_from_diff(128, "\n  \nfatal: bad revision 'x'\nmore text\n")
+
+    assert str(caught.value) == (
+        "diff could not be read: git diff failed with exit code 128: fatal: bad revision 'x'"
+    )
+
+
+@pytest.mark.unit
+def test_added_lines_from_diff__non_zero_exit_and_empty_output__still_raises() -> None:
+    with pytest.raises(ValueError) as caught:
+        prepush.added_lines_from_diff(1, "")
+
+    assert str(caught.value).startswith("diff could not be read: git diff failed with exit code 1")
+
+
+@pytest.mark.unit
+def test_added_lines_from_diff__zero_exit__returns_the_parsers_result() -> None:
+    diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -0,0 +4,2 @@\n+x\n+y\n"
+
+    assert prepush.added_lines_from_diff(0, diff) == {"a.py": [(4, 5)]}
+    assert prepush.added_lines_from_diff(0, "") == {}
+
+
+def _dup_run(rc: int, out: str, error: str | None, added: _Added | None = None) -> Any:
+    extra = {} if error is None else {"diff_error": error}
+    steps = _build(added_lines=added, **extra)
+    step: Any = next(s for s in steps if s.name == "duplicate-code")  # type: ignore[attr-defined]
+    (result,) = prepush.run_steps([step], _FakeRunner({step.cmd[0]: (rc, out)}))
+    return result
+
+
+_PYLINT_MISSING = "C:\\v\\python.exe: No module named pylint\n"
+
+
+@pytest.mark.unit
+def test_duplication_step__error_with_an_untracked_overlap__note_begins_with_the_error() -> None:
+    result = _dup_run(8, _TWO_BLOCKS, _UNREADABLE, {"src/prismabib/sub/b.py": [(1, 9)]})
+
+    assert not result.ok
+    assert result.note == (
+        _UNREADABLE + "\nduplicated block(s) touching your changes; merge them:\n"
+        "  src/prismabib/a.py:10-19  <->  src/prismabib/sub/b.py:5-14"
+    )
+    assert result.note.startswith("diff could not be read:")
+
+
+@pytest.mark.unit
+def test_duplication_step__error_without_an_overlap__fails_with_the_error_line_alone() -> None:
+    result = _dup_run(8, _TWO_BLOCKS, _UNREADABLE, {})
+
+    assert not result.ok
+    assert result.note == _UNREADABLE
+
+
+@pytest.mark.unit
+def test_duplication_step__failed_diff_error_without_an_overlap__note_is_that_message() -> None:
+    error = "diff could not be read: git diff failed with exit code 128: fatal: x"
+
+    result = _dup_run(8, _TWO_BLOCKS, error, None)
+
+    assert (result.ok, result.note) == (False, error)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("error", [None, _UNREADABLE])
+def test_duplication_step__matrix_pylint_clean__passes_with_the_note_unchanged(
+    error: str | None,
+) -> None:
+    result = _dup_run(0, "", error)
+
+    assert (result.ok, result.note) == (True, "")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("error", [None, _UNREADABLE])
+def test_duplication_step__matrix_pylint_missing__note_is_unchanged(error: str | None) -> None:
+    result = _dup_run(1, _PYLINT_MISSING, error)
+
+    assert not result.ok
+    assert result.note == prepush.missing_module_note(_PYLINT_MISSING, "pylint")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("error", [None, _UNREADABLE])
+def test_duplication_step__matrix_pylint_other_exit_code__note_is_unchanged(
+    error: str | None,
+) -> None:
+    result = _dup_run(32, "usage: pylint", error)
+
+    assert (result.ok, result.note) == (False, "pylint failed (exit 32) without a duplicate report")
+
+
+@pytest.mark.unit
+def test_duplication_step__matrix_unparsable_output_without_error__reports_that_error_only() -> (
+    None
+):
+    result = _dup_run(8, "R0801 odd shape", None)
+
+    assert (result.ok, result.note) == (
+        False,
+        "pylint output mentions R0801 but no duplicate group could be read",
+    )
+
+
+@pytest.mark.unit
+def test_duplication_step__matrix_unparsable_output_with_error__reports_both_parse_error_first() -> (
+    None
+):
+    result = _dup_run(8, "R0801 odd shape", _UNREADABLE)
+
+    assert not result.ok
+    assert result.note == (
+        "pylint output mentions R0801 but no duplicate group could be read\n" + _UNREADABLE
+    )
+
+
+@pytest.mark.unit
+def test_duplication_step__control_duplicates_without_error__existing_note_is_unchanged() -> None:
+    result = _dup_run(8, _TWO_BLOCKS, None, {"src/prismabib/other.py": [(1, 9)]})
+
+    assert (result.ok, result.note) == (True, "2 known duplicate block(s) outside this change")
+
+
+@pytest.mark.unit
+def test_build_steps__diff_error__leaves_every_other_step_as_it_was() -> None:
+    plain = _build(added_lines={})
+    with_error = _build(added_lines={}, diff_error=_UNREADABLE)
+
+    assert _names(with_error) == _names(plain)
+    assert [s.cmd for s in with_error] == [s.cmd for s in plain]  # type: ignore[attr-defined]

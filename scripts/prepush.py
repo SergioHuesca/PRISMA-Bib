@@ -62,9 +62,15 @@ SECRET_LOCATION = re.compile(r"^Location:\s+(.+):(\d+)\s*$", re.MULTILINE)
 # its own change, never in the feature change that hit it (docs/how-to/pre-push-check.md).
 MIN_SIMILARITY_LINES = 6
 PYLINT_REFACTOR_RC = 8
+# The one package the gate scans. The duplicate-code command, the coverage scope and the
+# root-module mapping below all derive from this constant, so they cannot drift apart.
+COVERAGE_SOURCE = "src/prismabib"
+ROOT_MODULE = COVERAGE_SOURCE.rsplit("/", 1)[-1]
+ROOT_INIT_PATH = f"{COVERAGE_SOURCE}/__init__.py"
 DEV_INSTALL_HINT = "install the development dependencies: uv sync --all-extras"
 DUP_HEADER = re.compile(r"R0801: Similar lines in (\d+) files")
 DUP_LOCATION = re.compile(r"^==([\w.]+):\[(\d+):(\d+)\]\s*$")
+DIFF_UNREADABLE = "diff could not be read"
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 Runner = Callable[[Sequence[str]], tuple[int, str]]
@@ -237,7 +243,13 @@ def parse_pylint_duplicates(output: str) -> list[DuplicateBlock]:
                 raise ValueError(
                     f"pylint output: expected a '==module:[a:b]' line, got {lines[i : i + 1]}"
                 )
-            path = "src/" + m.group(1).replace(".", "/") + ".py"
+            module = m.group(1)
+            # Pylint names the root package's own __init__ by the bare package name.
+            path = (
+                ROOT_INIT_PATH
+                if module == ROOT_MODULE
+                else "src/" + module.replace(".", "/") + ".py"
+            )
             locations.append((path, int(m.group(2)), int(m.group(3)) - 1))
             i += 1
         blocks.append(DuplicateBlock(tuple(locations)))
@@ -247,20 +259,64 @@ def parse_pylint_duplicates(output: str) -> list[DuplicateBlock]:
 
 
 def parse_added_lines(diff: str) -> dict[str, list[tuple[int, int]]]:
-    """New-side line ranges (first, last) per file from ``git diff -U0`` output."""
+    """New-side line ranges (first, last) per file from ``git diff -U0`` output.
+
+    A ``+++ `` line is a header only between a file's ``diff --git`` line and its first hunk;
+    inside a hunk it is content. Split on newline only, so a control character in a content
+    line cannot start a line. Paths are kept as git writes them. Raises ValueError on a header
+    that is neither the deleted-file marker nor a readable destination path.
+    """
     added: dict[str, list[tuple[int, int]]] = {}
     current: str | None = None
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            target = line[4:]
-            current = normalize_path(target[2:]) if target.startswith("b/") else None
-        elif line.startswith("@@") and current:
-            m = HUNK.match(line)
-            if m:
+    in_header = False  # between "diff --git" and the file's first hunk
+    for line in diff.split("\n"):
+        if line.startswith("diff --git "):
+            current, in_header = None, True
+        elif in_header and line.startswith("+++ "):
+            target = line[4:].removesuffix("\t")  # git appends a tab after a path with a space
+            if target == "/dev/null":  # a deleted file
+                current = None
+            elif target.startswith("b/") and len(target) > 2:
+                current = target[2:]
+            else:  # includes a quoted header: git quotes names with a tab, quote or backslash
+                raise ValueError(f"{DIFF_UNREADABLE}: unreadable header {line!r}")
+        elif line.startswith("@@"):
+            in_header = False
+            m = HUNK.match(line) if current else None
+            if m and current:
                 start, count = int(m.group(1)), int(m.group(2) or 1)
                 if count:
                     added.setdefault(current, []).append((start, start + count - 1))
     return added
+
+
+def added_lines_from_diff(rc: int, diff: str) -> dict[str, list[tuple[int, int]]]:
+    """Added-line ranges from the diff command's exit code and combined output.
+
+    A failed diff raises ValueError with the exit code and the first non-empty output line,
+    the same as an unreadable header, so error text is never read as an empty diff.
+    """
+    if rc != 0:
+        first = next((s.strip() for s in diff.splitlines() if s.strip()), "")
+        raise ValueError(f"{DIFF_UNREADABLE}: git diff failed with exit code {rc}: {first}")
+    return parse_added_lines(diff)
+
+
+def zero_context_diff_args(base: str) -> list[str]:
+    """Arguments of the zero-context diff, pinned so personal git configuration cannot change it."""
+    return [
+        "-c",
+        "core.quotepath=off",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-M",
+        "--no-ext-diff",
+        "--no-textconv",
+        base,
+    ]
 
 
 def untracked_files(porcelain_z: str) -> list[str]:
@@ -283,7 +339,15 @@ def filter_duplicates(
     ]
 
 
-def duplication_evaluator(added: dict[str, list[tuple[int, int]]]) -> Evaluator:
+def duplication_evaluator(
+    added: dict[str, list[tuple[int, int]]], diff_error: str | None = None
+) -> Evaluator:
+    """Judge pylint's run. ``diff_error`` is why the diff could not be read, if it could not.
+
+    A clean pylint run passes whatever the diff error (the accepted limit); otherwise the
+    error leads the note, and an unparsable pylint report does not hide it.
+    """
+
     def evaluate(rc: int, out: str) -> tuple[bool, str]:
         if rc == 0:
             return True, ""
@@ -294,18 +358,20 @@ def duplication_evaluator(added: dict[str, list[tuple[int, int]]]) -> Evaluator:
         try:
             blocks = parse_pylint_duplicates(out)
         except ValueError as exc:
-            return False, str(exc)
+            return False, "\n".join([str(exc), *([diff_error] if diff_error else [])])
         mine = filter_duplicates(blocks, added)
         if not mine:
+            if diff_error:
+                return False, diff_error
             return True, f"{len(blocks)} known duplicate block(s) outside this change"
         found = ["  " + "  <->  ".join(f"{p}:{a}-{b}" for p, a, b in blk.locations) for blk in mine]
-        return False, "duplicated block(s) touching your changes; merge them:\n" + "\n".join(found)
+        listing = "duplicated block(s) touching your changes; merge them:\n" + "\n".join(found)
+        return False, f"{diff_error}\n{listing}" if diff_error else listing
 
     return evaluate
 
 
 COMPLEXITY_THRESHOLD = 10
-COVERAGE_SOURCE = "src/prismabib"
 
 
 class FunctionRecord(NamedTuple):
@@ -764,6 +830,7 @@ def build_steps(
     test_paths: Sequence[str] | None,
     added_lines: dict[str, list[tuple[int, int]]] | None = None,
     changed: bool = False,
+    diff_error: str | None = None,
 ) -> list[Step]:
     py = sys.executable
     steps = [
@@ -796,7 +863,9 @@ def build_steps(
     # Whole tree: a run over touched files alone cannot see a block shared with an untouched one.
     steps.append(
         Step(
-            "duplicate-code", [*dup_cmd, "src/prismabib"], duplication_evaluator(added_lines or {})
+            "duplicate-code",
+            [*dup_cmd, COVERAGE_SOURCE],
+            duplication_evaluator(added_lines or {}, diff_error),
         )
     )
     if not quick:
@@ -971,15 +1040,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     base, base_warning = duplication_base(lambda cmd: _run(cmd, root, args.timeout))
     if base_warning:
         print(base_warning)
-    _, zero_diff = _git(root, "-c", "core.quotepath=off", "diff", "-U0", "--no-color", base)
-    added = parse_added_lines(zero_diff)
+    zero_rc, zero_diff = _git(root, *zero_context_diff_args(base))
+    diff_error: str | None = None
+    try:
+        added = added_lines_from_diff(zero_rc, zero_diff)
+    except ValueError as exc:  # the step fails on it only if pylint reports duplicates
+        diff_error, added = str(exc), {}
     for path in untracked_files(porcelain):
         try:  # every line of an untracked, non-ignored file counts as added
             count = len((Path(root) / path).read_bytes().splitlines())
         except OSError:
             continue
         if count:
-            added[normalize_path(path)] = [(1, count)]
+            added[path] = [(1, count)]
 
     def exists(p: str) -> bool:
         return (Path(root) / p).is_file()
@@ -1009,6 +1082,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             test_paths=test_paths,
             added_lines=added,
             changed=args.changed,
+            diff_error=diff_error,
         )
         steps += option_skips(quick=args.quick, skip_mypy=args.skip_mypy, changed=args.changed)
         results = run_steps(steps, lambda cmd: _run(cmd, root, args.timeout), args.fail_fast)
