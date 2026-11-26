@@ -83,7 +83,7 @@ which one is right.
   (Decision 1a) say so. They do not supply the abstract, the full author list, keywords,
   subject areas or references. The RDF/XML route in the experiment below returns more. It is a
   follow-up, not current behavior: the code does not request RDF, and switching level 3 to RDF
-  is a code change that needs the Main Flow and its own spec. Level 2 sends one DOI-batch query with no cursor (`search_standard_by_dois`, code reading), so the cursor refusal of 2026-11-27 does not apply to it as coded; that request was not run with this key.
+  is a code change that needs the Main Flow and its own spec. Level 2 (`search_standard_by_dois`) sends one request per batch of up to 25 DOIs, with no cursor (code reading), so the cursor refusal of 2026-11-27 does not apply to it as coded. It was not re-run on 2026-11-27; the code records one live single-DOI request (2026-10-21, HTTP 200) and says the multi-DOI form is not verified.
 
 ## Quota observed
 
@@ -157,7 +157,7 @@ another source (OpenAlex returned one for 10 of 10).
 
 This is a recommendation for later work. It is not what the project's cascade does today. It was written before the 2026-11-27 cursor finding and does not consider cursor paging, so step 1 below does not hold as written.
 
-1. Search `STANDARD` for the ids and the basic metadata. Paging past the first page by cursor is refused under `STANDARD` on this key (2026-11-27), so this step is not settled.
+1. Search `STANDARD` for the ids and the basic metadata. Every cursor request under `STANDARD`, including the first page, was refused on this key (2026-11-27), so this step is not settled.
 2. Abstract Retrieval `META` with `Accept: application/rdf+xml`, one call per record, for the
    full author list, affiliations, author keywords, ASJC subject areas and references.
 3. The abstract from OpenAlex.
@@ -183,7 +183,7 @@ record content, key or personal detail is recorded on this page.
 
 ### Outcome
 
-Paging past one page by cursor is refused under `STANDARD` for this key, so the check failed.
+Cursor paging is refused under `STANDARD` for this key, so the check failed.
 Offset paging with `start` returned complete result sets for two of the four queries and first
 pages for the other two. Offset paging is outside the project's spec, so using it needs a new
 decision. The decision recorded for #467 is no-go. No Abstract Retrieval request was sent, so
@@ -313,4 +313,4 @@ not established, because there is no RDF comparison.
 - Pre-2000 coverage comes from Q1 only (28 entries).
 - Non-English status rests on the query restriction. A record may list more than one language.
 - Default sort order. First pages only for Q2 and Q4.
-- Raw responses were kept outside the repository and are not published here.
+- The 17 responses of the main run were kept outside the repository and are not published here. The two verification responses were not stored.
