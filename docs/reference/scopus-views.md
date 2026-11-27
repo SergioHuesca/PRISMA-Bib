@@ -485,7 +485,7 @@ distinct EIDs equal the API's own total. There is no outside reference.
 - Elsevier's pages said the Boolean operator precedence would change in 2026. This was not checked.
 - The sum check in step 2 would show parts that do not add up to their parent. It would not show that
   the parent query itself is read differently.
-- The project's client does none of this, because it always sends a cursor.
+- The project does none of this: its search path, `ScopusClient.search`, always sends a cursor.
 - The experiment scripts and the recorded responses are kept outside the repository and are not published here.
 
 ### Terms of use
