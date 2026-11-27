@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chip inputs and the New Project checkbox now have accessible names.** The search input of each chip box (Search terms, Compound terms, Subject areas) is named by its visible label, also once a chip is added, and the empty box shows that label as a hint, also next to chips. The New Project option "Also fill missing fields of Scopus records from OpenAlex" is now a one-option checkbox group, so a screen reader announces its label; its look, ring and Tab order are unchanged. A real-browser sweep over every screen fails on any text box, checkbox or combo box whose accessible name is empty, "null" or "undefined". (#381, #382, #383, #384)
 
 - **Search `STANDARD` paging measured on a live key: no-go.** Cursor paging is refused under `STANDARD` for the tested key, so the spec tracked as #466 does not go ahead. The measurement (#466, #467) is recorded in [Scopus views](docs/reference/scopus-views.md), which also corrects earlier statements that did not consider cursor paging. Documentation only; no code changes.
+- **Scopus views gains a dated section on reading a whole `STANDARD` result set without a cursor (2026-11-27).** It records the limits found, the records lost in single passes, the splitting tests and a five-step procedure marked as not implemented in prismabib, with the query strings and request counts. Documentation only; no code or request changed.
 
 ### Fixed
 
