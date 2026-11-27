@@ -7,7 +7,7 @@ nothing in any cell.
 Entitlements are granted per API key and often per institution. These results are for one key,
 so another key or another institution may get different results.
 
-A later measurement, on 2026-11-27, covers Search `STANDARD` paging and sample coverage. It is in [Search STANDARD paging and sample coverage (2026-11-27)](#search-standard-paging-and-sample-coverage-2026-11-27). Reading a whole result set without a cursor is in [Reading a whole STANDARD result set without a cursor (2026-11-27)](#reading-a-whole-standard-result-set-without-a-cursor-2026-11-27). RDF was not re-measured then.
+A later measurement, on 2026-11-27, covers Search `STANDARD` paging and sample coverage. It is in [Search STANDARD paging and sample coverage (2026-11-27)](#search-standard-paging-and-sample-coverage-2026-11-27). Reading a whole result set without a cursor is in [Reading a whole STANDARD result set without a cursor (2026-11-27)](#reading-a-whole-standard-result-set-without-a-cursor-2026-11-27). RDF was not measured in those two sections. It was measured on 2026-11-27 on 200 records: see [RDF measurement on 200 records (2026-11-27)](#rdf-measurement-on-200-records-2026-11-27).
 
 | API | View | Result |
 |---|---|---|
@@ -147,7 +147,7 @@ For the seed record it returned (18.5 kB):
 | Keywords | 0 to 6 per record; one record had none |
 | Subject areas | 1 to 4 ASJC codes per record |
 
-RDF was not re-measured on 2026-11-27. The results above stand only on their original sample: one seed record for the grid and 10 records for the comparison.
+RDF was measured again on 2026-11-27, on 200 records: see [RDF measurement on 200 records (2026-11-27)](#rdf-measurement-on-200-records-2026-11-27). The results above stand only on their original sample: one seed record for the grid and 10 records for the comparison.
 
 ### What is still unreachable
 
@@ -160,7 +160,7 @@ another source (OpenAlex returned one for 10 of 10).
 This is a recommendation for later work. It is not what the project's cascade does today. It was written before the 2026-11-27 cursor finding and does not consider cursor paging, so step 1 below does not hold as written.
 
 1. Search `STANDARD` for the ids and the basic metadata. Every cursor request under `STANDARD`, including the first page, was refused on this key (2026-11-27), so this step is not settled.
-   Note (2026-11-27): the ids and basic metadata of step 1 were read without a cursor for result sets of up to 6,602 records; see [Reading a whole STANDARD result set without a cursor (2026-11-27)](#reading-a-whole-standard-result-set-without-a-cursor-2026-11-27). The procedure there was pieced together from separate tests and is not implemented in prismabib. Steps 2 and 3 of this path were not re-measured. The no-go stands.
+   Note (2026-11-27): the ids and basic metadata of step 1 were read without a cursor for result sets of up to 6,602 records; see [Reading a whole STANDARD result set without a cursor (2026-11-27)](#reading-a-whole-standard-result-set-without-a-cursor-2026-11-27). The procedure there was pieced together from separate tests and is not implemented in prismabib. Step 2 was measured again on 2026-11-27, on 200 records: see [RDF measurement on 200 records (2026-11-27)](#rdf-measurement-on-200-records-2026-11-27). Step 3 was not measured as a route. #490 plans to reverse the no-go recorded above for #467 and to build offset paging; that is not implemented.
 2. Abstract Retrieval `META` with `Accept: application/rdf+xml`, one call per record, for the
    full author list, affiliations, author keywords, ASJC subject areas and references.
 3. The abstract from OpenAlex.
@@ -296,7 +296,7 @@ or an affiliation URL, which agrees with the list above. Affiliation objects per
 entries): none 23, one 244, two 35, three 1. Whether `STANDARD` truncates the affiliation list was
 not established, because there is no RDF comparison.
 
-### Not measured
+### Not measured in this check
 
 - Any RDF request: RDF parse rate, DTD rejections, and RDF coverage of the author list, author
   ids, affiliations, author keywords, ASJC subject areas and references.
@@ -494,3 +494,101 @@ No clause on splitting queries was found in the API Service Agreement or in the 
 pages read on 2026-11-27. The agreement asks users to avoid excessive and unnecessary use. The Use
 Policies for academic research forbid mining the entire dataset and limit retention of the research
 dataset. One policy page was only partly read verbatim. This is not legal advice.
+
+## RDF measurement on 200 records (2026-11-27)
+
+Dated 2026-11-27. The requests ran from 11:16 to 11:23 UTC in one session, with one key. The owner approved the measurement before any request was sent. It tests the RDF route that #490 would use, Abstract Retrieval `META` with `Accept: application/rdf+xml`, on a sample that adds other disciplines and record kinds. Only aggregate counts are given here. The raw responses are kept outside the repository, unchanged, with SHA-256 digests, so that #502 can make fixtures from them without new requests.
+
+### Method
+
+- **Sample.** 200 records from search pages recorded for the two earlier checks above. The pages come from at least three queries. No Search request was sent. Within each discipline group, records were ordered by a hash of the record id. Then one record was taken from each group in turn. The groups are medicine (28), education (43), materials engineering (43), humanities (43) and computing (43). The group is the query the page came from, not a checked field. Medicine had only 28 usable records in the pages. The sample is deterministic, not random.
+- **Requests.** One Abstract Retrieval request per record, with `view=META`, the RDF/XML media type and the key only. A pause of one second came before each request. The cap was 250, and 200 requests were sent. All returned HTTP 200, so there were no retries and no stop rule fired. 61 OpenAlex requests were sent, all HTTP 200. No request carried a cursor.
+- **Parse.** A response counted as parsed only if it was well-formed XML with no document type declaration, and if it held the record whose id matched the request. All 200 did.
+- **OpenAlex match.** The project's own rule: a normalised DOI, or, for a record without a DOI, an exact normalised title and the same publication year. 166 records matched: 138 by DOI and 28 by title and year. One of the 28 had several exact candidates, and the first was used. 34 did not match: 4 DOIs were not found, and 30 title-and-year searches gave no exact match. Of those 30, 6 returned no result and 24 returned other results. For 12 of the 24, only the first 25 were read. Comparisons with OpenAlex use the 166 matched records only.
+- **Strata.** Fixed before any request, from the search entry and the query: discipline group, pre-2000 by cover date, non-English by query restriction, non-Elsevier by DOI prefix, and without a DOI.
+
+### Results
+
+- **Parse.** 200 of 200 responses parsed. None contained a document type declaration.
+- **Presence in the 200 parsed records.** Title 200. ASJC subject areas 200. Authors 198 (2 records have no author). Author ids 198. References 151. Author keywords 127. Affiliations 168, all with an id and a name. Abstract 0. Affiliation country (separate field or comma part) 0.
+
+Field coverage over the 166 matched records:
+
+| Field | RDF | OpenAlex | Both | RDF only | OpenAlex only | Neither |
+|---|---|---|---|---|---|---|
+| Title | 166 | 166 | 166 | 0 | 0 | 0 |
+| Authors | 166 | 166 | 166 | 0 | 0 | 0 |
+| Author ids | 166 | 164 | 164 | 2 | 0 | 0 |
+| Author keywords (OpenAlex: algorithmic keywords) | 113 | 165 | 113 | 0 | 52 | 1 |
+| ASJC subject areas (OpenAlex: topics) | 166 | 165 | 165 | 1 | 0 | 0 |
+| Affiliations | 143 | 140 | 136 | 7 | 4 | 19 |
+| Affiliation ids (OpenAlex: institution id) | 143 | 126 | 126 | 17 | 0 | 23 |
+| Affiliation country (separate field or comma part) | 0 | 126 | 0 | 0 | 126 | 40 |
+| Abstract | 0 | 109 | 0 | 0 | 109 | 57 |
+| References | 134 | 129 | 126 | 8 | 3 | 29 |
+
+- **Authors.** 625 authors in 198 records. 58 records have exactly one author. All 198 author lists are ordered lists. No record gave only the first-author field, as plain text or a link. Two records have no creator element. Authors without a usable author id: 0. Authors without any id: 0. Authors without an affiliation: 38, in 31 records. Against OpenAlex, the author count was equal in 165 of 166 matched records and higher in RDF in 1. No record had one RDF author while OpenAlex had two or more.
+- **References.** 151 records have references, and 49 have none. The records hold 5,958 references in total, from 0 to 256 per record. Among matched records with a non-zero count on both sides (126), RDF had more in 111, the same in 13 and fewer in 2. The completeness of either side was not checked.
+- **Keywords and subject areas.** Author keywords: 127 records have at least one, from 0 to 14 per record, 654 in total. ASJC codes: all 200 records have one or more, from 1 to 8 per record, 479 in total. No record had a subject element without an ASJC code.
+- **Affiliations.** 306 affiliations in 168 records. Each has an id and a name. The only element names seen under affiliations were the id, the name and the link elements. No element or attribute holds a country or a place field. A second search of the affiliation names, with a hand-picked word list, found a present or former country name in 17 of the 306 affiliations (in 12 records). In 7 of them (3 records) the country is in brackets at the end of the name. This is a lower bound: the script does not split on brackets, and its normaliser rejects some native-language country names.
+- **Language and publisher.** OpenAlex language for the 166 matched records: English 103, German 20, Spanish 20, French 19, Portuguese 3, Catalan 1. The RDF publisher was on the Elsevier name list for 24 records. 65 records have no publisher.
+
+By stratum (200 records, all parsed):
+
+| Stratum | Records | Matched to OpenAlex | RDF with author keywords | RDF with affiliations | RDF with references |
+|---|---|---|---|---|---|
+| All | 200 | 166 | 127 | 168 | 151 |
+| Computing | 43 | 41 | 31 | 42 | 41 |
+| Education | 43 | 33 | 39 | 40 | 40 |
+| Humanities | 43 | 33 | 5 | 18 | 15 |
+| Materials engineering | 43 | 40 | 38 | 42 | 42 |
+| Medicine | 28 | 19 | 14 | 26 | 13 |
+| Non-Elsevier (DOI prefix) | 114 | 110 | 88 | 110 | 108 |
+| Non-English (query restriction) | 86 | 66 | 44 | 58 | 55 |
+| Pre-2000 (cover date) | 54 | 39 | 15 | 34 | 17 |
+| Without DOI | 58 | 28 | 12 | 31 | 16 |
+
+### Country check
+
+The check ran on every parsed response. Its scope is every element named like an affiliation anywhere in the response, every node that is about an affiliation or carries an affiliation id, and the nodes those link to, followed through links. Inside that scope it looked for three things:
+
+1. An element or attribute name containing `country`, `nation` or `iso3166`.
+2. A text or attribute value that is a two-letter ISO 3166-1 code in upper case, or a country name or an upper-case three-letter code that the project's country normaliser accepts. Values containing `://` were skipped.
+3. A comma- or semicolon-separated part of a longer value that is such a code or name.
+
+It also counted place-type element or attribute names (location, address, city, region, state, geo). Those were not treated as countries.
+
+It did not look for: a country inside a longer value with no comma or semicolon; a country in brackets at the end of an affiliation name; a country name in a native language that the normaliser rejects; a lower-case two-letter code; anything inside a URL; or anything outside its scope, such as the publisher field or the title. Cities and regions were not counted as countries.
+
+The result was 0 on all three tests, and 0 place-type element or attribute names, across 306 affiliations in 168 records. Separately, the combined list of element and attribute names across the 200 responses, as the script prints it, was read by hand. No name contains `country`, `nation` or `iso3166`. That list was read, not tested by the script. The script's self-check, on synthetic data, shows that the check catches a country under an unexpected element name, in an attribute, one link away, and in a comma-separated part. It does not cover the other cases listed above.
+
+The affiliation-name search found country names that the script misses, as described in the affiliations results. The matter went to the owner, who kept Decision 18 of #490: no country is read from affiliation names, and RDF-only affiliations load without a country.
+
+### Limits and weak spots
+
+- One key, one session, one day. Another key or institution may get different results.
+- The sample is deterministic, not random, and each stratum is small.
+- Disciplines are query groups, not checked per record. The 43 computing records come from the search pages of a machine-learning query that was split and counted, not read in full. All 28 medicine records are pre-2000 by their query, so discipline and age cannot be separated in that group.
+- Non-English is a query restriction, not a checked field. OpenAlex gives 63 of the 166 matched records a non-English language. The query stratum has 86 records, 66 of them matched, and the two sets are not the same.
+- Non-Elsevier is a DOI-prefix proxy. 65 responses have no publisher, so the publisher check covers only part of the sample.
+- Records without a DOI match OpenAlex less often: 28 of 58, against 138 of 142 with a DOI. Their comparisons rest on 28 records.
+- Thin coverage in some strata: humanities (author keywords 5 of 43; affiliations 18 of 43; references 15 of 43), pre-2000 (author keywords 15 of 54; affiliations 34 of 54; references 17 of 54), records without a DOI (author keywords 12 of 58; affiliations 31 of 58; references 16 of 58) and medicine (references 13 of 28).
+- No abstract in any RDF response. OpenAlex gives an abstract for 109 of the 166 matched records, so 57 matched records have none from either source. With the 34 unmatched records, 91 of the 200 records got no abstract from either source.
+- Comparisons are presence checks, except for author and reference counts. RDF author keywords are not compared one to one with OpenAlex algorithmic keywords, which are a different kind of field. ASJC codes and OpenAlex topics are compared by presence only.
+- Reference completeness, keyword completeness and name accuracy were not checked.
+- No RDF country field was found. A name search gives a lower bound of country names in affiliation names. The limits are listed in the country check.
+
+### Decision
+
+**GO for the build in #490.** The agent took this decision from the counts above. No numeric threshold was set, before or after the counts.
+
+Reasons, from the counts:
+
+- All 200 responses parsed, and each held the requested record. The RDF route works for this key on this sample.
+- RDF gave an ordered author list for 198 of 200 records, with an id for every author. Author counts matched OpenAlex in 165 of 166 comparable records.
+- RDF gave ASJC codes for all 200 records, author keywords for 127, affiliations with ids for 168 and references for 151.
+- Two gaps are covered by the design: the abstract, which comes from OpenAlex or manual entry, and RDF-only affiliations, which load without a country. The design does not fill missing references, because loading references is out of scope. Some records get no author keywords (73), no affiliations (32) or no authors (2) from RDF.
+
+On country, the matter went to the owner after the country finding. The owner kept Decision 18 of #490: no country is read from affiliation names, and RDF-only affiliations load without a country. The owner answered before any build, so nothing else returns to the owner on that point.
+
+Paging was not measured again here, and this decision does not rest on it. #490 plans offset paging, which reverses the no-go for #467 recorded above. That reversal belongs to #490 and its decision record, not to this measurement. The merge condition in #490 still applies: a live read of the owner's review query must seal, with distinct records equal to the API's own total, before the pull request merges.
