@@ -324,9 +324,12 @@ not established, because there is no RDF comparison.
 
 Dated 2026-11-27. The recorded requests ran on 2026-11-26, 22:38 to 22:58 UTC.
 
-**Setup.** Same key, `X-ELS-APIKey` only (no insttoken), generic User-Agent, `api.elsevier.com/content/search/scopus`, `view=STANDARD`, `count=25` for page reads. No request carried `cursor`, and no attempt was made to get around the refusal.
+**Setup.** Same key, `X-ELS-APIKey` only (no insttoken), generic User-Agent,
+`api.elsevier.com/content/search/scopus`, `view=STANDARD`, `count=25` for page reads. No request
+carried `cursor`, and no attempt was made to get around the refusal.
 
-**Outcome.** On the sets read, offset paging with query splitting and a check of distinct EIDs against the total reached the whole set. One pass is not enough.
+**Outcome.** On the sets read, offset paging with query splitting and a check of distinct
+EIDs against the total reached the whole set. One pass is not enough.
 
 ### Limits found
 
@@ -357,7 +360,7 @@ Passes under the default order, each given as records read, then records lost:
 - Two Q4 parts: 2,563, lost 1; and 4,030, lost 3.
 - A second pass over the 612 slice: lost 0.
 - Q4 publication year 2008: 343, lost 0.
-- The one-go query: 769, lost 0.
+- The one-go query (the French-language query listed under Query strings): 769, lost 0.
 
 Passes under `+orig-load-date`: the 612 slice (lost 0) and the two Q4 parts (lost 37 and 51).
 
@@ -400,7 +403,7 @@ No sort tried can be trusted on its own.
 
 ### Procedure (not implemented in prismabib)
 
-The five steps below are not implemented in prismabib. They are not current project behaviour.
+The five steps below are not implemented in prismabib.
 
 1. Split the query by `PUBYEAR` until each part is small enough (5,000 is the hard limit). If one year
    is still too large, split it into `X` and `AND NOT X` on `DOCTYPE`, `SUBJAREA`, `SRCTYPE` or the
@@ -483,6 +486,7 @@ distinct EIDs equal the API's own total. There is no outside reference.
 - The sum check in step 2 would show parts that do not add up to their parent. It would not show that
   the parent query itself is read differently.
 - The project's client does none of this, because it always sends a cursor.
+- The experiment scripts and the recorded responses are kept outside the repository and are not published here.
 
 ### Terms of use
 
@@ -490,7 +494,3 @@ No clause on splitting queries was found in the API Service Agreement or in the 
 pages read on 2026-11-27. The agreement asks users to avoid excessive and unnecessary use. The Use
 Policies for academic research forbid mining the entire dataset and limit retention of the research
 dataset. One policy page was only partly read verbatim. This is not legal advice.
-
-### Data
-
-The experiment scripts and the recorded responses are not committed. The change makes no API request.
